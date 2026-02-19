@@ -1,6 +1,10 @@
 function fig = play_fusi_video_final( ...
     I, I_interp, PSC, bg, par, fps, maxFPS, TR, Tmax, baseline, ...
     loadedMask, loadedMaskIsInclude, nVols, applyRejection, QC, fileLabel, sliceIdx)
+
+disp('fps ='); disp(fps);
+disp('maxFPS ='); disp(maxFPS);
+
 % =========================================================
 %  fUSI Video GUI — MATRIX PROBE + 2D SUPPORT
 % Ensure previewCaxis exists (robust symmetric PSC scaling)
@@ -13,14 +17,15 @@ if ~isfield(par,'previewCaxis') || isempty(par.previewCaxis)
     if isempty(tmp)
         par.previewCaxis = [-5 5];
     else
-        prc = prctile(abs(tmp),99);   % symmetric around zero
-        if prc <= 0
-            prc = max(abs(tmp));
+        % Percentile window scaling (better for Gabriel)
+        low  = prctile(tmp, 1);
+        high = prctile(tmp, 99);
+
+        if ~isfinite(low) || ~isfinite(high) || high <= low
+            par.previewCaxis = [-5 5];
+        else
+            par.previewCaxis = [low high];
         end
-        if prc <= 0
-            prc = 1;
-        end
-        par.previewCaxis = [-prc prc];
     end
 end
 
@@ -207,11 +212,14 @@ caxis(ax, par.previewCaxis);     % PSC range
 set(cbar, 'Limits', par.previewCaxis);
 
 
-uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX 860 180 26], ...
-    'String','Set Colorbar Range', ...
+% Button BELOW colorbar (bottom-left corner)
+uicontrol('Style','pushbutton', ...
+    'Units','normalized', ...
+    'Position',[0.045 0.10 0.06 0.035], ... % adjust if needed
+    'String','Color Bar Range', ...
     'FontWeight','bold', ...
     'Callback',@setColorbarRange);
+
 
 % Footer
 uicontrol('Style','text','Units','pixels', ...
@@ -282,9 +290,9 @@ editorMode     = false;
 viewMaskedOnly = false;
 
 % Brush settings
-brushRadius   = 8;
-maskAlpha     = 0.15;
-maskColor     = [0 1 0];
+brushRadius   = 12;
+maskAlpha     = 0.35;
+maskColor     = [1 1 1];
 maskThreshold = 0.25;
 
 
@@ -470,7 +478,7 @@ sliderW = 350;
 % ---------- Mask Overlay Alpha ----------
 uicontrol('Style','text','Units','pixels', ...
     'Position',[rightX overlayY+18 labelW 18], ...
-    'String','Mask Overlay Alpha (%)', ...
+    'String','Mask Intensity Overlay', ...
     'ForegroundColor',[0.9 0.9 0.9], ...
     'BackgroundColor','k');
 
@@ -480,26 +488,37 @@ overlaySlider = uicontrol('Style','slider','Units','pixels', ...
     'Callback',@(s,~) setOverlayAlpha(s.Value));
 
 
+
 % ---------- Mask Threshold ----------
 thY = overlayY - gapSmall;
 
 uicontrol('Style','text','Units','pixels', ...
     'Position',[rightX thY+18 labelW 18], ...
-    'String','Mask Threshold (PSC)', ...
+    'String','Signal Change Threshold (%)', ...
     'ForegroundColor',[0.9 0.9 0.9], ...
     'BackgroundColor','k');
 
-% derive threshold range from PSC display range
-cax = par.previewCaxis;
+% Use real PSC distribution
+tmpPSC = PSC(:);
+tmpPSC = tmpPSC(isfinite(tmpPSC));
 
-maskThreshold = 0.25 * cax(2);   % default = 25% of max PSC
+if isempty(tmpPSC)
+    thrMin = -5;
+    thrMax = 5;
+else
+    thrMin = prctile(tmpPSC,1);
+    thrMax = prctile(tmpPSC,99);
+end
+
+maskThreshold = 0;   % start at 0% PSC
 
 maskThreshSlider = uicontrol('Style','slider','Units','pixels', ...
     'Position',[rightX thY sliderW 18], ...
-    'Min',cax(1), ...
-    'Max',cax(2), ...
+    'Min',thrMin, ...
+    'Max',thrMax, ...
     'Value',maskThreshold, ...
     'Callback',@(s,~) setMaskThreshold(s.Value));
+
 
 
 % ---------- Apply Slice Mask ? ALL Volumes ----------
@@ -658,6 +677,7 @@ playTimer = timer( ...
 % =========================================================
 function render()
 
+
     % -----------------------------------------------------
     % 1. SLICE SAFETY
     % -----------------------------------------------------
@@ -678,6 +698,7 @@ function render()
     end
     bgRGB = ind2rgb(uint8(bgNorm * 127), gray(128));   % [Y X 3]
 
+    outRGB = bgRGB;   % safe default
     % -----------------------------------------------------
     % 3. FRAME SAFETY
     % -----------------------------------------------------
@@ -718,6 +739,13 @@ end
     % -----------------------------------------------------
     % 5. MASK EXTRACTION — ALWAYS 2D
     % -----------------------------------------------------
+    if editorMode
+    alphaUse = max(0.6, maskAlpha);   % stronger during editing
+else
+    alphaUse = maskAlpha;
+end
+
+    
     if ndims(mask) == 4
         M = squeeze(mask(:,:,sliceIdx, curVol));
     elseif ndims(mask) == 3
@@ -735,59 +763,54 @@ end
 % - While EDITING ? show RAW mask (no threshold)
 % - While VIEWING ? apply threshold
 % -----------------------------------------------------
-if ~editorMode && maskThreshold > 0
-  M = M & (A >= maskThreshold);
+if ~editorMode
+    M = M & (A >= maskThreshold);
 end
 
-
-    % -----------------------------------------------------
-    % 6. BASE PSC OVERLAY (alphaPSC ? global PSC overlay)
-    % -----------------------------------------------------
-    alphaPSC = 0.70;
-    baseRGB = (1-alphaPSC).*bgRGB + alphaPSC.*pscRGB;
-
+   % -----------------------------------------------------
+% 6. BASE PSC OVERLAY
+% -----------------------------------------------------
+alphaPSC = 0.70;
+baseRGB = (1-alphaPSC).*bgRGB + alphaPSC.*pscRGB;
 
 % -----------------------------------------------------
-% 7. FINAL VIEW LOGIC (FIXED: editor mask VISIBILITY)
+% 7. FINAL VIEW LOGIC (RESTORED ORIGINAL BEHAVIOUR)
 % -----------------------------------------------------
 
 if viewMaskedOnly
-    % =============== MASKED VIEW ===============
+    % ===== MASKED MODE =====
+    
     show = M;
     if ~maskIsInclude
         show = ~M;
     end
-
-    outRGB = bgRGB;  % background everywhere
+    
     show3 = repmat(show,[1 1 3]);
+    
+    outRGB = bgRGB;                % background everywhere
+    outRGB(show3) = baseRGB(show3);  % PSC only inside mask
+    
+else
+    % ===== FULL MODE =====
+    
+    outRGB = baseRGB;   % show PSC everywhere
+    
+    % Editor overlay (ONLY when editing)
+ outRGB = baseRGB;
+
+if any(M(:))
 
     maskRGB = cat(3, ...
         ones(size(bg2))*maskColor(1), ...
         ones(size(bg2))*maskColor(2), ...
         ones(size(bg2))*maskColor(3));
 
-    maskedPSC = (1-0.35).*baseRGB + 0.35.*maskRGB;
-    outRGB(show3) = maskedPSC(show3);
+    M3 = repmat(M,[1 1 3]);
 
-else
-    % =============== FULL VIEW ===============
-    outRGB = baseRGB;
+    outRGB = outRGB .* (1 - maskAlpha .* M3) + ...
+             maskRGB .* (maskAlpha .* M3);
+end
 
-    % -------- EDITOR OVERLAY (ALWAYS visible when editing) --------
-    if editorMode && any(M(:))
-        maskRGB = cat(3, ...
-            ones(size(bg2))*maskColor(1), ...
-            ones(size(bg2))*maskColor(2), ...
-            ones(size(bg2))*maskColor(3));
-
-        % stronger alpha in editor so you SEE what you draw
-        alphaEdit = 0.55;
-
-
-        outRGB = outRGB .* (~M) + ...
-                 (1-alphaEdit).*outRGB.*M + ...
-                  alphaEdit .* maskRGB .* M;
-    end
 end
 
     % -----------------------------------------------------
@@ -831,10 +854,9 @@ end
 
 end
 
-
 % =========================================================
 %  PLAYBACK / SCRUB / OPEN SCM / SAVE VIDEO
-% =========================================================
+% ========================================================
     function scrubVol(v)
         playing        = false;
         playBtn.Value  = 0;
@@ -864,34 +886,43 @@ end
     fpsValue.String = sprintf('%d FPS', fps);
 end
 
-  function playPause(src,~)
+ function playPause(src,~)
 
     playing = logical(src.Value);
 
     if playing
         src.String = 'Pause';
-        set(playTimer,'Period',1/max(fps,0.1));
-        start(playTimer);
+
+        if strcmp(playTimer.Running,'off')
+            set(playTimer,'Period',1/max(fps,0.1));
+            start(playTimer);
+        end
     else
         src.String = 'Play';
-        stop(playTimer);
+
+        if strcmp(playTimer.Running,'on')
+            stop(playTimer);
+        end
     end
 end
 
 
     function replayVid(~, ~)
-        playing         = false;
-        volPos          = 1;
-        volume          = 1;
-        volSlider.Value = 1;
-        frame           = 1;
+    volume = 1;
+    volSlider.Value = 1;
+    frame = 1;
 
-        playing        = true;
-        playBtn.Value  = 1;
-        playBtn.String = 'Pause';
+    playing = true;
+    playBtn.Value = 1;
+    playBtn.String = 'Pause';
 
-        render();
-    end
+    stop(playTimer);
+    set(playTimer,'Period',1/max(fps,0.1));
+    start(playTimer);
+
+    render();
+end
+
 
 % =========================================================
 %  OPEN SCM GUI — FIXED & COMPLETE
@@ -1563,7 +1594,4 @@ function setColorbarRange(~,~)
 
     render();
 end
-
-
-
 end % END OF MAIN FUNCTION

@@ -30,7 +30,8 @@ for k = 1:nVols
     k0 = k;
     k1 = min(nVols, k + w - 1);
     Ik = mean(Ic(:,:,k0:k1),3);
-    PSC(:,:,k) = (Ik - I0) ./ I0;   % FRACTIONAL change
+    PSC(:,:,k) = 100 * (Ik - I0) ./ I0;
+   % FRACTIONAL change
 end
 
 % ---- Background ----
