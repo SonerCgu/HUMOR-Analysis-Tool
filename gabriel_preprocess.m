@@ -186,7 +186,7 @@ end
 %% ------------------ OUTPUT ------------------
 out = struct();
 out.I         = Ic;
-out.TR        = TRin;
+out.TR = TRin * nsub;
 out.blockDur  = TRin * nsub;
 out.nVols     = nr;
 out.totalTime = nt * TRin;

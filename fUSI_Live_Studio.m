@@ -721,11 +721,21 @@ if dims == 4
         'FontSize',13);
     Y = Y - dRow;     % ? FIX #1
 
-    sliceSlider = uicontrol(sidebar,'Style','slider',...
-        'Units','normalized','Position',[0.05 Y 0.90 sliderH],...
-        'Min',1,'Max',Nz,'Value',round(Nz/2),...
-        'SliderStep',[1/(Nz-1) 5/(Nz-1)],...
-        'BackgroundColor',[0.3 0.3 0.3]);
+  % ---- SAFE SLIDER STEP FOR SLICE ----
+if Nz > 1
+    smallStep = 1/(Nz-1);
+    largeStep = min(5/(Nz-1),1);
+else
+    smallStep = 1;
+    largeStep = 1;
+end
+
+sliceSlider = uicontrol(sidebar,'Style','slider',...
+    'Units','normalized','Position',[0.05 Y 0.90 sliderH],...
+    'Min',1,'Max',Nz,'Value',round(Nz/2),...
+    'SliderStep',[smallStep largeStep],...
+    'BackgroundColor',[0.3 0.3 0.3]);
+
     Y = Y - dBlock;   % ? FIX #2
 
 else
@@ -1041,21 +1051,41 @@ frameTimeLabel = uicontrol(playbackPanel,'Style','text',...
     'HorizontalAlignment','right',...
     'String','0.00 s');
 
+% ---- SAFE SLIDER STEP FOR FRAME SCRUBBER ----
+if T > 1
+    smallStep = 1/(T-1);
+    largeStep = min(10/(T-1),1);
+else
+    smallStep = 1;
+    largeStep = 1;
+end
+
 frameScrubber = uicontrol(playbackPanel,'Style','slider',...
     'Units','normalized','Position',[0.04 0.05 0.91 0.18],...
     'Min',1,'Max',T,'Value',1,...
-    'SliderStep',[1/(T-1) 10/(T-1)],...
+    'SliderStep',[smallStep largeStep],...
     'BackgroundColor',[0.25 0.25 0.25],...
     'Callback',@jumpFrame_A);
+
 
 %% =========================================================================
 % REQUIRED HIDDEN INTERNAL FRAME SLIDER
 % =========================================================================
+% ---- SAFE SLIDER STEP FOR INTERNAL FRAME SLIDER ----
+if T > 1
+    smallStep = 1/(T-1);
+    largeStep = min(10/(T-1),1);
+else
+    smallStep = 1;
+    largeStep = 1;
+end
+
 frameSlider = uicontrol(fig,'Style','slider',...
     'Units','normalized','Position',[0.23 0.01 0.72 0.02],...
     'Min',1,'Max',T,'Value',1,...
     'Visible','off',...
-    'SliderStep',[1/(T-1) 10/(T-1)]);
+    'SliderStep',[smallStep largeStep]);
+
 
 %% =========================================================================
 % TIMERS
@@ -1762,6 +1792,17 @@ function reloadWithGabriel(~,~)
     frameScrubber.Max   = T;
     frameSlider.Value   = 1;
     frameScrubber.Value = 1;
+% ---- UPDATE SLIDER STEP AFTER T CHANGE ----
+if T > 1
+    smallStep = 1/(T-1);
+    largeStep = min(10/(T-1),1);
+else
+    smallStep = 1;
+    largeStep = 1;
+end
+
+frameSlider.SliderStep   = [smallStep largeStep];
+frameScrubber.SliderStep = [smallStep largeStep];
 
     set(hLive,'XData',(0:T-1)*TR,'YData',zeros(1,T));
 

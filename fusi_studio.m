@@ -72,6 +72,20 @@ logPanel = uipanel(fig,...
     'FontSize',14,...
     'FontWeight','bold');
 
+
+activeDatasetText = uicontrol(fig,'Style','text', ...
+    'Units','normalized', ...
+    'Position',[0.50 0.91 0.47 0.04], ...
+    'FontSize',14, ...
+    'FontWeight','bold', ...
+    'ForegroundColor',[0.3 0.9 0.3], ...
+    'BackgroundColor',[0.05 0.05 0.05], ...
+    'HorizontalAlignment','left', ...
+    'String','ACTIVE DATASET: none');
+
+studio.activeDatasetText = activeDatasetText;
+guidata(fig,studio);
+
 logBox = uicontrol(logPanel,'Style','listbox',...
     'Units','normalized',...
     'Position',[0.02 0.02 0.96 0.94],...
@@ -95,19 +109,19 @@ sectionHeights = [0.11 0.11 0.20 0.11 0.12 0.10 0.12];
 titles = { ...
     '1. Dataset', ...
     '2. Quality Control', ...
-    '3. Preprocessing', ...
-    '4. Signal Processing', ...
+    '3. Recommended Processing Steps', ...
+    '4. Advanced Processing', ...
     '5. Visualization', ...
-    '6. Atlas', ...
+    '6. Coregistration', ...
     '7. Advanced Analysis'};
 
 buttons = { ...
     {'Load fUSI Data'}, ...
-    {'Run Full QC','Run Specific QC'}, ...
-    {'Frame-rate rejection','Gabriel preprocessing','Scrubbing','Step motor'}, ...
-    {'Compute PSC','PCA'}, ...
-    {'Live Viewer','SCM GUI','Video GUI'}, ...
-    {'Co-register atlas'}, ...
+    {'Full QC','Specific QC'}, ...
+    {'Frame Rejection','Subsampling','Scrubbing','Motor'}, ...
+    {'Compute PSC','Filtering', 'PCA', 'Despike'}, ...
+    {'Time-Course Viewer','SCM','Video & Mask'}, ...
+    {'Registration to Atlas'}, ...
     {'Functional connectivity','Group analysis'}};
 
 %% =========================================================
@@ -176,10 +190,12 @@ uicontrol(fig,'Style','pushbutton',...
     'FontWeight','bold',...
     'FontSize',13,...
     'BackgroundColor',[0.30 0.50 0.95],...
-    'ForegroundColor','w');
+    'ForegroundColor','w',...
+    'Callback',@helpCallback);
+
 
 uicontrol(fig,'Style','pushbutton',...
-    'String','EXPORT SESSION',...
+    'String','EXPORT STUDIO LOG',...
     'Units','normalized',...
     'Position',[0.62 btnY 0.14 btnH],...
     'FontWeight','bold',...
@@ -264,21 +280,24 @@ function drawButtons(parent, btns, sectionIndex)
         ypos = yStart - r*yGap;
 
         callback = [];
+        
+switch label
+    case 'Full QC',                 callback = @runFullQCCallback;
+    case 'Specific QC',             callback = @runSpecificQCCallback;
+    case 'Frame Rejection',         callback = @frameRateCallback;
+    case 'Subsampling',             callback = @gabrielCallback;
+    case 'Scrubbing',               callback = @scrubbingCallback;
+    case 'Motor',                   callback = @stepMotorCallback;
+    case 'Compute PSC',             callback = @computePSCCallback;
+    case 'Filtering',               callback = @filteringCallback;
+    case 'PCA',                     callback = @pcaCallback;
+    case 'Despike',                 callback = @despikeCallback;
+    case 'Time-Course Viewer',      callback = @liveViewerCallback;
+    case 'SCM',                     callback = @scmCallback;
+    case 'Video & Mask',            callback = @videoGUICallback;
+    case 'Registration to Atlas',   callback = @coregCallback;
+end
 
-        switch label
-            case 'Run Full QC',         callback = @runFullQCCallback;
-            case 'Run Specific QC',     callback = @runSpecificQCCallback;
-            case 'Gabriel preprocessing', callback = @gabrielCallback;
-            case 'Frame-rate rejection', callback = @frameRateCallback;
-            case 'Scrubbing',            callback = @scrubbingCallback;
-            case 'Step motor',           callback = @stepMotorCallback;
-            case 'Compute PSC',         callback = @computePSCCallback;
-            case 'PCA',                 callback = @pcaCallback;
-            case 'Live Viewer',         callback = @liveViewerCallback;
-            case 'SCM GUI',             callback = @scmCallback;
-            case 'Video GUI',           callback = @videoGUICallback;
-            case 'Co-register atlas',    callback = @coregCallback;
-        end
 
         btn = uicontrol(parent,...
             'Style','pushbutton',...
@@ -310,25 +329,6 @@ end
 %% =========================================================
 %  SECTION B — CORE CALLBACKS
 % =========================================================
-
-%% ---------------------------------------------------------
-%  DATASET DROPDOWN CALLBACK
-% ---------------------------------------------------------
-function datasetDropdownCallback(src,~)
-    studio = guidata(gcbf);
-    items = get(src,'String');
-    idx   = get(src,'Value');
-
-    if strcmp(items{idx},'<none>')
-        return;
-    end
-
-    studio.activeDataset = items{idx};
-    guidata(gcbf, studio);
-
-    addLog(['Active dataset switched to: ' items{idx}]);
-end
-
 
 %% =========================================================
 %  LOAD DATA CALLBACK
@@ -368,7 +368,7 @@ function loadDataCallback(~,~)
 
     guidata(gcbf,studio);
 
-    fallbackTR = 0.3;
+    fallbackTR = 0.32;
 
     try
         [data, meta] = loadFUSIData(fullfile(path,file), fallbackTR);
@@ -414,6 +414,26 @@ function loadDataCallback(~,~)
         studio.loadedPath = path;
         studio.exportPath = datasetFolder;
         studio.pipeline.loadDone = true;
+        
+%% ---------------------------------------------------------
+%  REGISTER EXISTING PSC + PREPROCESSING FILES (LAZY LOAD)
+% ---------------------------------------------------------
+pscFiles = dir(fullfile(datasetFolder,'PSC','*.mat'));
+for k = 1:numel(pscFiles)
+    name = erase(pscFiles(k).name,'.mat');
+    studio.datasets.(name) = struct( ...
+        'lazyFile', fullfile(pscFiles(k).folder, pscFiles(k).name), ...
+        'isLazy', true);
+end
+
+preFiles = dir(fullfile(datasetFolder,'Preprocessing','*.mat'));
+for k = 1:numel(preFiles)
+    name = erase(preFiles(k).name,'.mat');
+    studio.datasets.(name) = struct( ...
+        'lazyFile', fullfile(preFiles(k).folder, preFiles(k).name), ...
+        'isLazy', true);
+end
+
 
         guidata(gcbf, studio);
 
@@ -475,7 +495,15 @@ function runFullQCCallback(~,~)
     opts.pca        = true;
     opts.framerate  = true;
 
-    data = studio.datasets.(studio.activeDataset);
+    data = getActiveData(); 
+par = struct();
+par.interpol = 1;
+par.LPF = 0;
+par.HPF = 0;
+par.gaussSize = 0;
+par.gaussSig = 0;
+par.previewCaxis = [];
+par.caxis = [];
 
     try
         qc_fusi(data, studio.meta, studio.exportPath, opts);
@@ -528,7 +556,7 @@ function runSpecificQCCallback(~,~)
     addLog('Running selected QC...');
     setProgramStatus(false); drawnow;
 
-    data = studio.datasets.(studio.activeDataset);
+    data = getActiveData(); 
 
     try
         qc_fusi(data, studio.meta, studio.exportPath, opts);
@@ -595,7 +623,7 @@ function coregCallback(~,~)
             'Select anatomical scan (Cancel = mean functional)');
         if isequal(file,0)
             % fallback
-            data = studio.datasets.(studio.activeDataset);
+            data = getActiveData(); 
             anatomy = mean(data.I, ndims(data.I));
             addLog('Using mean functional as anatomy.');
         else
@@ -606,7 +634,7 @@ function coregCallback(~,~)
 
     try
         addLog('Launching atlas coreg...');
-        data = studio.datasets.(studio.activeDataset);
+        data = getActiveData(); 
 
         T = coreg(studio, anatomy);
         studio.meta.atlasTransf = T;
@@ -651,7 +679,7 @@ function gabrielCallback(~,~)
     addLog(sprintf('Running Gabriel preprocessing (nsub = %d)...', nsub));
     drawnow;
 
-    data = studio.datasets.(studio.activeDataset);
+    data = getActiveData(); 
 
     opts = struct();
     opts.nsub = nsub;
@@ -665,12 +693,15 @@ function gabrielCallback(~,~)
 
         newData = data;
         newData.I = out.I;
-        newData.TR = out.TR;
+        newData.TR = out.blockDur;
         newData.nVols = out.nVols;
         newData.totalTime = out.totalTime;
         newData.preprocessing = out.method;
 
-        versionName = ['gabriel_' datestr(now,'yyyymmdd_HHMMSS')];
+       ts = datestr(now,'yyyymmdd_HHMMSS');
+baseName = studio.activeDataset;
+versionName = [baseName '_gabriel_' ts];
+
 
         studio.datasets.(versionName) = newData;
         studio.pipeline.preprocDone = true;
@@ -681,7 +712,7 @@ function gabrielCallback(~,~)
         guidata(gcbf, studio);
 
         refreshDatasetDropdown();
-        studio.activeDataset = versionName;
+        %
         guidata(gcbf,studio);
 
         addLog(['Gabriel preprocessing ? ' versionName]);
@@ -695,6 +726,336 @@ function gabrielCallback(~,~)
 end
 
 
+
+
+%% =========================================================
+%  FRAME-RATE REJECTION (QC + VALIDATION QC)
+% =========================================================
+function frameRateCallback(~,~)
+
+    studio = guidata(gcbf);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    data = getActiveData();
+
+    addLog('Running Frame-rate QC (ORIGINAL)...');
+    setProgramStatus(false);
+    drawnow;
+
+    try
+
+        % --------------------------------------------------
+        % 1) QC ON ORIGINAL
+        % --------------------------------------------------
+        QC_before = frameRateQC(data.I, data.TR, 'ORIGINAL', false);
+
+        addLog(sprintf('Original rejected: %.2f %%', QC_before.rejPct));
+
+        qcFolder = fullfile(studio.exportPath,'QC','png');
+        if ~exist(qcFolder,'dir'), mkdir(qcFolder); end
+
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+
+        saveas(QC_before.figIntensity, ...
+            fullfile(qcFolder,['FrameRate_ORIGINAL_Intensity_' ts '.png']));
+        saveas(QC_before.figRejected, ...
+            fullfile(qcFolder,['FrameRate_ORIGINAL_Rejected_' ts '.png']));
+
+        % --------------------------------------------------
+        % 2) ASK FOR INTERPOLATION
+        % --------------------------------------------------
+        choice = questdlg( ...
+            sprintf('%.2f %% volumes rejected.\n\nInterpolate rejected volumes?', QC_before.rejPct), ...
+            'Frame-rate rejection', ...
+            'Yes','No','No');
+
+        if ~strcmp(choice,'Yes')
+            addLog('Interpolation skipped.');
+            setProgramStatus(true);
+            return;
+        end
+
+        addLog('Interpolating rejected volumes...');
+
+        % --------------------------------------------------
+        % 3) INTERPOLATE
+        % --------------------------------------------------
+        Iclean = interpolateRejectedVolumes(data.I, QC_before.outliers);
+
+        % --------------------------------------------------
+        % 4) QC AGAIN (VALIDATION)
+        % --------------------------------------------------
+        addLog('Running Frame-rate QC (INTERPOLATED)...');
+
+        QC_after = frameRateQC(Iclean, data.TR, 'INTERPOLATED', false);
+
+        addLog(sprintf('After interpolation rejected: %.2f %%', QC_after.rejPct));
+
+        saveas(QC_after.figIntensity, ...
+            fullfile(qcFolder,['FrameRate_INTERPOLATED_Intensity_' ts '.png']));
+        saveas(QC_after.figRejected, ...
+            fullfile(qcFolder,['FrameRate_INTERPOLATED_Rejected_' ts '.png']));
+
+        % --------------------------------------------------
+        % 5) CREATE NEW DATASET VERSION
+        % --------------------------------------------------
+        newData = data;
+        newData.I = Iclean;
+        newData.frameRateQC_before = QC_before;
+        newData.frameRateQC_after  = QC_after;
+        newData.preprocessing = 'Frame-rate rejection (validated)';
+
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+baseName = studio.activeDataset;
+versionName = [baseName '_frrej_' ts];
+
+
+        studio.datasets.(versionName) = newData;
+        studio.pipeline.preprocDone = true;
+
+        % SAVE MAT
+        save(fullfile(studio.exportPath,'Preprocessing', ...
+            [versionName '.mat']), ...
+            'newData','-v7.3');
+
+        guidata(gcbf, studio);
+
+        refreshDatasetDropdown();
+        %
+        guidata(gcbf,studio);
+
+        addLog(['Frame-rate rejection validated ? ' versionName]);
+
+    catch ME
+        addLog(['Frame-rate ERROR: ' ME.message]);
+        errordlg(ME.message,'Frame-rate Failure');
+    end
+
+    setProgramStatus(true);
+end
+
+function scrubbingCallback(~,~)
+
+    studio = guidata(gcbf);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    data = getActiveData();
+
+    addLog('Running Scrubbing (rDVARS)...');
+    setProgramStatus(false);
+    drawnow;
+
+    try
+
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+
+        % ? Correct function call
+        [outI, stats] = scrubbing(data.I, ...
+                                  data.TR, ...
+                                  studio.exportPath, ...
+                                  ['scrub_' ts]);
+
+        % ---- Log trimming info ----
+        if stats.trimmed
+            addLog(sprintf('Dataset trimmed: -%.2fs start, -%.2fs end.',...
+                   stats.trimStartSec,stats.trimEndSec));
+            addLog(sprintf('New total time: %.2f seconds.',...
+                   stats.newTotalTime));
+        end
+
+        % ---- Log scrubbing stats ----
+        addLog(sprintf('Scrubbing replaced %.2f%% volumes (%d/%d).',...
+               stats.percentRemoved,...
+               stats.removedVolumes,...
+               stats.finalVolumes));
+
+        addLog(['Scrubbing QC saved: ' stats.qcFile]);
+
+        % ---- Create new dataset version ----
+        newData = data;
+        newData.I = outI;
+        newData.preprocessing = 'Scrubbing (rDVARS)';
+        newData.scrubbingTimestamp = ts;
+
+        baseName = studio.activeDataset;
+        versionName = [baseName '_scrub_' ts];
+
+        studio.datasets.(versionName) = newData;
+        studio.pipeline.preprocDone = true;
+
+        % ---- Save ----
+        save(fullfile(studio.exportPath,'Preprocessing',...
+            [versionName '.mat']),...
+            'newData','-v7.3');
+
+        guidata(gcbf, studio);
+        refreshDatasetDropdown();
+
+        addLog(['Scrubbing complete ? ' versionName]);
+
+    catch ME
+        addLog(['SCRUBBING ERROR: ' ME.message]);
+        errordlg(ME.message,'Scrubbing Failure');
+    end
+
+    setProgramStatus(true);
+
+end
+
+function despikeCallback(~,~)
+
+    studio = guidata(gcbf);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    data = getActiveData();
+
+    answer = inputdlg('Z-threshold (default = 5):',...
+                      'Despike',1,{'5'});
+
+    if isempty(answer)
+        addLog('Despiking cancelled.');
+        return;
+    end
+
+    zthr = str2double(answer{1});
+    if isnan(zthr) || zthr <= 0
+        errordlg('Invalid Z-threshold.');
+        return;
+    end
+
+    addLog(sprintf('Running voxel-wise despiking (Z = %.2f)...',zthr));
+    setProgramStatus(false);
+    drawnow;
+
+    try
+
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+
+        % ? Correct single call
+        [outI, stats] = despike(data.I,...
+                                zthr,...
+                                studio.exportPath,...
+                                ['despike_' ts]);
+
+        % ---- Log stats ----
+        addLog(sprintf('Despiking removed %.4f%% of data points (%d spikes).',...
+               stats.percentRemoved,...
+               stats.removedPoints));
+
+        addLog(['Despike QC saved: ' stats.qcFile]);
+
+        % ---- Create dataset version ----
+        newData = data;
+        newData.I = outI;
+        newData.preprocessing = 'Voxel-wise MAD Despiking';
+        newData.despikeZ = zthr;
+
+        baseName = studio.activeDataset;
+        versionName = [baseName '_despike_' ts];
+
+        studio.datasets.(versionName) = newData;
+        studio.pipeline.preprocDone = true;
+
+        % ---- Save ----
+        save(fullfile(studio.exportPath,'Preprocessing',...
+            [versionName '.mat']),...
+            'newData','-v7.3');
+
+        guidata(gcbf,studio);
+        refreshDatasetDropdown();
+
+        addLog(['Despiking complete ? ' versionName]);
+
+    catch ME
+        addLog(['DESPIKE ERROR: ' ME.message]);
+        errordlg(ME.message,'Despike Failure');
+    end
+
+    setProgramStatus(true);
+
+end
+
+
+%% =========================================================
+%  PCA
+% =========================================================
+
+function pcaCallback(~,~)
+
+studio = guidata(gcbf);
+
+if ~studio.isLoaded
+    errordlg('Load data first.');
+    return;
+end
+
+data = getActiveData();
+
+addLog('Running PCA denoising...');
+setProgramStatus(false);
+drawnow;
+
+try
+
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+
+ [newData, stats] = pca_denoise(data,...
+                               studio.exportPath,...
+                               ['pca_' ts]);
+
+versionName = [studio.activeDataset '_pca_' ts];
+
+studio.datasets.(versionName) = newData;
+studio.pipeline.preprocDone = true;
+
+save(fullfile(studio.exportPath,'Preprocessing',...
+     [versionName '.mat']),...
+     'newData','-v7.3');
+
+guidata(gcbf,studio);
+refreshDatasetDropdown();
+
+addLog(sprintf('PCA removed %.2f%% variance.',...
+       stats.percentExplainedRemoved));
+addLog(['PCA QC saved: ' stats.qcFile]);
+addLog(['PCA complete ? ' versionName]);
+
+    newData.preprocessing = 'PCA denoising';
+
+    versionName = [studio.activeDataset '_pca_' ts];
+    studio.datasets.(versionName)=newData;
+
+    save(fullfile(studio.exportPath,'Preprocessing',...
+         [versionName '.mat']),'newData','-v7.3');
+
+    guidata(gcbf,studio);
+    refreshDatasetDropdown();
+
+    addLog(sprintf('PCA removed %.2f%% variance.',...
+           stats.percentExplainedRemoved));
+    addLog(['PCA QC saved: ' stats.qcFile]);
+    addLog(['PCA complete ? ' versionName]);
+
+catch ME
+    addLog(['PCA ERROR: ' ME.message]);
+    errordlg(ME.message,'PCA Failure');
+end
+
+setProgramStatus(true);
+end
+
 %% =========================================================
 %  PSC COMPUTATION  (deprecated but kept)
 % =========================================================
@@ -706,7 +1067,7 @@ function computePSCCallback(~,~)
         errordlg('Load data first.'); return;
     end
 
-    data = studio.datasets.(studio.activeDataset);
+    data = getActiveData(); 
 
     baseline.start = 0;
     baseline.end = min(5, data.nVols * data.TR);
@@ -725,7 +1086,9 @@ function computePSCCallback(~,~)
         proc = computePSC(data.I, data.TR, par, baseline);
 
         newData = data;
-        newData.PSC = proc.PSC;
+        newData.PSC = single(proc.PSC);
+newData.bg  = single(proc.bg);
+
         newData.bg  = proc.bg;
         newData.TR_eff = proc.TR_eff;
         newData.nFrames = proc.nFrames;
@@ -740,7 +1103,7 @@ function computePSCCallback(~,~)
         guidata(gcbf,studio);
 
         refreshDatasetDropdown();
-        studio.activeDataset = versionName;
+        %
         guidata(gcbf, studio);
 
         addLog(['PSC computation ? ' versionName]);
@@ -753,6 +1116,22 @@ function computePSCCallback(~,~)
     setProgramStatus(true);
 end
 
+%% ---------------------------------------------------------
+%  FILTERING PLACEHOLDER
+% ---------------------------------------------------------
+function filteringCallback(~,~)
+
+    studio = guidata(gcbf);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    addLog('Filtering module not implemented yet.');
+    msgbox('Filtering module coming soon.','Filtering','help');
+
+end
 
 %% =========================================================
 %  CHOOSE SIGNAL SOURCE HELPER  (LIVE/SCM/VIDEO)
@@ -774,7 +1153,7 @@ function [sig, bg, desc] = chooseSignalForViz()
     end
 
     desc = list{idx};
-    data = studio.datasets.(studio.activeDataset);
+    data = getActiveData(); 
 
     switch desc
         case 'Raw (I)'
@@ -796,14 +1175,49 @@ end
 %  SECTION C — HELPERS & UTILITY FUNCTIONS
 % =========================================================
 
+%% ---------------------------------------------------------
+%  DATASET DROPDOWN CALLBACK
+%% ---------------------------------------------------------
+function datasetDropdownCallback(src,~)
+
+    % Always use MAIN figure handle
+    studio = guidata(fig);
+
+    items = get(src,'String');
+    idx   = get(src,'Value');
+
+    if isempty(items) || strcmp(items{idx},'<none>')
+        return;
+    end
+
+    % Update active dataset
+    studio.activeDataset = items{idx};
+
+    % Save properly to MAIN figure
+    guidata(fig, studio);
+
+    % Optional: update active dataset display label
+   if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
+
+    maxLen = 60;   % adjust if needed
+    name = studio.activeDataset;
+
+    if length(name) > maxLen
+        name = [name(1:maxLen) '...'];
+    end
+
+    set(studio.activeDatasetText, ...
+        'String',['ACTIVE DATASET: ' name]);
+end
+end
 
 %% ---------------------------------------------------------
-%  REFRESH DATASET DROPDOWN
-% ---------------------------------------------------------
+%  REFRESH DATASET DROPDOWN (ADD THIS BACK)
+%% ---------------------------------------------------------
 function refreshDatasetDropdown()
 
-    studio = guidata(gcbf);
-    dd = findobj(gcbf,'Tag','datasetDropdown');
+    studio = guidata(fig);
+    dd = findobj(fig,'Tag','datasetDropdown');
 
     if isempty(dd)
         return;
@@ -818,16 +1232,25 @@ function refreshDatasetDropdown()
 
     set(dd,'String',names);
 
+    % Keep current active dataset if still valid
     idx = find(strcmp(names, studio.activeDataset),1);
+
     if isempty(idx)
         idx = 1;
         studio.activeDataset = names{1};
-        guidata(gcbf,studio);
     end
 
     set(dd,'Value',idx);
-end
 
+    % Update active dataset label
+    if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
+        set(studio.activeDatasetText, ...
+            'String',['ACTIVE DATASET: ' studio.activeDataset]);
+    end
+
+    guidata(fig, studio);
+
+end
 
 %% ---------------------------------------------------------
 %  INLINE IF FUNCTION (MATLAB has no built-in iff)
@@ -878,11 +1301,51 @@ end
 
 
 %% ---------------------------------------------------------
-%  GET ACTIVE DATASET
+%  GET ACTIVE DATASET  (SAFE LAZY LOAD)
 % ---------------------------------------------------------
 function data = getActiveData()
+
     studio = guidata(gcbf);
-    data = studio.datasets.(studio.activeDataset);
+    selected = studio.activeDataset;
+
+    if isempty(selected)
+        error('No active dataset selected.');
+    end
+
+    data = studio.datasets.(selected);
+
+    % -------------------------------------------------
+    % LAZY LOAD ONLY IF NEEDED
+    % -------------------------------------------------
+    if isstruct(data) && isfield(data,'isLazy') && data.isLazy
+
+        addLog(['Loading dataset from disk: ' selected]);
+        setProgramStatus(false);
+        drawnow;
+
+        try
+            m = matfile(data.lazyFile);
+
+            tmp = m.newData;   % load full struct once
+            data = tmp;
+
+            % IMPORTANT: clear lazy flag
+            data.isLazy = false;
+
+            % store fully loaded data back
+            studio.datasets.(selected) = data;
+            guidata(gcbf, studio);
+
+            addLog(['Dataset loaded: ' selected]);
+
+        catch ME
+            addLog(['Lazy load ERROR: ' ME.message]);
+            setProgramStatus(true);
+            rethrow(ME);
+        end
+
+        setProgramStatus(true);
+    end
 end
 
 
@@ -964,7 +1427,7 @@ end
 
 
 %% ---------------------------------------------------------
-%  EXPORT SESSION
+%  EXPORT Log Session
 % ---------------------------------------------------------
 function exportSessionCallback(~,~)
 
@@ -975,10 +1438,228 @@ function exportSessionCallback(~,~)
         return;
     end
 
-    save(fullfile(studio.exportPath,'session_info.mat'),'studio');
-    addLog(['Session exported to: ' studio.exportPath]);
+    if ~isfield(studio,'logBox') || isempty(studio.logBox)
+        errordlg('No log available.');
+        return;
+    end
+
+    logContent = get(studio.logBox,'String');
+
+    if isempty(logContent)
+        errordlg('Studio log is empty.');
+        return;
+    end
+
+    if ~iscell(logContent)
+        logContent = {logContent};
+    end
+
+    % Auto-save into analysed folder
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+    outFile = fullfile(studio.exportPath, ...
+                      ['StudioLog_' ts '.txt']);
+
+    fid = fopen(outFile,'w');
+    for i = 1:numel(logContent)
+        fprintf(fid,'%s\n',logContent{i});
+    end
+    fclose(fid);
+
+    addLog(['Studio log exported ? ' outFile]);
+
 end
 
+%% ---------------------------------------------------------
+%  Help Button
+% ---------------------------------------------------------
+function helpCallback(~,~)
+
+% =========================================================
+%  fUSI STUDIO - COMPLETE USER GUIDE (STABLE VERSION)
+% =========================================================
+
+bgColor = [0.08 0.08 0.08];
+fgColor = [1 1 1];
+
+helpFig = figure( ...
+    'Name','fUSI Studio - Complete User Guide', ...
+    'Color',bgColor, ...
+    'MenuBar','none', ...
+    'ToolBar','none', ...
+    'NumberTitle','off', ...
+    'Position',[200 80 1100 850]);
+
+txtBox = uicontrol(helpFig, ...
+    'Style','edit', ...
+    'Max',2, ...
+    'Min',0, ...
+    'Units','normalized', ...
+    'Position',[0.03 0.03 0.94 0.94], ...
+    'BackgroundColor',bgColor, ...
+    'ForegroundColor',fgColor, ...
+    'HorizontalAlignment','left', ...
+    'FontName','Arial', ...
+    'FontSize',14);
+
+% =========================================================
+% FULL GUIDE TEXT
+% =========================================================
+
+guide = {
+'==========================================================================='
+'                        fUSI STUDIO - COMPLETE GUIDE'
+'==========================================================================='
+''
+'OVERVIEW'
+'-------------------------------------------------------------------------'
+'fUSI Studio is a structured processing and analysis environment for'
+'functional ultrasound imaging (fUSI).'
+''
+'Supported data formats:'
+'  - 2D probe  : Y x X x T'
+'  - 3D matrix : Y x X x Z x T'
+''
+'Internally all datasets are stored as:'
+'  I(Y, X, Z, T)'
+''
+'When loading a dataset, the system automatically:'
+'  - Extracts TR (temporal resolution)'
+'  - Computes number of volumes'
+'  - Computes total acquisition time'
+'  - Detects probe type (2D or 3D)'
+'  - Creates a mirrored AnalysedData folder'
+'  - Creates subfolders:'
+'       QC'
+'       Preprocessing'
+'       PSC'
+'       Visualization'
+''
+''
+'==========================================================================='
+'1. DATASET'
+'==========================================================================='
+''
+'Load fUSI Data'
+'  Loads .mat or .nii files.'
+'  Reads metadata and stores raw dataset as "raw".'
+''
+'Dataset Dropdown'
+'  Switch between raw and all processed versions.'
+'  Lazy loading ensures memory efficiency.'
+''
+''
+'==========================================================================='
+'2. QUALITY CONTROL (QC)'
+'==========================================================================='
+''
+'Full QC runs all diagnostics automatically.'
+''
+'Frequency QC'
+'  Uses Fast Fourier Transform (FFT).'
+'  Identifies oscillatory artifacts and instability.'
+''
+'Spatial QC'
+'  Computes mean and variance maps across time.'
+''
+'Temporal QC'
+'  Detects drift and slow fluctuations.'
+''
+'PCA QC'
+'  Singular Value Decomposition:'
+'     X = U * S * V^T'
+'  Evaluates dominant variance components.'
+''
+''
+'==========================================================================='
+'3. RECOMMENDED PROCESSING STEPS'
+'==========================================================================='
+''
+'Frame Rejection'
+'  Detects global intensity outliers.'
+'  Optional interpolation replaces unstable volumes.'
+''
+'Scrubbing (rDVARS)'
+'  DVARS(t) = sqrt(mean((V_t - V_(t-1))^2))'
+''
+'  Threshold rule:'
+'     TH = median(DVARS) + k * MAD'
+''
+'  Flagged volumes are linearly interpolated.'
+''
+''
+'==========================================================================='
+'4. ADVANCED PROCESSING'
+'==========================================================================='
+''
+'Percent Signal Change (PSC)'
+'  PSC = 100 * (S - baseline) / baseline'
+''
+'Filtering'
+'  Temporal bandpass filtering.'
+'  Removes physiological and slow drift noise.'
+''
+'Despiking'
+'  Voxel-wise Median Absolute Deviation (MAD) method.'
+'  z = (x - median) / MAD'
+''
+'PCA Denoising'
+'  Principal Component Analysis.'
+'  Interactive component removal.'
+'  Reconstruction suppresses structured noise.'
+''
+''
+'==========================================================================='
+'5. VISUALIZATION'
+'==========================================================================='
+''
+'Live Viewer'
+'  Dynamic slice visualization.'
+''
+'SCM (Slice Correlation Map)'
+'  Computes correlation structure across regions.'
+''
+'Video & Mask'
+'  Overlay PSC onto anatomical reference.'
+''
+''
+'==========================================================================='
+'6. COREGISTRATION'
+'==========================================================================='
+''
+'Atlas Registration'
+'  Affine transformation: translation, rotation, scaling.'
+'  Aligns functional data to anatomical atlas.'
+''
+''
+'==========================================================================='
+'7. ADVANCED ANALYSIS'
+'==========================================================================='
+''
+'Functional Connectivity'
+'  Correlation matrix between voxels or ROIs.'
+''
+'Group Analysis'
+'  Multi-session comparison and statistical evaluation.'
+''
+''
+'==========================================================================='
+'RECOMMENDED WORKFLOW'
+'==========================================================================='
+''
+'1) Load Data'
+'2) Run Full QC'
+'3) Apply Frame Rejection or Scrubbing'
+'4) Compute PSC'
+'5) Optional PCA or Despike'
+'6) Visualization'
+'7) Connectivity or Group Analysis'
+''
+'==========================================================================='
+};
+
+set(txtBox,'String',strjoin(guide,newline));
+
+end
 
 
 %% ---------------------------------------------------------
@@ -1075,6 +1756,7 @@ end
 %% ---------------------------------------------------------
 %  LIVE VIEWER CALLBACK
 % ---------------------------------------------------------
+
 function liveViewerCallback(~,~)
 
     studio = guidata(gcbf);
@@ -1084,30 +1766,16 @@ function liveViewerCallback(~,~)
         return;
     end
 
-    signalType = selectSignalDialog();
-    if isempty(signalType)
-        addLog('Live Viewer cancelled.');
-        return;
+    data = getActiveData();
+
+    if isfield(data,'PSC')
+        I = double(data.PSC);
+    else
+        I = double(data.I);
     end
 
-    data = studio.datasets.(studio.activeDataset);
+    addLog(['Opening Live Viewer (Dataset: ' studio.activeDataset ')']);
 
-    switch signalType
-        case 'RAW (I)'
-            I = double(data.I);
-
-        case 'PSC'
-            if ~isfield(data,'PSC')
-                errordlg('PSC not computed for this dataset.');
-                return;
-            end
-            I = double(data.PSC);
-
-        case 'Preprocessed (Gabriel)'
-            I = double(data.I);
-    end
-
-    addLog('Opening Live Viewer...');
     setProgramStatus(false);
     drawnow;
 
@@ -1117,14 +1785,11 @@ function liveViewerCallback(~,~)
         addlistener(viewerFig,'ObjectBeingDestroyed', ...
             @(~,~) setProgramStatus(true));
 
-        addLog('Live Viewer opened.');
-
     catch ME
         addLog(['Live Viewer ERROR: ' ME.message]);
         errordlg(ME.message,'Live Viewer Failed');
         setProgramStatus(true);
     end
-
 end
 
 
@@ -1140,58 +1805,54 @@ function scmCallback(~,~)
         return;
     end
 
-    signalType = selectSignalDialog();
-    if isempty(signalType)
-        addLog('SCM cancelled.');
-        return;
-    end
+    data = getActiveData();
 
-    data = studio.datasets.(studio.activeDataset);
-
-    switch signalType
-        case 'RAW (I)'
-            PSCsig = double(data.I);
-            bg = mean(double(data.I), ndims(data.I));
-
-        case 'PSC'
-            if ~isfield(data,'PSC')
-                errordlg('No PSC available.');
-                return;
-            end
-            PSCsig = double(data.PSC);
-            bg = double(data.bg);
-
-        case 'Preprocessed (Gabriel)'
-            PSCsig = double(data.I);
-            bg = mean(double(data.I), ndims(data.I));
-    end
+    par = struct();
+    par.interpol = 1;
+    par.previewCaxis = [];
 
     baseline = struct('start',0,'end',10,'mode','sec');
 
-    addLog('Opening SCM GUI...');
+    if isfield(data,'PSC')
+        PSCsig = double(data.PSC);
+        bg     = double(data.bg);
+    else
+        proc = computePSC(double(data.I), data.TR, par, baseline);
+        PSCsig = double(proc.PSC);
+        bg     = double(proc.bg);
+    end
+
+    addLog(['Opening SCM GUI (Dataset: ' studio.activeDataset ')']);
+
     setProgramStatus(false);
     drawnow;
 
     try
-        scmFig = SCM_gui(PSCsig, bg, data.TR, struct(), baseline, studio.activeDataset);
+        scmFig = SCM_gui( ...
+            PSCsig, bg, data.TR, par, baseline, ...
+            data.I, data.I, ...
+            10, 240, ...
+            [], false, struct(), ...
+            studio.activeDataset);
 
         addlistener(scmFig,'ObjectBeingDestroyed', ...
             @(~,~) setProgramStatus(true));
-
-        addLog('SCM GUI opened.');
 
     catch ME
         addLog(['SCM ERROR: ' ME.message]);
         errordlg(ME.message,'SCM Failed');
         setProgramStatus(true);
     end
-
 end
+
 
 
 %% ---------------------------------------------------------
 %  VIDEO GUI CALLBACK (CLEAN + CORRECT)
 % ---------------------------------------------------------
+ %% ---------------------------------------------------------
+%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)
+%% ---------------------------------------------------------
 function videoGUICallback(~,~)
 
     studio = guidata(gcbf);
@@ -1201,38 +1862,9 @@ function videoGUICallback(~,~)
         return;
     end
 
-    % -------- Select signal ----------
-    signalType = selectSignalDialog();
-    if isempty(signalType)
-        addLog('Video GUI cancelled.');
-        return;
-    end
+    data = getActiveData();
 
-    data = studio.datasets.(studio.activeDataset);
-
-    switch signalType
-        case 'RAW (I)'
-            Iraw    = double(data.I);
-            Iinterp = double(data.I);
-            PSCsig  = double(data.I);
-            bg      = mean(double(data.I), ndims(data.I));
-
-        case 'PSC'
-            if ~isfield(data,'PSC')
-                errordlg('No PSC data available.');
-                return;
-            end
-            Iraw    = double(data.I);
-            Iinterp = double(data.I);
-            PSCsig  = double(data.PSC);
-            bg      = double(data.bg);
-
-        case 'Preprocessed (Gabriel)'
-            Iraw    = double(data.I);
-            Iinterp = double(data.I);
-            PSCsig  = double(data.I);
-            bg      = mean(double(data.I), ndims(data.I));
-    end
+    addLog(['Opening Video GUI (Dataset: ' studio.activeDataset ')']);
 
     % -------- Baseline dialog (seconds) --------
     answer = inputdlg( ...
@@ -1255,12 +1887,29 @@ function videoGUICallback(~,~)
 
     baseline = struct('start',blStart,'end',blEnd,'mode','sec');
 
-    % -------- par struct (REQUIRED STRUCTURE) --------
-par = struct();
-par.interpol = 1;
-par.previewCaxis = [];   % ? important
-par.caxis = [];
+    % -------- Define processing parameters --------
+    par = struct();
+    par.interpol = 1;
+    par.LPF = 0;
+    par.HPF = 0;
+    par.gaussSize = 0;
+    par.gaussSig = 0;
+    par.previewCaxis = [];
+    par.caxis = [];
 
+    % -------- Use ACTIVE dataset only --------
+    Iraw = double(data.I);
+
+    if isfield(data,'PSC')
+        PSCsig = double(data.PSC);
+        bg     = double(data.bg);
+    else
+        proc   = computePSC(Iraw, data.TR, par, baseline);
+        PSCsig = double(proc.PSC);
+        bg     = double(proc.bg);
+    end
+
+    Iinterp = Iraw;
 
     initialFPS = 10;
     maxFPS     = 240;
@@ -1274,7 +1923,6 @@ par.caxis = [];
         loadedMaskIsInclude = true;
     end
 
-    addLog('Opening Video GUI...');
     setProgramStatus(false);
     drawnow;
 
@@ -1292,16 +1940,11 @@ par.caxis = [];
         addlistener(videoFig,'ObjectBeingDestroyed', ...
             @(~,~) setProgramStatus(true));
 
-        addLog('Video GUI opened.');
-
     catch ME
-        disp('----- VIDEO GUI CRASH -----');
-        disp(ME.getReport);
         addLog(['Video GUI ERROR: ' ME.message]);
         errordlg(ME.message,'Video GUI Failed');
         setProgramStatus(true);
     end
 
 end
-
 end

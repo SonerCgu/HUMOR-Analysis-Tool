@@ -1,4 +1,5 @@
-function fig = SCM_gui(PSC, bg, TR, par, baseline, varargin)
+function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
+
 % SCM_gui — UPDATED: 2D + TRUE 3D SLICE SUPPORT (MATLAB 2017b)
 % ============================================================
 % Supports:
@@ -714,22 +715,64 @@ function clearMaskCB(~,~)
 end
 
 %% ---------------- VIDEO GUI (UNCHANGED CALL SIGNATURE) ----------------
+
 function openVideo(~,~)
-    if isempty(I_interp)
-        return;
+
+    initialFPS = 10;
+    maxFPS     = 240;
+
+    if exist('I_raw','var') && ~isempty(I_raw)
+        Iraw = I_raw;
+    else
+        Iraw = PSC;
     end
 
-    % SCM does not track include/exclude; default = Include
+    if exist('I_interp','var') && ~isempty(I_interp)
+        Iinterp = I_interp;
+    else
+        Iinterp = Iraw;
+    end
+
+    % -------------------------------------------------
+    % SAFELY BUILD MASK MATCHING PSC SIZE
+    % -------------------------------------------------
+    nY = size(PSC,1);
+    nX = size(PSC,2);
+
+    if isempty(passedMask)
+        loadedMask = [];
+    else
+        M = logical(passedMask);
+
+        % Collapse to 2D if needed
+        while ndims(M) > 2
+            M = any(M, ndims(M));
+        end
+
+        % Create empty mask with correct size
+        fixedMask = false(nY, nX);
+
+        % Determine overlap region
+        yMax = min(nY, size(M,1));
+        xMax = min(nX, size(M,2));
+
+        fixedMask(1:yMax, 1:xMax) = M(1:yMax, 1:xMax);
+
+        loadedMask = fixedMask;
+    end
+
     loadedMaskIsInclude = true;
 
-    % Play video GUI with mask passed from SCM viewer
     play_fusi_video_final( ...
-        I_raw, I_interp, PSC, bg, ...
+        Iraw, Iinterp, PSC, bg, ...
         par, initialFPS, maxFPS, ...
         TR, (nT-1)*TR, baseline, ...
-        passedMask, loadedMaskIsInclude, ...
-        nT, applyRejection, QC, fileLabel );
+        loadedMask, loadedMaskIsInclude, ...
+        nT, false, struct(), ...
+        fileLabel, state.z );
+
 end
+
 
 
 
