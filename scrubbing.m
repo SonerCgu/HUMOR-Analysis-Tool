@@ -1,7 +1,10 @@
 function [out, stats] = scrubbing(data, TR, saveRoot, tag)
 
 % ==========================================================
-% SCRUBBING (rDVARS) WITH OPTIONAL TRIMMING
+% SCRUBBING WITH SELECTABLE DETECTION METHOD
+%   - DVARS (frame-to-frame energy)
+%   - Global Signal (frame rejection style)
+% Optional trimming
 % No waitbars
 % Full QC PNG saving
 % Returns full stats for Studio log
@@ -44,10 +47,10 @@ trimEndVol   = 0;
 %% ---------------------------------------------------------
 % OPTIONAL TRIMMING
 %% ---------------------------------------------------------
-choice = questdlg('Trim before scrubbing?',...
-                  'Scrubbing','Yes','No','No');
+trimChoice = questdlg('Trim before scrubbing?',...
+                      'Scrubbing','Yes','No','No');
 
-if strcmp(choice,'Yes')
+if strcmp(trimChoice,'Yes')
 
     answer = inputdlg({'Trim START seconds:',...
                        'Trim END seconds:'},...
@@ -73,10 +76,22 @@ if strcmp(choice,'Yes')
 end
 
 %% ---------------------------------------------------------
+% DETECTION METHOD SELECTION
+%% ---------------------------------------------------------
+method = questdlg('Select scrubbing detection method:',...
+                  'Detection Method',...
+                  'DVARS','Global Signal','DVARS');
+
+if isempty(method)
+    error('Scrubbing cancelled.');
+end
+
+%% ---------------------------------------------------------
 % MASK
 %% ---------------------------------------------------------
 meanVol = mean(data4D,4);
 mask = meanVol > 0.05 * max(meanVol(:));
+
 if ~any(mask(:))
     mask = true(size(meanVol));
 end
@@ -86,17 +101,32 @@ maskVec = mask(:);
 flatMasked = flatAll(maskVec,:);
 
 %% ---------------------------------------------------------
-% DVARS
+% COMPUTE METRIC
 %% ---------------------------------------------------------
-diffVol = diff(flatMasked,1,2);
-DVARS = sqrt(mean(diffVol.^2,1));
-DVARS = [0 DVARS];
+switch method
 
-medDV = median(DVARS);
-madDV = mad(DVARS,1);
+    case 'DVARS'
+        % DVARS = sqrt(mean((V_t - V_t-1)^2))
+        diffVol = diff(flatMasked,1,2);
+        metric = sqrt(mean(diffVol.^2,1));
+        metric = [0 metric];
 
-TH = medDV + 2.5 * madDV;
-badMask = DVARS > TH;
+    case 'Global Signal'
+        % Frame rejection style global amplitude
+        metric = mean(flatMasked,1);
+
+end
+
+%% ---------------------------------------------------------
+% ROBUST THRESHOLD
+%% ---------------------------------------------------------
+medVal = median(metric);
+madVal = mad(metric,1);
+
+k = 2.5;
+TH = medVal + k * madVal;
+
+badMask = metric > TH;
 badIdx = find(badMask);
 
 %% ---------------------------------------------------------
@@ -120,17 +150,18 @@ out = reshape(flatAll,Y,X,Z,T);
 % STATS
 %% ---------------------------------------------------------
 stats.originalVolumes = origT;
-stats.finalVolumes = T;
-stats.removedVolumes = numel(badIdx);
-stats.percentRemoved = 100 * numel(badIdx) / T;
-stats.threshold = TH;
+stats.finalVolumes    = T;
+stats.removedVolumes  = numel(badIdx);
+stats.percentRemoved  = 100 * numel(badIdx) / T;
+stats.threshold       = TH;
+stats.method          = method;
 
-stats.trimmed = trimmed;
-stats.trimStartVol = trimStartVol;
-stats.trimEndVol   = trimEndVol;
-stats.trimStartSec = trimStartVol * TR;
-stats.trimEndSec   = trimEndVol   * TR;
-stats.newTotalTime = T * TR;
+stats.trimmed       = trimmed;
+stats.trimStartVol  = trimStartVol;
+stats.trimEndVol    = trimEndVol;
+stats.trimStartSec  = trimStartVol * TR;
+stats.trimEndSec    = trimEndVol   * TR;
+stats.newTotalTime  = T * TR;
 
 %% ---------------------------------------------------------
 % QC SAVE (ALWAYS)
@@ -140,28 +171,27 @@ if ~exist(qcDir,'dir')
     mkdir(qcDir);
 end
 
-qcFile = fullfile(qcDir,['Scrubbing_QC_' tag '.png']);
+qcFile = fullfile(qcDir,['Scrubbing_' method '_' tag '.png']);
 
-% Compute global signal
 globalSig = mean(flatMasked,1);
 
 fig = figure('Visible','off','Color','w');
 
 subplot(2,1,1)
-plot(DVARS,'k','LineWidth',1)
+plot(metric,'k','LineWidth',1)
 hold on
-plot([1 length(DVARS)], [TH TH], 'r--', 'LineWidth',1.5)
-plot(find(badMask), DVARS(badMask),'ro','MarkerSize',4)
-title('rDVARS')
-legend({'rDVARS','Threshold','Flagged volumes'},'Location','best')
+plot([1 length(metric)], [TH TH], 'r--', 'LineWidth',1.5)
+plot(find(badMask), metric(badMask),'ro','MarkerSize',4)
+title(['Detection Metric - ' method])
+legend({'Metric','Threshold','Flagged volumes'},'Location','best')
 xlabel('Volume')
-ylabel('rDVARS')
+ylabel('Metric')
 
 subplot(2,1,2)
 plot(globalSig,'b','LineWidth',1)
 hold on
 plot(find(badMask), globalSig(badMask),'ro','MarkerSize',4)
-title('Global Signal')
+title('Global Signal (reference)')
 legend({'Global signal','Flagged volumes'},'Location','best')
 xlabel('Volume')
 ylabel('Signal')

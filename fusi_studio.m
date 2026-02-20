@@ -287,7 +287,7 @@ switch label
     case 'Frame Rejection',         callback = @frameRateCallback;
     case 'Subsampling',             callback = @gabrielCallback;
     case 'Scrubbing',               callback = @scrubbingCallback;
-    case 'Motor',                   callback = @stepMotorCallback;
+    case 'Motor',                    callback = @(src,evt) feval(@stepMotorCallback, src, evt);
     case 'Compute PSC',             callback = @computePSCCallback;
     case 'Filtering',               callback = @filteringCallback;
     case 'PCA',                     callback = @pcaCallback;
@@ -910,6 +910,81 @@ function scrubbingCallback(~,~)
 
 end
 
+
+
+%% =========================================================
+%  MOTOR RECONSTRUCTION (FINAL STABLE VERSION)
+% =========================================================
+function stepMotorCallback(src,~)
+
+fig = ancestor(src,'figure');
+studio = guidata(fig);
+
+if isempty(studio) || ~studio.isLoaded
+    errordlg('Load data first.');
+    return;
+end
+
+data = getActiveData();
+
+if ndims(data.I) ~= 3
+    errordlg('Motor reconstruction only for 2D probe data.');
+    return;
+end
+
+addLog('Launching Motor Reconstruction...');
+setProgramStatus(false);
+drawnow;
+
+try
+
+    qcFolder = fullfile(studio.exportPath,'Preprocessing','motor_QC');
+    if ~exist(qcFolder,'dir')
+        mkdir(qcFolder);
+    end
+
+    [I3D, motorInfo] = motor(data.I, data.TR, qcFolder);
+
+    newData = data;
+    newData.I = I3D;
+    newData.nVols = size(I3D,4);
+    newData.preprocessing = 'Motor slice reconstruction';
+    newData.motorInfo = motorInfo;
+
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+    versionName = [studio.activeDataset '_motor_' ts];
+
+    studio.datasets.(versionName) = newData;
+    studio.pipeline.preprocDone = true;
+
+    save(fullfile(studio.exportPath,'Preprocessing',...
+        [versionName '.mat']),...
+        'newData','-v7.3');
+
+    guidata(fig,studio);
+    refreshDatasetDropdown();
+
+    addLog(sprintf('Slices: %d | Volumes per slice: %d | Minutes per slice: %.2f',...
+        motorInfo.nSlices,...
+        motorInfo.volumesPerSlice,...
+        motorInfo.minutesPerSlice));
+
+    addLog('Motor reconstruction complete.');
+
+catch ME
+    addLog(['MOTOR ERROR: ' ME.message]);
+    errordlg(ME.message,'Motor Failure');
+end
+
+setProgramStatus(true);
+
+end
+
+
+    % -------------------------------------------------
+    % Despike
+    % -------------------------------------------------
+
 function despikeCallback(~,~)
 
     studio = guidata(gcbf);
@@ -1121,15 +1196,94 @@ end
 % ---------------------------------------------------------
 function filteringCallback(~,~)
 
-    studio = guidata(gcbf);
+studio = guidata(gcbf);
 
-    if ~studio.isLoaded
-        errordlg('Load data first.');
-        return;
-    end
+if ~studio.isLoaded
+    errordlg('Load data first.');
+    return;
+end
 
-    addLog('Filtering module not implemented yet.');
-    msgbox('Filtering module coming soon.','Filtering','help');
+data = getActiveData();
+
+% ---------------------------------------------------------
+% Ask filter type
+% ---------------------------------------------------------
+choice = questdlg('Select filter type:', ...
+                  'Filtering', ...
+                  'Low-pass','High-pass','Band-pass','Low-pass');
+
+if isempty(choice)
+    return;
+end
+
+opts = struct();
+
+switch choice
+    case 'Low-pass'
+        opts.type = 'low';
+        answer = inputdlg({'Low-pass cutoff (Hz):','Order (1-6):'}, ...
+                          'Low-pass',1,{'0.2','4'});
+        opts.FcHigh = str2double(answer{1});
+        opts.order  = str2double(answer{2});
+        opts.FcLow  = 0;
+
+    case 'High-pass'
+        opts.type = 'high';
+        answer = inputdlg({'High-pass cutoff (Hz):','Order (1-6):'}, ...
+                          'High-pass',1,{'0.01','4'});
+        opts.FcLow  = str2double(answer{1});
+        opts.order  = str2double(answer{2});
+        opts.FcHigh = 0;
+
+    case 'Band-pass'
+        opts.type = 'band';
+        answer = inputdlg({'Low cutoff (Hz):','High cutoff (Hz):','Order (1-6):'}, ...
+                          'Band-pass',1,{'0.01','0.2','4'});
+        opts.FcLow  = str2double(answer{1});
+        opts.FcHigh = str2double(answer{2});
+        opts.order  = str2double(answer{3});
+end
+
+trimAns = inputdlg({'Trim start (sec):','Trim end (sec):'}, ...
+                   'Trimming',1,{'0','0'});
+
+opts.trimStart = str2double(trimAns{1});
+opts.trimEnd   = str2double(trimAns{2});
+
+addLog('Running Butterworth filtering...');
+setProgramStatus(false);
+drawnow;
+
+try
+
+    [I_filt, stats] = filtering(data.I, data.TR, studio.exportPath, opts);
+
+    newData = data;
+    newData.I = single(I_filt);
+    newData.filtering = stats;
+
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+    versionName = [studio.activeDataset '_filt_' ts];
+
+    studio.datasets.(versionName) = newData;
+    studio.pipeline.preprocDone = true;
+
+    save(fullfile(studio.exportPath,'Preprocessing', ...
+        [versionName '.mat']), ...
+        'newData','-v7.3');
+
+    guidata(gcbf,studio);
+    refreshDatasetDropdown();
+
+    addLog(['Filtering complete ? ' versionName]);
+    addLog(['QC saved ? ' stats.qcFolder]);
+
+catch ME
+    addLog(['FILTER ERROR: ' ME.message]);
+    errordlg(ME.message,'Filtering Failure');
+end
+
+setProgramStatus(true);
 
 end
 
@@ -1208,7 +1362,7 @@ function datasetDropdownCallback(src,~)
 
     set(studio.activeDatasetText, ...
         'String',['ACTIVE DATASET: ' name]);
-end
+   end
 end
 
 %% ---------------------------------------------------------
@@ -1756,7 +1910,6 @@ end
 %% ---------------------------------------------------------
 %  LIVE VIEWER CALLBACK
 % ---------------------------------------------------------
-
 function liveViewerCallback(~,~)
 
     studio = guidata(gcbf);
@@ -1768,10 +1921,28 @@ function liveViewerCallback(~,~)
 
     data = getActiveData();
 
+    % ----------------------------------------------------
+    % MEMORY SAFE: DO NOT CONVERT TO DOUBLE
+    % ----------------------------------------------------
     if isfield(data,'PSC')
-        I = double(data.PSC);
+        I = data.PSC;    % keep single precision
     else
-        I = double(data.I);
+        I = data.I;      % keep single precision
+    end
+
+    % ----------------------------------------------------
+    % Basic memory guard (prevents crash)
+    % ----------------------------------------------------
+    try
+        s = whos('I');
+        approxGB = s.bytes / 1e9;
+
+        if approxGB > 5
+            warndlg(sprintf(['Dataset is %.2f GB in memory.\n' ...
+                'LiveViewer may crash on low RAM systems.'], approxGB));
+        end
+    catch
+        % silently ignore if whos fails
     end
 
     addLog(['Opening Live Viewer (Dataset: ' studio.activeDataset ')']);
@@ -1780,8 +1951,14 @@ function liveViewerCallback(~,~)
     drawnow;
 
     try
-        viewerFig = fUSI_Live_Studio(I, data.TR, studio.meta, studio.activeDataset);
 
+        viewerFig = fUSI_Live_Studio( ...
+            I, ...
+            data.TR, ...
+            studio.meta, ...
+            studio.activeDataset);
+
+        % When viewer closes ? restore status
         addlistener(viewerFig,'ObjectBeingDestroyed', ...
             @(~,~) setProgramStatus(true));
 
@@ -1790,6 +1967,13 @@ function liveViewerCallback(~,~)
         errordlg(ME.message,'Live Viewer Failed');
         setProgramStatus(true);
     end
+
+    % ----------------------------------------------------
+    % CLEAN TEMPORARY VARIABLE
+    % ----------------------------------------------------
+    clear I
+    drawnow
+
 end
 
 
@@ -1945,6 +2129,5 @@ function videoGUICallback(~,~)
         errordlg(ME.message,'Video GUI Failed');
         setProgramStatus(true);
     end
-
 end
 end
