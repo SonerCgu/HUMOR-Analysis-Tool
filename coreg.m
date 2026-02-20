@@ -1,202 +1,267 @@
-function Transf = coreg(studio, anatomyInput)
-
+function Transf = coreg(studio)
 % =========================================================
 % fUSI Studio – Atlas Coregistration
-% Clean, robust, no Direction dependency
+% STRICT paper-faithful version (no geometry manipulation)
+%
+% - Select .mat anatomy from studio.loadedPath via popup
+% - Robustly detects the anatomy struct (with Data field)
+% - Optionally loads previous Transformation.mat
+% - Launches registration_ccf GUI (updated version)
+% - Logs when Transformation.mat is saved (transformSaved event)
+% - Saves/loads Transformation.mat in the dataset folder (studio.loadedPath)
+%
+% MATLAB 2017b compatible
 % =========================================================
-
-if ~studio.isLoaded
-    error('Load dataset first.');
-end
-
-if nargin < 2 || isempty(anatomyInput)
-    anatomyInput = mean(studio.data.I,4);
-end
 
 fprintf('\n--- fUSI Atlas Coregistration ---\n');
 
-%% =========================================================
-% LOAD ATLAS
-%% =========================================================
+Transf = [];
 
+%% ---------------------------------------------------------
+% 0) CHECK
+%% ---------------------------------------------------------
+if nargin < 1 || isempty(studio) || ~isfield(studio,'isLoaded') || ~studio.isLoaded
+    error('Load dataset first.');
+end
+if ~isfield(studio,'loadedPath') || isempty(studio.loadedPath) || ~exist(studio.loadedPath,'dir')
+    error('studio.loadedPath is missing or invalid.');
+end
+
+% Work inside dataset folder so Transformation.mat lands there
+oldDir = pwd;
+cleanupDir = onCleanup(@() cd(oldDir));
+cd(studio.loadedPath);
+
+%% ---------------------------------------------------------
+% 1) LOAD ATLAS (exactly like paper)
+%% ---------------------------------------------------------
 atlasFile = 'allen_brain_atlas.mat';
-if ~exist(atlasFile,'file')
-    error('Allen atlas file not found.');
-end
 
-load(atlasFile,'atlas');
-
-if ~isfield(atlas,'Histology')
-    error('Atlas struct must contain atlas.Histology');
-end
-
-atlasVol = double(atlas.Histology);
-
-if ~isfield(atlas,'VoxelSize')
-    error('Atlas must contain VoxelSize field.');
-end
-
-%% =========================================================
-% PREPARE ANATOMY
-%% =========================================================
-
-anatomyVol = double(anatomyInput);
-
-% Ensure 3D
-if ndims(anatomyVol) == 2
-    anatomyVol = repmat(anatomyVol,1,1,1);
-end
-
-%% =========================================================
-% GET VOXEL SIZE SAFELY
-%% =========================================================
-
-if isfield(studio.data,'VoxelSize')
-    voxelSize = studio.data.VoxelSize;
-
-elseif isfield(studio.meta,'VoxelSize')
-    voxelSize = studio.meta.VoxelSize;
-
-elseif isfield(studio.meta,'rawMetadata') && ...
-       isfield(studio.meta.rawMetadata,'voxelSize')
-
-    voxelSize = studio.meta.rawMetadata.voxelSize;
-
-else
-    warning('Voxel size not found. Assuming isotropic 100 µm.');
-    voxelSize = [0.1 0.1 0.1]; % mm
-end
-
-if numel(voxelSize) == 2
-    voxelSize = [voxelSize 1];
-end
-
-%% =========================================================
-% RESAMPLE ANATOMY TO ATLAS RESOLUTION
-%% =========================================================
-
-anatomyVol = interpolateToAtlas(anatomyVol, voxelSize, atlas.VoxelSize);
-
-%% =========================================================
-% INTERACTIVE AFFINE REGISTRATION
-%% =========================================================
-
-Transf = interactiveAffine(atlasVol, anatomyVol, atlas.VoxelSize);
-
-%% =========================================================
-% SAVE
-%% =========================================================
-
-atlasFolder = fullfile(studio.exportPath,'Atlas');
-if ~exist(atlasFolder,'dir')
-    mkdir(atlasFolder);
-end
-
-save(fullfile(atlasFolder,'atlas_affine.mat'),'Transf');
-
-fprintf('Affine saved successfully.\n');
-
-end
-function outVol = interpolateToAtlas(vol, voxelSize, atlasVoxelSize)
-
-vol = double(vol);
-
-dz = voxelSize(1);
-dx = voxelSize(2);
-dy = voxelSize(3);
-
-dzint = atlasVoxelSize(1);
-dxint = atlasVoxelSize(2);
-dyint = atlasVoxelSize(3);
-
-[nz,nx,ny] = size(vol);
-
-n1x = round((nx-1)*dx/dxint)+1;
-n1y = round((ny-1)*dy/dyint)+1;
-n1z = round((nz-1)*dz/dzint)+1;
-
-[Xq,Yq,Zq] = meshgrid( ...
-    (0:n1x-1)*dxint/dx+1,...
-    (0:n1z-1)*dzint/dz+1,...
-    (0:n1y-1)*dyint/dy+1);
-
-outVol = interp3(vol,Xq,Yq,Zq,'linear',0);
-
-end
-function Transf = interactiveAffine(atlasVol, scanVol, atlasVoxelSize)
-
-atlasVol = double(atlasVol);
-scanVol  = double(scanVol);
-
-[~,~,nz] = size(atlasVol);
-
-T = eye(4);
-scale = ones(3,1);
-
-fig = figure('Name','Atlas Coregistration',...
-    'Color','k','Position',[200 100 1200 800]);
-
-ax = axes(fig);
-slice = round(nz/2);
-
-updateDisplay();
-
-set(fig,'WindowScrollWheelFcn',@scrollSlice);
-set(fig,'WindowButtonDownFcn',@mouseTranslate);
-set(fig,'WindowKeyPressFcn',@keyRotate);
-
-uiwait(msgbox({'Adjust alignment using:', ...
-               'Mouse click = translate', ...
-               'Left/Right arrows = rotate', ...
-               'Up/Down arrows = scale', ...
-               'Scroll wheel = change slice', ...
-               'Close window when done.'}));
-
-Transf.M = T;
-Transf.VoxelSize = atlasVoxelSize;
-Transf.size = size(atlasVol);
-Transf.scale = scale;
-
-if isvalid(fig)
-    close(fig);
-end
-
-    function updateDisplay()
-        imshow(atlasVol(:,:,slice),[],'Parent',ax);
-        hold(ax,'on');
-        overlay = imwarp(scanVol,affine3d(T));
-        h = imshow(overlay(:,:,slice),[],'Parent',ax);
-        set(h,'AlphaData',0.4);
-        hold(ax,'off');
+atlasPath = which(atlasFile);
+if isempty(atlasPath)
+    % also try same folder as this coreg.m
+    here = fileparts(mfilename('fullpath'));
+    cand = fullfile(here, atlasFile);
+    if exist(cand,'file')
+        atlasPath = cand;
     end
+end
 
-    function scrollSlice(~,event)
-        slice = max(1,min(nz,slice + event.VerticalScrollCount));
-        updateDisplay();
+if isempty(atlasPath) || ~exist(atlasPath,'file')
+    error('allen_brain_atlas.mat not found on path or next to coreg.m.');
+end
+
+SAtlas = load(atlasPath,'atlas');
+if ~isfield(SAtlas,'atlas')
+    error('Loaded allen_brain_atlas.mat but variable "atlas" is missing.');
+end
+atlas = SAtlas.atlas;
+
+%% ---------------------------------------------------------
+% 2) SELECT ANATOMY FILE FROM DATASET FOLDER
+%% ---------------------------------------------------------
+rawFolder = studio.loadedPath;
+matFiles  = dir(fullfile(rawFolder,'*.mat'));
+
+if isempty(matFiles)
+    error('No .mat files found in loaded dataset folder: %s', rawFolder);
+end
+
+fileNames = {matFiles.name};
+
+[idx, tf] = listdlg( ...
+    'PromptString','Select anatomical MAT file:', ...
+    'SelectionMode','single', ...
+    'ListString',fileNames, ...
+    'ListSize',[420 320]);
+
+if ~tf
+    fprintf('Coregistration cancelled.\n');
+    return;
+end
+
+anatomyFile = fullfile(rawFolder, fileNames{idx});
+
+%% ---------------------------------------------------------
+% 3) DETECT ANATOMY STRUCT
+%% ---------------------------------------------------------
+S = load(anatomyFile);
+
+% Find ALL candidate structs with a Data field (and preferably VoxelSize)
+fields = fieldnames(S);
+candNames = {};
+candStruct = {};
+
+for i = 1:numel(fields)
+    v = S.(fields{i});
+    if isstruct(v) && isfield(v,'Data')
+        candNames{end+1}  = fields{i}; %#ok<AGROW>
+        candStruct{end+1} = v;        %#ok<AGROW>
     end
+end
 
-    function mouseTranslate(~,~)
-        cp = get(ax,'CurrentPoint');
-        dx = cp(1,1)/100;
-        dy = cp(1,2)/100;
-        T(4,1:2) = T(4,1:2) + [dx dy];
-        updateDisplay();
-    end
+if isempty(candStruct)
+    error('Selected file does not contain any struct with field "Data".');
+end
 
-    function keyRotate(~,event)
-        switch event.Key
-            case 'leftarrow'
-                T = T * makehgtform('zrotate',deg2rad(-1));
-            case 'rightarrow'
-                T = T * makehgtform('zrotate',deg2rad(1));
-            case 'uparrow'
-                scale = scale * 1.01;
-                T(1:3,1:3) = T(1:3,1:3)*1.01;
-            case 'downarrow'
-                scale = scale * 0.99;
-                T(1:3,1:3) = T(1:3,1:3)*0.99;
+% If multiple candidates exist, let user pick the correct one
+if numel(candStruct) > 1
+    pretty = candNames;
+    for k=1:numel(candStruct)
+        try
+            sz = size(candStruct{k}.Data);
+            pretty{k} = sprintf('%s   [%s]', candNames{k}, strjoin(string(sz),'x'));
+        catch
         end
-        updateDisplay();
     end
 
+    [jdx, tf2] = listdlg( ...
+        'PromptString','Multiple anatomy structs found. Select one:', ...
+        'SelectionMode','single', ...
+        'ListString',pretty, ...
+        'ListSize',[520 300]);
+
+    if ~tf2
+        fprintf('Coregistration cancelled.\n');
+        return;
+    end
+
+    anatomic = candStruct{jdx};
+else
+    anatomic = candStruct{1};
+end
+
+% Validate Data
+if ~isfield(anatomic,'Data') || isempty(anatomic.Data) || ~isnumeric(anatomic.Data)
+    error('Anatomy struct has no valid numeric "Data".');
+end
+
+% Ensure VoxelSize exists
+if ~isfield(anatomic,'VoxelSize') || isempty(anatomic.VoxelSize)
+    anatomic.VoxelSize = [1 1 1];
+end
+
+% Force double like original code typically expects
+anatomic.Data = double(anatomic.Data);
+
+fprintf('Anatomy file: %s\n', anatomyFile);
+fprintf('Anatomy size: %s\n', mat2str(size(anatomic.Data)));
+
+%% ---------------------------------------------------------
+% 4) OPTIONAL LOAD PREVIOUS TRANSFORMATION (from dataset folder)
+%% ---------------------------------------------------------
+usePrevious = false;
+prevFile = fullfile(rawFolder,'Transformation.mat');
+
+if exist(prevFile,'file')
+    choice = questdlg( ...
+        'Load previous Transformation.mat from this dataset folder?', ...
+        'Previous Transformation', ...
+        'Yes','No','No');
+
+    if strcmp(choice,'Yes')
+        tmp = load(prevFile,'Transf');
+        if isfield(tmp,'Transf') && isstruct(tmp.Transf) && isfield(tmp.Transf,'M')
+            usePrevious = true;
+            Transf = tmp.Transf;
+        else
+            warning('Transformation.mat found but variable "Transf" is missing/invalid. Starting fresh.');
+            usePrevious = false;
+            Transf = [];
+        end
+    end
+end
+
+%% ---------------------------------------------------------
+% 5) LAUNCH registration_ccf GUI
+%% ---------------------------------------------------------
+fprintf('Launching registration_ccf GUI...\n');
+
+% Create GUI object
+if usePrevious
+    R = registration_ccf(atlas, anatomic, Transf);
+else
+    R = registration_ccf(atlas, anatomic);
+end
+
+% Listen to saves coming from the GUI (registration_ccf now notifies 'transformSaved')
+try
+    addlistener(R,'transformSaved', @(src,evt)onTransformSaved(studio, prevFile));
+catch
+    % If older registration_ccf without event, ignore
+end
+
+% Wait until GUI closes
+try
+    if isfield(R,'H') && isstruct(R.H) && isfield(R.H,'figure1') && isgraphics(R.H.figure1)
+        waitfor(R.H.figure1);
+    else
+        % fallback: wait for any figure handle in object
+        if isprop(R,'H') && isfield(R.H,'figure1') && isgraphics(R.H.figure1)
+            waitfor(R.H.figure1);
+        end
+    end
+catch
+    % last resort: do nothing
+end
+
+%% ---------------------------------------------------------
+% 6) RETURN TRANSFORMATION
+%% ---------------------------------------------------------
+if exist(prevFile,'file')
+    tmp = load(prevFile,'Transf');
+    if isfield(tmp,'Transf')
+        Transf = tmp.Transf;
+    else
+        warning('Transformation.mat exists but does not contain Transf.');
+        Transf = [];
+    end
+else
+    warning('Transformation.mat not found after registration.');
+    Transf = [];
+end
+
+fprintf('--- Coregistration finished ---\n');
+
+end
+
+%% =======================================================================
+% Helper: log + notify studio on save
+%% =======================================================================
+function onTransformSaved(studio, transfPath)
+
+msg = sprintf('Saved Transformation.mat: %s', transfPath);
+
+% Console
+fprintf('[COREG] %s\n', msg);
+
+% Try to write into Studio log (robust against different implementations)
+try
+    if isfield(studio,'addLog') && isa(studio.addLog,'function_handle')
+        studio.addLog(msg);
+        return;
+    end
+end
+
+try
+    if isfield(studio,'log') && isa(studio.log,'function_handle')
+        studio.log(msg);
+        return;
+    end
+end
+
+try
+    if isfield(studio,'logHandle') && isgraphics(studio.logHandle)
+        % common pattern: a uicontrol editbox/listbox
+        old = get(studio.logHandle,'String');
+        if ischar(old), old = {old}; end
+        ts = datestr(now,'HH:MM:SS');
+        newLine = sprintf('[%s] %s', ts, msg);
+        set(studio.logHandle,'String',[old; {newLine}]);
+        drawnow limitrate nocallbacks;
+        return;
+    end
+end
+
+% If nothing matched, do nothing (avoid crashing)
 end
