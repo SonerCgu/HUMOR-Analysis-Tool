@@ -1,10 +1,7 @@
 function [out, stats] = despike(data, zthr, saveRoot, tag)
 
 % ==========================================================
-% VOXEL-WISE MAD DESPIKING
-% No waitbars
-% Full QC PNG saving
-% Returns full stats
+% VOXEL-WISE MAD DESPIKING (STABLE VERSION)
 % ==========================================================
 
 if nargin < 2 || isempty(zthr)
@@ -19,6 +16,7 @@ if nargin < 3 || isempty(saveRoot)
     saveRoot = pwd;
 end
 
+data = single(data);
 sz = size(data);
 
 if ndims(data) == 3
@@ -32,31 +30,35 @@ else
     error('Data must be 3D or 4D.');
 end
 
-flat = reshape(double(data4D),[],T);
+flat = reshape(data4D,[],T);
 Nvox = size(flat,1);
 
 totalPoints = numel(flat);
 removedPoints = 0;
-allRobustZ = [];
+
+spikesPerFrame = zeros(1,T,'single');
+spikeMap = zeros(Y,X,Z,'single');
 
 for v = 1:Nvox
 
     sig = flat(v,:);
-    med = median(sig,'omitnan');
-    madv = median(abs(sig - med),'omitnan');
+    med = median(sig);
+    madv = median(abs(sig - med));
 
     if madv < eps
         continue
     end
 
     robustZ = 0.6745 * (sig - med) / madv;
-    allRobustZ = [allRobustZ robustZ];
-
     spikeMask = abs(robustZ) > zthr;
 
     if any(spikeMask)
 
         removedPoints = removedPoints + sum(spikeMask);
+        spikesPerFrame = spikesPerFrame + spikeMask;
+
+        [yy,xx,zz] = ind2sub([Y,X,Z],v);
+        spikeMap(yy,xx,zz) = spikeMap(yy,xx,zz) + sum(spikeMask);
 
         good = ~spikeMask;
 
@@ -71,45 +73,59 @@ end
 
 out = reshape(flat,Y,X,Z,T);
 
-%% ---------------------------------------------------------
+% =========================
 % STATS
-%% ---------------------------------------------------------
+% =========================
 stats.totalPoints = totalPoints;
 stats.removedPoints = removedPoints;
 stats.percentRemoved = 100 * removedPoints / totalPoints;
 stats.zThreshold = zthr;
 
-
-% -------------------------------------------------------
+% =========================
 % QC FIGURE
-% -------------------------------------------------------
-fig = figure('Visible','off','Color','w');
+% =========================
+qcFolder = fullfile(saveRoot,'Preprocessing','despike_QC');
+if ~exist(qcFolder,'dir')
+    mkdir(qcFolder);
+end
+
+qcFile = fullfile(qcFolder,['despike_QC_' tag '.png']);
+
+fig = figure('Visible','off','Color','w','Position',[200 200 1200 800]);
 
 subplot(3,1,1)
 plot(spikesPerFrame,'k','LineWidth',1)
 title('Spikes per frame')
 xlabel('Frame')
 ylabel('# spikes')
-legend({'Spikes per frame'},'Location','best')
+grid on
 
 subplot(3,1,2)
-histogram(spikesPerFrame,50)
+hist(spikesPerFrame,50)
 title('Distribution of spikes per frame')
 xlabel('# spikes')
 ylabel('Count')
 
 subplot(3,1,3)
-imagesc(spikeMap(:,:,round(Z/2)))
+midSlice = round(Z/2);
+imagesc(spikeMap(:,:,midSlice))
 colorbar
 title('Spike spatial map (mid slice)')
 xlabel('X')
 ylabel('Y')
 
-saveas(fig,qcFile)
+annotation('textbox',[0 0.95 1 0.04],...
+    'String','Voxel-wise MAD Despiking QC',...
+    'EdgeColor','none',...
+    'HorizontalAlignment','center',...
+    'FontWeight','bold');
+
+saveas(fig,qcFile);
 close(fig)
 
-close(f);
-
 stats.qcFile = qcFile;
+
+clear flat spikeMap spikesPerFrame
+drawnow
 
 end
