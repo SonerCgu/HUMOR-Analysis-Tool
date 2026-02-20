@@ -12,6 +12,7 @@ studio.isLoaded = false;
 studio.loadedFile = '';
 studio.loadedPath = '';
 studio.exportPath = '';
+studio.atlasTransform = [];
 studio.allButtons = {};   % proper handle container
 studio.figure = [];              % store figure handle
 
@@ -571,81 +572,59 @@ function runSpecificQCCallback(~,~)
     setProgramStatus(true);
 end
 
-
 %% =========================================================
-%  ATLAS COREGISTRATION
+%  Coregistration
 % =========================================================
 function coregCallback(~,~)
 
-    studio = guidata(gcbf);
-    if ~studio.isLoaded
-        errordlg('Load data first.'); return;
+    fig = gcbf;
+    studio = guidata(fig);
+
+    addLog('--- Atlas Coregistration ---');
+
+    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
     end
 
-    addLog('Preparing anatomical image...');
-    setProgramStatus(false); drawnow;
-
-    rawFolder = studio.loadedPath;
-    files = dir(rawFolder);
-
-    anatFiles = {};
-    for i = 1:length(files)
-        f = files(i).name;
-        f2 = lower(f);
-        if contains(f2,'anat') || contains(f2,'t2') || contains(f2,'struct')
-            if endsWith(f2,{'.nii','.nii.gz','.mat'})
-                anatFiles{end+1} = f;
-            end
-        end
-    end
-
-    anatomy = [];
-    useManual = false;
-
-    if ~isempty(anatFiles)
-        [idx,tf] = listdlg( ...
-            'PromptString','Select anatomical file:', ...
-            'SelectionMode','single', ...
-            'ListString',anatFiles);
-        if tf
-            anatomy = loadAnatomy(fullfile(rawFolder, anatFiles{idx}));
-            addLog(['Using anatomy: ' anatFiles{idx}]);
-        else
-            useManual = true;
-        end
-    else
-        useManual = true;
-    end
-
-    if useManual
-        [file,path2] = uigetfile( ...
-            {'*.nii;*.nii.gz;*.mat','Anatomy'}, ...
-            'Select anatomical scan (Cancel = mean functional)');
-        if isequal(file,0)
-            % fallback
-            data = getActiveData(); 
-            anatomy = mean(data.I, ndims(data.I));
-            addLog('Using mean functional as anatomy.');
-        else
-            anatomy = loadAnatomy(fullfile(path2,file));
-            addLog(['Using anatomy: ' file]);
-        end
-    end
+    setProgramStatus(false);
+    drawnow;
 
     try
-        addLog('Launching atlas coreg...');
-        data = getActiveData(); 
+        % Run coreg (saves Transformation.mat into studio.loadedPath)
+        Transf = coreg(studio);
 
-        T = coreg(studio, anatomy);
-        studio.meta.atlasTransf = T;
-        studio.pipeline.atlasDone = true;
-        guidata(gcbf, studio);
+        if isempty(Transf)
+            addLog('Coregistration cancelled.');
+            setProgramStatus(true);
+            return;
+        end
 
-        addLog('Atlas coregistration complete.');
+        % Store transformation in studio
+        studio.atlasTransform = Transf;
+
+        % Also store canonical on-disk location for downstream steps
+        if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
+            studio.atlasTransformFile = fullfile(studio.loadedPath,'Transformation.mat');
+        else
+            studio.atlasTransformFile = 'Transformation.mat';
+        end
+
+        guidata(fig,studio);
+
+        addLog('Atlas coregistration completed.');
+        addLog('Transformation stored in studio.atlasTransform');
+        addLog(['Transformation file: ' studio.atlasTransformFile]);
+
+        % Optional: quick UI notification (non-blocking)
+        try
+            msgbox('Transformation saved and stored in Studio.','Atlas Coregistration','help');
+        catch
+        end
 
     catch ME
-        addLog(['Atlas ERROR: ' ME.message]);
-        errordlg(ME.message,'Atlas Failure');
+        addLog(['COREG ERROR: ' ME.message]);
+        errordlg(ME.message,'Coregistration Failed');
     end
 
     setProgramStatus(true);
@@ -1535,49 +1514,6 @@ function unlockAllButtons()
 
     guidata(gcbf, studio);
 end
-
-
-
-%% ---------------------------------------------------------
-%  LOAD ANATOMY FILE (nii / nii.gz / mat)
-% ---------------------------------------------------------
-function anatomy = loadAnatomy(path)
-
-    [~,~,ext] = fileparts(path);
-    ext = lower(ext);
-
-    switch ext
-
-        case '.nii'
-            info = niftiinfo(path);
-            anatomy = niftiread(info);
-
-        case '.gz'
-            info = niftiinfo(path);   % MATLAB handles .nii.gz
-            anatomy = niftiread(info);
-
-        case '.mat'
-            S = load(path);
-            fn = fieldnames(S);
-
-            % Priorities
-            if isfield(S,'anatomy')
-                anatomy = S.anatomy;
-            elseif isfield(S,'meanVol')
-                anatomy = S.meanVol;
-            elseif isfield(S,'I')
-                anatomy = mean(S.I,4);
-            else
-                anatomy = S.(fn{1});
-            end
-
-        otherwise
-            error(['Unsupported anatomy file type: ' ext]);
-    end
-
-    anatomy = double(anatomy);
-end
-
 
 
 %% ---------------------------------------------------------
