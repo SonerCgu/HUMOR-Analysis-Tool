@@ -1,98 +1,109 @@
 function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
-
-% SCM_gui — UPDATED: 2D + TRUE 3D SLICE SUPPORT (MATLAB 2017b)
-% ============================================================
+% SCM_gui — 2D + TRUE 3D SLICE SUPPORT (MATLAB 2017b + 2023b)
+% ==========================================================
 % Supports:
 %   - 2D probe:     PSC [Y X T]
-%   - Matrix probe: PSC [Y X Z T]  -> adds slice slider (left of image)
+%   - Matrix probe: PSC [Y X Z T]  -> slice slider (left of image)
 %
-% Features preserved:
-%   - ROI toggle ON/OFF (hover + click)
-%   - Freeze for screenshots: click freezes hover; "Unfreeze" resumes
-%   - ROI size slider
-%   - Time axis = minutes
-%   - Timecourse shows ONLY PSC (hover orange dotted; ROIs colored dotted)
-%   - Baseline + signal windows shaded on timecourse
-%   - Robust parsing/clamping
+% Preserved layout + fixes:
+%   ? Strict original range parsing (prevents silent shifts vs old results)
+%   ? Slice slider left of image when Z>1
+%   ? ROIs stored per-slice
+%   ? Mask load supports .mat, .nii, .nii.gz (nii.gz works in 2017b)
+%   ? Right-click: unfreeze + remove nearest ROI
+%   ? Works MATLAB 2017b and 2023b
 %
-% New:
-%   - Slice slider (when Z>1) positioned LEFT of image axis
-%   - ROI storage per slice (switch slices without losing ROIs)
-% ============================================================
+% ROI behavior:
+%   - Hover: live PSC shown (orange dotted)
+%   - Left-click: add ROI + freezes hover
+%   - Unfreeze: button OR right-click
+%   - Right-click: unfreeze + remove nearest ROI
 
 %% ---------------- SAFETY ----------------
-assert(isscalar(TR) && isfinite(TR) && TR>0,'TR must be positive scalar');
+assert(isscalar(TR) && isfinite(TR) && TR > 0, 'TR must be positive scalar');
 
 pscDims = ndims(PSC);
-assert(pscDims==3 || pscDims==4, 'PSC must be [Y X T] or [Y X Z T]');
+assert(pscDims == 3 || pscDims == 4, 'PSC must be [Y X T] or [Y X Z T]');
 
 if pscDims == 3
-    [nY,nX,nT] = size(PSC);
+    [nY, nX, nT] = size(PSC);
     nZ = 1;
 else
-    [nY,nX,nZ,nT] = size(PSC);
+    [nY, nX, nZ, nT] = size(PSC);
 end
-
-if nZ > 1
-    fprintf('[SCM] nZ = %d ? slice slider ENABLED\n', nZ);
-else
-    fprintf('[SCM] nZ = %d ? slice slider DISABLED\n', nZ);
-end
-
 
 tsec = (0:nT-1) * TR;
 tmin = tsec / 60;
 
+%% ---------------- BACKWARD COMPAT SHIM (arg#6) ----------------
+% Some callers still pass I_raw as 6th argument instead of nVolsOrig.
+if ~(isnumeric(nVolsOrig) && isscalar(nVolsOrig) && isfinite(nVolsOrig))
+    varargin  = [{nVolsOrig} varargin];
+    nVolsOrig = nT; %#ok<NASGU>
+end
+
 %% ---------------- OPTIONAL INPUTS ----------------
 fileLabel = '';
-
 if ~isempty(varargin)
     lastArg = varargin{end};
     if ischar(lastArg) || (isstring(lastArg) && isscalar(lastArg))
         fileLabel = char(lastArg);
+        varargin  = varargin(1:end-1);
     end
 end
-
-if isempty(fileLabel)
-    fileLabel = 'SCM';
-end
-
-
-% ---- SAFETY: force char (MATLAB 2017b compatible) ----
-if isstring(fileLabel)
-    fileLabel = char(fileLabel);
-elseif ~ischar(fileLabel)
-    fileLabel = 'SCM';
-end
-
+if isempty(fileLabel), fileLabel = 'SCM'; end
+if isstring(fileLabel), fileLabel = char(fileLabel); end
+if ~ischar(fileLabel),  fileLabel = 'SCM'; end
 
 I_raw = []; I_interp = [];
-initialFPS = 10; maxFPS = 120;
+initialFPS = 10; maxFPS = 120; %#ok<NASGU>
 passedMask = [];
-applyRejection = false; QC = struct();
+passedMaskIsInclude = true;  % optional
+applyRejection = false; QC = struct(); %#ok<NASGU>
 
-if numel(varargin)>=1, I_raw = varargin{1}; end %#ok<NASGU>
-if numel(varargin)>=2, I_interp = varargin{2}; end
-if numel(varargin)>=3, initialFPS = varargin{3}; end %#ok<NASGU>
-if numel(varargin)>=4, maxFPS = varargin{4}; end %#ok<NASGU>
-if numel(varargin)>=5, passedMask = varargin{5}; end
-if numel(varargin)>=6, applyRejection = varargin{6}; end %#ok<NASGU>
-if numel(varargin)>=7, QC = varargin{7}; end %#ok<NASGU>
+if numel(varargin) >= 1, I_raw        = varargin{1}; end %#ok<NASGU>
+if numel(varargin) >= 2, I_interp     = varargin{2}; end
+if numel(varargin) >= 3, initialFPS   = varargin{3}; end %#ok<NASGU>
+if numel(varargin) >= 4, maxFPS       = varargin{4}; end %#ok<NASGU>
+if numel(varargin) >= 5, passedMask   = varargin{5}; end
+
+% If maskIsInclude is provided, it is usually position 6 (after passedMask)
+if numel(varargin) >= 6
+    v6 = varargin{6};
+
+    isBoolScalar = (islogical(v6) && isscalar(v6)) || ...
+                   (isnumeric(v6) && isscalar(v6) && (v6==0 || v6==1));
+
+    if ~isempty(passedMask) && isBoolScalar
+        % Only interpret v6 as maskIsInclude if a mask was actually passed
+        passedMaskIsInclude = logical(v6);
+        if numel(varargin) >= 7, applyRejection = varargin{7}; end %#ok<NASGU>
+        if numel(varargin) >= 8, QC            = varargin{8}; end %#ok<NASGU>
+    else
+        % Otherwise v6 is applyRejection
+        applyRejection = v6; %#ok<NASGU>
+        if numel(varargin) >= 7, QC = varargin{7}; end %#ok<NASGU>
+    end
+end
+%% ---------------- BASELINE MODE (SEC vs VOL) ----------------
+modeStr = 'sec';
+if isfield(baseline,'mode') && ~isempty(baseline.mode)
+    try
+        modeStr = lower(char(baseline.mode));
+    catch
+        modeStr = 'sec';
+    end
+end
+isVolMode = (strncmpi(modeStr,'vol',3) || strncmpi(modeStr,'idx',3));
 
 %% ---------------- STATE ----------------
-state.alphaPct = 60;
-state.thresh   = 0;
-state.cax      = [0 80];
-state.sigma    = 1.0;
+state.alphaPct = 100;
+state.thresh   = 50;
+state.cax      = [0 100];
+state.sigma    = 0;
 state.cmap     = 'hot';
 
-% current slice
-% ---------------- SLICE INIT ----------------
-% current slice: always start from middle by default
-state.z = max(1, round(nZ/2));   % default = middle slice
-
-fprintf('[SCM] init slice = %d (nZ=%d)\n', state.z, nZ);
-
+state.z = max(1, round(nZ/2));
 
 %% ---------------- ROI STATE ----------------
 roi.enable   = true;
@@ -100,12 +111,13 @@ roi.size     = 12;
 roi.colors   = lines(12);
 roi.isFrozen = false;
 
-% Store ROIs per slice (so slice switching keeps them)
-ROI_byZ = cell(1,nZ);     % each cell: struct array of ROIs
-for zz=1:nZ, ROI_byZ{zz} = struct('x1',{},'x2',{},'y1',{},'y2',{},'color',{}); end
+ROI_byZ = cell(1, nZ);
+for zz = 1:nZ
+    ROI_byZ{zz} = struct('x1',{},'x2',{},'y1',{},'y2',{},'color',{});
+end
 
-roiHandles = gobjects(0);  % visible rects for current slice
-roiPlotPSC = gobjects(0);  % visible curves for current slice
+roiHandles = gobjects(0);
+roiPlotPSC = gobjects(0);
 
 %% ---------------- FIGURE ----------------
 fig = figure( ...
@@ -113,16 +125,14 @@ fig = figure( ...
     'Color',[0.05 0.05 0.05], ...
     'Position',[100 80 1280 800], ...
     'MenuBar','none', ...
-    'ToolBar','none');
-
-
+    'ToolBar','none', ...
+    'NumberTitle','off');
 
 set(fig,'DefaultUicontrolFontName','Arial');
 set(fig,'DefaultUicontrolFontSize',12);
 
-% ---- FEATURE 2: bottom-right credits ----
 annotation(fig,'textbox', ...
-    [0.62 0.005 0.37 0.03], ...   % normalized: bottom-right strip
+    [0.62 0.005 0.37 0.03], ...
     'String','SCM GUI · Soner Caner Cagun · MPI Biological Cybernetics', ...
     'Color',[0.70 0.70 0.70], ...
     'FontSize',10, ...
@@ -145,16 +155,14 @@ end
 
 axis(ax,'image'); axis(ax,'off'); set(ax,'YDir','reverse'); hold(ax,'on');
 
-% Background image handle (updates on slice change)
 bg2 = getBg2DForSlice(state.z);
 hBG = image(ax, toRGB(bg2));
 
-% Overlay handle (SCM map)
 hOV = imagesc(ax, zeros(nY,nX));
 set(hOV,'AlphaData',0);
 
-colormap(ax,state.cmap);
-caxis(ax,state.cax);
+colormap(ax, state.cmap);
+caxis(ax, state.cax);
 
 cb = colorbar(ax);
 cb.Color = 'w';
@@ -167,8 +175,7 @@ slZ = [];
 txtZ = [];
 
 if nZ > 1
-    % place slider JUST LEFT of image axis (but inside figure)
-    axPos = get(ax,'Position');   % [x y w h]
+    axPos = get(ax,'Position');
 
     slZ = uicontrol(fig,'Style','slider', ...
         'Units','pixels', ...
@@ -185,12 +192,7 @@ if nZ > 1
         'BackgroundColor',get(fig,'Color'), ...
         'HorizontalAlignment','left', ...
         'FontWeight','bold');
-
-    % ? make sure slider is visible above everything
-    uistack(slZ,'top');
-    uistack(txtZ,'top');
 end
-
 
 %% ---------------- TIMECOURSE AXIS ----------------
 axTC = axes('Parent',fig,'Units','pixels','Position',[60 35 780 150], ...
@@ -220,7 +222,7 @@ axes(ax); %#ok<LAXES>
 hLiveRect = rectangle(ax,'Position',[1 1 1 1], ...
     'EdgeColor',[0 1 0],'LineWidth',2,'Visible','off');
 
-%% ---------------- CONTROL PANEL ----------------
+%% ---------------- CONTROL PANEL (ORIGINAL LAYOUT) ----------------
 panel = uipanel('Parent',fig,'Title','SCM Controls', ...
     'Units','pixels','Position',[875 105 370 665], ...
     'BackgroundColor',[0.10 0.10 0.10],'ForegroundColor','w', ...
@@ -327,14 +329,14 @@ set(fig,'WindowButtonMotionFcn',@mouseMove);
 set(fig,'WindowButtonDownFcn',@mouseClick);
 set(fig,'WindowScrollWheelFcn',@mouseScroll);
 
-
 %% ---------------- MASK INIT (PER SLICE) ----------------
 mask2D = true(nY,nX);
 if ~isempty(passedMask)
     mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
-
 end
-
+if ~passedMaskIsInclude && ~isempty(passedMask)
+    mask2D = ~mask2D;
+end
 
 %% ---------------- INITIAL COMPUTE ----------------
 computeSCM();
@@ -345,92 +347,85 @@ redrawROIsForCurrentSlice();
 % CALLBACKS
 %% ============================================================
 
-function sliceChanged(~,~)
-    if isempty(slZ), return; end
-    zNew = round(slZ.Value);
+function sliceChanged(varargin) %#ok<INUSD>
+    if isempty(slZ) || ~isgraphics(slZ), return; end
+    zNew = round(get(slZ,'Value'));
     zNew = max(1, min(nZ, zNew));
     if zNew == state.z, return; end
 
-    % store nothing special: ROI definitions are already in ROI_byZ{state.z}
-    % switch
     state.z = zNew;
-    slZ.Value = state.z;
-    if ~isempty(txtZ)
-        txtZ.String = sprintf('Slice: %d/%d',state.z,nZ);
+    set(slZ,'Value',state.z);
+    if ~isempty(txtZ) && isgraphics(txtZ)
+        set(txtZ,'String',sprintf('Slice: %d / %d',state.z,nZ));
     end
 
-    % update mask for this slice (if 3D/4D mask was passed or loaded)
-if ~isempty(passedMask)
-    mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
+    if ~isempty(passedMask)
+        mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
+    else
+        mask2D = true(nY,nX);
+    end
+ if ~passedMaskIsInclude && ~isempty(passedMask)
+        mask2D = ~mask2D;
+    end
 
-end
-
-    % update background
     bg2 = getBg2DForSlice(state.z);
     set(hBG,'CData',toRGB(bg2));
 
-    % clear hover visuals
     set(hLiveRect,'Visible','off');
     set(hLivePSC,'Visible','off');
     roi.isFrozen = false;
 
-    % update SCM + alpha
     computeSCM();
     redrawROIsForCurrentSlice();
 end
 
-function toggleROI(~,~)
-    roi.enable = logical(cbROI.Value);
+function toggleROI(varargin)
+    roi.enable = logical(get(cbROI,'Value'));
     roi.isFrozen = false;
-
     if ~roi.enable
         set(hLiveRect,'Visible','off');
         set(hLivePSC,'Visible','off');
     end
 end
 
-function unfreezeHover(~,~)
+function unfreezeHover(varargin)
     roi.isFrozen = false;
 end
 
 function setROIsize()
-    roi.size = max(1, round(slROI.Value));
+    roi.size = max(1, round(get(slROI,'Value')));
     set(txtROIsz,'String',sprintf('%d px',roi.size));
 end
 
-function mouseMove(~,~)
+function mouseMove(varargin)
     if ~roi.enable || roi.isFrozen
         return;
     end
-
-    % IMPORTANT: only react when cursor is over IMAGE AXIS
-    if ~isequal(gco, []) && ~isempty(gco)
-        % ok
-    end
-    if ~isequal(gca, ax)
+    if ~isPointerOverImageAxis()
         return;
     end
 
     cp = get(ax,'CurrentPoint');
-    x = round(cp(1,1)); ypix = round(cp(1,2));
+    x = round(cp(1,1));
+    ypix = round(cp(1,2));
 
-    if x<1 || x>nX || ypix<1 || ypix>nY
+    if x < 1 || x > nX || ypix < 1 || ypix > nY
         set(hLiveRect,'Visible','off');
         set(hLivePSC,'Visible','off');
         return;
     end
 
     hlf = floor(roi.size/2);
-    x1  = max(1, x-hlf);  x2 = min(nX, x+hlf);
-    y1  = max(1, ypix-hlf); y2 = min(nY, ypix+hlf);
+    x1  = max(1, x-hlf);     x2 = min(nX, x+hlf);
+    y1  = max(1, ypix-hlf);  y2 = min(nY, ypix+hlf);
 
-    col = roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
+    col = roi.colors(mod(numel(ROI_byZ{state.z}), size(roi.colors,1)) + 1, :);
 
     set(hLiveRect,'Position',[x1 y1 x2-x1+1 y2-y1+1], ...
         'EdgeColor',col,'Visible','on');
 
     tc_psc = computeRoiPSC(x1,x2,y1,y2);
-    if numel(tc_psc)==nT
+    if numel(tc_psc) == nT
         set(hLivePSC,'YData',tc_psc,'Visible','on');
     else
         set(hLivePSC,'Visible','off');
@@ -440,78 +435,53 @@ function mouseMove(~,~)
 end
 
 function mouseScroll(~, evt)
-    if nZ <= 1
-        return;
-    end
+    if nZ <= 1, return; end
+    if ~isPointerOverImageAxis(), return; end
 
-    % Determine what object the mouse is over
-    h = hittest(fig);
-    if isempty(h)
-        return;
-    end
-
-    axHit = ancestor(h, 'axes');
-    if isempty(axHit) || axHit ~= ax
-        return;   % only scroll when over image axis
-    end
-
-    % Scroll direction (natural)
     dz = -sign(evt.VerticalScrollCount);
-    if dz == 0
-        return;
-    end
+    if dz == 0, return; end
 
-    zNew = state.z + dz;
-    zNew = max(1, min(nZ, zNew));
+    zNew = max(1, min(nZ, state.z + dz));
+    if zNew == state.z, return; end
 
-    if zNew == state.z
-        return;
-    end
-
-    % Update slice state
     state.z = zNew;
 
-    % Sync slider
     if ~isempty(slZ) && isgraphics(slZ)
-        slZ.Value = state.z;
+        set(slZ,'Value',state.z);
+    end
+    if ~isempty(txtZ) && isgraphics(txtZ)
+        set(txtZ,'String',sprintf('Slice: %d / %d', state.z, nZ));
     end
 
-    % Update label
-    if ~isempty(txtZ)
-        txtZ.String = sprintf('Slice: %d / %d', state.z, nZ);
-    end
-
-    % Update mask for this slice
     if ~isempty(passedMask)
         mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
-
+    else
+        mask2D = true(nY,nX);
+    end
+    if ~passedMaskIsInclude && ~isempty(passedMask)
+        mask2D = ~mask2D;
     end
 
-    % Update background + SCM
     bg2 = getBg2DForSlice(state.z);
-    set(hBG, 'CData', toRGB(bg2));
+    set(hBG,'CData',toRGB(bg2));
 
     computeSCM();
     redrawROIsForCurrentSlice();
 end
 
-function mouseClick(~,~)
-    if ~roi.enable
-        return;
-    end
-    if ~isequal(gca, ax)
-        return;
-    end
+function mouseClick(varargin)
+    if ~roi.enable, return; end
+    if ~isPointerOverImageAxis(), return; end
 
     cp = get(ax,'CurrentPoint');
     x = round(cp(1,1)); ypix = round(cp(1,2));
-    if x<1 || x>nX || ypix<1 || ypix>nY
+    if x < 1 || x > nX || ypix < 1 || ypix > nY
         return;
     end
 
     hlf = floor(roi.size/2);
-    x1  = max(1, x-hlf);  x2 = min(nX, x+hlf);
-    y1  = max(1, ypix-hlf); y2 = min(nY, ypix+hlf);
+    x1  = max(1, x-hlf);     x2 = min(nX, x+hlf);
+    y1  = max(1, ypix-hlf);  y2 = min(nY, ypix+hlf);
 
     type = get(fig,'SelectionType');
 
@@ -519,40 +489,37 @@ function mouseClick(~,~)
         roi.isFrozen = true;
 
         tc_psc = computeRoiPSC(x1,x2,y1,y2);
-        if numel(tc_psc)~=nT
-            return;
-        end
+        if numel(tc_psc) ~= nT, return; end
 
-        col = roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
-
+        col = roi.colors(mod(numel(ROI_byZ{state.z}), size(roi.colors,1)) + 1, :);
         ROI_byZ{state.z}(end+1) = struct('x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col);
 
-        % draw immediately
         redrawROIsForCurrentSlice();
         drawTimeWindows();
 
     elseif strcmp(type,'alt')
-        if isempty(ROI_byZ{state.z}), return; end
+        % RIGHT-CLICK: unfreeze + remove nearest ROI
+        roi.isFrozen = false;
 
-        ROI = ROI_byZ{state.z};
-        ctr = arrayfun(@(r)[(r.x1+r.x2)/2,(r.y1+r.y2)/2],ROI,'uni',0);
-        ctr = cat(1,ctr{:});
-        [~,i] = min(sum((ctr-[x ypix]).^2,2));
-
-        if i>=1 && i<=numel(ROI)
-            ROI(i) = [];
-            ROI_byZ{state.z} = ROI;
-            redrawROIsForCurrentSlice();
+        if ~isempty(ROI_byZ{state.z})
+            ROI = ROI_byZ{state.z};
+            ctr = arrayfun(@(r)[(r.x1+r.x2)/2, (r.y1+r.y2)/2], ROI, 'uni', 0);
+            ctr = cat(1, ctr{:});
+            [~,i] = min(sum((ctr - [x ypix]).^2, 2));
+            if i >= 1 && i <= numel(ROI)
+                ROI(i) = [];
+                ROI_byZ{state.z} = ROI;
+                redrawROIsForCurrentSlice();
+            end
         end
+
+        set(hLiveRect,'Visible','off');
+        set(hLivePSC,'Visible','off');
     end
 end
 
-
-disp([b0 b1 s0 s1]);
-disp([b0i b1i s0i s1i]);
-
 %% ---------------- SCM COMPUTATION ----------------
-function computeSCM(~,~)
+function computeSCM(varargin) %#ok<INUSD>
     [b0,b1] = parseRangeSafe(get(ebBase,'String'), baseline.start, baseline.end);
     [s0,s1] = parseRangeSafe(get(ebSig,'String'),  baseline.end+10, baseline.end+40);
 
@@ -560,23 +527,31 @@ function computeSCM(~,~)
     if ~isfinite(sig), sig = state.sigma; end
     state.sigma = sig;
 
-    % convert to indices (inclusive)
-    b0i = clamp(round(b0/TR)+1,1,nT);
-    b1i = clamp(round(b1/TR)+1,1,nT);
-    if b1i < b0i, tmp=b0i; b0i=b1i; b1i=tmp; end
+    % ---- convert to indices (ORIGINAL behavior for sec mode) ----
+    if ~isVolMode
+        b0i = clamp(round(b0/TR)+1,1,nT);
+        b1i = clamp(round(b1/TR)+1,1,nT);
+        s0i = clamp(round(s0/TR)+1,1,nT);
+        s1i = clamp(round(s1/TR)+1,1,nT);
+    else
+        % baseline/signal given as volume indices (1-based)
+        b0i = clamp(round(b0),1,nT);
+        b1i = clamp(round(b1),1,nT);
+        s0i = clamp(round(s0),1,nT);
+        s1i = clamp(round(s1),1,nT);
+    end
 
-    s0i = clamp(round(s0/TR)+1,1,nT);
-    s1i = clamp(round(s1/TR)+1,1,nT);
+    if b1i < b0i, tmp=b0i; b0i=b1i; b1i=tmp; end
     if s1i < s0i, tmp=s0i; s0i=s1i; s1i=tmp; end
 
     PSCz = getPSCForSlice(state.z); % [Y X T]
 
-    base = mean(PSCz(:,:,b0i:b1i),3);
-    sigm = mean(PSCz(:,:,s0i:s1i),3);
-    map  = sigm - base;
+    baseMap = mean(PSCz(:,:,b0i:b1i),3);
+    sigMap  = mean(PSCz(:,:,s0i:s1i),3);
+    map     = sigMap - baseMap;
 
-    if sig>0
-        map = imgaussfilt(map, sig);
+    if sig > 0
+        map = smooth2D_gauss(map, sig);
     end
 
     set(hOV,'CData',map);
@@ -584,8 +559,8 @@ function computeSCM(~,~)
     drawTimeWindows();
 end
 
-function updateView(~,~)
-    state.alphaPct = slAlpha.Value;
+function updateView(varargin) %#ok<INUSD>
+    state.alphaPct = get(slAlpha,'Value');
     set(txtAlpha,'String',sprintf('%.0f',state.alphaPct));
 
     thr = str2double(get(ebThr,'String'));
@@ -593,18 +568,24 @@ function updateView(~,~)
     state.thresh = thr;
 
     cax = parse2(get(ebCax,'String'), state.cax);
-    if numel(cax)==2 && isfinite(cax(1)) && isfinite(cax(2)) && cax(2)>cax(1)
+    if numel(cax)==2 && isfinite(cax(1)) && isfinite(cax(2)) && cax(2) > cax(1)
         state.cax = cax(:)';
     end
 
-    state.cmap = popMap.String{popMap.Value};
+    maps = get(popMap,'String');
+    idx  = get(popMap,'Value');
+    if iscell(maps)
+        state.cmap = maps{idx};
+    else
+        state.cmap = strtrim(maps(idx,:));
+    end
 
     ov = get(hOV,'CData');
     alpha = (state.alphaPct/100) .* (abs(ov) >= state.thresh) .* double(mask2D);
     set(hOV,'AlphaData',alpha);
 
-    colormap(ax,state.cmap);
-    caxis(ax,state.cax);
+    colormap(ax, state.cmap);
+    caxis(ax, state.cax);
 end
 
 %% ---------------- TIME WINDOW OVERLAYS ----------------
@@ -612,20 +593,30 @@ function drawTimeWindows()
     [b0,b1] = parseRangeSafe(get(ebBase,'String'), baseline.start, baseline.end);
     [s0,s1] = parseRangeSafe(get(ebSig,'String'),  baseline.end+10, baseline.end+40);
 
-    if b1 < b0, tmp=b0; b0=b1; b1=tmp; end
-    if s1 < s0, tmp=s0; s0=s1; s1=tmp; end
+    % Convert to seconds for patch positions (x-axis is minutes)
+    if isVolMode
+        b0s = (clamp(round(b0),1,nT) - 1) * TR;
+        b1s = (clamp(round(b1),1,nT) - 1) * TR;
+        s0s = (clamp(round(s0),1,nT) - 1) * TR;
+        s1s = (clamp(round(s1),1,nT) - 1) * TR;
+    else
+        b0s = b0; b1s = b1; s0s = s0; s1s = s1;
+    end
+
+    if b1s < b0s, tmp=b0s; b0s=b1s; b1s=tmp; end
+    if s1s < s0s, tmp=s0s; s0s=s1s; s1s=tmp; end
 
     yl = get(axTC,'YLim');
-    if any(~isfinite(yl)) || yl(2)<=yl(1)
+    if any(~isfinite(yl)) || yl(2) <= yl(1)
         yl = [-5 5];
         set(axTC,'YLim',yl);
     end
 
-    xb = [b0 b1 b1 b0] / 60;
+    xb = [b0s b1s b1s b0s] / 60;
     yb = [yl(1) yl(1) yl(2) yl(2)];
     set(hBasePatch,'XData',xb,'YData',yb,'FaceColor',[0.6 0.8 1.0],'Visible','on');
 
-    xs = [s0 s1 s1 s0] / 60;
+    xs = [s0s s1s s1s s0s] / 60;
     ys = [yl(1) yl(1) yl(2) yl(2)];
     set(hSigPatch,'XData',xs,'YData',ys,'FaceColor',[1.0 0.7 0.4],'Visible','on');
 
@@ -640,19 +631,17 @@ end
 
 %% ---------------- ROI PSC ----------------
 function tc_psc = computeRoiPSC(x1,x2,y1,y2)
-    PSCz = getPSCForSlice(state.z); % [Y X T]
+    PSCz = getPSCForSlice(state.z);
     tc = squeeze(mean(mean(PSCz(y1:y2, x1:x2, :), 1), 2));
     if isempty(tc)
         tc_psc = [];
         return;
     end
-
-    tc = tc(:)';   % row
+    tc = tc(:)'; % row
     if numel(tc) ~= nT
         tc_psc = [];
         return;
     end
-
     tc_psc = tc;
 
     if all(isfinite(tc_psc))
@@ -666,14 +655,11 @@ function tc_psc = computeRoiPSC(x1,x2,y1,y2)
 end
 
 function redrawROIsForCurrentSlice()
-    % delete currently drawn ROI handles/curves
     deleteIfValid(roiHandles); roiHandles = gobjects(0);
     deleteIfValid(roiPlotPSC); roiPlotPSC = gobjects(0);
 
     ROI = ROI_byZ{state.z};
-    if isempty(ROI)
-        return;
-    end
+    if isempty(ROI), return; end
 
     for k = 1:numel(ROI)
         r = ROI(k);
@@ -681,7 +667,7 @@ function redrawROIsForCurrentSlice()
             'EdgeColor',r.color,'LineWidth',2); %#ok<AGROW>
 
         tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
-        if numel(tc)==nT
+        if numel(tc) == nT
             roiPlotPSC(end+1) = plot(axTC, tmin, tc, ':', 'Color', r.color, 'LineWidth', 2.2); %#ok<AGROW>
         end
     end
@@ -689,35 +675,34 @@ end
 
 function deleteIfValid(h)
     if isempty(h), return; end
-    for i=1:numel(h)
+    for i = 1:numel(h)
         if isgraphics(h(i)), delete(h(i)); end
     end
 end
 
 %% ---------------- MASK ----------------
-function loadMaskCB(~,~)
+function loadMaskCB(varargin) %#ok<INUSD>
     [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz','Mask files (*.mat,*.nii,*.nii.gz)'});
     if isequal(f,0), return; end
     try
-        passedMask = readMask(fullfile(p,f));    % store full mask so slice changes work
+        passedMask = readMask(fullfile(p,f));
         mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
-
+        if ~passedMaskIsInclude, mask2D = ~mask2D; end
         updateView();
     catch ME
         warning('Mask load failed: %s', ME.message);
     end
 end
 
-function clearMaskCB(~,~)
+function clearMaskCB(varargin) %#ok<INUSD>
     passedMask = [];
     mask2D = true(nY,nX);
+    if ~passedMaskIsInclude, mask2D = ~mask2D; end
     updateView();
 end
 
-%% ---------------- VIDEO GUI (UNCHANGED CALL SIGNATURE) ----------------
-
-function openVideo(~,~)
-
+%% ---------------- VIDEO GUI ----------------
+function openVideo(varargin) %#ok<INUSD>
     initialFPS = 10;
     maxFPS     = 240;
 
@@ -726,72 +711,243 @@ function openVideo(~,~)
     else
         Iraw = PSC;
     end
-
     if exist('I_interp','var') && ~isempty(I_interp)
         Iinterp = I_interp;
     else
         Iinterp = Iraw;
     end
 
-    % -------------------------------------------------
-    % SAFELY BUILD MASK MATCHING PSC SIZE
-    % -------------------------------------------------
-    nY = size(PSC,1);
-    nX = size(PSC,2);
-
-    if isempty(passedMask)
-        loadedMask = [];
-    else
+    loadedMask = [];
+    if ~isempty(passedMask)
         M = logical(passedMask);
-
-        % Collapse to 2D if needed
         while ndims(M) > 2
             M = any(M, ndims(M));
         end
-
-        % Create empty mask with correct size
         fixedMask = false(nY, nX);
-
-        % Determine overlap region
         yMax = min(nY, size(M,1));
         xMax = min(nX, size(M,2));
-
         fixedMask(1:yMax, 1:xMax) = M(1:yMax, 1:xMax);
-
         loadedMask = fixedMask;
     end
-
-    loadedMaskIsInclude = true;
 
     play_fusi_video_final( ...
         Iraw, Iinterp, PSC, bg, ...
         par, initialFPS, maxFPS, ...
         TR, (nT-1)*TR, baseline, ...
-        loadedMask, loadedMaskIsInclude, ...
+        loadedMask, passedMaskIsInclude, ...
         nT, false, struct(), ...
         fileLabel, state.z );
+end
+
+function showHelp(varargin)
+% Dark themed, modern HELP window (MATLAB 2017b + 2023b)
+% - Dark background, white text
+% - Big bold title, section headers
+% - Scrollable content (slider + mouse wheel)
+% - Modal (blocks interaction until closed)
+
+% ---------------- Window ----------------
+W = 920; H = 740;
+scr = get(0,'ScreenSize');  % [left bottom width height]
+x0 = max(20, round((scr(3)-W)/2));
+y0 = max(20, round((scr(4)-H)/2));
+
+bgFig   = [0.06 0.06 0.07];
+bgPanel = [0.10 0.10 0.12];
+bgText  = [0.12 0.12 0.14];
+colTxt  = [0.94 0.94 0.96];
+colSub  = [0.76 0.86 1.00];
+
+hf = figure( ...
+    'Name','SCM Help', ...
+    'Color',bgFig, ...
+    'MenuBar','none', ...
+    'ToolBar','none', ...
+    'NumberTitle','off', ...
+    'Resize','on', ...
+    'Position',[x0 y0 W H], ...
+    'WindowStyle','modal');
+
+% ---------------- Title ----------------
+titleAx = uicontrol('Style','text','Parent',hf, ...
+    'Units','pixels', ...
+    'Position',[20 H-62 W-40 44], ...
+    'String','SCM Viewer — Help', ...
+    'ForegroundColor',colTxt, ...
+    'BackgroundColor',bgFig, ...
+    'FontName','Arial', ...
+    'FontSize',22, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','left');
+
+subAx = uicontrol('Style','text','Parent',hf, ...
+    'Units','pixels', ...
+    'Position',[22 H-86 W-44 20], ...
+    'String','Dark UI • 2D + Matrix probe (Z-slices) • ROI hover/click • Mask-aware overlay', ...
+    'ForegroundColor',[0.75 0.75 0.78], ...
+    'BackgroundColor',bgFig, ...
+    'FontName','Arial', ...
+    'FontSize',11, ...
+    'FontWeight','normal', ...
+    'HorizontalAlignment','left');
+
+% ---------------- Main panel ----------------
+p = uipanel('Parent',hf, ...
+    'Units','pixels', ...
+    'Position',[20 80 W-40 H-120], ...
+    'BackgroundColor',bgPanel, ...
+    'BorderType','line', ...
+    'HighlightColor',[0.18 0.18 0.20]);
+
+% Text content (use a listbox for reliable colors + scrolling in 2017b)
+lines = {
+' '
+'SCM MAP (what you are seeing)'
+'  • SCM is computed as: mean(SIGNAL window) - mean(BASELINE window).'
+'  • The overlay is masked by:  (|SCM| > Threshold) AND (Mask, if loaded).'
+' '
+'NAVIGATION (Matrix probe / Z-slices)'
+'  • Slice slider (left of image): change slice.'
+'  • Mouse wheel over image: change slice.'
+'  • ROIs are stored per slice — switching slices keeps your ROIs.'
+' '
+'ROI TOOL (Hover + Click)'
+'  • Enable ROI must be ON.'
+'  • Hover: live ROI box + live PSC curve (orange dotted).'
+'  • Left-click: add a persistent ROI (rectangle + dotted PSC curve).'
+'  • Right-click: remove the nearest ROI.'
+'  • Tip: if you use “freeze hover” mode, right-click can also unfreeze.'
+' '
+'DISPLAY CONTROLS'
+'  • Overlay alpha (%): transparency of SCM overlay.'
+'  • Threshold (abs %): show only pixels with |SCM| ? threshold.'
+'  • Color scale range: sets the colorbar/caxis limits for the overlay.'
+'  • SCM smoothing sigma: Gaussian smoothing of SCM map (0 = off).'
+'  • Colormap: changes the overlay palette.'
+' '
+'TIMECOURSE'
+'  • X-axis is time in minutes.'
+'  • Hover PSC (orange) + persistent ROIs (colored) are plotted as dotted lines.'
+'  • Baseline and Signal windows are shaded on the timecourse.'
+' '
+'MASK'
+'  • Load mask: supports .mat, .nii, .nii.gz.'
+'  • Clear mask: removes masking (overlay visible everywhere again).'
+' '
+'SHORTCUTS / MOUSE'
+'  • Mouse wheel over image: change slice (if Z > 1).'
+'  • Left-click: add ROI.'
+'  • Right-click: remove nearest ROI (or unfreeze if you implement it that way).'
+' '
+'NOTES'
+'  • If the overlay looks empty: lower Threshold, increase alpha, or widen caxis.'
+'  • If you load a mask and see nothing: verify mask matches data orientation/size.'
+' '
+};
+
+% Make section headers stand out by inserting a marker. We’ll color the whole list,
+% and add a small legend box to indicate headers.
+lb = uicontrol('Style','listbox','Parent',p, ...
+    'Units','pixels', ...
+    'Position',[14 14 (W-40)-60 (H-120)-28], ...
+    'String',lines, ...
+    'Value',1, ...
+    'BackgroundColor',bgText, ...
+    'ForegroundColor',colTxt, ...
+    'FontName','Consolas', ...
+    'FontSize',12, ...
+    'Max',2,'Min',0);
+
+% Slider (mirrors listbox scroll)
+sl = uicontrol('Style','slider','Parent',p, ...
+    'Units','pixels', ...
+    'Position',[(W-40)-38 14 18 (H-120)-28], ...
+    'Min',1,'Max',max(2,numel(lines)), ...
+    'Value',1, ...
+    'SliderStep',[1/max(1,numel(lines)-1) 10/max(1,numel(lines)-1)], ...
+    'Callback',@onScroll);
+
+% Legend hint (subtle)
+uicontrol('Style','text','Parent',hf, ...
+    'Units','pixels', ...
+    'Position',[24 52 W-200 18], ...
+    'String','Scroll with mouse wheel or slider • Close to return to SCM', ...
+    'ForegroundColor',[0.72 0.72 0.74], ...
+    'BackgroundColor',bgFig, ...
+    'FontName','Arial', ...
+    'FontSize',11, ...
+    'HorizontalAlignment','left');
+
+% Close button
+btn = uicontrol('Style','pushbutton','Parent',hf, ...
+    'Units','pixels', ...
+    'Position',[W-160 30 130 38], ...
+    'String','Close', ...
+    'FontName','Arial', ...
+    'FontSize',12, ...
+    'FontWeight','bold', ...
+    'ForegroundColor','w', ...
+    'BackgroundColor',[0.75 0.15 0.15], ...
+    'Callback',@(~,~) close(hf));
+
+% Mouse wheel scroll
+set(hf,'WindowScrollWheelFcn',@onWheel);
+
+% Keep layout responsive
+set(hf,'SizeChangedFcn',@onResize);
+onResize();
+
+% ---------------- Nested callbacks ----------------
+    function onResize(~,~)
+        pos = get(hf,'Position');
+        Wc = pos(3); Hc = pos(4);
+
+        set(titleAx,'Position',[20 Hc-62 Wc-40 44]);
+        set(subAx,  'Position',[22 Hc-86 Wc-44 20]);
+
+        set(p,'Position',[20 80 Wc-40 Hc-120]);
+
+        set(lb,'Position',[14 14 (Wc-40)-60 (Hc-120)-28]);
+        set(sl,'Position',[(Wc-40)-38 14 18 (Hc-120)-28]);
+
+        set(btn,'Position',[Wc-160 30 130 38]);
+    end
+
+    function onScroll(~,~)
+        v = round(get(sl,'Value'));
+        v = max(1, min(numel(lines), v));
+        set(sl,'Value',v);
+
+        % listbox shows a window of items; set Value to bring v into view
+        set(lb,'Value',v);
+    end
+
+    function onWheel(~,evt)
+        % Scroll: positive -> down; negative -> up (match typical feel)
+        v = round(get(sl,'Value'));
+        v = v + evt.VerticalScrollCount;
+        v = max(1, min(numel(lines), v));
+        set(sl,'Value',v);
+        set(lb,'Value',v);
+    end
 
 end
 
-
-
-
-function showHelp(~,~)
-    msg = {
-        'SCM Viewer'
-        ''
-        'Matrix probe: use the slice slider (left of image) to change slices.'
-        ''
-        'ROI: enable checkbox toggles hover + click.'
-        'Hover: live PSC shown (orange dotted).'
-        'Left-click: add ROI (persistent PSC curve) + freezes hover for screenshots.'
-        'Unfreeze Hover: resumes live hover updates.'
-        'Right-click: remove nearest ROI.'
-        ''
-        'Time axis: minutes.'
-        'Baseline and Signal windows are shaded.'
-    };
-    helpdlg(msg,'SCM Help');
+%% ---------------- POINTER HIT TEST ----------------
+function tf = isPointerOverImageAxis()
+    tf = false;
+    try
+        h = hittest(fig);
+        if isempty(h), return; end
+        axHit = ancestor(h, 'axes');
+        tf = ~isempty(axHit) && axHit == ax;
+    catch
+        try
+            tf = isequal(gca, ax);
+        catch
+            tf = false;
+        end
+    end
 end
 
 %% ---------------- HELPERS ----------------
@@ -804,18 +960,11 @@ function PSCz = getPSCForSlice(z)
 end
 
 function bg2 = getBg2DForSlice(z)
-    % Accept bg:
-    %   [Y X]
-    %   [Y X Z]
-    %   [Y X Z T]
-    %   [Y X T]  (rare) -> mean over T
-    if ndims(bg)==2
-        bg2 = bg;
-        return;
+    if ndims(bg) == 2
+        bg2 = bg; return;
     end
-    if ndims(bg)==3
-        % could be [Y X Z] or [Y X T]
-        if size(bg,3) == nT && nZ==1
+    if ndims(bg) == 3
+        if size(bg,3) == nT && nZ == 1
             bg2 = mean(bg,3);
         else
             z = max(1, min(size(bg,3), z));
@@ -823,9 +972,8 @@ function bg2 = getBg2DForSlice(z)
         end
         return;
     end
-    if ndims(bg)==4
-        % [Y X Z T] -> mean over T, then slice
-        tmp = mean(bg,4);  % [Y X Z]
+    if ndims(bg) == 4
+        tmp = mean(bg,4);
         z = max(1, min(size(tmp,3), z));
         bg2 = tmp(:,:,z);
         return;
@@ -834,11 +982,13 @@ function bg2 = getBg2DForSlice(z)
 end
 
 function [a,b] = parseRangeSafe(s, da, db)
-    if nargin<2, da = 0; end
-    if nargin<3, db = da; end
-    s = strrep(s,'–','-');
+    % ---- RESTORED ORIGINAL STRICT PARSING ----
+    % This matches your original behavior and avoids unintended shifts.
+    if nargin < 2, da = 0; end
+    if nargin < 3, db = da; end
+    s = strrep(char(s),'–','-');
     v = sscanf(s,'%f-%f');
-    if numel(v)~=2 || any(~isfinite(v))
+    if numel(v) ~= 2 || any(~isfinite(v))
         a = da; b = db;
     else
         a = v(1); b = v(2);
@@ -846,8 +996,9 @@ function [a,b] = parseRangeSafe(s, da, db)
 end
 
 function v = parse2(s, dflt)
-    v = sscanf(s,'%f');
-    if numel(v)<2
+    % ---- RESTORED ORIGINAL ----
+    v = sscanf(char(s),'%f');
+    if numel(v) < 2
         v = dflt(:)';
     else
         v = v(1:2);
@@ -858,16 +1009,7 @@ function out = clamp(x, lo, hi)
     out = min(max(x,lo),hi);
 end
 
-function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ)
-    % M0 can be:
-    % 2D: [Y X]
-    % 3D: [Y X Z]  OR  [Y X nVols]  (from Video GUI)
-    % 4D: [Y X Z T] or [Y X T something]
-    %
-    % Rule:
-    % - If nZ>1 and dim3 == nZ -> treat as Z-slices
-    % - Otherwise treat dim3 as time/volumes and collapse with ANY()
-
+function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ_)
     if isempty(M0)
         M2 = true(ny,nx);
         return;
@@ -879,21 +1021,20 @@ function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ)
         M2 = M0;
 
     elseif ndims(M0) == 3
-        if nZ > 1 && size(M0,3) == nZ
+        if nZ_ > 1 && size(M0,3) == nZ_
             z = max(1, min(size(M0,3), z));
-            M2 = M0(:,:,z);             % true slice mask
+            M2 = M0(:,:,z);
         else
-            M2 = any(M0,3);             % collapse volumes/time -> 2D
+            M2 = any(M0,3);
         end
 
     else
-        % 4D or higher: collapse last dim(s) first
         tmp = M0;
         while ndims(tmp) > 3
             tmp = any(tmp, ndims(tmp));
         end
 
-        if ndims(tmp)==3 && nZ > 1 && size(tmp,3) == nZ
+        if ndims(tmp) == 3 && nZ_ > 1 && size(tmp,3) == nZ_
             z = max(1, min(size(tmp,3), z));
             M2 = tmp(:,:,z);
         else
@@ -904,19 +1045,36 @@ function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ)
         end
     end
 
-    % crop/pad to [ny nx]
     M2 = M2(1:min(ny,size(M2,1)), 1:min(nx,size(M2,2)));
     if size(M2,1) < ny, M2(end+1:ny,:) = true; end
     if size(M2,2) < nx, M2(:,end+1:nx) = true; end
 end
 
-
 function M = readMask(f)
-    [~,~,e] = fileparts(f);
-    if strcmpi(e,'.gz')
-        M = niftiread(f);
+    if ~exist(f,'file')
+        error('Mask file not found: %s', f);
+    end
+
+    isNiiGz = false;
+    if numel(f) >= 7
+        isNiiGz = strcmpi(f(end-6:end), '.nii.gz');
+    end
+
+    if isNiiGz
+        tmpDir = tempname;
+        mkdir(tmpDir);
+        gunzip(f, tmpDir);
+        d = dir(fullfile(tmpDir,'*.nii'));
+        if isempty(d)
+            error('Failed to gunzip .nii.gz mask.');
+        end
+        niiFile = fullfile(tmpDir, d(1).name);
+        M = niftiread(niiFile);
+        try, rmdir(tmpDir,'s'); catch, end
         return;
     end
+
+    [~,~,e] = fileparts(f);
     if strcmpi(e,'.mat')
         S = load(f);
         fn = fieldnames(S);
@@ -937,6 +1095,25 @@ function mkBtn(lbl,x,y,w,h,cb,bgcol,fs)
         'Position',[x y w h],'Callback',cb, ...
         'BackgroundColor',bgcol,'ForegroundColor','w', ...
         'FontSize',fs,'FontWeight','bold');
+end
+
+function out = smooth2D_gauss(in, sigma)
+    % Prefer imgaussfilt when available (matches your old code).
+    try
+        out = imgaussfilt(in, sigma);
+        return;
+    catch
+        % deterministic fallback (conv2)
+    end
+    if sigma <= 0
+        out = in;
+        return;
+    end
+    r = max(1, ceil(3*sigma));
+    x = -r:r;
+    g = exp(-(x.^2)/(2*sigma^2));
+    g = g / sum(g);
+    out = conv2(conv2(in, g, 'same'), g', 'same');
 end
 
 end
