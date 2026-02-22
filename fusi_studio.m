@@ -429,10 +429,13 @@ end
 
 preFiles = dir(fullfile(datasetFolder,'Preprocessing','*.mat'));
 for k = 1:numel(preFiles)
-    name = erase(preFiles(k).name,'.mat');
-    studio.datasets.(name) = struct( ...
-        'lazyFile', fullfile(preFiles(k).folder, preFiles(k).name), ...
-        'isLazy', true);
+    fullName = erase(preFiles(k).name,'.mat');
+safeKey  = makeSafeKey(fullName, studio.datasets);
+
+studio.datasets.(safeKey) = struct( ...
+    'lazyFile', fullfile(preFiles(k).folder, preFiles(k).name), ...
+    'isLazy', true, ...
+    'displayNameFull', fullName);
 end
 
 
@@ -1042,74 +1045,109 @@ function despikeCallback(~,~)
 end
 
 
+
 %% =========================================================
 %  PCA
 % =========================================================
-
+%% =========================================================
+%  PCA
+% =========================================================
 function pcaCallback(~,~)
 
-studio = guidata(gcbf);
+    studio = guidata(gcbf);
 
-if ~studio.isLoaded
-    errordlg('Load data first.');
-    return;
-end
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
 
-data = getActiveData();
+    data = getActiveData();
 
-addLog('Running PCA denoising...');
-setProgramStatus(false);
-drawnow;
-
-try
+    addLog('Running PCA denoising... (select PCs to remove)');
+    setProgramStatus(false);
+    drawnow;
 
     ts = datestr(now,'yyyymmdd_HHMMSS');
 
- [newData, stats] = pca_denoise(data,...
-                               studio.exportPath,...
-                               ['pca_' ts]);
+    opts = struct();
+    opts.nCompMax = 50;
+    opts.maxDisplayPoints = 2000;
+    opts.chunkT = 250;
+    opts.centerMode = 'voxel';
 
-versionName = [studio.activeDataset '_pca_' ts];
+    % These will be called INSIDE pca_denoise right after selector closes
+    opts.onApply  = @(sel) pca_onApply(sel);
+    opts.onCancel = @() pca_onCancel();
 
-studio.datasets.(versionName) = newData;
-studio.pipeline.preprocDone = true;
+    try
+        [newData, stats] = pca_denoise(data, studio.exportPath, ['pca_' ts], opts);
 
-save(fullfile(studio.exportPath,'Preprocessing',...
-     [versionName '.mat']),...
-     'newData','-v7.3');
+        % cancelled -> already set READY in onCancel, but keep safe
+        if ~isfield(stats,'applied') || ~stats.applied
+            setProgramStatus(true);
+            return;
+        end
 
-guidata(gcbf,studio);
-refreshDatasetDropdown();
+        versionName = [studio.activeDataset '_pca_' ts];
+        newData.preprocessing = 'PCA denoising';
 
-addLog(sprintf('PCA removed %.2f%% variance.',...
-       stats.percentExplainedRemoved));
-addLog(['PCA QC saved: ' stats.qcFile]);
-addLog(['PCA complete ? ' versionName]);
+        studio.datasets.(versionName) = newData;
+        studio.pipeline.preprocDone = true;
 
-    newData.preprocessing = 'PCA denoising';
+        save(fullfile(studio.exportPath,'Preprocessing',[versionName '.mat']), ...
+            'newData','-v7.3');
 
-    versionName = [studio.activeDataset '_pca_' ts];
-    studio.datasets.(versionName)=newData;
+        guidata(gcbf,studio);
+        refreshDatasetDropdown();
 
-    save(fullfile(studio.exportPath,'Preprocessing',...
-         [versionName '.mat']),'newData','-v7.3');
+        addLog(sprintf('PCA removed %.2f%% variance proxy.', stats.percentExplainedRemoved));
 
-    guidata(gcbf,studio);
-    refreshDatasetDropdown();
+        if isfield(stats,'selectedComponents') && ~isempty(stats.selectedComponents)
+            addLog(['Dropped PCs: ' sprintf('%d ', stats.selectedComponents)]);
+        end
 
-    addLog(sprintf('PCA removed %.2f%% variance.',...
-           stats.percentExplainedRemoved));
-    addLog(['PCA QC saved: ' stats.qcFile]);
-    addLog(['PCA complete ? ' versionName]);
+        if isfield(stats,'qcFile') && ~isempty(stats.qcFile)
+            addLog(['PCA QC saved: ' stats.qcFile]);
+        end
+        if isfield(stats,'qcGlobalMeanFile') && ~isempty(stats.qcGlobalMeanFile)
+            addLog(['PCA QC saved: ' stats.qcGlobalMeanFile]);
+        end
+        if isfield(stats,'qcMeanImageFile') && ~isempty(stats.qcMeanImageFile)
+            addLog(['PCA QC saved: ' stats.qcMeanImageFile]);
+        end
+        if isfield(stats,'qcGridFiles') && ~isempty(stats.qcGridFiles)
+            for i = 1:numel(stats.qcGridFiles)
+                addLog(['PCA QC grid saved: ' stats.qcGridFiles{i}]);
+            end
+        end
 
-catch ME
-    addLog(['PCA ERROR: ' ME.message]);
-    errordlg(ME.message,'PCA Failure');
+        addLog(['PCA complete ? ' versionName]);
+
+    catch ME
+        addLog(['PCA ERROR: ' ME.message]);
+        errordlg(ME.message,'PCA Failure');
+    end
+
+    setProgramStatus(true);
+
+    % ---------------- nested hook helpers ----------------
+    function pca_onApply(sel)
+        if isempty(sel)
+            addLog('PCA applied: no components selected. Please wait...');
+        else
+            sel = unique(sel(:)');
+            addLog(['PCA applied, dropping PCs: ' sprintf('%d ', sel) '— please wait...']);
+        end
+        drawnow;
+    end
+
+    function pca_onCancel()
+        addLog('PCA cancelled.');
+        setProgramStatus(true);
+        drawnow;
+    end
+
 end
-
-setProgramStatus(true);
-end
-
 %% =========================================================
 %  PSC COMPUTATION  (deprecated but kept)
 % =========================================================
@@ -1309,80 +1347,85 @@ end
 % =========================================================
 
 %% ---------------------------------------------------------
-%  DATASET DROPDOWN CALLBACK
+%  DATASET DROPDOWN CALLBACK (short labels, internal safe keys)
 %% ---------------------------------------------------------
 function datasetDropdownCallback(src,~)
 
-    % Always use MAIN figure handle
     studio = guidata(fig);
 
-    items = get(src,'String');
-    idx   = get(src,'Value');
-
-    if isempty(items) || strcmp(items{idx},'<none>')
+    keys = get(src,'UserData');   % cell array of INTERNAL keys
+    if isempty(keys) || ~iscell(keys)
         return;
     end
 
-    % Update active dataset
-    studio.activeDataset = items{idx};
+    idx = get(src,'Value');
+    idx = max(1, min(numel(keys), idx));
 
-    % Save properly to MAIN figure
+    studio.activeDataset = keys{idx};
     guidata(fig, studio);
 
-    % Optional: update active dataset display label
-   if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
+    % Update active dataset display label (show full name if stored)
+    if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
+      showName = makeDropdownLabel(getDatasetDisplayName(studio, studio.activeDataset));
 
-    maxLen = 60;   % adjust if needed
-    name = studio.activeDataset;
+        % optional truncation just for the top label
+        maxLen = 90;
+        if length(showName) > maxLen
+            showName = [showName(1:maxLen) '...'];
+        end
 
-    if length(name) > maxLen
-        name = [name(1:maxLen) '...'];
+        set(studio.activeDatasetText,'String',['ACTIVE DATASET: ' showName]);
     end
-
-    set(studio.activeDatasetText, ...
-        'String',['ACTIVE DATASET: ' name]);
-   end
 end
 
+
 %% ---------------------------------------------------------
-%  REFRESH DATASET DROPDOWN (ADD THIS BACK)
+%  REFRESH DATASET DROPDOWN (shows short labels; stores keys in UserData)
 %% ---------------------------------------------------------
 function refreshDatasetDropdown()
 
     studio = guidata(fig);
     dd = findobj(fig,'Tag','datasetDropdown');
 
-    if isempty(dd)
+    if isempty(dd) || ~ishghandle(dd)
         return;
     end
 
-    names = fieldnames(studio.datasets);
-
-    if isempty(names)
-        set(dd,'String',{'<none>'},'Value',1);
+    keys = fieldnames(studio.datasets);
+    if isempty(keys)
+        set(dd,'String',{'<none>'},'Value',1,'UserData',{{}});
         return;
     end
 
-    set(dd,'String',names);
+    % Build display labels (shortened, timestamps removed)
+    labels = cell(size(keys));
+    for i = 1:numel(keys)
+        k = keys{i};
+        labels{i} = makeDropdownLabel(getDatasetDisplayName(studio, k));
+    end
+
+    set(dd,'String',labels,'UserData',keys);
 
     % Keep current active dataset if still valid
-    idx = find(strcmp(names, studio.activeDataset),1);
-
+    idx = find(strcmp(keys, studio.activeDataset), 1);
     if isempty(idx)
         idx = 1;
-        studio.activeDataset = names{1};
+        studio.activeDataset = keys{1};
     end
 
     set(dd,'Value',idx);
 
     % Update active dataset label
     if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
-        set(studio.activeDatasetText, ...
-            'String',['ACTIVE DATASET: ' studio.activeDataset]);
+        showName = getDatasetDisplayName(studio, studio.activeDataset);
+        maxLen = 90;
+        if length(showName) > maxLen
+            showName = [showName(1:maxLen) '...'];
+        end
+        set(studio.activeDatasetText,'String',['ACTIVE DATASET: ' showName]);
     end
 
     guidata(fig, studio);
-
 end
 
 %% ---------------------------------------------------------
@@ -2064,6 +2107,108 @@ function videoGUICallback(~,~)
         addLog(['Video GUI ERROR: ' ME.message]);
         errordlg(ME.message,'Video GUI Failed');
         setProgramStatus(true);
+    end
+end
+
+%% ---------------------------------------------------------
+%  HELPERS for dataset naming (safe keys + nice labels)
+%% ---------------------------------------------------------
+function label = makeDropdownLabel(fullName)
+    % Show short name, but keep ONLY the LAST timestamp (yyyymmdd_HHMMSS)
+    % Example:
+    %   raw_gabriel_20260222_212942_despike_20260222_223512_scrub_20260222_225432
+    % -> raw_gabriel_despike_scrub (20260222_225432)
+
+    % Find all timestamps
+    ts = regexp(fullName, '_\d{8}_\d{6}', 'match');
+
+    if isempty(ts)
+        % No timestamps -> just clean underscores
+        label = regexprep(fullName,'_+','_');
+        label = regexprep(label,'^_','');
+        label = regexprep(label,'_$','');
+        return;
+    end
+
+    lastTS = ts{end};          % includes leading "_"
+    lastTS = lastTS(2:end);    % remove leading "_"
+
+    % Remove ALL timestamps from the base text
+    base = regexprep(fullName, '_\d{8}_\d{6}', '');
+
+    % Clean up underscores
+    base = regexprep(base,'_+','_');
+    base = regexprep(base,'^_','');
+    base = regexprep(base,'_$','');
+
+    % Append last timestamp in parentheses
+    label = sprintf('%s (%s)', base, lastTS);
+end
+
+function name = getDatasetDisplayName(studio, key)
+    % Prefer stored displayNameFull, else fall back to key
+    name = key;
+    try
+        d = studio.datasets.(key);
+        if isstruct(d) && isfield(d,'displayNameFull') && ~isempty(d.displayNameFull)
+            name = d.displayNameFull;
+        end
+    catch
+    end
+end
+
+function key = makeSafeKey(fullName, datasetsStruct)
+    % Make a valid struct field name <= namelengthmax and unique
+    s = regexprep(fullName, '[^A-Za-z0-9_]', '_');
+
+    if exist('matlab.lang.makeValidName','file')
+        s = matlab.lang.makeValidName(s);
+    else
+        s = genvarname(s); %#ok<DEPGENAM>
+    end
+
+    maxLen = namelengthmax;  % usually 63
+    h = shortHash(fullName); % 8 hex chars
+
+    if length(s) > maxLen
+        keep = maxLen - (1 + length(h)); % "_" + hash
+        keep = max(1, keep);
+        s = [s(1:keep) '_' h];
+    end
+
+    key = s;
+
+    % Ensure uniqueness (avoid collisions)
+    if isfield(datasetsStruct, key)
+        n = 2;
+        base = key;
+        while true
+            suf = sprintf('_v%d', n);
+            cand = base;
+            if length(cand) + length(suf) > maxLen
+                cand = cand(1:maxLen - length(suf));
+            end
+            cand = [cand suf];
+            if ~isfield(datasetsStruct, cand)
+                key = cand;
+                break;
+            end
+            n = n + 1;
+        end
+    end
+end
+
+function h = shortHash(s)
+    % MD5 -> first 8 hex chars (Java available in MATLAB 2017b)
+    try
+        md = java.security.MessageDigest.getInstance('MD5');
+        md.update(uint8(s(:)'));
+        d = typecast(md.digest,'uint8');
+        hx = lower(reshape(dec2hex(d,2).',1,[]));
+        h = hx(1:8);
+    catch
+        % fallback checksum
+        h = sprintf('%08x', mod(sum(uint32(s)), 2^32));
     end
 end
 end
