@@ -1,14 +1,12 @@
 function out = gabriel_preprocess(Iin, TRin, opts)
 % gabriel_preprocess
 % ============================================================
-% Clean Gabriel-style preprocessing (MATLAB 2017b compatible)
-%
 % Supports:
 %   - 3D input: Iin [Y X T]
 %   - 4D input: Iin [Y X Z T]
 %
 % Steps:
-%   1) Mean temporal block-averaging (no offset, no frame loss)
+%   1) Median temporal block-averaging (no offset, no frame loss)
 %   2) Non-rigid drift correction (demons)
 %   3) QC figures: DISPLAY (optional) + PNG export (optional)
 %
@@ -66,23 +64,23 @@ if nr < 1
     error('Not enough frames (%d) for nsub = %d', nt, nsub);
 end
 
-fprintf('[Gabriel] Mean block averaging (nsub = %d)\n', nsub);
+fprintf('[Gabriel] Median block averaging (nsub = %d)\n', nsub);
 fprintf('[Gabriel] Using %d / %d frames\n', nr*nsub, nt);
 
-%% ------------------ STEP 1: SUBSAMPLING ------------------
+%% ------------------ STEP 1: SUBSAMPLING (MEDIAN) ------------------
 if nd == 3
     % 2D probe
     Ir = zeros(ny, nx, nr, 'like', Iin);
     for i = 1:nr
         idx = (i-1)*nsub + (1:nsub);
-        Ir(:,:,i) = mean(Iin(:,:,idx), 3);
+        Ir(:,:,i) = median(Iin(:,:,idx), 3);
     end
 else
     % Matrix probe
     Ir = zeros(ny, nx, nz, nr, 'like', Iin);
     for i = 1:nr
         idx = (i-1)*nsub + (1:nsub);
-        Ir(:,:,:,i) = mean(Iin(:,:,:,idx), 4);
+        Ir(:,:,:,i) = median(Iin(:,:,:,idx), 4);
     end
 end
 
@@ -95,7 +93,7 @@ assert(nRef <= nr, 'gabriel_preprocess: nRef exceeds number of blocks');
 Ic = Ir;
 
 if nd == 3
-    Iref = mean(Ir(:,:,1:nRef), 3);
+    Iref = median(Ir(:,:,1:nRef), 3);
     for i = 1:nr
         [~, tmp] = imregdemons( ...
             Ir(:,:,i), Iref, ...
@@ -104,7 +102,7 @@ if nd == 3
         Ic(:,:,i) = tmp;
     end
 else
-    Iref = mean(Ir(:,:,:,1:nRef), 4);
+    Iref = median(Ir(:,:,:,1:nRef), 4);
     for i = 1:nr
         [~, tmp] = imregdemons( ...
             Ir(:,:,:,i), Iref, ...
@@ -123,16 +121,16 @@ if opts.saveQC || opts.showQC
         mkdir(opts.qcDir);
     end
 
-    % ---- Global mean QC (dimension-safe) ----
-    g_raw = globalMeanOverTime(Iin);
-    g_sub = globalMeanOverTime(Ir);
-    g_reg = globalMeanOverTime(Ic);
+    % ---- Global median QC (dimension-safe) ----
+    g_raw = globalMedianOverTime(Iin);
+    g_sub = globalMedianOverTime(Ir);
+    g_reg = globalMedianOverTime(Ic);
 
     t_raw = (0:numel(g_raw)-1) * TRin;
     t_sub = linspace(t_raw(1), t_raw(end), numel(g_sub));
 
     QC.figIntensity = figure('Color','w','Position',[100 100 950 380], ...
-        'Name','Gabriel QC — Global mean','NumberTitle','off');
+        'Name','Gabriel QC — Global median','NumberTitle','off');
 
     plot(t_raw, g_raw,'k','LineWidth',0.8); hold on;
     plot(t_sub, g_sub,'b','LineWidth',1.8);
@@ -140,20 +138,20 @@ if opts.saveQC || opts.showQC
     grid on;
     legend({'Raw','Subsampled','Registered'},'Location','best');
     xlabel('Time (s)');
-    ylabel('Mean intensity');
-    title('QC — Global mean signal');
+    ylabel('Median intensity');
+    title('QC — Global median signal');
 
     if opts.saveQC
-        saveas(QC.figIntensity, fullfile(opts.qcDir,'QC_globalMean.png'));
+        saveas(QC.figIntensity, fullfile(opts.qcDir,'QC_globalMedian.png'));
     end
 
     % ---- Registration QC (robust for 2D & 3D) ----
     if nd == 3
-        Ipre  = mean(Ir(:,:,1:nRef), 3);
-        Ipost = mean(Ic(:,:,1:nRef), 3);
+        Ipre  = median(Ir(:,:,1:nRef), 3);
+        Ipost = median(Ic(:,:,1:nRef), 3);
     else
-        Ipre  = mean(Ir(:,:,:,1:nRef), 4);
-        Ipost = mean(Ic(:,:,:,1:nRef), 4);
+        Ipre  = median(Ir(:,:,:,1:nRef), 4);
+        Ipost = median(Ic(:,:,:,1:nRef), 4);
     end
 
     Ipre2D  = reduceTo2D(Ipre);
@@ -186,11 +184,11 @@ end
 %% ------------------ OUTPUT ------------------
 out = struct();
 out.I         = Ic;
-out.TR = TRin * nsub;
+out.TR        = TRin * nsub;
 out.blockDur  = TRin * nsub;
 out.nVols     = nr;
 out.totalTime = nt * TRin;
-out.method    = sprintf('Mean block avg (nsub=%d) + demons', nsub);
+out.method    = sprintf('Median block avg (nsub=%d) + demons', nsub);
 out.QC        = QC;
 
 fprintf('[Gabriel] blockDur  : %.3f s\n', out.blockDur);
@@ -201,17 +199,17 @@ end
 
 %% ===================== HELPERS =====================
 
-function g = globalMeanOverTime(X)
+function g = globalMedianOverTime(X)
     tdim = ndims(X);
     T = size(X, tdim);
     Xp = permute(X, [tdim, 1:tdim-1]);
     Xp = reshape(Xp, T, []);
-    g  = mean(Xp, 2).';
+    g  = median(Xp, 2).';
 end
 
 function I2 = reduceTo2D(V)
     while ndims(V) > 2
-        V = mean(V, ndims(V));
+        V = median(V, ndims(V));
     end
     I2 = V;
 end

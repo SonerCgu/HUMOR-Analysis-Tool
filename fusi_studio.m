@@ -13,8 +13,17 @@ studio.loadedFile = '';
 studio.loadedPath = '';
 studio.exportPath = '';
 studio.atlasTransform = [];
-studio.allButtons = {};   % proper handle container
+studio.atlasTransformFile = '';
+studio.allButtons = {};          % proper handle container
 studio.figure = [];              % store figure handle
+
+% Optional shared mask/underlay refs (set by Mask Editor)
+studio.mask = [];
+studio.maskIsInclude = true;
+studio.brainMask = [];
+studio.brainImageFile = '';
+studio.anatomicalReferenceRaw = [];
+studio.anatomicalReference = [];
 
 % Pipeline state tracking
 studio.pipeline = struct( ...
@@ -27,12 +36,13 @@ studio.pipeline = struct( ...
 %% =========================================================
 %  FIGURE WINDOW
 % =========================================================
-fig = figure('Name','fUSI Studio',...
-    'Color',[0.05 0.05 0.05],...
-    'Position',[300 200 1900 1080],...
-    'MenuBar','none',...
-    'ToolBar','none',...
-    'NumberTitle','off');
+fig = figure('Name','HUMoR Analysis Tool', ...
+    'Color',[0.05 0.05 0.05], ...
+    'Position',[300 200 1900 1080], ...
+    'MenuBar','none', ...
+    'ToolBar','none', ...
+    'NumberTitle','off', ...
+    'CloseRequestFcn',@onCloseStudio);
 
 studio.figure = fig;
 guidata(fig, studio);
@@ -40,39 +50,37 @@ guidata(fig, studio);
 %% =========================================================
 %  TITLE
 % =========================================================
-uicontrol(fig,'Style','text',...
-    'String','fUSI Studio',...
-    'Units','normalized',...
-    'Position',[0.52 0.95 0.35 0.04],...
-    'FontSize',30,...
-    'FontWeight','bold',...
-    'ForegroundColor',[0.95 0.95 0.95],...
-    'BackgroundColor',[0.05 0.05 0.05],...
+uicontrol(fig,'Style','text', ...
+    'String','HUMoR Analysis Tool', ...
+    'Units','normalized', ...
+    'Position',[0.52 0.95 0.35 0.04], ...
+    'FontSize',26, ...
+    'FontWeight','bold', ...
+    'ForegroundColor',[0.95 0.95 0.95], ...
+    'BackgroundColor',[0.05 0.05 0.05], ...
     'HorizontalAlignment','center');
 
 %% =========================================================
 %  LEFT PANEL
 % =========================================================
 leftWidth = 0.45;
-leftPanel = uipanel(fig,...
-    'Units','normalized',...
-    'Position',[0.03 0.10 leftWidth 0.83],...
-    'BackgroundColor',[0.07 0.07 0.07],...
+leftPanel = uipanel(fig, ...
+    'Units','normalized', ...
+    'Position',[0.03 0.10 leftWidth 0.83], ...
+    'BackgroundColor',[0.07 0.07 0.07], ...
     'BorderType','none');
-
 
 %% =========================================================
 %  LOG PANEL
 % =========================================================
-logPanel = uipanel(fig,...
-    'Title','Studio Log',...
-    'Units','normalized',...
-    'Position',[0.50 0.19 0.47 0.70],...
-    'BackgroundColor',[0.07 0.07 0.07],...
-    'ForegroundColor','w',...
-    'FontSize',14,...
+logPanel = uipanel(fig, ...
+    'Title','Studio Log', ...
+    'Units','normalized', ...
+    'Position',[0.50 0.19 0.47 0.70], ...
+    'BackgroundColor',[0.07 0.07 0.07], ...
+    'ForegroundColor','w', ...
+    'FontSize',14, ...
     'FontWeight','bold');
-
 
 activeDatasetText = uicontrol(fig,'Style','text', ...
     'Units','normalized', ...
@@ -84,18 +92,18 @@ activeDatasetText = uicontrol(fig,'Style','text', ...
     'HorizontalAlignment','left', ...
     'String','ACTIVE DATASET: none');
 
+studio = guidata(fig);
 studio.activeDatasetText = activeDatasetText;
 guidata(fig,studio);
 
-logBox = uicontrol(logPanel,'Style','listbox',...
-    'Units','normalized',...
-    'Position',[0.02 0.02 0.96 0.94],...
-    'BackgroundColor',[0 0 0],...
-    'ForegroundColor',[0.6 0.85 1],...
-    'FontName','Courier New',...
+logBox = uicontrol(logPanel,'Style','listbox', ...
+    'Units','normalized', ...
+    'Position',[0.02 0.02 0.96 0.94], ...
+    'BackgroundColor',[0 0 0], ...
+    'ForegroundColor',[0.6 0.85 1], ...
+    'FontName','Courier New', ...
     'FontSize',11);
 
-% attach in figure for later access
 studio = guidata(fig);
 studio.logBox = logBox;
 guidata(fig, studio);
@@ -109,7 +117,7 @@ sectionHeights = [0.11 0.11 0.20 0.11 0.12 0.10 0.12];
 
 titles = { ...
     '1. Dataset', ...
-    '2. Quality Control', ...
+    '2. Quality Control & Data Overview', ...
     '3. Recommended Processing Steps', ...
     '4. Advanced Processing', ...
     '5. Visualization', ...
@@ -120,7 +128,7 @@ buttons = { ...
     {'Load fUSI Data'}, ...
     {'Full QC','Specific QC'}, ...
     {'Frame Rejection','Subsampling','Scrubbing','Motor'}, ...
-    {'Compute PSC','Filtering', 'PCA', 'Despike'}, ...
+    {'Will be Removed (was PSC Computation)','Filtering', 'PCA', 'Despike'}, ...
     {'Time-Course Viewer','SCM','Video & SCM Mask', 'Mask Editor'}, ...
     {'Registration to Atlas'}, ...
     {'Functional connectivity','Group analysis'}};
@@ -136,16 +144,16 @@ for i = 1:length(sectionHeights)
     h = sectionHeights(i);
     y = y - h;
 
-    panel = uipanel(leftPanel,...
-        'Title',titles{i},...
-        'Units','normalized',...
-        'Position',[0.03 y 0.94 h],...
-        'BackgroundColor',[0.10 0.10 0.10],...
-        'ForegroundColor','w',...
-        'FontSize',16,...
-        'FontWeight','bold',...
-        'BorderType','line',...
-        'HighlightColor',[1 1 1],...
+    panel = uipanel(leftPanel, ...
+        'Title',titles{i}, ...
+        'Units','normalized', ...
+        'Position',[0.03 y 0.94 h], ...
+        'BackgroundColor',[0.10 0.10 0.10], ...
+        'ForegroundColor','w', ...
+        'FontSize',16, ...
+        'FontWeight','bold', ...
+        'BorderType','line', ...
+        'HighlightColor',[1 1 1], ...
         'ShadowColor',[1 1 1]);
 
     drawButtons(panel, buttons{i}, i);
@@ -156,19 +164,18 @@ end
 %% =========================================================
 %  STATUS BAR
 % =========================================================
-statusPanel = uipanel(fig,...
-    'Units','normalized',...
-    'Position',[0.03 0.05 leftWidth 0.055],...
-    'BorderType','line', ...     % <--- FIXED
-    'HighlightColor',[0 0 0], ...% <--- FIXED
-    'ShadowColor',[0 0 0]);      % <--- FIXED
+statusPanel = uipanel(fig, ...
+    'Units','normalized', ...
+    'Position',[0.03 0.05 leftWidth 0.055], ...
+    'BorderType','line', ...
+    'HighlightColor',[0 0 0], ...
+    'ShadowColor',[0 0 0]);
 
-
-statusText = uicontrol(statusPanel,'Style','text',...
-    'Units','normalized',...
-    'Position',[0 0 1 1],...
-    'FontWeight','bold',...
-    'FontSize',16,...
+statusText = uicontrol(statusPanel,'Style','text', ...
+    'Units','normalized', ...
+    'Position',[0 0 1 1], ...
+    'FontWeight','bold', ...
+    'FontSize',16, ...
     'HorizontalAlignment','center');
 
 studio = guidata(fig);
@@ -184,43 +191,60 @@ setProgramStatus(false);
 btnY = 0.05;
 btnH = 0.055;
 
-uicontrol(fig,'Style','pushbutton',...
-    'String','HELP',...
-    'Units','normalized',...
-    'Position',[0.50 btnY 0.10 btnH],...
-    'FontWeight','bold',...
-    'FontSize',13,...
-    'BackgroundColor',[0.30 0.50 0.95],...
-    'ForegroundColor','w',...
+uicontrol(fig,'Style','pushbutton', ...
+    'String','HELP', ...
+    'Units','normalized', ...
+    'Position',[0.50 btnY 0.10 btnH], ...
+    'FontWeight','bold', ...
+    'FontSize',13, ...
+    'BackgroundColor',[0.30 0.50 0.95], ...
+    'ForegroundColor','w', ...
     'Callback',@helpCallback);
 
-
-uicontrol(fig,'Style','pushbutton',...
-    'String','EXPORT STUDIO LOG',...
-    'Units','normalized',...
-    'Position',[0.62 btnY 0.14 btnH],...
-    'FontWeight','bold',...
-    'FontSize',13,...
-    'BackgroundColor',[0.15 0.65 0.55],...
-    'ForegroundColor','w',...
+uicontrol(fig,'Style','pushbutton', ...
+    'String','EXPORT STUDIO LOG', ...
+    'Units','normalized', ...
+    'Position',[0.62 btnY 0.14 btnH], ...
+    'FontWeight','bold', ...
+    'FontSize',13, ...
+    'BackgroundColor',[0.15 0.65 0.55], ...
+    'ForegroundColor','w', ...
     'Callback',@exportSessionCallback);
 
-uicontrol(fig,'Style','pushbutton',...
-    'String','CLOSE',...
-    'Units','normalized',...
-    'Position',[0.79 btnY 0.10 btnH],...
-    'FontWeight','bold',...
-    'FontSize',13,...
-    'BackgroundColor',[0.85 0.25 0.25],...
-    'ForegroundColor','w',...
+uicontrol(fig,'Style','pushbutton', ...
+    'String','CLOSE', ...
+    'Units','normalized', ...
+    'Position',[0.79 btnY 0.10 btnH], ...
+    'FontWeight','bold', ...
+    'FontSize',13, ...
+    'BackgroundColor',[0.85 0.25 0.25], ...
+    'ForegroundColor','w', ...
     'Callback',@(s,e) close(fig));
+
+%% =========================================================
+%  FOOTER LABEL (BOTTOM-RIGHT)
+% =========================================================
+studio = guidata(fig);
+
+footerText = uicontrol(fig,'Style','text', ...
+    'Units','normalized', ...
+    'Position',[0.50 0.008 0.47 0.028], ...
+    'BackgroundColor',[0.05 0.05 0.05], ...
+    'ForegroundColor',[0.70 0.70 0.70], ...
+    'FontName','Arial', ...
+    'FontSize',10, ...
+    'FontWeight','normal', ...
+    'HorizontalAlignment','right', ...
+    'String', buildFooterLabel());
+
+studio.footerText = footerText;
+guidata(fig, studio);
 
 %% =========================================================
 %  BUTTON DRAWING FUNCTION WITH DROPDOWN
 % =========================================================
 function drawButtons(parent, btns, sectionIndex)
 
-    % ? Must use FIG always — never gcbf here.
     studio = guidata(fig);
 
     % Normal two-column layout EXCEPT Section 1
@@ -241,16 +265,16 @@ function drawButtons(parent, btns, sectionIndex)
             xpos = 0.08;
             ypos = yStart;
 
-            loadBtn = uicontrol(parent,...
-                'Style','pushbutton',...
-                'String','Load fUSI Data',...
-                'Units','normalized',...
-                'Position',[xpos ypos btnWidth btnHeight],...
-                'FontWeight','bold',...
-                'FontSize',14,...
-                'ForegroundColor','w',...
-                'Enable','on',...
-                'BackgroundColor',[0.35 0.35 0.35],...
+            loadBtn = uicontrol(parent, ...
+                'Style','pushbutton', ...
+                'String','Load fUSI Data', ...
+                'Units','normalized', ...
+                'Position',[xpos ypos btnWidth btnHeight], ...
+                'FontWeight','bold', ...
+                'FontSize',14, ...
+                'ForegroundColor','w', ...
+                'Enable','on', ...
+                'BackgroundColor',[0.35 0.35 0.35], ...
                 'Callback',@loadDataCallback);
 
             studio.allButtons{end+1} = loadBtn;
@@ -258,69 +282,78 @@ function drawButtons(parent, btns, sectionIndex)
             % -------- DROPDOWN --------
             ddX = xpos + btnWidth + 0.06;
 
-            uicontrol(parent,...
-                'Style','popupmenu',...
-                'String',{'<none>'},...
-                'Units','normalized',...
-                'Position',[ddX ypos btnWidth btnHeight],...
-                'BackgroundColor',[0.2 0.2 0.2],...
-                'ForegroundColor','w',...
-                'FontSize',13,...
-                'Callback',@datasetDropdownCallback,...
-                'Tag','datasetDropdown');
+            uicontrol(parent, ...
+                'Style','popupmenu', ...
+                'String',{'<none>'}, ...
+                'Units','normalized', ...
+                'Position',[ddX ypos btnWidth btnHeight], ...
+                'BackgroundColor',[0.2 0.2 0.2], ...
+                'ForegroundColor','w', ...
+                'FontSize',13, ...
+                'Callback',@datasetDropdownCallback, ...
+                'Tag','datasetDropdown', ...
+                'UserData',{{}});
 
             guidata(fig, studio);
             return;
         end
 
-% -------- ALL OTHER BUTTONS --------
-r = floor((k-1)/cols);
-c = mod(k-1, cols);
+        % -------- ALL OTHER BUTTONS --------
+        r = floor((k-1)/cols);
+        c = mod(k-1, cols);
 
-xpos = 0.08 + c*(btnWidth + xGap);
-ypos = yStart - r*yGap;
+        xpos = 0.08 + c*(btnWidth + xGap);
+        ypos = yStart - r*yGap;
 
-% DEFAULT: dummy (so you immediately see if something isn't mapped)
-callback = @dummyNotImplemented;
+        callback = @dummyNotImplemented;
 
-switch lower(strtrim(label))
-    case 'full qc',                 callback = @runFullQCCallback;
-    case 'specific qc',             callback = @runSpecificQCCallback;
-    case 'frame rejection',         callback = @frameRateCallback;
-    case 'subsampling',             callback = @gabrielCallback;
-    case 'scrubbing',               callback = @scrubbingCallback;
-    case 'motor',                   callback = @stepMotorCallback;
-    case 'compute psc',             callback = @computePSCCallback;
-    case 'filtering',               callback = @filteringCallback;
-    case 'pca',                     callback = @pcaCallback;
-    case 'despike',                 callback = @despikeCallback;
-    case 'time-course viewer',      callback = @liveViewerCallback;
-    case 'scm',                     callback = @scmCallback;
-    case 'video & scm mask',        callback = @videoGUICallback;
-    case 'mask editor',             callback = @maskEditorCallback;
-    case 'registration to atlas',   callback = @coregCallback;
-    case 'functional connectivity', callback = @functionalConnectivityCallback;
-    case 'group analysis',          callback = @groupAnalysisCallback;
-end
+        % SAFE label key (case/space stable)
+        labelKey = lower(regexprep(strtrim(label),'\s+',' '));
 
-btn = uicontrol(parent,...
-    'Style','pushbutton',...
-    'String',label,...
-    'Units','normalized',...
-    'Position',[xpos ypos btnWidth btnHeight],...
-    'FontWeight','bold',...
-    'FontSize',14,...
-    'ForegroundColor','w',...
-    'BackgroundColor',[0.18 0.18 0.18],...
-    'Enable','off',...
-    'Callback',callback);
+        switch labelKey
+            case 'full qc',                 callback = @runFullQCCallback;
+            case 'specific qc',             callback = @runSpecificQCCallback;
+            case 'frame rejection',         callback = @frameRateCallback;
+            case 'subsampling',             callback = @gabrielCallback;
+            case 'scrubbing',               callback = @scrubbingCallback;
+            case 'motor',                   callback = @stepMotorCallback;
 
-studio.allButtons{end+1} = btn;
-    guidata(fig, studio);
+            % keep PSC computation (deprecated but accessible)
+            case 'will be removed (was psc computation)', callback = @computePSCCallback;
+
+            case 'filtering',               callback = @filteringCallback;
+            case 'pca',                     callback = @pcaCallback;
+            case 'despike',                 callback = @despikeCallback;
+
+            case 'time-course viewer',      callback = @liveViewerCallback;
+            case 'scm',                     callback = @scmCallback;
+
+            % IMPORTANT FIX: this label must match after lower()
+            case 'video & scm mask',        callback = @videoGUICallback;
+
+            case 'mask editor',             callback = @maskEditorCallback;
+
+            case 'registration to atlas',   callback = @coregCallback;
+            case 'functional connectivity', callback = @functionalConnectivityCallback;
+            case 'group analysis',          callback = @groupAnalysisCallback;
+        end
+
+        btn = uicontrol(parent, ...
+            'Style','pushbutton', ...
+            'String',label, ...
+            'Units','normalized', ...
+            'Position',[xpos ypos btnWidth btnHeight], ...
+            'FontWeight','bold', ...
+            'FontSize',14, ...
+            'ForegroundColor','w', ...
+            'BackgroundColor',[0.18 0.18 0.18], ...
+            'Enable','off', ...
+            'Callback',callback);
+
+        studio.allButtons{end+1} = btn;
+        guidata(fig, studio);
     end
 end
-
-
 
 %% =========================================================
 %  DUMMY PLACEHOLDER
@@ -338,12 +371,12 @@ end
 % =========================================================
 function loadDataCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
 
     startPath = 'Z:\fUS\Project_PACAP_AVATAR_SC\RawData';
     if ~exist(startPath,'dir'), startPath = pwd; end
 
-    [file,path] = uigetfile({'*.mat;*.nii','fUSI Data'},...
+    [file,path] = uigetfile({'*.mat;*.nii','fUSI Data'}, ...
         'Select fUSI dataset',startPath);
 
     if isequal(file,0)
@@ -354,7 +387,7 @@ function loadDataCallback(~,~)
     addLog('Loading dataset...');
     setProgramStatus(false); drawnow;
 
-    %% RESET INTERNAL STATE
+    % RESET INTERNAL STATE
     studio.datasets = struct();
     studio.activeDataset = '';
     studio.meta = [];
@@ -362,6 +395,8 @@ function loadDataCallback(~,~)
     studio.loadedFile = '';
     studio.loadedPath = '';
     studio.exportPath = '';
+    studio.atlasTransform = [];
+    studio.atlasTransformFile = '';
     studio.pipeline = struct( ...
         'loadDone', false, ...
         'qcDone', false, ...
@@ -369,14 +404,14 @@ function loadDataCallback(~,~)
         'pscDone', false, ...
         'visualDone', false);
 
-    guidata(gcbf,studio);
+    guidata(fig,studio);
 
     fallbackTR = 0.32;
 
     try
         [data, meta] = loadFUSIData(fullfile(path,file), fallbackTR);
 
-        %% AUTO EXPORT FOLDER MIRROR
+        % AUTO EXPORT FOLDER MIRROR
         rawRoot    = 'Z:\fUS\Project_PACAP_AVATAR_SC\RawData';
         exportRoot = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData';
 
@@ -402,12 +437,12 @@ function loadDataCallback(~,~)
         visFolder = fullfile(datasetFolder,'Visualization');
 
         folders = {qcFolder,pngFolder,matFolder,preFolder,pscFolder,visFolder};
-        for k = 1:numel(folders)
-            if ~exist(folders{k},'dir'), mkdir(folders{k}); end
+        for kk = 1:numel(folders)
+            if ~exist(folders{kk},'dir'), mkdir(folders{kk}); end
         end
 
-        %% STORE RAW DATASET
-        studio = guidata(gcbf);
+        % STORE RAW DATASET
+        studio = guidata(fig);
 
         studio.datasets.raw = data;
         studio.activeDataset = 'raw';
@@ -417,45 +452,47 @@ function loadDataCallback(~,~)
         studio.loadedPath = path;
         studio.exportPath = datasetFolder;
         studio.pipeline.loadDone = true;
-        
-%% ---------------------------------------------------------
-%  REGISTER EXISTING PSC + PREPROCESSING FILES (LAZY LOAD)
-% ---------------------------------------------------------
-pscFiles = dir(fullfile(datasetFolder,'PSC','*.mat'));
-for k = 1:numel(pscFiles)
-    name = erase(pscFiles(k).name,'.mat');
-    studio.datasets.(name) = struct( ...
-        'lazyFile', fullfile(pscFiles(k).folder, pscFiles(k).name), ...
-        'isLazy', true);
-end
 
-preFiles = dir(fullfile(datasetFolder,'Preprocessing','*.mat'));
-for k = 1:numel(preFiles)
-    fullName = erase(preFiles(k).name,'.mat');
-safeKey  = makeSafeKey(fullName, studio.datasets);
+        % REGISTER EXISTING PSC + PREPROCESSING FILES (LAZY LOAD)
+        pscFiles = dir(fullfile(datasetFolder,'PSC','*.mat'));
+        for kk = 1:numel(pscFiles)
+            fullName = erase(pscFiles(kk).name,'.mat');
+            safeKey  = makeSafeKey(fullName, studio.datasets);
+            studio.datasets.(safeKey) = struct( ...
+                'lazyFile', fullfile(pscFiles(kk).folder, pscFiles(kk).name), ...
+                'isLazy', true, ...
+                'displayNameFull', fullName);
+        end
 
-studio.datasets.(safeKey) = struct( ...
-    'lazyFile', fullfile(preFiles(k).folder, preFiles(k).name), ...
-    'isLazy', true, ...
-    'displayNameFull', fullName);
-end
+        preFiles = dir(fullfile(datasetFolder,'Preprocessing','*.mat'));
+        for kk = 1:numel(preFiles)
+            fullName = erase(preFiles(kk).name,'.mat');
+            safeKey  = makeSafeKey(fullName, studio.datasets);
 
+            studio.datasets.(safeKey) = struct( ...
+                'lazyFile', fullfile(preFiles(kk).folder, preFiles(kk).name), ...
+                'isLazy', true, ...
+                'displayNameFull', fullName);
+        end
 
-        guidata(gcbf, studio);
+        guidata(fig, studio);
 
-        %% ENABLE ALL BUTTONS
+        % ENABLE ALL BUTTONS
         unlockAllButtons();
 
-        %% REFRESH DROPDOWN
+        % REFRESH DROPDOWN
         refreshDatasetDropdown();
 
-        %% LOG METADATA
+        % LOG METADATA
         dims = size(data.I);
         nz = 1;
-        if isfield(meta.rawMetadata,'imageDim')
-            if numel(meta.rawMetadata.imageDim) == 3
-                nz = meta.rawMetadata.imageDim(3);
+        try
+            if isfield(meta,'rawMetadata') && isfield(meta.rawMetadata,'imageDim')
+                if numel(meta.rawMetadata.imageDim) == 3
+                    nz = meta.rawMetadata.imageDim(3);
+                end
             end
+        catch
         end
         probeType = iff(nz>1,'Matrix (3D) Probe','2D Probe');
 
@@ -466,7 +503,9 @@ end
         addLog(sprintf('Volumes: %d', data.nVols));
         addLog(['Probe: ' probeType]);
         addLog(sprintf('TR: %.3f sec', data.TR));
-        addLog(sprintf('Total time: %.2f sec', data.TotalTimeSec));
+        if isfield(data,'TotalTimeSec')
+            addLog(sprintf('Total time: %.2f sec', data.TotalTimeSec));
+        end
         addLog('---------------------------------------');
 
         setProgramStatus(true);
@@ -478,22 +517,20 @@ end
     end
 end
 
-
 %% =========================================================
 %  FULL QC
 % =========================================================
 function runFullQCCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
     if ~isfield(studio,'isLoaded') || ~studio.isLoaded
-        errordlg('Load data first.'); 
+        errordlg('Load data first.');
         return;
     end
 
     addLog('Running FULL QC...');
     setProgramStatus(false); drawnow;
 
-    % --- QC modules (FULL) ---
     opts = struct();
     opts.frequency   = true;
     opts.spatial     = true;
@@ -503,14 +540,12 @@ function runFullQCCallback(~,~)
     opts.framerate   = true;
     opts.pca         = true;
 
-    % --- NEW modules ---
     opts.burst       = true;
     opts.cnr         = true;
     opts.commonmode  = true;
 
-    % --- NEW: dataset-specific QC folder ---
-    opts.datasetTag = studio.activeDataset;      % raw / raw_gabriel_... etc
-    opts.useTimestampSubfolder = false;          % set true to never overwrite per run
+    opts.datasetTag = studio.activeDataset;
+    opts.useTimestampSubfolder = false;
 
     data = getActiveData();
 
@@ -519,7 +554,7 @@ function runFullQCCallback(~,~)
 
         addLog(['FULL QC completed. Saved under: QC\' opts.datasetTag]);
         studio.pipeline.qcDone = true;
-        guidata(gcbf,studio);
+        guidata(fig,studio);
 
     catch ME
         addLog(['QC ERROR: ' ME.message]);
@@ -529,15 +564,14 @@ function runFullQCCallback(~,~)
     setProgramStatus(true);
 end
 
-
 %% =========================================================
 %  SPECIFIC QC
 % =========================================================
 function runSpecificQCCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
     if ~isfield(studio,'isLoaded') || ~studio.isLoaded
-        errordlg('Load data first.'); 
+        errordlg('Load data first.');
         return;
     end
 
@@ -577,9 +611,8 @@ function runSpecificQCCallback(~,~)
     opts.cnr         = ismember(9,choice);
     opts.commonmode  = ismember(10,choice);
 
-    % --- dataset-specific QC folder ---
     opts.datasetTag = studio.activeDataset;
-    opts.useTimestampSubfolder = false;  % set true => QC/<dataset>/<timestamp>/
+    opts.useTimestampSubfolder = false;
 
     addLog('Running selected QC...');
     setProgramStatus(false); drawnow;
@@ -591,7 +624,7 @@ function runSpecificQCCallback(~,~)
 
         addLog(['Selected QC completed. Saved under: QC\' opts.datasetTag]);
         studio.pipeline.qcDone = true;
-        guidata(gcbf,studio);
+        guidata(fig,studio);
 
     catch ME
         addLog(['QC ERROR: ' ME.message]);
@@ -601,19 +634,17 @@ function runSpecificQCCallback(~,~)
     setProgramStatus(true);
 end
 
-
 %% =========================================================
 %  GABRIEL PREPROCESSING
 % =========================================================
 function gabrielCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
     if ~studio.isLoaded
         errordlg('Load data first.'); return;
     end
 
-    %% Ask nsub
-    answ = inputdlg({'Enter subsampling factor (nsub ? 2):'}, ...
+    answ = inputdlg({'Enter subsampling factor (nsub >= 2):'}, ...
         'Gabriel Preprocessing', 1, {'50'});
     if isempty(answ)
         addLog('Gabriel preprocessing cancelled.');
@@ -622,14 +653,14 @@ function gabrielCallback(~,~)
 
     nsub = str2double(answ{1});
     if isnan(nsub) || nsub < 2
-        errordlg('Invalid nsub (?2).'); return;
+        errordlg('Invalid nsub (>=2).'); return;
     end
 
     setProgramStatus(false);
     addLog(sprintf('Running Gabriel preprocessing (nsub = %d)...', nsub));
     drawnow;
 
-    data = getActiveData(); 
+    data = getActiveData();
 
     opts = struct();
     opts.nsub = nsub;
@@ -644,28 +675,25 @@ function gabrielCallback(~,~)
         newData = data;
         newData.I = out.I;
         newData.TR = out.blockDur;
-        newData.nVols = out.nVols;
-        newData.totalTime = out.totalTime;
-        newData.preprocessing = out.method;
+        if isfield(out,'nVols'), newData.nVols = out.nVols; end
+        if isfield(out,'totalTime'), newData.totalTime = out.totalTime; end
+        if isfield(out,'method'), newData.preprocessing = out.method; end
 
-       ts = datestr(now,'yyyymmdd_HHMMSS');
-baseName = studio.activeDataset;
-versionName = [baseName '_gabriel_' ts];
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+        baseName = studio.activeDataset;
+        fullName = [baseName '_gabriel_' ts];
 
-
-        studio.datasets.(versionName) = newData;
+        keyName = makeSafeKey(fullName, studio.datasets);
+        studio.datasets.(keyName) = newData;
         studio.pipeline.preprocDone = true;
 
-        save(fullfile(studio.exportPath,'Preprocessing',[versionName '.mat']), ...
+        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
             'newData','-v7.3');
 
-        guidata(gcbf, studio);
-
+        guidata(fig, studio);
         refreshDatasetDropdown();
-        %
-        guidata(gcbf,studio);
 
-        addLog(['Gabriel preprocessing ? ' versionName]);
+        addLog(['Gabriel preprocessing -> ' fullName]);
 
     catch ME
         addLog(['GABRIEL ERROR: ' ME.message]);
@@ -675,13 +703,12 @@ versionName = [baseName '_gabriel_' ts];
     setProgramStatus(true);
 end
 
-
 %% =========================================================
 %  FRAME-RATE REJECTION (QC + VALIDATION QC)
 % =========================================================
 function frameRateCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
 
     if ~studio.isLoaded
         errordlg('Load data first.');
@@ -695,12 +722,7 @@ function frameRateCallback(~,~)
     drawnow;
 
     try
-
-        % --------------------------------------------------
-        % 1) QC ON ORIGINAL
-        % --------------------------------------------------
         QC_before = frameRateQC(data.I, data.TR, 'ORIGINAL', false);
-
         addLog(sprintf('Original rejected: %.2f %%', QC_before.rejPct));
 
         qcFolder = fullfile(studio.exportPath,'QC','png');
@@ -708,14 +730,12 @@ function frameRateCallback(~,~)
 
         ts = datestr(now,'yyyymmdd_HHMMSS');
 
-        saveas(QC_before.figIntensity, ...
-            fullfile(qcFolder,['FrameRate_ORIGINAL_Intensity_' ts '.png']));
-        saveas(QC_before.figRejected, ...
-            fullfile(qcFolder,['FrameRate_ORIGINAL_Rejected_' ts '.png']));
+        try
+            saveas(QC_before.figIntensity, fullfile(qcFolder,['FrameRate_ORIGINAL_Intensity_' ts '.png']));
+            saveas(QC_before.figRejected,  fullfile(qcFolder,['FrameRate_ORIGINAL_Rejected_'  ts '.png']));
+        catch
+        end
 
-        % --------------------------------------------------
-        % 2) ASK FOR INTERPOLATION
-        % --------------------------------------------------
         choice = questdlg( ...
             sprintf('%.2f %% volumes rejected.\n\nInterpolate rejected volumes?', QC_before.rejPct), ...
             'Frame-rate rejection', ...
@@ -728,55 +748,39 @@ function frameRateCallback(~,~)
         end
 
         addLog('Interpolating rejected volumes...');
-
-        % --------------------------------------------------
-        % 3) INTERPOLATE
-        % --------------------------------------------------
         Iclean = interpolateRejectedVolumes(data.I, QC_before.outliers);
 
-        % --------------------------------------------------
-        % 4) QC AGAIN (VALIDATION)
-        % --------------------------------------------------
         addLog('Running Frame-rate QC (INTERPOLATED)...');
-
         QC_after = frameRateQC(Iclean, data.TR, 'INTERPOLATED', false);
-
         addLog(sprintf('After interpolation rejected: %.2f %%', QC_after.rejPct));
 
-        saveas(QC_after.figIntensity, ...
-            fullfile(qcFolder,['FrameRate_INTERPOLATED_Intensity_' ts '.png']));
-        saveas(QC_after.figRejected, ...
-            fullfile(qcFolder,['FrameRate_INTERPOLATED_Rejected_' ts '.png']));
+        try
+            saveas(QC_after.figIntensity, fullfile(qcFolder,['FrameRate_INTERPOLATED_Intensity_' ts '.png']));
+            saveas(QC_after.figRejected,  fullfile(qcFolder,['FrameRate_INTERPOLATED_Rejected_'  ts '.png']));
+        catch
+        end
 
-        % --------------------------------------------------
-        % 5) CREATE NEW DATASET VERSION
-        % --------------------------------------------------
         newData = data;
         newData.I = Iclean;
         newData.frameRateQC_before = QC_before;
         newData.frameRateQC_after  = QC_after;
         newData.preprocessing = 'Frame-rate rejection (validated)';
 
-    ts = datestr(now,'yyyymmdd_HHMMSS');
-baseName = studio.activeDataset;
-versionName = [baseName '_frrej_' ts];
+        ts2 = datestr(now,'yyyymmdd_HHMMSS');
+        baseName = studio.activeDataset;
+        fullName = [baseName '_frrej_' ts2];
 
-
-        studio.datasets.(versionName) = newData;
+        keyName = makeSafeKey(fullName, studio.datasets);
+        studio.datasets.(keyName) = newData;
         studio.pipeline.preprocDone = true;
 
-        % SAVE MAT
-        save(fullfile(studio.exportPath,'Preprocessing', ...
-            [versionName '.mat']), ...
+        save(fullfile(studio.exportPath,'Preprocessing', [fullName '.mat']), ...
             'newData','-v7.3');
 
-        guidata(gcbf, studio);
-
+        guidata(fig, studio);
         refreshDatasetDropdown();
-        %
-        guidata(gcbf,studio);
 
-        addLog(['Frame-rate rejection validated ? ' versionName]);
+        addLog(['Frame-rate rejection validated -> ' fullName]);
 
     catch ME
         addLog(['Frame-rate ERROR: ' ME.message]);
@@ -787,12 +791,9 @@ versionName = [baseName '_frrej_' ts];
 end
 
 %% =========================================================
-%  Scrubbing
+%  SCRUBBING
 % =========================================================
 function scrubbingCallback(src, ~)
-
-    fig = ancestor(src,'figure');
-    if isempty(fig) || ~ishandle(fig), fig = gcbf; end
 
     studio = guidata(fig);
     if isempty(studio) || ~isstruct(studio) || ~isfield(studio,'isLoaded') || ~studio.isLoaded
@@ -809,10 +810,8 @@ function scrubbingCallback(src, ~)
     tag = ['scrub_' ts];
 
     try
-        % Run scrubbing (your scrubbing.m handles dialogs)
         [outI, stats] = scrubbing(data.I, data.TR, studio.exportPath, tag);
 
-        % ---- method + interp labels (robust for old/new scrubbing.m) ----
         method = 'Unknown';
         if isfield(stats,'method') && ~isempty(stats.method), method = stats.method; end
 
@@ -821,35 +820,33 @@ function scrubbingCallback(src, ~)
             interpMethod = stats.interpMethod;
         end
 
-        methKey   = regexprep(method, '\s+','');          % 'DVARS' or 'GlobalSignal'
-        interpKey = lower(regexprep(interpMethod,'\s+','')); % 'linear' or 'pchip'
+        methKey   = regexprep(method, '\s+','');
+        interpKey = lower(regexprep(interpMethod,'\s+',''));
 
-        % ---- create new dataset version (consistent with your other steps) ----
         baseName    = studio.activeDataset;
-        versionName = [baseName '_scrub_' methKey '_' interpKey '_' ts];
+        fullName    = [baseName '_scrub_' methKey '_' interpKey '_' ts];
+        keyName     = makeSafeKey(fullName, studio.datasets);
 
         newData = data;
         newData.I = single(outI);
         newData.preprocessing = sprintf('Scrubbing (%s, %s)', method, interpMethod);
         newData.scrubbingStats = stats;
 
-        studio.datasets.(versionName) = newData;
+        studio.datasets.(keyName) = newData;
         studio.pipeline.preprocDone = true;
 
-        % ---- save to disk ----
-        save(fullfile(studio.exportPath,'Preprocessing',[versionName '.mat']), ...
+        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
              'newData','-v7.3');
 
-        % ---- persist studio back (IMPORTANT) ----
         guidata(fig, studio);
-
         refreshDatasetDropdown();
 
-        % ---- log ----
         nFlag = NaN; pct = NaN;
-        if isfield(stats,'removedVolumes'), nFlag = stats.removedVolumes; pct = stats.percentRemoved; end
+        if isfield(stats,'removedVolumes'), nFlag = stats.removedVolumes; end
+        if isfield(stats,'percentRemoved'), pct = stats.percentRemoved; end
+
         addLog(sprintf('Scrubbing done: %s + %s | flagged=%g (%.2f%%)', methKey, interpKey, nFlag, pct));
-        addLog(['Saved dataset ? ' versionName]);
+        addLog(['Saved dataset -> ' fullName]);
 
     catch ME
         addLog(['SCRUBBING ERROR: ' ME.message]);
@@ -859,83 +856,75 @@ function scrubbingCallback(src, ~)
     setProgramStatus(true);
 end
 
-
 %% =========================================================
 %  MOTOR RECONSTRUCTION (FINAL STABLE VERSION)
 % =========================================================
 function stepMotorCallback(src,~)
 
-fig = ancestor(src,'figure');
-studio = guidata(fig);
+    studio = guidata(fig);
 
-if isempty(studio) || ~studio.isLoaded
-    errordlg('Load data first.');
-    return;
-end
-
-data = getActiveData();
-
-if ndims(data.I) ~= 3
-    errordlg('Motor reconstruction only for 2D probe data.');
-    return;
-end
-
-addLog('Launching Motor Reconstruction...');
-setProgramStatus(false);
-drawnow;
-
-try
-
-    qcFolder = fullfile(studio.exportPath,'Preprocessing','motor_QC');
-    if ~exist(qcFolder,'dir')
-        mkdir(qcFolder);
+    if isempty(studio) || ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
     end
 
-    [I3D, motorInfo] = motor(data.I, data.TR, qcFolder);
+    data = getActiveData();
 
-    newData = data;
-    newData.I = I3D;
-    newData.nVols = size(I3D,4);
-    newData.preprocessing = 'Motor slice reconstruction';
-    newData.motorInfo = motorInfo;
+    if ndims(data.I) ~= 3
+        errordlg('Motor reconstruction only for 2D probe data.');
+        return;
+    end
 
-    ts = datestr(now,'yyyymmdd_HHMMSS');
-    versionName = [studio.activeDataset '_motor_' ts];
+    addLog('Launching Motor Reconstruction...');
+    setProgramStatus(false);
+    drawnow;
 
-    studio.datasets.(versionName) = newData;
-    studio.pipeline.preprocDone = true;
+    try
+        qcFolder = fullfile(studio.exportPath,'Preprocessing','motor_QC');
+        if ~exist(qcFolder,'dir'); mkdir(qcFolder); end
 
-    save(fullfile(studio.exportPath,'Preprocessing',...
-        [versionName '.mat']),...
-        'newData','-v7.3');
+        [I3D, motorInfo] = motor(data.I, data.TR, qcFolder);
 
-    guidata(fig,studio);
-    refreshDatasetDropdown();
+        newData = data;
+        newData.I = I3D;
+        if ndims(I3D) == 4
+            newData.nVols = size(I3D,4);
+        end
+        newData.preprocessing = 'Motor slice reconstruction';
+        newData.motorInfo = motorInfo;
 
-    addLog(sprintf('Slices: %d | Volumes per slice: %d | Minutes per slice: %.2f',...
-        motorInfo.nSlices,...
-        motorInfo.volumesPerSlice,...
-        motorInfo.minutesPerSlice));
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+        fullName = [studio.activeDataset '_motor_' ts];
+        keyName  = makeSafeKey(fullName, studio.datasets);
 
-    addLog('Motor reconstruction complete.');
+        studio.datasets.(keyName) = newData;
+        studio.pipeline.preprocDone = true;
 
-catch ME
-    addLog(['MOTOR ERROR: ' ME.message]);
-    errordlg(ME.message,'Motor Failure');
+        save(fullfile(studio.exportPath,'Preprocessing', [fullName '.mat']), ...
+            'newData','-v7.3');
+
+        guidata(fig,studio);
+        refreshDatasetDropdown();
+
+        addLog(sprintf('Slices: %d | Volumes per slice: %d | Minutes per slice: %.2f', ...
+            motorInfo.nSlices, motorInfo.volumesPerSlice, motorInfo.minutesPerSlice));
+
+        addLog('Motor reconstruction complete.');
+
+    catch ME
+        addLog(['MOTOR ERROR: ' ME.message]);
+        errordlg(ME.message,'Motor Failure');
+    end
+
+    setProgramStatus(true);
 end
 
-setProgramStatus(true);
-
-end
-
-
-    % -------------------------------------------------
-    % Despike
-    % -------------------------------------------------
-
+%% =========================================================
+%  DESPIKE
+% =========================================================
 function despikeCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
 
     if ~studio.isLoaded
         errordlg('Load data first.');
@@ -944,7 +933,7 @@ function despikeCallback(~,~)
 
     data = getActiveData();
 
-    answer = inputdlg('Z-threshold (default = 5):',...
+    answer = inputdlg('Z-threshold (default = 5):', ...
                       'Despike',1,{'5'});
 
     if isempty(answer)
@@ -963,43 +952,36 @@ function despikeCallback(~,~)
     drawnow;
 
     try
-
         ts = datestr(now,'yyyymmdd_HHMMSS');
 
-        % ? Correct single call
-        [outI, stats] = despike(data.I,...
-                                zthr,...
-                                studio.exportPath,...
-                                ['despike_' ts]);
+        [outI, stats] = despike(data.I, zthr, studio.exportPath, ['despike_' ts]);
 
-        % ---- Log stats ----
-        addLog(sprintf('Despiking removed %.4f%% of data points (%d spikes).',...
-               stats.percentRemoved,...
-               stats.removedPoints));
+        if isfield(stats,'percentRemoved') && isfield(stats,'removedPoints')
+            addLog(sprintf('Despiking removed %.4f%% of data points (%d spikes).', ...
+                   stats.percentRemoved, stats.removedPoints));
+        end
+        if isfield(stats,'qcFile')
+            addLog(['Despike QC saved: ' stats.qcFile]);
+        end
 
-        addLog(['Despike QC saved: ' stats.qcFile]);
-
-        % ---- Create dataset version ----
         newData = data;
         newData.I = outI;
         newData.preprocessing = 'Voxel-wise MAD Despiking';
         newData.despikeZ = zthr;
 
-        baseName = studio.activeDataset;
-        versionName = [baseName '_despike_' ts];
+        fullName = [studio.activeDataset '_despike_' ts];
+        keyName  = makeSafeKey(fullName, studio.datasets);
 
-        studio.datasets.(versionName) = newData;
+        studio.datasets.(keyName) = newData;
         studio.pipeline.preprocDone = true;
 
-        % ---- Save ----
-        save(fullfile(studio.exportPath,'Preprocessing',...
-            [versionName '.mat']),...
+        save(fullfile(studio.exportPath,'Preprocessing', [fullName '.mat']), ...
             'newData','-v7.3');
 
-        guidata(gcbf,studio);
+        guidata(fig,studio);
         refreshDatasetDropdown();
 
-        addLog(['Despiking complete ? ' versionName]);
+        addLog(['Despiking complete -> ' fullName]);
 
     catch ME
         addLog(['DESPIKE ERROR: ' ME.message]);
@@ -1007,20 +989,14 @@ function despikeCallback(~,~)
     end
 
     setProgramStatus(true);
-
 end
 
-
-
-%% =========================================================
-%  PCA
-% =========================================================
 %% =========================================================
 %  PCA
 % =========================================================
 function pcaCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
 
     if ~studio.isLoaded
         errordlg('Load data first.');
@@ -1041,32 +1017,34 @@ function pcaCallback(~,~)
     opts.chunkT = 250;
     opts.centerMode = 'voxel';
 
-    % These will be called INSIDE pca_denoise right after selector closes
     opts.onApply  = @(sel) pca_onApply(sel);
     opts.onCancel = @() pca_onCancel();
 
     try
         [newData, stats] = pca_denoise(data, studio.exportPath, ['pca_' ts], opts);
 
-        % cancelled -> already set READY in onCancel, but keep safe
         if ~isfield(stats,'applied') || ~stats.applied
             setProgramStatus(true);
             return;
         end
 
-        versionName = [studio.activeDataset '_pca_' ts];
+        fullName = [studio.activeDataset '_pca_' ts];
+        keyName  = makeSafeKey(fullName, studio.datasets);
+
         newData.preprocessing = 'PCA denoising';
 
-        studio.datasets.(versionName) = newData;
+        studio.datasets.(keyName) = newData;
         studio.pipeline.preprocDone = true;
 
-        save(fullfile(studio.exportPath,'Preprocessing',[versionName '.mat']), ...
+        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
             'newData','-v7.3');
 
-        guidata(gcbf,studio);
+        guidata(fig,studio);
         refreshDatasetDropdown();
 
-        addLog(sprintf('PCA removed %.2f%% variance proxy.', stats.percentExplainedRemoved));
+        if isfield(stats,'percentExplainedRemoved')
+            addLog(sprintf('PCA removed %.2f%% variance proxy.', stats.percentExplainedRemoved));
+        end
 
         if isfield(stats,'selectedComponents') && ~isempty(stats.selectedComponents)
             addLog(['Dropped PCs: ' sprintf('%d ', stats.selectedComponents)]);
@@ -1082,12 +1060,12 @@ function pcaCallback(~,~)
             addLog(['PCA QC saved: ' stats.qcMeanImageFile]);
         end
         if isfield(stats,'qcGridFiles') && ~isempty(stats.qcGridFiles)
-            for i = 1:numel(stats.qcGridFiles)
-                addLog(['PCA QC grid saved: ' stats.qcGridFiles{i}]);
+            for ii = 1:numel(stats.qcGridFiles)
+                addLog(['PCA QC grid saved: ' stats.qcGridFiles{ii}]);
             end
         end
 
-        addLog(['PCA complete ? ' versionName]);
+        addLog(['PCA complete -> ' fullName]);
 
     catch ME
         addLog(['PCA ERROR: ' ME.message]);
@@ -1096,7 +1074,6 @@ function pcaCallback(~,~)
 
     setProgramStatus(true);
 
-    % ---------------- nested hook helpers ----------------
     function pca_onApply(sel)
         if isempty(sel)
             addLog('PCA applied: no components selected. Please wait...');
@@ -1112,23 +1089,24 @@ function pcaCallback(~,~)
         setProgramStatus(true);
         drawnow;
     end
-
 end
+
 %% =========================================================
-%  PSC COMPUTATION  (deprecated but kept)
+%  PSC COMPUTATION (deprecated but kept)
 % =========================================================
 function computePSCCallback(~,~)
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
 
     if ~studio.isLoaded
         errordlg('Load data first.'); return;
     end
 
-    data = getActiveData(); 
+    data = getActiveData();
 
     baseline.start = 0;
     baseline.end = min(5, data.nVols * data.TR);
+    baseline.mode = 'sec';
 
     par = struct();
     par.interpol = 1;
@@ -1145,26 +1123,23 @@ function computePSCCallback(~,~)
 
         newData = data;
         newData.PSC = single(proc.PSC);
-newData.bg  = single(proc.bg);
+        newData.bg  = single(proc.bg);
+        if isfield(proc,'TR_eff'),   newData.TR_eff   = proc.TR_eff; end
+        if isfield(proc,'nFrames'),  newData.nFrames  = proc.nFrames; end
 
-        newData.bg  = proc.bg;
-        newData.TR_eff = proc.TR_eff;
-        newData.nFrames = proc.nFrames;
+        fullName = ['psc_' datestr(now,'yyyymmdd_HHMMSS')];
+        keyName  = makeSafeKey(fullName, studio.datasets);
 
-        versionName = ['psc_' datestr(now,'yyyymmdd_HHMMSS')];
-        studio.datasets.(versionName) = newData;
+        studio.datasets.(keyName) = newData;
         studio.pipeline.pscDone = true;
 
-        save(fullfile(studio.exportPath,'PSC',[versionName '.mat']), ...
+        save(fullfile(studio.exportPath,'PSC',[fullName '.mat']), ...
             'newData','-v7.3');
 
-        guidata(gcbf,studio);
-
+        guidata(fig,studio);
         refreshDatasetDropdown();
-        %
-        guidata(gcbf, studio);
 
-        addLog(['PSC computation ? ' versionName]);
+        addLog(['PSC computation -> ' fullName]);
 
     catch ME
         addLog(['PSC ERROR: ' ME.message]);
@@ -1174,15 +1149,109 @@ newData.bg  = single(proc.bg);
     setProgramStatus(true);
 end
 
+%% =========================================================
+%  FILTERING
+% =========================================================
+function filteringCallback(~,~)
+
+    studio = guidata(fig);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    data = getActiveData();
+
+    choice = questdlg('Select filter type:', ...
+                      'Filtering', ...
+                      'Low-pass','High-pass','Band-pass','Low-pass');
+
+    if isempty(choice)
+        return;
+    end
+
+    opts = struct();
+
+    switch choice
+        case 'Low-pass'
+            opts.type = 'low';
+            answer = inputdlg({'Low-pass cutoff (Hz):','Order (1-6):'}, ...
+                              'Low-pass',1,{'0.2','4'});
+            if isempty(answer), return; end
+            opts.FcHigh = str2double(answer{1});
+            opts.order  = str2double(answer{2});
+            opts.FcLow  = 0;
+
+        case 'High-pass'
+            opts.type = 'high';
+            answer = inputdlg({'High-pass cutoff (Hz):','Order (1-6):'}, ...
+                              'High-pass',1,{'0.01','4'});
+            if isempty(answer), return; end
+            opts.FcLow  = str2double(answer{1});
+            opts.order  = str2double(answer{2});
+            opts.FcHigh = 0;
+
+        case 'Band-pass'
+            opts.type = 'band';
+            answer = inputdlg({'Low cutoff (Hz):','High cutoff (Hz):','Order (1-6):'}, ...
+                              'Band-pass',1,{'0.01','0.2','4'});
+            if isempty(answer), return; end
+            opts.FcLow  = str2double(answer{1});
+            opts.FcHigh = str2double(answer{2});
+            opts.order  = str2double(answer{3});
+    end
+
+    trimAns = inputdlg({'Trim start (sec):','Trim end (sec):'}, ...
+                       'Trimming',1,{'0','0'});
+    if isempty(trimAns), return; end
+
+    opts.trimStart = str2double(trimAns{1});
+    opts.trimEnd   = str2double(trimAns{2});
+
+    addLog('Running Butterworth filtering...');
+    setProgramStatus(false);
+    drawnow;
+
+    try
+        [I_filt, stats] = filtering(data.I, data.TR, studio.exportPath, opts);
+
+        newData = data;
+        newData.I = single(I_filt);
+        newData.filtering = stats;
+
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+        fullName = [studio.activeDataset '_filt_' ts];
+        keyName  = makeSafeKey(fullName, studio.datasets);
+
+        studio.datasets.(keyName) = newData;
+        studio.pipeline.preprocDone = true;
+
+        save(fullfile(studio.exportPath,'Preprocessing', [fullName '.mat']), ...
+            'newData','-v7.3');
+
+        guidata(fig,studio);
+        refreshDatasetDropdown();
+
+        addLog(['Filtering complete -> ' fullName]);
+        if isfield(stats,'qcFolder')
+            addLog(['QC saved -> ' stats.qcFolder]);
+        end
+
+    catch ME
+        addLog(['FILTER ERROR: ' ME.message]);
+        errordlg(ME.message,'Filtering Failure');
+    end
+
+    setProgramStatus(true);
+end
 
 %% =========================================================
-%  Coregistration
+%  COREGISTRATION
 % =========================================================
 function coregCallback(~,~)
 
-    fig = gcbf;
     studio = guidata(fig);
-
     addLog('--- Atlas Coregistration ---');
 
     if ~isfield(studio,'isLoaded') || ~studio.isLoaded
@@ -1194,7 +1263,6 @@ function coregCallback(~,~)
     drawnow;
 
     try
-        % Run coreg (saves Transformation.mat into studio.loadedPath)
         Transf = coreg(studio);
 
         if isempty(Transf)
@@ -1203,10 +1271,8 @@ function coregCallback(~,~)
             return;
         end
 
-        % Store transformation in studio
         studio.atlasTransform = Transf;
 
-        % Also store canonical on-disk location for downstream steps
         if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
             studio.atlasTransformFile = fullfile(studio.loadedPath,'Transformation.mat');
         else
@@ -1219,7 +1285,6 @@ function coregCallback(~,~)
         addLog('Transformation stored in studio.atlasTransform');
         addLog(['Transformation file: ' studio.atlasTransformFile]);
 
-        % Optional: quick UI notification (non-blocking)
         try
             msgbox('Transformation saved and stored in Studio.','Atlas Coregistration','help');
         catch
@@ -1233,16 +1298,12 @@ function coregCallback(~,~)
     setProgramStatus(true);
 end
 
-
 %% =========================================================
-%  Group Analysis
+%  GROUP ANALYSIS
 % =========================================================
 function groupAnalysisCallback(src,~)
 
-    mainFig = ancestor(src,'figure');
-    if isempty(mainFig) || ~ishandle(mainFig), mainFig = fig; end
-
-    studio = guidata(mainFig);
+    studio = guidata(fig);
     if ~isfield(studio,'isLoaded') || ~studio.isLoaded
         errordlg('Load data first.','Group Analysis');
         return;
@@ -1252,11 +1313,9 @@ function groupAnalysisCallback(src,~)
     setProgramStatus(false);
     drawnow;
 
-    % This function is nested -> has access to setProgramStatus + addLog
     onClose = @() groupAnalysisOnClose();
 
     try
-        % IMPORTANT: GroupAnalysis must RETURN its figure handle
         gaFig = GroupAnalysis(studio, onClose);
 
         if isempty(gaFig) || ~ishandle(gaFig)
@@ -1265,7 +1324,6 @@ function groupAnalysisCallback(src,~)
             return;
         end
 
-        % Redundant safety: if user closes window, restore READY
         addlistener(gaFig,'ObjectBeingDestroyed', @(~,~) onClose());
 
     catch ME
@@ -1275,7 +1333,6 @@ function groupAnalysisCallback(src,~)
     end
 
     function groupAnalysisOnClose()
-        % Avoid errors if main figure already closed
         if ~isempty(fig) && ishandle(fig)
             setProgramStatus(true);
             addLog('Group Analysis closed.');
@@ -1284,14 +1341,11 @@ function groupAnalysisCallback(src,~)
 end
 
 %% =========================================================
-%  Functional Connectivity
+%  FUNCTIONAL CONNECTIVITY
 % =========================================================
 function functionalConnectivityCallback(src,~)
 
-    studioFig = ancestor(src,'figure');
-    if isempty(studioFig) || ~ishandle(studioFig), studioFig = fig; end
-
-    studio = guidata(studioFig);
+    studio = guidata(fig);
     addLog('Opening Functional Connectivity...');
 
     if ~isfield(studio,'isLoaded') || ~studio.isLoaded
@@ -1313,7 +1367,6 @@ function functionalConnectivityCallback(src,~)
     opts = struct();
     opts.datasetName = studio.activeDataset;
 
-    % Optional mask/anat pass-through
     if isfield(data,'mask') && ~isempty(data.mask)
         opts.mask = data.mask;
     elseif isfield(studio,'mask') && ~isempty(studio.mask)
@@ -1328,7 +1381,6 @@ function functionalConnectivityCallback(src,~)
         opts.anat = studio.anatomicalReferenceRaw;
     end
 
-    % Logging: just use addLog (now always logs to Studio fig)
     opts.logFcn = @(m) addLog(['[FC] ' m]);
 
     try
@@ -1344,152 +1396,321 @@ function functionalConnectivityCallback(src,~)
         errordlg(ME.message,'Functional Connectivity');
     end
 end
-%% ---------------------------------------------------------
-%  FILTERING
-% ---------------------------------------------------------
-function filteringCallback(~,~)
-
-studio = guidata(gcbf);
-
-if ~studio.isLoaded
-    errordlg('Load data first.');
-    return;
-end
-
-data = getActiveData();
-
-% ---------------------------------------------------------
-% Ask filter type
-% ---------------------------------------------------------
-choice = questdlg('Select filter type:', ...
-                  'Filtering', ...
-                  'Low-pass','High-pass','Band-pass','Low-pass');
-
-if isempty(choice)
-    return;
-end
-
-opts = struct();
-
-switch choice
-    case 'Low-pass'
-        opts.type = 'low';
-        answer = inputdlg({'Low-pass cutoff (Hz):','Order (1-6):'}, ...
-                          'Low-pass',1,{'0.2','4'});
-        opts.FcHigh = str2double(answer{1});
-        opts.order  = str2double(answer{2});
-        opts.FcLow  = 0;
-
-    case 'High-pass'
-        opts.type = 'high';
-        answer = inputdlg({'High-pass cutoff (Hz):','Order (1-6):'}, ...
-                          'High-pass',1,{'0.01','4'});
-        opts.FcLow  = str2double(answer{1});
-        opts.order  = str2double(answer{2});
-        opts.FcHigh = 0;
-
-    case 'Band-pass'
-        opts.type = 'band';
-        answer = inputdlg({'Low cutoff (Hz):','High cutoff (Hz):','Order (1-6):'}, ...
-                          'Band-pass',1,{'0.01','0.2','4'});
-        opts.FcLow  = str2double(answer{1});
-        opts.FcHigh = str2double(answer{2});
-        opts.order  = str2double(answer{3});
-end
-
-trimAns = inputdlg({'Trim start (sec):','Trim end (sec):'}, ...
-                   'Trimming',1,{'0','0'});
-
-opts.trimStart = str2double(trimAns{1});
-opts.trimEnd   = str2double(trimAns{2});
-
-addLog('Running Butterworth filtering...');
-setProgramStatus(false);
-drawnow;
-
-try
-
-    [I_filt, stats] = filtering(data.I, data.TR, studio.exportPath, opts);
-
-    newData = data;
-    newData.I = single(I_filt);
-    newData.filtering = stats;
-
-    ts = datestr(now,'yyyymmdd_HHMMSS');
-    versionName = [studio.activeDataset '_filt_' ts];
-
-    studio.datasets.(versionName) = newData;
-    studio.pipeline.preprocDone = true;
-
-    save(fullfile(studio.exportPath,'Preprocessing', ...
-        [versionName '.mat']), ...
-        'newData','-v7.3');
-
-    guidata(gcbf,studio);
-    refreshDatasetDropdown();
-
-    addLog(['Filtering complete ? ' versionName]);
-    addLog(['QC saved ? ' stats.qcFolder]);
-
-catch ME
-    addLog(['FILTER ERROR: ' ME.message]);
-    errordlg(ME.message,'Filtering Failure');
-end
-
-setProgramStatus(true);
-
-end
 
 %% =========================================================
-%  CHOOSE SIGNAL SOURCE HELPER  (LIVE/SCM/VIDEO)
+%  SECTION D — VISUALIZATION CALLBACKS
 % =========================================================
-function [sig, bg, desc] = chooseSignalForViz()
-    studio = guidata(gcbf);
 
-    list = {'Raw (I)','PSC','Preprocessed (Gabriel)'};
+%% ---------------------------------------------------------
+%  LIVE VIEWER CALLBACK
+% ---------------------------------------------------------
+function liveViewerCallback(~,~)
 
-    [idx,tf] = listdlg( ...
-        'PromptString','Select data source for visualization:', ...
-        'SelectionMode','single', ...
-        'ListString',list,...
-        'ListSize',[300 200]);
+    studio = guidata(fig);
 
-    if ~tf
-        sig = []; bg = []; desc = '';
+    if ~studio.isLoaded
+        errordlg('Load data first.');
         return;
     end
 
-    desc = list{idx};
-    data = getActiveData(); 
+    data = getActiveData();
 
-    switch desc
-        case 'Raw (I)'
-            sig = data.I;
-            bg  = mean(data.I, ndims(data.I));
-        case 'PSC'
-            if ~isfield(data,'PSC')
-                errordlg('PSC not computed for this dataset.');
-                sig = []; bg = []; return;
+    if isfield(data,'PSC') && ~isempty(data.PSC)
+        I = data.PSC;    % keep single
+    else
+        I = data.I;      % keep single
+    end
+
+    try
+        s = whos('I');
+        approxGB = s.bytes / 1e9;
+        if approxGB > 5
+            warndlg(sprintf(['Dataset is %.2f GB in memory.\n' ...
+                'LiveViewer may crash on low RAM systems.'], approxGB));
+        end
+    catch
+    end
+
+    addLog(['Opening Live Viewer (Dataset: ' studio.activeDataset ')']);
+    setProgramStatus(false);
+    drawnow;
+
+    try
+        viewerFig = fUSI_Live_Studio(I, data.TR, studio.meta, studio.activeDataset);
+        addlistener(viewerFig,'ObjectBeingDestroyed', @(~,~) setProgramStatus(true));
+
+    catch ME
+        addLog(['Live Viewer ERROR: ' ME.message]);
+        errordlg(ME.message,'Live Viewer Failed');
+        setProgramStatus(true);
+    end
+
+    clear I
+    drawnow
+end
+
+%% ---------------------------------------------------------
+%  SCM GUI CALLBACK (UNDERLAY SELECTION) — UPDATED
+% ---------------------------------------------------------
+function scmCallback(src,~)
+
+    studio = guidata(fig);
+
+    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
+        errordlg('Load data first.','SCM');
+        return;
+    end
+
+    data = getActiveData();
+
+    par = struct();
+    par.interpol = 1;
+    par.previewCaxis = [];
+    par.exportPath = studio.exportPath;
+    par.datasetTag = studio.activeDataset;
+
+    if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
+        par.loadedPath = studio.loadedPath;
+        par.rawPath    = studio.loadedPath;
+    else
+        par.loadedPath = '';
+        par.rawPath    = '';
+    end
+
+    par.loadedFile = '';
+    try
+        if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile)
+            lf = studio.loadedFile;
+            fullLf = lf;
+            if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
+                cand = fullfile(studio.loadedPath, lf);
+                if exist(cand,'file')
+                    fullLf = cand;
+                end
             end
-            sig = data.PSC;
-            bg  = data.bg;
-        case 'Preprocessed (Gabriel)'
-            sig = data.I;   % Gabriel result already in I
-            bg  = mean(data.I, ndims(data.I));
+            par.loadedFile = fullLf;
+        end
+    catch
+        par.loadedFile = '';
+    end
+
+    baseline = struct('start',0,'end',10,'mode','sec');
+
+    % Default PSC+bg like VideoGUI: use existing if present
+    if isfield(data,'PSC') && ~isempty(data.PSC) && isfield(data,'bg') && ~isempty(data.bg)
+        PSCsig    = data.PSC;
+        bgDefault = data.bg;
+    else
+        try
+            proc      = computePSC(data.I, data.TR, par, baseline);
+            PSCsig    = proc.PSC;
+            bgDefault = proc.bg;
+        catch
+            proc      = computePSC(double(data.I), data.TR, par, baseline);
+            PSCsig    = proc.PSC;
+            bgDefault = proc.bg;
+        end
+    end
+
+    [bgUnderlay, underlayLabel] = chooseSCMUnderlay(studio, data, bgDefault);
+    if isempty(bgUnderlay)
+        addLog('SCM cancelled (no underlay selected).');
+        return;
+    end
+
+    loadedMask = [];
+    loadedMaskIsInclude = true;
+    if isfield(studio,'mask') && ~isempty(studio.mask)
+        loadedMask = studio.mask;
+        if isfield(studio,'maskIsInclude') && ~isempty(studio.maskIsInclude)
+            loadedMaskIsInclude = logical(studio.maskIsInclude);
+        end
+    end
+
+    addLog(['Opening SCM GUI (Dataset: ' studio.activeDataset ')']);
+    addLog(['SCM underlay: ' underlayLabel]);
+
+    setProgramStatus(false);
+    drawnow;
+
+    try
+        fileLabel = [studio.activeDataset ' | ' underlayLabel];
+
+        scmFig = SCM_gui( ...
+            PSCsig, bgUnderlay, data.TR, par, baseline, data.nVols, ...
+            data.I, data.I, ...
+            10, 240, ...
+            loadedMask, loadedMaskIsInclude, struct(), ...
+            fileLabel);
+
+        addlistener(scmFig,'ObjectBeingDestroyed', @(~,~) setProgramStatus(true));
+
+    catch ME
+        addLog(['SCM ERROR: ' ME.message]);
+        errordlg(ME.message,'SCM Failed');
+        setProgramStatus(true);
     end
 end
-%% =========================================================
-%  SECTION C — HELPERS & UTILITY FUNCTIONS
-% =========================================================
 
 %% ---------------------------------------------------------
-%  DATASET DROPDOWN CALLBACK (short labels, internal safe keys)
+%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)
+% ---------------------------------------------------------
+function videoGUICallback(~,~)
+
+    studio = guidata(fig);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    data = getActiveData();
+
+    addLog(['Opening Video GUI (Dataset: ' studio.activeDataset ')']);
+
+    answer = inputdlg( ...
+        {'Baseline START (seconds):','Baseline END (seconds):'}, ...
+        'Video GUI Baseline', ...
+        1, {'0','10'});
+
+    if isempty(answer)
+        addLog('Video GUI cancelled.');
+        return;
+    end
+
+    blStart = str2double(answer{1});
+    blEnd   = str2double(answer{2});
+
+    if isnan(blStart) || isnan(blEnd) || blEnd <= blStart
+        errordlg('Invalid baseline range (seconds).');
+        return;
+    end
+
+    baseline = struct('start',blStart,'end',blEnd,'mode','sec');
+
+    par = struct();
+    par.interpol = 1;
+    par.LPF = 0;
+    par.HPF = 0;
+    par.gaussSize = 0;
+    par.gaussSig = 0;
+    par.previewCaxis = [];
+    par.caxis = [];
+
+    Iraw = data.I;  % keep original precision (usually single)
+
+    if isfield(data,'PSC') && ~isempty(data.PSC) && isfield(data,'bg') && ~isempty(data.bg)
+        PSCsig = data.PSC;
+        bg     = data.bg;
+    else
+        try
+            proc   = computePSC(Iraw, data.TR, par, baseline);
+        catch
+            proc   = computePSC(double(Iraw), data.TR, par, baseline);
+        end
+        PSCsig = proc.PSC;
+        bg     = proc.bg;
+    end
+
+    Iinterp = Iraw;
+
+    initialFPS = 10;
+    maxFPS     = 240;
+
+    if isfield(studio,'mask') && ~isempty(studio.mask)
+        loadedMask = studio.mask;
+        loadedMaskIsInclude = studio.maskIsInclude;
+    else
+        loadedMask = [];
+        loadedMaskIsInclude = true;
+    end
+
+    setProgramStatus(false);
+    drawnow;
+
+    try
+        videoFig = play_fusi_video_final( ...
+            Iraw, Iinterp, PSCsig, bg, ...
+            par, initialFPS, maxFPS, ...
+            data.TR, (data.nVols-1)*data.TR, ...
+            baseline, ...
+            loadedMask, loadedMaskIsInclude, ...
+            data.nVols, false, struct(), ...
+            studio.activeDataset);
+
+        addlistener(videoFig,'ObjectBeingDestroyed', @(~,~) setProgramStatus(true));
+
+    catch ME
+        addLog(['Video GUI ERROR: ' ME.message]);
+        errordlg(ME.message,'Video GUI Failed');
+        setProgramStatus(true);
+    end
+end
+
 %% ---------------------------------------------------------
+%  MASK EDITOR CALLBACK (STANDALONE)
+% ---------------------------------------------------------
+function maskEditorCallback(~,~)
+
+    studio = guidata(fig);
+
+    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
+        errordlg('Load data first.','Mask Editor');
+        return;
+    end
+
+    data = getActiveData();
+
+    addLog(['Opening Mask Editor (Dataset: ' studio.activeDataset ')']);
+    setProgramStatus(false); drawnow;
+
+    try
+        out = mask(studio, data.I, studio.activeDataset);
+
+        if ~isstruct(out) || (isfield(out,'cancelled') && out.cancelled)
+            addLog('Mask Editor cancelled.');
+            setProgramStatus(true);
+            return;
+        end
+
+        if isfield(out,'mask') && ~isempty(out.mask)
+            studio.mask = logical(out.mask);
+            studio.brainMask = studio.mask;
+            studio.maskIsInclude = true;
+            addLog('Mask stored in Studio (studio.mask).');
+        end
+
+        if isfield(out,'anatomical_reference_raw') && ~isempty(out.anatomical_reference_raw)
+            studio.anatomicalReferenceRaw = out.anatomical_reference_raw;
+        end
+        if isfield(out,'anatomical_reference') && ~isempty(out.anatomical_reference)
+            studio.anatomicalReference = out.anatomical_reference;
+        end
+
+        if isfield(out,'files') && isstruct(out.files) && isfield(out.files,'brainImage_mat') ...
+                && ~isempty(out.files.brainImage_mat)
+            studio.brainImageFile = out.files.brainImage_mat;
+            addLog(['Brain-only image saved: ' studio.brainImageFile]);
+        end
+
+        guidata(fig, studio);
+
+    catch ME
+        addLog(['Mask Editor ERROR: ' ME.message]);
+        errordlg(ME.message,'Mask Editor');
+    end
+
+    setProgramStatus(true);
+end
+
+%% =========================================================
+%  DATASET DROPDOWN CALLBACK
+% =========================================================
 function datasetDropdownCallback(src,~)
 
     studio = guidata(fig);
 
-    keys = get(src,'UserData');   % cell array of INTERNAL keys
+    keys = get(src,'UserData');
     if isempty(keys) || ~iscell(keys)
         return;
     end
@@ -1500,24 +1721,19 @@ function datasetDropdownCallback(src,~)
     studio.activeDataset = keys{idx};
     guidata(fig, studio);
 
-    % Update active dataset display label (show full name if stored)
     if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
-      showName = makeDropdownLabel(getDatasetDisplayName(studio, studio.activeDataset));
-
-        % optional truncation just for the top label
+        showName = makeDropdownLabel(getDatasetDisplayName(studio, studio.activeDataset));
         maxLen = 90;
         if length(showName) > maxLen
             showName = [showName(1:maxLen) '...'];
         end
-
         set(studio.activeDatasetText,'String',['ACTIVE DATASET: ' showName]);
     end
 end
 
-
-%% ---------------------------------------------------------
-%  REFRESH DATASET DROPDOWN (shows short labels; stores keys in UserData)
-%% ---------------------------------------------------------
+%% =========================================================
+%  REFRESH DATASET DROPDOWN
+% =========================================================
 function refreshDatasetDropdown()
 
     studio = guidata(fig);
@@ -1533,7 +1749,6 @@ function refreshDatasetDropdown()
         return;
     end
 
-    % Build display labels (shortened, timestamps removed)
     labels = cell(size(keys));
     for i = 1:numel(keys)
         k = keys{i};
@@ -1542,7 +1757,6 @@ function refreshDatasetDropdown()
 
     set(dd,'String',labels,'UserData',keys);
 
-    % Keep current active dataset if still valid
     idx = find(strcmp(keys, studio.activeDataset), 1);
     if isempty(idx)
         idx = 1;
@@ -1551,7 +1765,6 @@ function refreshDatasetDropdown()
 
     set(dd,'Value',idx);
 
-    % Update active dataset label
     if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
         showName = getDatasetDisplayName(studio, studio.activeDataset);
         maxLen = 90;
@@ -1564,60 +1777,12 @@ function refreshDatasetDropdown()
     guidata(fig, studio);
 end
 
-%% ---------------------------------------------------------
-%  INLINE IF FUNCTION (MATLAB has no built-in iff)
-% ---------------------------------------------------------
-function out = iff(cond, a, b)
-    if cond
-        out = a;
-    else
-        out = b;
-    end
-end
-
-%% ---------------------------------------------------------
-%  SELECT ACTIVE DATASET (List dialog)
-% ---------------------------------------------------------
-function selectActiveDataset()
-
-    studio = guidata(gcbf);
-    names = fieldnames(studio.datasets);
-
-    if isempty(names)
-        addLog('No datasets available to select.');
-        return;
-    end
-
-    [idx,tf] = listdlg( ...
-        'PromptString','Select dataset', ...
-        'SelectionMode','single', ...
-        'ListString',names, ...
-        'ListSize',[350 300]);
-
-    if tf
-        studio.activeDataset = names{idx};
-        guidata(gcbf,studio);
-
-        % update dropdown as well
-        dd = findobj(gcbf,'Tag','datasetDropdown');
-        if ~isempty(dd)
-            set(dd,'Value',idx);
-        end
-
-        addLog(['Active dataset set to: ' names{idx}]);
-    else
-        addLog('Dataset selection cancelled.');
-    end
-end
-
-
-
-%% ---------------------------------------------------------
-%  GET ACTIVE DATASET  (SAFE LAZY LOAD)
-% ---------------------------------------------------------
+%% =========================================================
+%  GET ACTIVE DATASET (SAFE LAZY LOAD)  ***FIG SAFE***
+% =========================================================
 function data = getActiveData()
 
-    studio = guidata(gcbf);
+    studio = guidata(fig);
     selected = studio.activeDataset;
 
     if isempty(selected)
@@ -1626,27 +1791,20 @@ function data = getActiveData()
 
     data = studio.datasets.(selected);
 
-    % -------------------------------------------------
-    % LAZY LOAD ONLY IF NEEDED
-    % -------------------------------------------------
     if isstruct(data) && isfield(data,'isLazy') && data.isLazy
-
         addLog(['Loading dataset from disk: ' selected]);
         setProgramStatus(false);
         drawnow;
 
         try
             m = matfile(data.lazyFile);
-
-            tmp = m.newData;   % load full struct once
+            tmp = m.newData;
             data = tmp;
 
-            % IMPORTANT: clear lazy flag
             data.isLazy = false;
 
-            % store fully loaded data back
             studio.datasets.(selected) = data;
-            guidata(gcbf, studio);
+            guidata(fig, studio);
 
             addLog(['Dataset loaded: ' selected]);
 
@@ -1660,12 +1818,257 @@ function data = getActiveData()
     end
 end
 
+%% =========================================================
+%  UNLOCK ALL BUTTONS AFTER LOAD
+% =========================================================
+function unlockAllButtons()
+
+    studio = guidata(fig);
+
+    if ~isfield(studio,'allButtons') || isempty(studio.allButtons)
+        return;
+    end
+
+    for i = 1:length(studio.allButtons)
+        h = studio.allButtons{i};
+        if ~isempty(h) && ishghandle(h)
+            try
+                set(h, 'Enable','on', 'BackgroundColor',[0.25 0.25 0.25]);
+            catch
+            end
+        end
+    end
+
+    guidata(fig, studio);
+end
+
+%% =========================================================
+%  EXPORT Log Session
+% =========================================================
+function exportSessionCallback(~,~)
+
+    studio = guidata(fig);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    if ~isfield(studio,'logBox') || isempty(studio.logBox)
+        errordlg('No log available.');
+        return;
+    end
+
+    logContent = get(studio.logBox,'String');
+    if isempty(logContent)
+        errordlg('Studio log is empty.');
+        return;
+    end
+
+    if ~iscell(logContent)
+        logContent = {logContent};
+    end
+
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+    outFile = fullfile(studio.exportPath, ['StudioLog_' ts '.txt']);
+
+    fid = fopen(outFile,'w');
+    for i = 1:numel(logContent)
+        fprintf(fid,'%s\n',logContent{i});
+    end
+    fclose(fid);
+
+    addLog(['Studio log exported -> ' outFile]);
+end
+
+%% =========================================================
+%  HELP BUTTON
+% =========================================================
+function helpCallback(~,~)
+
+    bgColor = [0.08 0.08 0.08];
+    fgColor = [1 1 1];
+
+    helpFig = figure( ...
+        'Name','fUSI Studio - Complete User Guide', ...
+        'Color',bgColor, ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'NumberTitle','off', ...
+        'Position',[200 80 1100 850]);
+
+    txtBox = uicontrol(helpFig, ...
+        'Style','edit', ...
+        'Max',2, ...
+        'Min',0, ...
+        'Units','normalized', ...
+        'Position',[0.03 0.03 0.94 0.94], ...
+        'BackgroundColor',bgColor, ...
+        'ForegroundColor',fgColor, ...
+        'HorizontalAlignment','left', ...
+        'FontName','Arial', ...
+        'FontSize',14);
+
+    guide = {
+    '==========================================================================='
+    '                        fUSI STUDIO - COMPLETE GUIDE'
+    '==========================================================================='
+    ''
+    'OVERVIEW'
+    '-------------------------------------------------------------------------'
+    'fUSI Studio is a structured processing and analysis environment for'
+    'functional ultrasound imaging (fUSI).'
+    ''
+    'Supported data formats:'
+    '  - 2D probe  : Y x X x T'
+    '  - 3D matrix : Y x X x Z x T'
+    ''
+    'When loading a dataset, the system automatically:'
+    '  - Extracts TR (temporal resolution)'
+    '  - Computes number of volumes'
+    '  - Computes total acquisition time'
+    '  - Detects probe type (2D or 3D)'
+    '  - Creates a mirrored AnalysedData folder'
+    '  - Creates subfolders: QC / Preprocessing / PSC / Visualization'
+    ''
+    '==========================================================================='
+    'RECOMMENDED WORKFLOW'
+    '==========================================================================='
+    '1) Load Data'
+    '2) Run Full QC'
+    '3) Apply Frame Rejection or Scrubbing'
+    '4) (Optional) Filtering / PCA / Despike'
+    '5) Visualization (Live / SCM / Video)'
+    '6) Atlas registration'
+    '7) Connectivity or Group Analysis'
+    '==========================================================================='
+    };
+
+    set(txtBox,'String',strjoin(guide,newline));
+end
+
+%% =========================================================
+%  LOGGING UTILITY
+% =========================================================
+function addLog(msg)
+
+    if isempty(fig) || ~ishandle(fig), return; end
+
+    studio = guidata(fig);
+
+    if isfield(studio,'logBox') && ~isempty(studio.logBox) && ishghandle(studio.logBox)
+        lb = studio.logBox;
+    else
+        lb = findobj(fig,'Style','listbox');
+        if isempty(lb), return; end
+        lb = lb(1);
+    end
+
+    current = get(lb,'String');
+    if ~iscell(current), current = {current}; end
+
+    timestamp = datestr(now,'HH:MM:SS');
+    newEntry = sprintf('[%s] %s',timestamp,msg);
+
+    set(lb,'String',[current; {newEntry}]);
+    drawnow;
+end
+
+%% =========================================================
+%  FOOTER LABEL
+% =========================================================
+function s = buildFooterLabel()
+    person = 'Soner Caner Cagun';
+    tool   = 'HUMoR Analysis Tool';
+    inst   = 'Max-Planck Institute for Biological Cybernetics';
+    dt     = datestr(now,'yyyy-mm-dd HH:MM');
+    s = sprintf('%s - %s - %s - %s', person, tool, inst, dt);
+end
+
+%% =========================================================
+%  STATUS BAR HANDLER
+% =========================================================
+function setProgramStatus(isReady)
+
+    studio = guidata(fig);
+    statusPanel = studio.statusPanel;
+    statusText  = studio.statusText;
+
+    bgReady    = [0.15 0.60 0.20];
+    bgNotReady = [0.85 0.20 0.20];
+    fg         = [1 1 1];
+
+    if isReady
+        bg = bgReady;
+        txt = 'PROGRAM READY';
+    else
+        bg = bgNotReady;
+        txt = 'PROGRAM NOT READY';
+    end
+
+    set(statusPanel, ...
+        'BackgroundColor',bg, ...
+        'HighlightColor',bg, ...
+        'ShadowColor',bg);
+
+    set(statusText, ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fg, ...
+        'String',txt, ...
+        'FontWeight','bold', ...
+        'FontSize',16);
+
+    drawnow;
+end
+
+%% =========================================================
+%  SMALL HELPERS (iff)
+% =========================================================
+function out = iff(cond, a, b)
+    if cond, out = a; else, out = b; end
+end
+
+%% =========================================================
+%  HELPERS for dataset naming (safe keys + nice labels)
+% =========================================================
+function label = makeDropdownLabel(fullName)
+
+    ts = regexp(fullName, '_\d{8}_\d{6}', 'match');
+
+    if isempty(ts)
+        label = regexprep(fullName,'_+','_');
+        label = regexprep(label,'^_','');
+        label = regexprep(label,'_$','');
+        return;
+    end
+
+    lastTS = ts{end};
+    lastTS = lastTS(2:end);
+
+    base = regexprep(fullName, '_\d{8}_\d{6}', '');
+
+    base = regexprep(base,'_+','_');
+    base = regexprep(base,'^_','');
+    base = regexprep(base,'_$','');
+
+    label = sprintf('%s (%s)', base, lastTS);
+end
+
+function name = getDatasetDisplayName(studio, key)
+    name = key;
+    try
+        d = studio.datasets.(key);
+        if isstruct(d) && isfield(d,'displayNameFull') && ~isempty(d.displayNameFull)
+            name = d.displayNameFull;
+        end
+    catch
+    end
+end
+
+%% =========================================================
+%  SCM UNDERLAY CHOOSER + LOADER (kept from your version)
+% =========================================================
 function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
-% 1) Default (Video GUI bg / PSC reference)  <-- TRUE default
-% 2) Mean of ACTIVE dataset
-% 3) Median of ACTIVE dataset
-% 4) External underlay from file (starts in RAW folder)
-% 5) Cancel
 
     bg = [];
     label = '';
@@ -1701,7 +2104,7 @@ function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
         case opts{4}
             startPath = pwd;
             if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-                startPath = studio.loadedPath;   % RAW folder
+                startPath = studio.loadedPath;
             end
 
             [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
@@ -1718,8 +2121,6 @@ function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
 end
 
 function bg = computeUnderlayFromActive(data, method)
-% Returns 2D (2D probe) or 3D (matrix probe) underlay.
-% Uses last dimension as time (T).
 
     I = data.I;
     dimT = ndims(I);
@@ -1729,11 +2130,9 @@ function bg = computeUnderlayFromActive(data, method)
         return;
     end
 
-    % Median is expensive -> use subsample across time for speed/stability
     sz = size(I);
     T  = sz(dimT);
 
-    % Keep up to ~600 frames for median estimate
     maxFrames = 600;
     if T <= maxFrames
         idx = 1:T;
@@ -1742,27 +2141,19 @@ function bg = computeUnderlayFromActive(data, method)
         idx  = 1:step:T;
     end
 
-    % Build indexing cell
     subs = repmat({':'},1,dimT);
     subs{dimT} = idx;
 
     Isub = double(I(subs{:}));
-
     bg = median(Isub, dimT);
 end
 
 function U = loadUnderlayFile(f)
-% Loads an external underlay from:
-%  - .mat (first numeric array or struct.I)
-%  - .nii / .nii.gz
-%  - image files (png/jpg/tif)
-% Returns U as 2D or 3D numeric array (grayscale).
 
     if ~exist(f,'file')
         error('Underlay file not found: %s', f);
     end
 
-    % --- NIFTI (.nii.gz handling for MATLAB 2017b) ---
     isNiiGz = numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz');
 
     try
@@ -1800,7 +2191,6 @@ function U = loadUnderlayFile(f)
             return;
         end
 
-        % --- Image files ---
         A = imread(f);
         U = double(A);
         U = toGray(U);
@@ -1813,7 +2203,6 @@ function U = loadUnderlayFile(f)
 end
 
 function U = pickNumericFromMat(S)
-    % Prefer struct.I, else first numeric variable
     if isstruct(S)
         fn = fieldnames(S);
         for k = 1:numel(fn)
@@ -1833,16 +2222,13 @@ function U = pickNumericFromMat(S)
 end
 
 function X = squeezeTo2Dor3D(X)
-    % If 4D+, collapse LAST dim by mean
     while ndims(X) > 3
         X = mean(X, ndims(X));
     end
 end
 
 function G = toGray(X)
-    % Converts RGB -> gray; keeps 2D/3D grayscale
     if ndims(X) == 3 && size(X,3) == 3
-        % RGB image
         R = X(:,:,1); Gc = X(:,:,2); B = X(:,:,3);
         G = 0.2989*R + 0.5870*Gc + 0.1140*B;
         return;
@@ -1850,942 +2236,11 @@ function G = toGray(X)
     G = X;
 end
 
-%% ---------------------------------------------------------
-%  UNLOCK ALL BUTTONS AFTER LOAD
-% ---------------------------------------------------------
-function unlockAllButtons()
-
-    studio = guidata(gcbf);
-
-    % Safety: ensure allButtons exists and is a cell array
-    if ~isfield(studio,'allButtons') || isempty(studio.allButtons)
-        return;
-    end
-
-    for i = 1:length(studio.allButtons)
-
-        % retrieve stored handle
-        h = studio.allButtons{i};
-
-        % validate handle
-        if ~isempty(h) && ishghandle(h)
-            try
-                set(h, ...
-                    'Enable','on', ...
-                    'BackgroundColor',[0.25 0.25 0.25]);
-            catch
-                % If a button was deleted accidentally, skip
-            end
-        end
-    end
-
-    guidata(gcbf, studio);
-end
-
-
-%% ---------------------------------------------------------
-%  EXPORT Log Session
-% ---------------------------------------------------------
-function exportSessionCallback(~,~)
-
-    studio = guidata(gcbf);
-
-    if ~studio.isLoaded
-        errordlg('Load data first.');
-        return;
-    end
-
-    if ~isfield(studio,'logBox') || isempty(studio.logBox)
-        errordlg('No log available.');
-        return;
-    end
-
-    logContent = get(studio.logBox,'String');
-
-    if isempty(logContent)
-        errordlg('Studio log is empty.');
-        return;
-    end
-
-    if ~iscell(logContent)
-        logContent = {logContent};
-    end
-
-    % Auto-save into analysed folder
-    ts = datestr(now,'yyyymmdd_HHMMSS');
-    outFile = fullfile(studio.exportPath, ...
-                      ['StudioLog_' ts '.txt']);
-
-    fid = fopen(outFile,'w');
-    for i = 1:numel(logContent)
-        fprintf(fid,'%s\n',logContent{i});
-    end
-    fclose(fid);
-
-    addLog(['Studio log exported ? ' outFile]);
-
-end
-
-%% ---------------------------------------------------------
-%  Help Button
-% ---------------------------------------------------------
-function helpCallback(~,~)
-
-% =========================================================
-%  fUSI STUDIO - COMPLETE USER GUIDE (STABLE VERSION)
-% =========================================================
-
-bgColor = [0.08 0.08 0.08];
-fgColor = [1 1 1];
-
-helpFig = figure( ...
-    'Name','fUSI Studio - Complete User Guide', ...
-    'Color',bgColor, ...
-    'MenuBar','none', ...
-    'ToolBar','none', ...
-    'NumberTitle','off', ...
-    'Position',[200 80 1100 850]);
-
-txtBox = uicontrol(helpFig, ...
-    'Style','edit', ...
-    'Max',2, ...
-    'Min',0, ...
-    'Units','normalized', ...
-    'Position',[0.03 0.03 0.94 0.94], ...
-    'BackgroundColor',bgColor, ...
-    'ForegroundColor',fgColor, ...
-    'HorizontalAlignment','left', ...
-    'FontName','Arial', ...
-    'FontSize',14);
-
-% =========================================================
-% FULL GUIDE TEXT
-% =========================================================
-
-guide = {
-'==========================================================================='
-'                        fUSI STUDIO - COMPLETE GUIDE'
-'==========================================================================='
-''
-'OVERVIEW'
-'-------------------------------------------------------------------------'
-'fUSI Studio is a structured processing and analysis environment for'
-'functional ultrasound imaging (fUSI).'
-''
-'Supported data formats:'
-'  - 2D probe  : Y x X x T'
-'  - 3D matrix : Y x X x Z x T'
-''
-'Internally all datasets are stored as:'
-'  I(Y, X, Z, T)'
-''
-'When loading a dataset, the system automatically:'
-'  - Extracts TR (temporal resolution)'
-'  - Computes number of volumes'
-'  - Computes total acquisition time'
-'  - Detects probe type (2D or 3D)'
-'  - Creates a mirrored AnalysedData folder'
-'  - Creates subfolders:'
-'       QC'
-'       Preprocessing'
-'       PSC'
-'       Visualization'
-''
-''
-'==========================================================================='
-'1. DATASET'
-'==========================================================================='
-''
-'Load fUSI Data'
-'  Loads .mat or .nii files.'
-'  Reads metadata and stores raw dataset as "raw".'
-''
-'Dataset Dropdown'
-'  Switch between raw and all processed versions.'
-'  Lazy loading ensures memory efficiency.'
-''
-''
-'==========================================================================='
-'2. QUALITY CONTROL (QC)'
-'==========================================================================='
-''
-'Full QC runs all diagnostics automatically.'
-''
-'Frequency QC'
-'  Uses Fast Fourier Transform (FFT).'
-'  Identifies oscillatory artifacts and instability.'
-''
-'Spatial QC'
-'  Computes mean and variance maps across time.'
-''
-'Temporal QC'
-'  Detects drift and slow fluctuations.'
-''
-'PCA QC'
-'  Singular Value Decomposition:'
-'     X = U * S * V^T'
-'  Evaluates dominant variance components.'
-''
-''
-'==========================================================================='
-'3. RECOMMENDED PROCESSING STEPS'
-'==========================================================================='
-''
-'Frame Rejection'
-'  Detects global intensity outliers.'
-'  Optional interpolation replaces unstable volumes.'
-''
-'Scrubbing (rDVARS)'
-'  DVARS(t) = sqrt(mean((V_t - V_(t-1))^2))'
-''
-'  Threshold rule:'
-'     TH = median(DVARS) + k * MAD'
-''
-'  Flagged volumes are linearly interpolated.'
-''
-''
-'==========================================================================='
-'4. ADVANCED PROCESSING'
-'==========================================================================='
-''
-'Percent Signal Change (PSC)'
-'  PSC = 100 * (S - baseline) / baseline'
-''
-'Filtering'
-'  Temporal bandpass filtering.'
-'  Removes physiological and slow drift noise.'
-''
-'Despiking'
-'  Voxel-wise Median Absolute Deviation (MAD) method.'
-'  z = (x - median) / MAD'
-''
-'PCA Denoising'
-'  Principal Component Analysis.'
-'  Interactive component removal.'
-'  Reconstruction suppresses structured noise.'
-''
-''
-'==========================================================================='
-'5. VISUALIZATION'
-'==========================================================================='
-''
-'Live Viewer'
-'  Dynamic slice visualization.'
-''
-'SCM (Slice Correlation Map)'
-'  Computes correlation structure across regions.'
-''
-'Video & Mask'
-'  Overlay PSC onto anatomical reference.'
-''
-''
-'==========================================================================='
-'6. COREGISTRATION'
-'==========================================================================='
-''
-'Atlas Registration'
-'  Affine transformation: translation, rotation, scaling.'
-'  Aligns functional data to anatomical atlas.'
-''
-''
-'==========================================================================='
-'7. ADVANCED ANALYSIS'
-'==========================================================================='
-''
-'Functional Connectivity'
-'  Correlation matrix between voxels or ROIs.'
-''
-'Group Analysis'
-'  Multi-session comparison and statistical evaluation.'
-''
-''
-'==========================================================================='
-'RECOMMENDED WORKFLOW'
-'==========================================================================='
-''
-'1) Load Data'
-'2) Run Full QC'
-'3) Apply Frame Rejection or Scrubbing'
-'4) Compute PSC'
-'5) Optional PCA or Despike'
-'6) Visualization'
-'7) Connectivity or Group Analysis'
-''
-'==========================================================================='
-};
-
-set(txtBox,'String',strjoin(guide,newline));
-
-end
-
-
-%% ---------------------------------------------------------
-%  LOGGING UTILITY
-% ---------------------------------------------------------
-function addLog(msg)
-
-    % Always log into the main Studio figure (NOT gcbf)
-    if isempty(fig) || ~ishandle(fig), return; end
-
-    studio = guidata(fig);
-
-    % Prefer stored handle (fast + robust)
-    if isfield(studio,'logBox') && ~isempty(studio.logBox) && ishghandle(studio.logBox)
-        logBox = studio.logBox;
-    else
-        % fallback: search within Studio figure
-        logBox = findobj(fig,'Style','listbox');
-        if isempty(logBox), return; end
-        logBox = logBox(1);
-    end
-
-    current = get(logBox,'String');
-    if ~iscell(current), current = {current}; end
-
-    timestamp = datestr(now,'HH:MM:SS');
-    newEntry = sprintf('[%s] %s',timestamp,msg);
-
-    set(logBox,'String',[current; {newEntry}]);
-    drawnow;
-end
-
-
-
-%% ---------------------------------------------------------
-%  STATUS BAR HANDLER
-% ---------------------------------------------------------
-function setProgramStatus(isReady)
-
-    studio = guidata(fig);
-    statusPanel = studio.statusPanel;
-    statusText  = studio.statusText;
-
-    % Colors
-    bgReady    = [0.15 0.60 0.20];
-    bgNotReady = [0.85 0.20 0.20];
-    fg         = [1 1 1];
-
-    if isReady
-        bg = bgReady;
-        txt = 'PROGRAM READY';
-    else
-        bg = bgNotReady;
-        txt = 'PROGRAM NOT READY';
-    end
-
-
-    % Apply colors without MATLAB overriding them
-    set(statusPanel,...
-        'BackgroundColor',bg,...
-        'HighlightColor',bg,...   % Prevent white edging
-        'ShadowColor',bg);        % Prevent white edging
-
-    set(statusText,...
-        'BackgroundColor',bg,...
-        'ForegroundColor',fg,...
-        'String',txt,...
-        'FontWeight','bold',...
-        'FontSize',16);
-
-    drawnow;
-end
 %% =========================================================
-%  SECTION D — VISUALIZATION CALLBACKS (STABLE VERSION)
+%  MakeSafeKey (struct field-safe, unique, <= namelengthmax)
 % =========================================================
-
-
-%% ---------------------------------------------------------
-%  SIGNAL SELECTION DIALOG
-% ---------------------------------------------------------
-function signalType = selectSignalDialog()
-
-    choices = {'RAW (I)','PSC','Preprocessed (Gabriel)'};
-
-    [idx, tf] = listdlg( ...
-        'PromptString','Select signal to visualize:', ...
-        'ListString',choices, ...
-        'SelectionMode','single', ...
-        'ListSize',[300 150]);
-
-    if ~tf
-        signalType = '';
-    else
-        signalType = choices{idx};
-    end
-
-end
-
-
-%% ---------------------------------------------------------
-%  LIVE VIEWER CALLBACK
-% ---------------------------------------------------------
-function liveViewerCallback(~,~)
-
-    studio = guidata(gcbf);
-
-    if ~studio.isLoaded
-        errordlg('Load data first.');
-        return;
-    end
-
-    data = getActiveData();
-
-    % ----------------------------------------------------
-    % MEMORY SAFE: DO NOT CONVERT TO DOUBLE
-    % ----------------------------------------------------
-    if isfield(data,'PSC')
-        I = data.PSC;    % keep single precision
-    else
-        I = data.I;      % keep single precision
-    end
-
-    % ----------------------------------------------------
-    % Basic memory guard (prevents crash)
-    % ----------------------------------------------------
-    try
-        s = whos('I');
-        approxGB = s.bytes / 1e9;
-
-        if approxGB > 5
-            warndlg(sprintf(['Dataset is %.2f GB in memory.\n' ...
-                'LiveViewer may crash on low RAM systems.'], approxGB));
-        end
-    catch
-        % silently ignore if whos fails
-    end
-
-    addLog(['Opening Live Viewer (Dataset: ' studio.activeDataset ')']);
-
-    setProgramStatus(false);
-    drawnow;
-
-    try
-
-        viewerFig = fUSI_Live_Studio( ...
-            I, ...
-            data.TR, ...
-            studio.meta, ...
-            studio.activeDataset);
-
-        % When viewer closes ? restore status
-        addlistener(viewerFig,'ObjectBeingDestroyed', ...
-            @(~,~) setProgramStatus(true));
-
-    catch ME
-        addLog(['Live Viewer ERROR: ' ME.message]);
-        errordlg(ME.message,'Live Viewer Failed');
-        setProgramStatus(true);
-    end
-
-    % ----------------------------------------------------
-    % CLEAN TEMPORARY VARIABLE
-    % ----------------------------------------------------
-    clear I
-    drawnow
-
-end
-
-
-%% ---------------------------------------------------------
-%  SCM GUI CALLBACK (UNDERLAY SELECTION)
-% ---------------------------------------------------------
-function scmCallback(~,~)
-
-    studio = guidata(gcbf);
-
-    if ~studio.isLoaded
-        errordlg('Load data first.');
-        return;
-    end
-
-    data = getActiveData();
-
-    % ---------- Build TRUE DEFAULT like Video GUI ----------
-    par = struct();
-    par.interpol = 1;
-    par.previewCaxis = [];
-
-    baseline = struct('start',0,'end',10,'mode','sec');
-
-    if isfield(data,'PSC') && ~isempty(data.PSC)
-        PSCsig = double(data.PSC);
-
-        if isfield(data,'bg') && ~isempty(data.bg)
-            bgDefault = double(data.bg);  % TRUE Video GUI default
-        else
-            % PSC exists but bg missing -> recompute bg (fast enough)
-            proc = computePSC(double(data.I), data.TR, par, baseline);
-            bgDefault = double(proc.bg);
-        end
-    else
-        % No PSC yet -> compute both PSC and bg default
-        proc   = computePSC(double(data.I), data.TR, par, baseline);
-        PSCsig = double(proc.PSC);
-        bgDefault = double(proc.bg);      % TRUE Video GUI default
-    end
-
-    % ---------- Underlay chooser (4 options incl external from RAW folder) ----------
-    [bgUnderlay, underlayLabel] = chooseSCMUnderlay(studio, data, bgDefault);
-    if isempty(bgUnderlay)
-        addLog('SCM cancelled (no underlay selected).');
-        return;
-    end
-
-    addLog(['Opening SCM GUI (Dataset: ' studio.activeDataset ')']);
-    addLog(['SCM underlay: ' underlayLabel]);
-
-    setProgramStatus(false);
-    drawnow;
-
-    try
-        fileLabel = [studio.activeDataset ' | ' underlayLabel];
-
-        scmFig = SCM_gui( ...
-            PSCsig, bgUnderlay, data.TR, par, baseline, data.nVols, ...
-            data.I, data.I, ...
-            10, 240, ...
-            [], false, struct(), ...
-            fileLabel);
-
-        addlistener(scmFig,'ObjectBeingDestroyed', ...
-            @(~,~) setProgramStatus(true));
-
-    catch ME
-        addLog(['SCM ERROR: ' ME.message]);
-        errordlg(ME.message,'SCM Failed');
-        setProgramStatus(true);
-    end
-end
-%% ---------------------------------------------------------
-%  VIDEO GUI CALLBACK (CLEAN + CORRECT)
-% ---------------------------------------------------------
- %% ---------------------------------------------------------
-%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)
-%% ---------------------------------------------------------
-function videoGUICallback(~,~)
-
-    studio = guidata(gcbf);
-
-    if ~studio.isLoaded
-        errordlg('Load data first.');
-        return;
-    end
-
-    data = getActiveData();
-
-    addLog(['Opening Video GUI (Dataset: ' studio.activeDataset ')']);
-
-    % -------- Baseline dialog (seconds) --------
-    answer = inputdlg( ...
-        {'Baseline START (seconds):','Baseline END (seconds):'}, ...
-        'Video GUI Baseline', ...
-        1, {'0','10'});
-
-    if isempty(answer)
-        addLog('Video GUI cancelled.');
-        return;
-    end
-
-    blStart = str2double(answer{1});
-    blEnd   = str2double(answer{2});
-
-    if isnan(blStart) || isnan(blEnd) || blEnd <= blStart
-        errordlg('Invalid baseline range (seconds).');
-        return;
-    end
-
-    baseline = struct('start',blStart,'end',blEnd,'mode','sec');
-
-    % -------- Define processing parameters --------
-    par = struct();
-    par.interpol = 1;
-    par.LPF = 0;
-    par.HPF = 0;
-    par.gaussSize = 0;
-    par.gaussSig = 0;
-    par.previewCaxis = [];
-    par.caxis = [];
-
-    % -------- Use ACTIVE dataset only --------
-    Iraw = double(data.I);
-
-    if isfield(data,'PSC')
-        PSCsig = double(data.PSC);
-        bg     = double(data.bg);
-    else
-        proc   = computePSC(Iraw, data.TR, par, baseline);
-        PSCsig = double(proc.PSC);
-        bg     = double(proc.bg);
-    end
-
-    Iinterp = Iraw;
-
-    initialFPS = 10;
-    maxFPS     = 240;
-
-    % -------- Mask handling --------
-    if isfield(studio,'mask')
-        loadedMask = studio.mask;
-        loadedMaskIsInclude = studio.maskIsInclude;
-    else
-        loadedMask = [];
-        loadedMaskIsInclude = true;
-    end
-
-    setProgramStatus(false);
-    drawnow;
-
-    try
-
-        videoFig = play_fusi_video_final( ...
-            Iraw, Iinterp, PSCsig, bg, ...
-            par, initialFPS, maxFPS, ...
-            data.TR, (data.nVols-1)*data.TR, ...
-            baseline, ...
-            loadedMask, loadedMaskIsInclude, ...
-            data.nVols, false, struct(), ...
-            studio.activeDataset);
-
-        addlistener(videoFig,'ObjectBeingDestroyed', ...
-            @(~,~) setProgramStatus(true));
-
-    catch ME
-        addLog(['Video GUI ERROR: ' ME.message]);
-        errordlg(ME.message,'Video GUI Failed');
-        setProgramStatus(true);
-    end
-end
-
-%% ---------------------------------------------------------
-%  MASK EDITOR CALLBACK (STANDALONE)
-%% ---------------------------------------------------------
-function maskEditorCallback(~,~)
-
-    fig = gcbf;
-    studio = guidata(fig);
-
-    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
-        errordlg('Load data first.','Mask Editor');
-        return;
-    end
-
-    data = getActiveData();
-
-    addLog(['Opening Mask Editor (Dataset: ' studio.activeDataset ')']);
-    setProgramStatus(false); drawnow;
-
-    try
-        % Call mask editor (supports mask(studio, data.I, label))
-        out = mask(studio, data.I, studio.activeDataset);
-
-        if ~isstruct(out) || (isfield(out,'cancelled') && out.cancelled)
-            addLog('Mask Editor cancelled.');
-            setProgramStatus(true);
-            return;
-        end
-
-        % --- store mask into Studio (keep backward compatibility) ---
-        if isfield(out,'mask') && ~isempty(out.mask)
-            studio.mask = logical(out.mask);        % videoGUICallback looks for studio.mask
-            studio.brainMask = studio.mask;         % also keep your newer name
-            studio.maskIsInclude = true;
-            addLog('Mask stored in Studio (studio.mask).');
-        end
-
-        % --- store underlay references (fixes anatomical_reference_raw expectations) ---
-        if isfield(out,'anatomical_reference_raw') && ~isempty(out.anatomical_reference_raw)
-            studio.anatomicalReferenceRaw = out.anatomical_reference_raw;
-        end
-        if isfield(out,'anatomical_reference') && ~isempty(out.anatomical_reference)
-            studio.anatomicalReference = out.anatomical_reference;
-        end
-
-        % --- store saved brain-only underlay file (single .mat) ---
-        if isfield(out,'files') && isstruct(out.files) && isfield(out.files,'brainImage_mat') ...
-                && ~isempty(out.files.brainImage_mat)
-            studio.brainImageFile = out.files.brainImage_mat;
-            addLog(['Brain-only image saved: ' studio.brainImageFile]);
-        end
-
-        guidata(fig, studio);
-
-    catch ME
-        addLog(['Mask Editor ERROR: ' ME.message]);
-        errordlg(ME.message,'Mask Editor');
-    end
-
-    setProgramStatus(true);
-end
-
-%% ---------------------------------------------------------
-%  HELPERS for dataset naming (safe keys + nice labels)
-%% ---------------------------------------------------------
-function label = makeDropdownLabel(fullName)
-    % Show short name, but keep ONLY the LAST timestamp (yyyymmdd_HHMMSS)
-    % Example:
-    %   raw_gabriel_20260222_212942_despike_20260222_223512_scrub_20260222_225432
-    % -> raw_gabriel_despike_scrub (20260222_225432)
-
-    % Find all timestamps
-    ts = regexp(fullName, '_\d{8}_\d{6}', 'match');
-
-    if isempty(ts)
-        % No timestamps -> just clean underscores
-        label = regexprep(fullName,'_+','_');
-        label = regexprep(label,'^_','');
-        label = regexprep(label,'_$','');
-        return;
-    end
-
-    lastTS = ts{end};          % includes leading "_"
-    lastTS = lastTS(2:end);    % remove leading "_"
-
-    % Remove ALL timestamps from the base text
-    base = regexprep(fullName, '_\d{8}_\d{6}', '');
-
-    % Clean up underscores
-    base = regexprep(base,'_+','_');
-    base = regexprep(base,'^_','');
-    base = regexprep(base,'_$','');
-
-    % Append last timestamp in parentheses
-    label = sprintf('%s (%s)', base, lastTS);
-end
-
-function name = getDatasetDisplayName(studio, key)
-    % Prefer stored displayNameFull, else fall back to key
-    name = key;
-    try
-        d = studio.datasets.(key);
-        if isstruct(d) && isfield(d,'displayNameFull') && ~isempty(d.displayNameFull)
-            name = d.displayNameFull;
-        end
-    catch
-    end
-end
-
-
-%% ---------------------------------------------------------
-%  UNDERLAY SELECTION FOR SCM / VIDEO
-%% ---------------------------------------------------------
-function [bgOut, label] = chooseUnderlayForSCM(studio, data, bgDefault, nY, nX, nZ)
-
-    label = 'Default (PSC bg)';
-    bgOut = bgDefault;
-
-    opts = { ...
-        'Default (current reference / PSC bg)', ...
-        'Mean of active raw data', ...
-        'Load DP / underlay image from file...'};
-
-    [idx, tf] = listdlg( ...
-        'PromptString','Choose SCM underlay image (reference):', ...
-        'SelectionMode','single', ...
-        'ListString',opts, ...
-        'ListSize',[420 160]);
-
-    if ~tf || isempty(idx)
-        return; % cancelled -> keep default
-    end
-
-    switch idx
-        case 1
-            label = 'Default (PSC bg)';
-            bgOut = bgDefault;
-
-        case 2
-            % Mean of raw (active dataset) -> good baseline reference
-            I = data.I;
-            if ndims(I) == 3
-                rawMean = mean(double(I), 3);          % [Y X]
-            elseif ndims(I) == 4
-                rawMean = mean(double(I), 4);          % [Y X Z]
-            else
-                rawMean = double(bgDefault);
-            end
-            bgOut = fitUnderlayToPSC(rawMean, nY, nX, nZ);
-            label = 'Mean of active raw data (auto-fit + contrast)';
-
-        case 3
-            startPath = '';
-            if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-                startPath = studio.loadedPath;
-            elseif isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
-                startPath = studio.exportPath;
-            else
-                startPath = pwd;
-            end
-
-            [f,p] = uigetfile( ...
-                {'*.nii;*.nii.gz;*.mat;*.tif;*.tiff;*.png;*.jpg;*.jpeg','Underlay files (*.nii,*.nii.gz,*.mat, images)'}, ...
-                'Select DP / underlay image', startPath);
-
-            if isequal(f,0)
-                return; % cancelled -> keep default
-            end
-
-            fullFile = fullfile(p,f);
-
-            try
-                U = loadUnderlayAny(fullFile);
-                bgOut = fitUnderlayToPSC(U, nY, nX, nZ);
-                label = ['File: ' f ' (auto-fit + contrast)'];
-            catch ME
-                warndlg(sprintf('Failed to load underlay:\n%s', ME.message),'Underlay load failed');
-                bgOut = bgDefault;
-                label = 'Default (PSC bg) — DP load FAILED';
-            end
-    end
-end
-
-%% ---------------------------------------------------------
-%  LOAD UNDERLAY: .nii/.nii.gz/.mat/common images
-%% ---------------------------------------------------------
-function U = loadUnderlayAny(fullFile)
-
-    if ~exist(fullFile,'file')
-        error('Underlay file not found: %s', fullFile);
-    end
-
-    % handle .nii.gz
-    if numel(fullFile) >= 7 && strcmpi(fullFile(end-6:end), '.nii.gz')
-        tmpDir = tempname;
-        mkdir(tmpDir);
-        gunzip(fullFile, tmpDir);
-        d = dir(fullfile(tmpDir,'*.nii'));
-        if isempty(d)
-            error('Failed to gunzip .nii.gz underlay.');
-        end
-        niiFile = fullfile(tmpDir, d(1).name);
-        U = niftiread(niiFile);
-        try, rmdir(tmpDir,'s'); catch, end
-        return;
-    end
-
-    [~,~,ext] = fileparts(fullFile);
-
-    if strcmpi(ext,'.nii')
-        U = niftiread(fullFile);
-        return;
-    end
-
-    if strcmpi(ext,'.mat')
-        S = load(fullFile);
-        fn = fieldnames(S);
-        if isempty(fn)
-            error('MAT underlay contains no variables.');
-        end
-        U = S.(fn{1});
-        return;
-    end
-
-    % image formats
-    U = imread(fullFile);
-end
-
-%% ---------------------------------------------------------
-%  FIT + CONTRAST-STRETCH UNDERLAY TO MATCH PSC DIMS
-%  Output is 2D (Y X) or 3D (Y X Z), scaled ~[0..1] per slice.
-%% ---------------------------------------------------------
-function bg = fitUnderlayToPSC(U, nY, nX, nZ)
-
-    U = double(U);
-    U(~isfinite(U)) = 0;
-
-    % reduce 4D -> 3D by mean over 4th dim
-    if ndims(U) == 4
-        U = mean(U,4);
-    end
-
-    % ensure 2D or 3D
-    if ndims(U) == 2
-        U2 = resize2D(U, nY, nX);
-        U2 = contrast01(U2);
-
-        if nZ > 1
-            bg = repmat(U2, [1 1 nZ]);
-        else
-            bg = U2;
-        end
-        return;
-    end
-
-    if ndims(U) == 3
-        % If Z mismatches, resample Z by nearest index selection
-        zIn = size(U,3);
-
-        if nZ <= 1
-            % collapse to 2D if PSC is 2D
-            U2 = mean(U,3);
-            U2 = resize2D(U2, nY, nX);
-            bg = contrast01(U2);
-            return;
-        end
-
-        if zIn ~= nZ
-            zIdx = round(linspace(1, zIn, nZ));
-            zIdx = max(1, min(zIn, zIdx));
-            U = U(:,:,zIdx);
-        end
-
-        bg = zeros(nY, nX, nZ);
-        for zz = 1:nZ
-            sl = U(:,:,zz);
-            sl = resize2D(sl, nY, nX);
-            bg(:,:,zz) = contrast01(sl);
-        end
-        return;
-    end
-
-    % fallback
-    U2 = squeeze(U);
-    while ndims(U2) > 2
-        U2 = mean(U2, ndims(U2));
-    end
-    U2 = resize2D(U2, nY, nX);
-    bg = contrast01(U2);
-end
-
-function A = resize2D(A, nY, nX)
-    if size(A,1) == nY && size(A,2) == nX
-        return;
-    end
-    try
-        A = imresize(A, [nY nX], 'bilinear');
-    catch
-        % no IPT -> simple interp2 fallback
-        [yy,xx] = ndgrid(linspace(1,size(A,1),nY), linspace(1,size(A,2),nX));
-        A = interp2(A, xx, yy, 'linear', 0);
-    end
-end
-
-function A = contrast01(A)
-    v = A(:);
-    v = v(isfinite(v));
-    if isempty(v)
-        A(:) = 0;
-        return;
-    end
-    p1  = prctile(v, 1);
-    p99 = prctile(v, 99);
-    if ~isfinite(p1) || ~isfinite(p99) || p99 <= p1
-        p1 = min(v);
-        p99 = max(v);
-        if p99 <= p1
-            A(:) = 0;
-            return;
-        end
-    end
-    A = min(max(A, p1), p99);
-    A = (A - p1) / max(eps, (p99 - p1));
-end
-
-
-%% ---------------------------------------------------------
-%  MakeSafeKey
-%% ---------------------------------------------------------
 function key = makeSafeKey(fullName, datasetsStruct)
-    % Make a valid struct field name <= namelengthmax and unique
+
     s = regexprep(fullName, '[^A-Za-z0-9_]', '_');
 
     if exist('matlab.lang.makeValidName','file')
@@ -2794,18 +2249,17 @@ function key = makeSafeKey(fullName, datasetsStruct)
         s = genvarname(s); %#ok<DEPGENAM>
     end
 
-    maxLen = namelengthmax;  % usually 63
-    h = shortHash(fullName); % 8 hex chars
+    maxLen = namelengthmax;
+    h = shortHash(fullName);
 
     if length(s) > maxLen
-        keep = maxLen - (1 + length(h)); % "_" + hash
+        keep = maxLen - (1 + length(h));
         keep = max(1, keep);
         s = [s(1:keep) '_' h];
     end
 
     key = s;
 
-    % Ensure uniqueness (avoid collisions)
     if isfield(datasetsStruct, key)
         n = 2;
         base = key;
@@ -2826,7 +2280,6 @@ function key = makeSafeKey(fullName, datasetsStruct)
 end
 
 function h = shortHash(s)
-    % MD5 -> first 8 hex chars (Java available in MATLAB 2017b)
     try
         md = java.security.MessageDigest.getInstance('MD5');
         md.update(uint8(s(:)'));
@@ -2834,8 +2287,18 @@ function h = shortHash(s)
         hx = lower(reshape(dec2hex(d,2).',1,[]));
         h = hx(1:8);
     catch
-        % fallback checksum
         h = sprintf('%08x', mod(sum(uint32(s)), 2^32));
     end
 end
+
+%% =========================================================
+%  CLOSE HANDLER
+% =========================================================
+function onCloseStudio(~,~)
+    try
+        delete(fig);
+    catch
+    end
+end
+
 end
