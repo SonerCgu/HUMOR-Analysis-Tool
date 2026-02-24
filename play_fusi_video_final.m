@@ -7,20 +7,35 @@ disp('maxFPS ='); disp(maxFPS);
 
 % =========================================================
 %  fUSI Video GUI — MATRIX PROBE + 2D SUPPORT
-% Ensure previewCaxis exists (robust symmetric PSC scaling)
+%  (MATLAB 2017b compatible)
+%
+% THIS UPDATE:
+%   ? Alpha intensity modulation is now IDENTICAL to SCM_gui:
+%      alpha = (a/100) * thrMask * baseMask                 (if mod OFF)
+%      alpha = (a/100) * mod * thrMask * baseMask           (if mod ON)
+%        mod = clamp( (|PSC|-effLo)/(effHi-effLo), 0..1 )
+%        effLo = max(modMin, thr)
+%        effHi = modMax  (fallback to max(|PSC|) if invalid)
+%
+% Notes:
+%   - "Signal Change Threshold [PSC]" now matches SCM behavior:
+%       hides low |PSC| by alpha (set thr=0 to show everything)
+%   - Controls are EDIT BOXES like SCM (Alpha%, ModMin, ModMax)
 % =========================================================
+
+% ---- defaults ----
+if ~isfield(par,'interpol') || isempty(par.interpol) || ~isfinite(par.interpol) || par.interpol < 1
+    par.interpol = 1;
+end
+
+% Ensure previewCaxis exists (robust PSC scaling)
 if ~isfield(par,'previewCaxis') || isempty(par.previewCaxis)
-
-    tmp = PSC(:);
-    tmp = tmp(isfinite(tmp));
-
+    tmp = PSC(:); tmp = tmp(isfinite(tmp));
     if isempty(tmp)
         par.previewCaxis = [-5 5];
     else
-        % Percentile window scaling (better for Gabriel)
         low  = prctile(tmp, 1);
         high = prctile(tmp, 99);
-
         if ~isfinite(low) || ~isfinite(high) || high <= low
             par.previewCaxis = [-5 5];
         else
@@ -29,21 +44,19 @@ if ~isfield(par,'previewCaxis') || isempty(par.previewCaxis)
     end
 end
 
-
-
 % ---------------- DIMENSIONS (PSC) ----------------
 bgFull = bg;   % keep full [Y X], [Y X Z] or [Y X Z T]
-
 ndPSC = ndims(PSC);
+
 switch ndPSC
-    case 4         % [Y X Z T]
+    case 4  % [Y X Z T]
         [nz, nx, nZ, nFrames] = size(PSC);
-    case 3         % [Y X T]  (2D probe ? treat as Z=1)
+    case 3  % [Y X T]  (2D probe -> Z=1)
         [nz, nx, nFrames] = size(PSC);
         nZ = 1;
-    case 2         % [Y X]   (rare; treat as Z=1, T=1)
+    case 2  % [Y X] (rare)
         [nz, nx] = size(PSC);
-        nZ      = 1;
+        nZ = 1;
         nFrames = 1;
     otherwise
         error('PSC must be 2D, 3D or 4D.');
@@ -70,8 +83,14 @@ end
 fig = figure('Color','k','Position',[600 -100 1500 900], ...
     'Name','fUSI Video Analysis — Soner (Auto Mask v3, Slice-wise)', ...
     'NumberTitle','off');
-% ===== Studio-safe close handler =====
+
 set(fig,'CloseRequestFcn',@onCloseVideo);
+
+% Remove any accidental colorbars (safety)
+try
+    delete(findall(fig,'Type','ColorBar'));
+catch
+end
 
 % ---- Slice indicator (top-left text) ----
 if nZ > 1
@@ -94,6 +113,7 @@ txtSlice = annotation(fig,'textbox', ...
 ax  = axes('Parent',fig,'Units','normalized', ...
            'Position',[0.14 0.12 0.56 0.70]);
 axis(ax,'off','image');
+
 img = image(ax, zeros(nz, nx, 3, 'single'));
 set(ax,'HitTest','on');
 set(img,'HitTest','off');
@@ -121,7 +141,7 @@ if ~isempty(fileLabel)
         'Interpreter','none');
 end
 
-% --- Colormaps ---
+% --- Colormap for PSC bar (only for colorbar display) ---
 Nc   = 128;
 mapA = hot(Nc);
 mapA(1,:) = 0;    % zero PSC = black
@@ -155,18 +175,19 @@ uicontrol('Style','text','Units','pixels', ...
 % ================= PLAYBACK CONTROLS =================
 rowH = 28;
 gap  = 10;
-y0   = 800;   % FPS row anchor
+
+y = 800;  % rolling Y anchor (top-down layout)
 
 % -------- FPS --------
 uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX y0 100 rowH], ...
+    'Position',[rightX y 100 rowH], ...
     'String','FPS', ...
     'ForegroundColor','w', 'BackgroundColor','k', ...
     'FontName',uiFontName, 'FontSize',uiFontSize, ...
     'HorizontalAlignment','right');
 
 fpsValue = uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX+105 y0 80 rowH], ...
+    'Position',[rightX+105 y 120 rowH], ...
     'ForegroundColor','w','BackgroundColor','k', ...
     'FontName',uiFontName, 'FontSize',uiFontSize, ...
     'HorizontalAlignment','left');
@@ -174,21 +195,21 @@ fpsValue = uicontrol('Style','text','Units','pixels', ...
 fpsSlider = uicontrol('Style','slider', ...
     'Min',1,'Max',maxFPS,'Value',fps, ...
     'Units','pixels', ...
-    'Position',[rightX y0-rowH 360 rowH], ...
+    'Position',[rightX y-rowH 360 rowH], ...
     'Callback',@(s,~) setFPS(s.Value));
 
-% -------- VOLUME --------
-y1 = y0 - (rowH*2 + gap);
+y = y - (rowH*2 + gap);
 
+% -------- VOLUME --------
 uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX y1 100 rowH], ...
+    'Position',[rightX y 100 rowH], ...
     'String','Volume', ...
     'ForegroundColor','w','BackgroundColor','k', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'HorizontalAlignment','right');
 
 volValue = uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX+105 y1 120 rowH], ...
+    'Position',[rightX+105 y 140 rowH], ...
     'ForegroundColor','w','BackgroundColor','k', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'HorizontalAlignment','left');
@@ -196,30 +217,35 @@ volValue = uicontrol('Style','text','Units','pixels', ...
 volSlider = uicontrol('Style','slider', ...
     'Min',1,'Max',nVols,'Value',1, ...
     'Units','pixels', ...
-    'Position',[rightX y1-rowH 360 rowH], ...
+    'Position',[rightX y-rowH 360 rowH], ...
     'Callback',@(s,~) scrubVol(round(s.Value)));
 
-% Colorbar (left, thin)
-cbar = colorbar('Position',[0.06 0.18 0.014 0.58]);
-colormap(cbar,'hot');
+y = y - (rowH*2 + 18);
+
+% =========================================================
+%  SINGLE COLORBAR (PSC ONLY)  — LEFT SIDE
+% =========================================================
+try
+    colormap(ax, mapA);  % only affects the colorbar; the image is RGB
+catch
+end
+caxis(ax, par.previewCaxis);
+
+cbar = colorbar(ax, 'Position',[0.06 0.18 0.014 0.58]);
 cbar.Color = 'w';
 cbar.FontSize = 13;
-cbar.Label.String = 'Percent Signal Change (%)';
+cbar.Label.String = 'Signal Change (%)';
 cbar.Label.FontSize = 14;
 cbar.Label.Color = 'w';
-% ---- Bind colorbar to PSC units, not normalized [0–1] ----
-caxis(ax, par.previewCaxis);     % PSC range
-set(cbar, 'Limits', par.previewCaxis);
-
+set(cbar,'Limits',par.previewCaxis);
 
 % Button BELOW colorbar (bottom-left corner)
 uicontrol('Style','pushbutton', ...
     'Units','normalized', ...
-    'Position',[0.045 0.10 0.06 0.035], ... % adjust if needed
+    'Position',[0.045 0.10 0.075 0.035], ...
     'String','Color Bar Range', ...
     'FontWeight','bold', ...
     'Callback',@setColorbarRange);
-
 
 % Footer
 uicontrol('Style','text','Units','pixels', ...
@@ -230,39 +256,26 @@ uicontrol('Style','text','Units','pixels', ...
     'HorizontalAlignment','left', ...
     'FontName',uiFontName,'FontSize',11);
 
-
 % =========================================================
 %  INITIALIZE MASK (ALWAYS FIRST)
 % =========================================================
 mask = false(nz, nx, nZ, nVols);
-
-%  Accepts: [Y X], [Y X Z], [Y X Z T]
-%  Normalizes internally to [Y X Z T]
-% =========================================================
-
 maskIsInclude = true;
 statusLine    = '';
 
 if exist('loadedMask','var') && ~isempty(loadedMask)
-
     loadedMask = logical(loadedMask);
 
     switch ndims(loadedMask)
-
         case 2
-            % -------- 2D mask [Y X] --------
             mask(:,:,sliceIdx,:) = repmat(loadedMask,[1 1 1 nVols]);
             statusLine = '2D mask expanded to all frames (current slice).';
-
         case 3
-            % -------- 3D mask [Y X Z] --------
-            for z = 1:min(nZ,size(loadedMask,3))
-                mask(:,:,z,:) = repmat(loadedMask(:,:,z),[1 1 1 nVols]);
+            for zz = 1:min(nZ,size(loadedMask,3))
+                mask(:,:,zz,:) = repmat(loadedMask(:,:,zz),[1 1 1 nVols]);
             end
             statusLine = '3D mask expanded to all frames.';
-
         case 4
-            % -------- 4D mask [Y X Z T] --------
             if isequal(size(loadedMask), size(mask))
                 mask = loadedMask;
                 statusLine = '4D mask restored.';
@@ -282,10 +295,7 @@ volume  = 1;
 frame   = 1;
 playing = false;
 
-applyToAllFrames = true;  % If true ? apply painting to all volumes
-                          % ALWAYS slice-specific now
-
-% Editor state
+applyToAllFrames = true;  % apply painting to all volumes (THIS SLICE)
 editorMode     = false;
 viewMaskedOnly = false;
 
@@ -293,14 +303,13 @@ viewMaskedOnly = false;
 brushRadius   = 12;
 maskAlpha     = 0.35;
 maskColor     = [1 1 1];
-maskThreshold = 0.25;
 
+% Threshold in PSC units (abs %) — matches SCM behavior
+maskThreshold = 0;
 
-% AUTO MASK mode  (1=Off, 2=A, 3=B)
-strictMode     = 2;
-percentileKeep = 90;
-percentileMin  = 60;
-percentileMax  = 99;
+% AUTO MASK fixed to robust A (no UI)
+strictMode     = 2;  %#ok<NASGU>
+percentileKeep = 90; %#ok<NASGU>
 
 % Fill parameters
 fillWindowR     = 18;
@@ -312,257 +321,275 @@ mouseIsDown = false;
 paintMode   = '';
 lastMouseXY = [NaN NaN];
 
-% ===================== MASK EDITOR UI =====================
+% ============================================================
+%  PSC ALPHA MODULATION (IDENTICAL TO SCM_gui)
+% ============================================================
+alphaModEnable = true;   % state.alphaModOn
+alphaPct       = 100;    % "Overlay alpha (%)" 0..100
+modMinAbs      = 50;     % "Mod Min (abs %)"
+modMaxAbs      = 100;    % "Mod Max (abs %)"
+
+% =========================================================
+%  RIGHT PANEL: MASK / TOOLS  (NO OVERLAPS)
+% =========================================================
 uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX 680 360 20], ...
-    'String','Mask / Auto Tools', ...
+    'Position',[rightX y 360 20], ...
+    'String','Mask / Tools', ...
     'ForegroundColor',[0.9 0.9 0.9], ...
     'BackgroundColor','k', ...
     'FontName',uiFontName,'FontSize',12, ...
     'FontWeight','bold', ...
     'HorizontalAlignment','left');
 
-
-maskPanelTopY = 680;   % anchor for all mask-related controls
+y = y - 30;
 
 editBtn = uicontrol('Style','togglebutton','Units','pixels', ...
-    'Position',[rightX 650 360 28], ...
+    'Position',[rightX y 360 28], ...
     'String','Editor OFF', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@toggleEditor);
 
+y = y - 35;
+
 viewBtn = uicontrol('Style','togglebutton','Units','pixels', ...
-    'Position',[rightX 615 175 28], ...
+    'Position',[rightX y 175 28], ...
     'String','VIEW: FULL', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@toggleViewMasked);
 
-posView = get(viewBtn,'Position');
 includeDrop = uicontrol('Style','popupmenu','Units','pixels', ...
-    'Position',[posView(1)+posView(3)+10 posView(2) posView(3) posView(4)], ...
+    'Position',[rightX+185 y 175 28], ...
     'String',{'Include','Exclude'}, ...
     'Value',1, ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@setIncludeExclude);
 
+y = y - 35;
+
 applyAllBtn = uicontrol('Style','togglebutton','Units','pixels', ...
-    'Position',[rightX 580 175 28], ...
+    'Position',[rightX y 175 28], ...
     'String','AUTO: ALL', ...
     'Value',1, ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@toggleApplyAll);
 
 autoBtn = uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX+185 580 175 28], ...
+    'Position',[rightX+185 y 175 28], ...
     'String','AUTO MASK (M)', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'FontWeight','bold', ...
     'Callback',@autoMaskButton);
 
+y = y - 32;
+
 % Brush size
 uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX 555 120 18], ...
+    'Position',[rightX y 140 18], ...
     'String','Brush size', ...
     'ForegroundColor',[0.8 0.8 0.8], ...
     'BackgroundColor','k', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'HorizontalAlignment','left');
 
+y = y - 20;
+
 brushSlider = uicontrol('Style','slider','Units','pixels', ...
-    'Position',[rightX 535 360 18], ...
+    'Position',[rightX y 360 18], ...
     'Min',1,'Max',25,'Value',brushRadius, ...
     'Callback',@(s,~) setBrush(round(s.Value)));
 
+y = y - 22;
+
 brushVal = uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX 515 360 16], ...
+    'Position',[rightX y 360 16], ...
     'String',sprintf('Radius: %d px',brushRadius), ...
     'ForegroundColor',[0.7 0.7 0.7], ...
     'BackgroundColor','k', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'HorizontalAlignment','left');
 
+y = y - 32;
+
 % Fill / Color / Clear
 uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX 480 110 28], ...
+    'Position',[rightX y 110 28], ...
     'String','Color...', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@pickColor);
 
 uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX+120 480 110 28], ...
+    'Position',[rightX+120 y 110 28], ...
     'String','Fill (F)', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@fillRegion);
 
 uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX+240 480 120 28], ...
+    'Position',[rightX+240 y 120 28], ...
     'String','Clear mask', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@clearMaskAll);
 
-% Strict selector for AUTO MASK
-uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX 450 360 18], ...
-    'String','Auto method (A/B)', ...
-    'ForegroundColor',[0.8 0.8 0.8], ...
-    'BackgroundColor','k', ...
-    'FontName',uiFontName,'FontSize',uiFontSize, ...
-    'HorizontalAlignment','left');
-
-strictDrop = uicontrol('Style','popupmenu','Units','pixels', ...
-    'Position',[rightX 425 360 26], ...
-    'String',{'Off','A: robust','B: percentile'}, ...
-    'Value',strictMode, ...
-    'FontName',uiFontName,'FontSize',uiFontSize, ...
-    'Callback',@setStrictMode);
-
-percSlider = uicontrol('Style','slider','Units','pixels', ...
-    'Position',[rightX 395 360 16], ...
-    'Min',percentileMin,'Max',percentileMax,'Value',percentileKeep, ...
-    'Callback',@setPercentileKeep);
-
-percVal = uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX 375 360 18], ...
-    'String',sprintf('Percentile: %.0f (lower = more voxels)',percentileKeep), ...
-    'ForegroundColor',[0.7 0.7 0.7], ...
-    'BackgroundColor','k', ...
-    'FontName',uiFontName,'FontSize',uiFontSize, ...
-    'HorizontalAlignment','left');
+y = y - 44;
 
 uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX 330 360 32], ...
+    'Position',[rightX y 360 32], ...
     'String','Save Mask (.mat)', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@saveMaskMat);
 
+y = y - 40;
+
 uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX 290 360 32], ...
+    'Position',[rightX y 360 32], ...
     'String','Save Interpolated Data (.mat)', ...
     'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',@saveInterpolatedMat);
 
+y = y - 48;
 
 % ============================================================
-%  MASK OVERLAY & THRESHOLD BLOCK (ONLY THESE ARE UPDATED)
-%  -- Positioned safely BELOW the Save buttons
+%  PSC ALPHA MODULATION (SCM IDENTICAL)
 % ============================================================
+uicontrol('Style','text','Units','pixels', ...
+    'Position',[rightX y+22 360 18], ...
+    'String','PSC Alpha Modulation (IDENTICAL to SCM_gui)', ...
+    'ForegroundColor',[0.90 0.90 0.90], ...
+    'BackgroundColor','k', ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize);
+
+alphaEnableChk = uicontrol('Style','checkbox','Units','pixels', ...
+    'Position',[rightX y 110 18], ...
+    'String','Alpha modulate by |PSC|', ...
+    'Value',double(alphaModEnable), ...
+    'ForegroundColor','w', ...
+    'BackgroundColor','k', ...
+    'FontName',uiFontName,'FontSize',uiFontSize, ...
+    'Callback',@toggleAlphaMod);
+
+% Alpha %, ModMin, ModMax edit boxes
+uicontrol('Style','text','Units','pixels', ...
+    'Position',[rightX+120 y 45 18], ...
+    'String','alpha', ...
+    'ForegroundColor',[0.85 0.85 0.85], ...
+    'BackgroundColor','k', ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize);
+
+editAlphaPct = uicontrol('Style','edit','Units','pixels', ...
+    'Position',[rightX+160 y-2 50 22], ...
+    'String',sprintf('%.0f',alphaPct), ...
+    'BackgroundColor',[0.10 0.10 0.10], ...
+    'ForegroundColor','w', ...
+    'FontName',uiFontName,'FontSize',uiFontSize, ...
+    'Callback',@setAlphaPctBox);
+
+uicontrol('Style','text','Units','pixels', ...
+    'Position',[rightX+215 y 35 18], ...
+    'String','min', ...
+    'ForegroundColor',[0.85 0.85 0.85], ...
+    'BackgroundColor','k', ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize);
+
+editModMin = uicontrol('Style','edit','Units','pixels', ...
+    'Position',[rightX+245 y-2 50 22], ...
+    'String',sprintf('%.3g',modMinAbs), ...
+    'BackgroundColor',[0.10 0.10 0.10], ...
+    'ForegroundColor','w', ...
+    'FontName',uiFontName,'FontSize',uiFontSize, ...
+    'Callback',@setModMinBox);
+
+uicontrol('Style','text','Units','pixels', ...
+    'Position',[rightX+300 y 35 18], ...
+    'String','max', ...
+    'ForegroundColor',[0.85 0.85 0.85], ...
+    'BackgroundColor','k', ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize);
+
+editModMax = uicontrol('Style','edit','Units','pixels', ...
+    'Position',[rightX+330 y-2 50 22], ...
+    'String',sprintf('%.3g',modMaxAbs), ...
+    'BackgroundColor',[0.10 0.10 0.10], ...
+    'ForegroundColor','w', ...
+    'FontName',uiFontName,'FontSize',uiFontSize, ...
+    'Callback',@setModMaxBox);
+
+y = y - 46;
 
 % ============================================================
-%  BUTTON GEOMETRY — MUST BE DEFINED FIRST
+%  MASK OVERLAY ALPHA
+% ============================================================
+uicontrol('Style','text','Units','pixels', ...
+    'Position',[rightX y+18 240 18], ...
+    'String','Mask Overlay Alpha', ...
+    'ForegroundColor',[0.9 0.9 0.9], ...
+    'BackgroundColor','k', ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize);
+
+overlaySlider = uicontrol('Style','slider','Units','pixels', ...
+    'Position',[rightX y 360 18], ...
+    'Min',0,'Max',1,'Value',maskAlpha, ...
+    'Callback',@(s,~) setOverlayAlpha(s.Value));
+
+y = y - 38;
+
+% ============================================================
+%  SIGNAL CHANGE THRESHOLD (PSC)
+% ============================================================
+uicontrol('Style','text','Units','pixels', ...
+    'Position',[rightX y+18 360 18], ...
+    'String','Signal Change Threshold [PSC] (%)', ...
+    'ForegroundColor',[0.9 0.9 0.9], ...
+    'BackgroundColor','k', ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize);
+
+tmpPSC = PSC(:); tmpPSC = tmpPSC(isfinite(tmpPSC));
+if isempty(tmpPSC)
+    thrMin = par.previewCaxis(1);
+    thrMax = par.previewCaxis(2);
+else
+    thrMin = prctile(tmpPSC,1);
+    thrMax = prctile(tmpPSC,99);
+end
+if ~isfinite(thrMin) || ~isfinite(thrMax) || thrMax <= thrMin
+    thrMin = par.previewCaxis(1);
+    thrMax = par.previewCaxis(2);
+end
+maskThreshold = 0;
+
+maskThreshSlider = uicontrol('Style','slider','Units','pixels', ...
+    'Position',[rightX y 360 18], ...
+    'Min',thrMin,'Max',thrMax,'Value',maskThreshold, ...
+    'Callback',@(s,~) setMaskThreshold(s.Value));
+
+y = y - 52;
+
+% ============================================================
+%  APPLY MASK TO ALL VOLUMES (THIS SLICE)
+% ============================================================
+applyAllMaskBtn = uicontrol('Style','pushbutton','Units','pixels', ...
+    'Position',[rightX y 360 34], ...
+    'String','Apply Mask to all Volumes (THIS SLICE)', ...
+    'FontWeight','bold', ...
+    'ForegroundColor','w', ...
+    'BackgroundColor',[0.20 0.45 0.25], ...
+    'Callback',@applyMaskToAllFrames);
+
+% ============================================================
+%  BOTTOM PANEL BUTTONS (FIXED)
 % ============================================================
 btnW  = 120;
 btnH  = 42;
 gapX  = 18;
 gapY  = 18;
 
-row1Y = 40;                         % bottom row
-row2Y = row1Y + btnH + gapY;        % row above
+row1Y = 40;
+row2Y = row1Y + btnH + gapY;
 
-
-% ============================================================
-%  MASK OVERLAY + THRESHOLD + APPLY MASK (COMPACT LAYOUT)
-% ============================================================
-
-% Get Y-position of Save Interpolated button
-saveInterpPos = get(findobj(fig,'String','Save Interpolated Data (.mat)'),'Position');
-baseY = saveInterpPos(2);
-
-% Compact spacing
-overlayY = baseY - 55;      % was -70 ? now tighter
-gapSmall = 34;              % gap between sliders
-btnGap   = 90;              % distance to apply-mask button
-
-labelW = 220;
-sliderW = 350;
-
-% ---------- Mask Overlay Alpha ----------
-uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX overlayY+18 labelW 18], ...
-    'String','Mask Intensity Overlay', ...
-    'ForegroundColor',[0.9 0.9 0.9], ...
-    'BackgroundColor','k');
-
-overlaySlider = uicontrol('Style','slider','Units','pixels', ...
-    'Position',[rightX overlayY sliderW 18], ...
-    'Min',0,'Max',1,'Value',maskAlpha, ...
-    'Callback',@(s,~) setOverlayAlpha(s.Value));
-
-
-
-% ---------- Mask Threshold ----------
-thY = overlayY - gapSmall;
-
-uicontrol('Style','text','Units','pixels', ...
-    'Position',[rightX thY+18 labelW 18], ...
-    'String','Signal Change Threshold (%)', ...
-    'ForegroundColor',[0.9 0.9 0.9], ...
-    'BackgroundColor','k');
-
-% Use real PSC distribution
-tmpPSC = PSC(:);
-tmpPSC = tmpPSC(isfinite(tmpPSC));
-
-if isempty(tmpPSC)
-    thrMin = -5;
-    thrMax = 5;
-else
-    thrMin = prctile(tmpPSC,1);
-    thrMax = prctile(tmpPSC,99);
-end
-
-maskThreshold = 0;   % start at 0% PSC
-
-maskThreshSlider = uicontrol('Style','slider','Units','pixels', ...
-    'Position',[rightX thY sliderW 18], ...
-    'Min',thrMin, ...
-    'Max',thrMax, ...
-    'Value',maskThreshold, ...
-    'Callback',@(s,~) setMaskThreshold(s.Value));
-
-
-
-% ---------- Apply Slice Mask ? ALL Volumes ----------
-applyMaskY = thY - btnH - 14;   % 14 px padding below threshold slider
-
-applyAllMaskBtn = uicontrol('Style','pushbutton','Units','pixels', ...
-    'Position',[rightX applyMaskY sliderW btnH], ...
-    'String','Apply Mask to all Volumes', ...
-    'FontWeight','bold', ...
-    'ForegroundColor','w', ...
-    'BackgroundColor',[0.20 0.45 0.25], ...
-    'Callback',@applyMaskToAllFrames);
-
-% ---------------- CALLBACKS ----------------
-function setOverlayAlpha(v)
-    maskAlpha = v;
-    statusLine = sprintf('Mask alpha = %.2f', v);
-    render();
-end
-
-function setMaskThreshold(v)
-    maskThreshold = v;
-    statusLine = sprintf('Mask threshold = %.2f', v);
-    render();
-end
-
-% ---------------------------------------------------------
-%  FIGURE CALLBACKS (mouse / keyboard / scroll)
-% ---------------------------------------------------------
-set(fig,'WindowButtonDownFcn',@mouseDown);
-set(fig,'WindowButtonUpFcn',@mouseUp);
-set(fig,'WindowButtonMotionFcn',@mouseMoveVideo);
-set(fig,'KeyPressFcn',@keyPressHandler);
-set(fig,'WindowScrollWheelFcn',@mouseScrollSlice);
-
-
-
-
-
-% ============================================================
-%  BOTTOM PANEL — NOW row1Y/row2Y EXIST
-% ============================================================
-
-% -------- ROW 2 (HELP / CLOSE / OPEN SCM)
 helpBtn = uicontrol('Style','pushbutton','String','HELP', ...
     'Units','pixels', 'Position',[rightX row2Y btnW btnH], ...
     'BackgroundColor',[0.25 0.40 0.65], 'ForegroundColor','w', ...
@@ -580,8 +607,6 @@ scmBtn = uicontrol('Style','pushbutton','String','Open SCM', ...
     'ForegroundColor','w', ...
     'FontWeight','bold', 'Callback',@openSCM);
 
-
-% -------- ROW 1 (PLAY / REPLAY / SAVE MP4)
 playBtn = uicontrol('Style','togglebutton','String','Play', ...
     'Units','pixels', ...
     'Position',[rightX row1Y btnW btnH], ...
@@ -600,15 +625,291 @@ saveMP4Btn = uicontrol('Style','pushbutton','String','Save MP4', ...
     'BackgroundColor',[0.25 0.40 0.65], 'ForegroundColor','w', ...
     'FontWeight','bold', 'Callback',@saveVideo);
 
+% ---------------------------------------------------------
+%  FIGURE CALLBACKS (mouse / keyboard / scroll)
+% ---------------------------------------------------------
+set(fig,'WindowButtonDownFcn',@mouseDown);
+set(fig,'WindowButtonUpFcn',@mouseUp);
+set(fig,'WindowButtonMotionFcn',@mouseMoveVideo);
+set(fig,'KeyPressFcn',@keyPressHandler);
+set(fig,'WindowScrollWheelFcn',@mouseScrollSlice);
 
+% ================= INITIAL RENDER + TIMER =================
+render();
+alphaModToggledUI();
 
+% =========================================================
+%  PLAYBACK TIMER
+% =========================================================
+playTimer = timer( ...
+    'ExecutionMode','fixedSpacing', ...
+    'Period',1/max(fps,0.1), ...
+    'TimerFcn',@timerTick);
 
+    function timerTick(~,~)
+        if ~ishandle(fig) || ~playing
+            return;
+        end
+
+        volume = volume + 1;
+
+        if volume > nVols
+            volume = nVols;
+            playing = false;
+
+            if ishandle(playBtn)
+                playBtn.Value = 0;
+                playBtn.String = 'Play';
+            end
+
+            stop(playTimer);
+            return;
+        end
+
+        volSlider.Value = volume;
+
+        frame = (volume - 1) * par.interpol + 1;
+        frame = max(1, min(nFrames, round(frame)));
+
+        render();
+    end
+
+% =========================================================
+%  RENDER
+% =========================================================
+    function render()
+
+        sliceIdx = max(1, min(nZ, sliceIdx));
+
+        % 1) Background slice
+        bg2 = getBg2DForSlice(bgFull, sliceIdx, nZ);
+        bg2(~isfinite(bg2)) = 0;
+
+        mn = min(bg2(:));
+        mx = max(bg2(:));
+        if mx > mn
+            bgNorm = (bg2 - mn) ./ (mx - mn);
+        else
+            bgNorm = zeros(size(bg2));
+        end
+        bgRGB = ind2rgb(uint8(bgNorm * 127), gray(128));
+
+        % 2) Frame safety
+        if frame < 1 || frame > nFrames
+            img.CData = bgRGB;
+            return;
+        end
+
+        curVol = volume;
+
+        % 3) PSC slice for current frame
+        if ndPSC == 4
+            A = squeeze(PSC(:,:,sliceIdx, frame));
+        elseif ndPSC == 3
+            A = PSC(:,:,frame);
+        else
+            A = PSC; % 2D
+        end
+        A(~isfinite(A)) = 0;
+
+        % Colorbar bounds (PSC units)
+        cax = par.previewCaxis;
+        if numel(cax) ~= 2 || ~isfinite(cax(1)) || ~isfinite(cax(2)) || diff(cax) <= 0
+            cax = [-10 10];
+            par.previewCaxis = cax;
+        end
+        if ishandle(cbar)
+            set(cbar,'Limits',cax);
+        end
+
+        % PSC -> RGB (based on cax)
+        A_scaled = (A - cax(1)) ./ (cax(2) - cax(1) + eps);
+        A_scaled = max(0, min(1, A_scaled));
+        pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
+
+        % 4) Mask extraction (2D for this slice + volume)
+        M = squeeze(mask(:,:,sliceIdx, curVol));
+        M = logical(M);
+        M = M(1:size(bg2,1), 1:size(bg2,2));
+
+        % 5) Determine baseMask (SCM-style): FULL -> all ones, MASKED -> include/exclude
+        if viewMaskedOnly
+            show = M;
+            if ~maskIsInclude
+                show = ~M;
+            end
+            baseMask = double(show);
+        else
+            baseMask = 1; % scalar OK (expands)
+        end
+
+        % 6) SCM-identical alpha modulation using |PSC| and threshold
+        thr = maskThreshold; % "Threshold (abs %)" equivalent
+        thrMask = double(abs(A) >= thr);
+
+        a = max(0, min(100, alphaPct)); % overlay alpha (%)
+        if ~alphaModEnable
+            alphaMap = (a/100) .* thrMask .* baseMask;
+        else
+            effLo = max(modMinAbs, thr);
+            effHi = modMaxAbs;
+
+            if ~isfinite(effHi) || effHi <= effLo
+                effHi = max(abs(A(:)));
+            end
+            if ~isfinite(effHi) || effHi <= effLo
+                effHi = effLo + eps;
+            end
+
+            mod = (abs(A) - effLo) ./ max(eps, (effHi - effLo));
+            mod(~isfinite(mod)) = 0;
+            mod = min(max(mod,0),1);
+
+            alphaMap = (a/100) .* mod .* thrMask .* baseMask;
+        end
+
+        alphaMap(~isfinite(alphaMap)) = 0;
+        alphaMap = min(max(alphaMap,0),1);
+
+        a3 = repmat(alphaMap,[1 1 3]);
+        baseRGB = (1-a3).*bgRGB + a3.*pscRGB;
+
+        % 7) Apply mask overlay tint (editor visual)
+        outRGB = baseRGB;
+
+        if ~viewMaskedOnly
+            if any(M(:))
+                maskRGB = cat(3, ...
+                    ones(size(bg2))*maskColor(1), ...
+                    ones(size(bg2))*maskColor(2), ...
+                    ones(size(bg2))*maskColor(3));
+
+                M3 = repmat(M,[1 1 3]);
+
+                alphaUse = maskAlpha;
+                if editorMode
+                    alphaUse = max(0.6, maskAlpha); % stronger during editing
+                end
+
+                outRGB = outRGB .* (1 - alphaUse .* M3) + ...
+                         maskRGB .* (alphaUse .* M3);
+            end
+        end
+
+        img.CData = outRGB;
+
+        % 8) Info line
+        t = (volume - 1) * TR;
+
+        em = tern(editorMode,'ON','OFF');
+        vm = tern(viewMaskedOnly,'MASKED','FULL');
+        ms = tern(maskIsInclude,'Include','Exclude');
+
+        if isfield(baseline,'mode')
+            modeStr = baseline.mode;
+        else
+            modeStr = 'sec';
+        end
+
+        alphaState = tern(alphaModEnable,'ON','OFF');
+
+        extra = '';
+        if ~isempty(statusLine)
+            extra = [' | ' statusLine];
+        end
+
+        info.String = sprintf( ...
+            ['t = %.1f / %.1f s   |   Vol %d / %d   |   View: %s (%s)\n' ...
+             'Baseline: %g–%g %s   |   Editor: %s   |   AUTO: A   |   AlphaMod: %s   |   alpha=%g%%  min=%g  max=%g%s'], ...
+            t, Tmax, volume, nVols, vm, ms, ...
+            baseline.start, baseline.end, modeStr, ...
+            em, alphaState, alphaPct, modMinAbs, modMaxAbs, extra);
+
+        fpsValue.String = sprintf('%d FPS', fps);
+        volValue.String = sprintf('%d / %d', volume, nVols);
+
+        txtSliceAx.String = sliceString(sliceIdx, nZ);
+
+    end
+
+% =========================================================
+%  PLAYBACK / SCRUB / FPS
+% =========================================================
+    function scrubVol(v)
+        playing        = false;
+        playBtn.Value  = 0;
+        playBtn.String = 'Play';
+
+        volume = min(max(1, v), nVols);
+        volPos = volume;
+
+        frame = (volume - 1) * par.interpol + 1;
+        frame = max(1, min(nFrames, round(frame)));
+
+        render();
+    end
+
+    function setFPS(v)
+        fps = max(1, min(maxFPS, round(v)));
+
+        if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
+            stop(playTimer);
+            set(playTimer,'Period',1/max(fps,0.1));
+            if playing
+                start(playTimer);
+            end
+        end
+
+        fpsValue.String = sprintf('%d FPS', fps);
+    end
+
+    function playPause(src,~)
+        playing = logical(src.Value);
+
+        if playing
+            src.String = 'Pause';
+            if exist('playTimer','var') && isa(playTimer,'timer')
+                if strcmp(playTimer.Running,'off')
+                    set(playTimer,'Period',1/max(fps,0.1));
+                    start(playTimer);
+                end
+            end
+        else
+            src.String = 'Play';
+            if exist('playTimer','var') && isa(playTimer,'timer')
+                if strcmp(playTimer.Running,'on')
+                    stop(playTimer);
+                end
+            end
+        end
+    end
+
+    function replayVid(~, ~)
+        volume = 1;
+        volSlider.Value = 1;
+        frame = 1;
+
+        playing = true;
+        playBtn.Value = 1;
+        playBtn.String = 'Pause';
+
+        if exist('playTimer','var') && isa(playTimer,'timer')
+            stop(playTimer);
+            set(playTimer,'Period',1/max(fps,0.1));
+            start(playTimer);
+        end
+
+        render();
+    end
+
+% =========================================================
+%  SCROLL SLICE
+% =========================================================
     function mouseScrollSlice(~, evt)
         if nZ <= 1 || playing
             return;
         end
 
-        % Only scroll when mouse is over image axis
         h = hittest(fig);
         if isempty(h), return; end
         axHit = ancestor(h,'axes');
@@ -630,353 +931,40 @@ saveMP4Btn = uicontrol('Style','pushbutton','String','Save MP4', ...
             txtSlice.String = '';
         end
 
-        render();   % redraw SAME time / volume
-    end
-
-% ================= INITIAL RENDER + MAIN LOOP =================
-render();
-% =========================================================
-%  PLAYBACK TIMER (Studio-safe replacement for while loop)
-% =========================================================
-    function timerTick(~,~)
-
-    if ~ishandle(fig) || ~playing
-        return;
-    end
-
-    volume = volume + 1;
-
-    if volume > nVols
-        volume = nVols;
-        playing = false;
-
-        if ishandle(playBtn)
-            playBtn.Value = 0;
-            playBtn.String = 'Play';
-        end
-
-        stop(playTimer);
-        return;
-    end
-
-    volSlider.Value = volume;
-
-    frame = (volume - 1) * par.interpol + 1;
-    frame = max(1, min(nFrames, round(frame)));
-
-    render();
-end
-
-playTimer = timer( ...
-    'ExecutionMode','fixedSpacing', ...
-    'Period',1/max(fps,0.1), ...
-    'TimerFcn',@timerTick);
-
-% =========================================================
-%  RENDER FUNCTION — FINAL, FULLY CORRECTED VERSION
-% =========================================================
-function render()
-
-
-    % -----------------------------------------------------
-    % 1. SLICE SAFETY
-    % -----------------------------------------------------
-    sliceIdx = max(1, min(nZ, sliceIdx));
-
-    % -----------------------------------------------------
-    % 2. BACKGROUND 2D SLICE
-    % -----------------------------------------------------
-    bg2 = getBg2DForSlice(bgFull, sliceIdx, nZ);
-    bg2(~isfinite(bg2)) = 0;
-
-    mn = min(bg2(:));
-    mx = max(bg2(:));
-    if mx > mn
-        bgNorm = (bg2 - mn) ./ (mx - mn);
-    else
-        bgNorm = zeros(size(bg2));
-    end
-    bgRGB = ind2rgb(uint8(bgNorm * 127), gray(128));   % [Y X 3]
-
-    outRGB = bgRGB;   % safe default
-    % -----------------------------------------------------
-    % 3. FRAME SAFETY
-    % -----------------------------------------------------
-    if frame < 1 || frame > nFrames
-        img.CData = bgRGB;
-        return;
-    end
-    curVol = volume;
-
-    % -----------------------------------------------------
-    % 4. PSC SLICE 2D
-    % -----------------------------------------------------
-    if ndPSC == 4
-        A = squeeze(PSC(:,:,sliceIdx, frame));
-    else
-        A = PSC(:,:,frame);
-    end
-    A(~isfinite(A)) = 0;
-
-    % PSC scaling
- cax = par.previewCaxis;
-if numel(cax) ~= 2 || diff(cax) <= 0
-    cax = [-10 10];
-    par.previewCaxis = cax;
-end
-
-% ---- update colorbar in PSC units ----
-if ishandle(cbar)
-    set(cbar, 'Limits', cax);
-end
-
-
-    A_scaled = (A - cax(1)) ./ (cax(2) - cax(1) + eps);
-    A_scaled = max(0, min(1, A_scaled));  % clamp
-
-    pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);   % [Y X 3]
-
-    % -----------------------------------------------------
-    % 5. MASK EXTRACTION — ALWAYS 2D
-    % -----------------------------------------------------
-    if editorMode
-    alphaUse = max(0.6, maskAlpha);   % stronger during editing
-else
-    alphaUse = maskAlpha;
-end
-
-    
-    if ndims(mask) == 4
-        M = squeeze(mask(:,:,sliceIdx, curVol));
-    elseif ndims(mask) == 3
-        M = squeeze(mask(:,:,sliceIdx));
-    else
-        M = mask;
-    end
-
-    M = logical(M);
-    M = M(1:size(bg2,1), 1:size(bg2,2));  % ensure size match
-
-
-% -----------------------------------------------------
-% IMPORTANT:
-% - While EDITING ? show RAW mask (no threshold)
-% - While VIEWING ? apply threshold
-% -----------------------------------------------------
-if ~editorMode
-    M = M & (A >= maskThreshold);
-end
-
-   % -----------------------------------------------------
-% 6. BASE PSC OVERLAY
-% -----------------------------------------------------
-alphaPSC = 0.70;
-baseRGB = (1-alphaPSC).*bgRGB + alphaPSC.*pscRGB;
-
-% -----------------------------------------------------
-% 7. FINAL VIEW LOGIC (RESTORED ORIGINAL BEHAVIOUR)
-% -----------------------------------------------------
-
-if viewMaskedOnly
-    % ===== MASKED MODE =====
-    
-    show = M;
-    if ~maskIsInclude
-        show = ~M;
-    end
-    
-    show3 = repmat(show,[1 1 3]);
-    
-    outRGB = bgRGB;                % background everywhere
-    outRGB(show3) = baseRGB(show3);  % PSC only inside mask
-    
-else
-    % ===== FULL MODE =====
-    
-    outRGB = baseRGB;   % show PSC everywhere
-    
-    % Editor overlay (ONLY when editing)
- outRGB = baseRGB;
-
-if any(M(:))
-
-    maskRGB = cat(3, ...
-        ones(size(bg2))*maskColor(1), ...
-        ones(size(bg2))*maskColor(2), ...
-        ones(size(bg2))*maskColor(3));
-
-    M3 = repmat(M,[1 1 3]);
-
-    outRGB = outRGB .* (1 - maskAlpha .* M3) + ...
-             maskRGB .* (maskAlpha .* M3);
-end
-
-end
-
-    % -----------------------------------------------------
-    % 8. DISPLAY
-    % -----------------------------------------------------
-    img.CData = outRGB;
-
-    % -----------------------------------------------------
-    % 9. INFO STRING
-    % -----------------------------------------------------
-    t = (volume - 1) * TR;
-
-    em = tern(editorMode,'ON','OFF');
-    vm = tern(viewMaskedOnly,'MASKED','FULL');
-    ms = tern(maskIsInclude,'Include','Exclude');
-    methodLabel = autoMethodLabel();
-
-    extra = '';
-    if ~isempty(statusLine)
-        extra = [' | ' statusLine];
-    end
-
-    
-    if isfield(baseline,'mode')
-    modeStr = baseline.mode;
-else
-    modeStr = 'sec';
-end
-
-    info.String = sprintf( ...
-        ['t = %.1f / %.1f s   |   Vol %d / %d   |   View: %s (%s)\n' ...
-         'Baseline: %g–%g %s   |   Editor: %s   |   AUTO: %s%s'], ...
-        t, Tmax, volume, nVols, vm, ms, ...
-        baseline.start, baseline.end, modeStr, ...
-        em, methodLabel, extra);
-
-    fpsValue.String = sprintf('%d FPS', fps);
-    volValue.String = sprintf('%d / %d', volume, nVols);
-
-    txtSliceAx.String = sliceString(sliceIdx, nZ);
-
-end
-
-% =========================================================
-%  PLAYBACK / SCRUB / OPEN SCM / SAVE VIDEO
-% ========================================================
-    function scrubVol(v)
-        playing        = false;
-        playBtn.Value  = 0;
-        playBtn.String = 'Play';
-
-        volume = min(max(1, v), nVols);
-        volPos = volume;
-
-        frame = (volume - 1) * par.interpol + 1;
-        frame = max(1, min(nFrames, round(frame)));
-
         render();
     end
 
-   function setFPS(v)
-
-    fps = max(1, min(maxFPS, round(v)));
-
-    if isvalid(playTimer)
-        stop(playTimer);
-        set(playTimer,'Period',1/fps);
-        if playing
-            start(playTimer);
-        end
-    end
-
-    fpsValue.String = sprintf('%d FPS', fps);
-end
-
- function playPause(src,~)
-
-    playing = logical(src.Value);
-
-    if playing
-        src.String = 'Pause';
-
-        if strcmp(playTimer.Running,'off')
-            set(playTimer,'Period',1/max(fps,0.1));
-            start(playTimer);
-        end
-    else
-        src.String = 'Play';
-
-        if strcmp(playTimer.Running,'on')
-            stop(playTimer);
-        end
-    end
-end
-
-
-    function replayVid(~, ~)
-    volume = 1;
-    volSlider.Value = 1;
-    frame = 1;
-
-    playing = true;
-    playBtn.Value = 1;
-    playBtn.String = 'Pause';
-
-    stop(playTimer);
-    set(playTimer,'Period',1/max(fps,0.1));
-    start(playTimer);
-
-    render();
-end
-
-
 % =========================================================
-%  OPEN SCM GUI — FIXED & COMPLETE
-%  - Transfers FULL slice-wise mask to SCM
-%  - Collapses time, preserves Z
+%  OPEN SCM GUI (transfers mask collapsed over time)
 % =========================================================
-function openSCM(~,~)
-    try
-        % -------------------------------------------------
-        % Pass full PSC + background (SCM keeps slice slider)
-        % -------------------------------------------------
-        PSC_fast = PSC;
-        bg_fast  = bgFull;
+    function openSCM(~,~)
+        try
+            PSC_fast = PSC;
+            bg_fast  = bgFull;
 
-        % -------------------------------------------------
-        % Build SCM-compatible mask
-        %   Video GUI mask: [Y X Z T]
-        %   SCM expects:
-        %     - 2D probe    -> [Y X]
-        %     - Matrix probe -> [Y X Z]
-        % -------------------------------------------------
-        if nZ == 1
-            % ---------- 2D probe ----------
-            % Collapse time only
-            mask_fast = any(mask(:,:,1,:), 4);     % [Y X]
-
-        else
-            % ---------- Matrix probe ----------
-            % Collapse time for EACH slice
-            mask_fast = false(size(bg_fast));      % [Y X Z]
-
-            for z = 1:nZ
-                mask_fast(:,:,z) = any(mask(:,:,z,:), 4);
+            if nZ == 1
+                mask_fast = any(mask(:,:,1,:), 4);   % [Y X]
+            else
+                mask_fast = false(size(bg_fast,1), size(bg_fast,2), nZ);
+                for zz = 1:nZ
+                    mask_fast(:,:,zz) = any(mask(:,:,zz,:), 4);
+                end
             end
+
+            SCM_gui( ...
+                PSC_fast, bg_fast, TR, par, baseline, ...
+                I, I_interp, fps, maxFPS, ...
+                mask_fast, maskIsInclude, ...
+                applyRejection, QC, fileLabel );
+
+            statusLine = 'SCM opened (full slice-wise mask transferred).';
+            render();
+
+        catch ME
+            statusLine = ['SCM failed: ' ME.message];
+            render();
         end
-
-        % -------------------------------------------------
-        % Launch SCM
-        % -------------------------------------------------
-        SCM_gui( ...
-            PSC_fast, bg_fast, TR, par, baseline, ...
-            I, I_interp, fps, maxFPS, ...
-            mask_fast, maskIsInclude, ...
-            applyRejection, QC, fileLabel );
-
-        statusLine = 'SCM opened (full slice-wise mask transferred).';
-        render();
-
-    catch ME
-        statusLine = ['SCM failed: ' ME.message];
-        render();
     end
-end
-
 
 % =========================================================
 %  SAVE MP4 VIDEO
@@ -992,7 +980,6 @@ end
         vid.Quality   = 95;
         open(vid);
 
-        % Temporary text overlay on AXES
         txt = text(ax, 0.01, 0.99, '', ...
             'Units','normalized', ...
             'Color','w', ...
@@ -1042,7 +1029,7 @@ end
         if isequal(f,0), return; end
 
         out = struct();
-        out.mask          = mask;           % now 4D mask (Y x X x Z x T)
+        out.mask          = mask;
         out.maskIsInclude = maskIsInclude;
 
         out.metadata = struct();
@@ -1069,30 +1056,20 @@ end
         out.I = I_interp;
 
         metadata = struct();
-        if exist('S','var') && isfield(S,'metadata') && isstruct(S.metadata)
-            metadata = S.metadata;
-        end
-
         metadata.TR     = TR;
         metadata.time   = (0:size(I_interp,3)-1) * TR;
         metadata.system = 'fUSI';
 
-        if exist('S','var')
-            if isfield(S,'imageDim'),  metadata.imageDim  = S.imageDim;  end
-            if isfield(S,'imageSize'), metadata.imageSize = S.imageSize; end
-            if isfield(S,'voxelSize'), metadata.voxelSize = S.voxelSize; end
-            if isfield(S,'imageType'), metadata.imageType = S.imageType; end
-            if isfield(S,'origin'),    metadata.origin    = S.origin;    end
-            if isfield(S,'t0'),        metadata.t0        = S.t0;        end
+        try
+            metadata.frameRateQC = struct( ...
+                'applied',      applyRejection, ...
+                'outliers',     QC.outliers, ...
+                'thresholdLow', QC.thresholdLow, ...
+                'thresholdHigh',QC.thresholdHigh, ...
+                'sigma',        QC.sigma, ...
+                'rejPct',       QC.rejPct);
+        catch
         end
-
-        metadata.frameRateQC = struct( ...
-            'applied',      applyRejection, ...
-            'outliers',     QC.outliers, ...
-            'thresholdLow', QC.thresholdLow, ...
-            'thresholdHigh',QC.thresholdHigh, ...
-            'sigma',        QC.sigma, ...
-            'rejPct',       QC.rejPct);
 
         metadata.baseline = baseline;
 
@@ -1108,7 +1085,6 @@ end
         statusLine = 'Interpolated MAT file saved (with metadata).';
         render();
     end
-
 
 % =========================================================
 %  HELP DIALOG
@@ -1139,29 +1115,18 @@ end
             'HorizontalAlignment','left');
 
         msg = [ ...
-            'SLICE-WISE MASKING\n' ...
+            'ALPHA MODULATION (IDENTICAL to SCM_gui)\n' ...
             '============================================================\n' ...
-            'Each slice has its own mask (Y x X x Z x T).\n' ...
-            'Painting, fill, auto mask operate ONLY on current slice.\n\n' ...
-            ...
-            'RECOMMENDED WORKFLOW\n' ...
-            '============================================================\n' ...
-            '1) Select AUTO MASK method (A or B)\n' ...
-            '2) Press M or click AUTO MASK\n' ...
-            '3) Use FILL (F) to expand coherent regions\n' ...
-            '4) Refine mask manually with paint tools\n' ...
-            '5) Switch VIEW: MASKED for final visualization\n\n' ...
-            ...
+            'Threshold hides low |PSC| by alpha.\n' ...
+            'Alpha (%) is the global overlay strength.\n' ...
+            'If alpha modulation is ON, alpha ramps 0..1 between Mod Min and Mod Max.\n\n' ...
             'VIEW MODES\n' ...
             '============================================================\n' ...
-            '- VIEW: FULL   -> show PSC everywhere\n' ...
-            '- VIEW: MASKED -> show PSC only inside mask\n' ...
-            '- Include/Exclude flips mask interpretation\n' ...
-            '- Contrast remains identical in all modes\n\n' ...
-            ...
-            'KEYBOARD SHORTCUTS\n' ...
+            '- VIEW: FULL   -> PSC shown everywhere (threshold still applies)\n' ...
+            '- VIEW: MASKED -> PSC shown only inside mask (Include/Exclude)\n\n' ...
+            'SHORTCUTS\n' ...
             '============================================================\n' ...
-            '- M  -> Automatic mask (A / B)\n' ...
+            '- M  -> Automatic mask (robust)\n' ...
             '- F  -> Fill region at cursor\n' ...
             '- Scroll wheel -> change slice\n' ...
             ];
@@ -1178,7 +1143,7 @@ end
             'Max',2,'Min',0, ...
             'Enable','inactive');
 
-        closeBtn = uicontrol('Style','pushbutton','Parent',hf, ...
+        closeBtn2 = uicontrol('Style','pushbutton','Parent',hf, ...
             'Units','pixels', ...
             'Position',[770 25 130 42], ...
             'String','Close', ...
@@ -1197,11 +1162,12 @@ end
             W = p(3); H = p(4);
             set(titleTxt,'Position',[20 H-50 W-40 36]);
             set(txtBox,  'Position',[20 90 W-40 H-150]);
-            set(closeBtn,'Position',[W-150 25 130 42]);
+            set(closeBtn2,'Position',[W-150 25 130 42]);
         end
     end
+
 % =========================================================
-%  UI CALLBACKS: EDITOR / VIEW / AUTO FLAGS
+%  UI CALLBACKS: EDITOR / VIEW / MASK
 % =========================================================
     function toggleEditor(src, ~)
         editorMode = logical(src.Value);
@@ -1232,7 +1198,6 @@ end
 
     function applyMaskToAllFrames(~, ~)
         refMask = mask(:,:,sliceIdx,volume);
-
         if ~any(refMask(:))
             statusLine = 'Current slice mask is empty — nothing to apply.';
             render();
@@ -1240,17 +1205,15 @@ end
         end
 
         for v = 1:nVols
-            for z = 1:nZ
-                mask(:,:,z,v) = refMask;
-            end
+            mask(:,:,sliceIdx,v) = refMask;
         end
 
-        statusLine = sprintf('Mask of slice %d was applied', sliceIdx);
+        statusLine = sprintf('Mask of slice %d applied to all volumes.', sliceIdx);
         render();
     end
 
     function autoMaskButton(~, ~)
-        autoMask();   % defined below
+        autoMask();
     end
 
     function setBrush(v)
@@ -1272,16 +1235,67 @@ end
         render();
     end
 
-    function setStrictMode(src, ~)
-        strictMode = src.Value;
-        statusLine = '';
+    function setOverlayAlpha(v)
+        maskAlpha = max(0, min(1, v));
+        statusLine = sprintf('Mask alpha = %.2f', maskAlpha);
         render();
     end
 
-    function setPercentileKeep(src, ~)
-        percentileKeep = round(src.Value);
-        percVal.String = sprintf('Percentile: %.0f (lower = more voxels)', percentileKeep);
-        statusLine = '';
+    function setMaskThreshold(v)
+        maskThreshold = v;
+        statusLine = sprintf('PSC threshold = %.2f', maskThreshold);
+        render();
+    end
+
+% =========================================================
+%  SCM-IDENTICAL ALPHA MOD UI CALLBACKS
+% =========================================================
+    function toggleAlphaMod(~,~)
+        alphaModEnable = logical(get(alphaEnableChk,'Value'));
+        alphaModToggledUI();
+        render();
+    end
+
+    function alphaModToggledUI()
+        if alphaModEnable
+            set(editModMin,'Enable','on','ForegroundColor','w','BackgroundColor',[0.10 0.10 0.10]);
+            set(editModMax,'Enable','on','ForegroundColor','w','BackgroundColor',[0.10 0.10 0.10]);
+        else
+            set(editModMin,'Enable','off','ForegroundColor',[0.55 0.55 0.55],'BackgroundColor',[0.16 0.16 0.16]);
+            set(editModMax,'Enable','off','ForegroundColor',[0.55 0.55 0.55],'BackgroundColor',[0.16 0.16 0.16]);
+        end
+    end
+
+    function setAlphaPctBox(src,~)
+        v = str2double(src.String);
+        if ~isfinite(v), v = alphaPct; end
+        v = max(0, min(100, v));
+        alphaPct = v;
+        set(src,'String',sprintf('%.0f',alphaPct));
+        render();
+    end
+
+    function setModMinBox(src,~)
+        v = str2double(src.String);
+        if ~isfinite(v), v = modMinAbs; end
+        modMinAbs = v;
+        if modMaxAbs < modMinAbs
+            modMaxAbs = modMinAbs;
+            set(editModMax,'String',sprintf('%.3g',modMaxAbs));
+        end
+        set(src,'String',sprintf('%.3g',modMinAbs));
+        render();
+    end
+
+    function setModMaxBox(src,~)
+        v = str2double(src.String);
+        if ~isfinite(v), v = modMaxAbs; end
+        modMaxAbs = v;
+        if modMaxAbs < modMinAbs
+            modMinAbs = modMaxAbs;
+            set(editModMin,'String',sprintf('%.3g',modMinAbs));
+        end
+        set(src,'String',sprintf('%.3g',modMaxAbs));
         render();
     end
 
@@ -1317,26 +1331,24 @@ end
 
         cp = get(ax,'CurrentPoint');
         x = cp(1,1);
-        y = cp(1,2);
+        y2 = cp(1,2);
 
-        % store cursor for Fill region
-        if x>=1 && x<=nx && y>=1 && y<=nz
-            lastMouseXY = [x y];
+        if x>=1 && x<=nx && y2>=1 && y2<=nz
+            lastMouseXY = [x y2];
         end
 
         if ~mouseIsDown || ~editorMode || playing, return; end
-
         applyPaintAtCursor();
     end
 
     function applyPaintAtCursor()
         cp = get(ax,'CurrentPoint');
         x  = round(cp(1,1));
-        y  = round(cp(1,2));
+        y2 = round(cp(1,2));
 
-        if x<1 || x>nx || y<1 || y>nz, return; end
+        if x<1 || x>nx || y2<1 || y2>nz, return; end
 
-        brush = makeBrushMask(x, y, brushRadius, nz, nx);
+        brush = makeBrushMask(x, y2, brushRadius, nz, nx);
 
         if strcmp(paintMode,'add')
             if applyToAllFrames
@@ -1344,7 +1356,7 @@ end
             else
                 mask(:,:,sliceIdx,volume) = mask(:,:,sliceIdx,volume) | brush;
             end
-        else % remove
+        else
             if applyToAllFrames
                 mask(:,:,sliceIdx,:) = mask(:,:,sliceIdx,:) & ~repmat(brush,[1 1 1 nVols]);
             else
@@ -1371,7 +1383,6 @@ end
                     return;
                 end
                 fillAtXY(lastMouseXY(1), lastMouseXY(2));
-
             case 'm'
                 autoMask();
         end
@@ -1394,58 +1405,52 @@ end
             render();
             return;
         end
-
         fillRegionAtSeed(x0, y0);
     end
 
 % =========================================================
-%  AUTO MASK + REGION GROWING — SLICE WISE
+%  AUTO MASK + REGION GROWING — SLICE WISE (AUTO = robust A)
 % =========================================================
     function autoMask()
-        if strictMode == 1
-            statusLine = 'AUTO MASK: Off (no changes).';
-            render();
-            return;
-        end
-
-        % PSC magnitude for this slice
         if ndPSC == 4
             P = squeeze(max(abs(PSC(:,:,sliceIdx,:)),[],4));
-        else
+        elseif ndPSC == 3
             P = max(abs(PSC),[],3);
+        else
+            P = abs(PSC);
         end
 
         P(~isfinite(P)) = 0;
         vec = P(:);
 
-        switch strictMode
-            case 2
-                medv = median(vec);
-                madv = median(abs(vec - medv)) + eps;
-                thr  = medv + 1.2*madv;
-            case 3
-                thr = prctile(vec, percentileKeep);
-        end
+        medv = median(vec);
+        madv = median(abs(vec - medv)) + eps;
+        thr  = medv + 1.2*madv;
 
         autoM = P >= thr;
 
-        % clean
-        se = strel('disk', max(1,round(fillWindowR/3)));
-        autoM = imopen(autoM,se);
-        autoM = imclose(autoM,se);
-        autoM = imfill(autoM,'holes');
-        autoM = bwareaopen(autoM, 20);
+        try
+            se = strel('disk', max(1,round(fillWindowR/3)));
+            autoM = imopen(autoM,se);
+            autoM = imclose(autoM,se);
+            autoM = imfill(autoM,'holes');
+            autoM = bwareaopen(autoM, 20);
+        catch
+        end
 
         if nnz(autoM) > fillMaxPixels
-            autoM = bwareafilt(autoM,1);
+            try
+                autoM = bwareafilt(autoM,1);
+            catch
+            end
         end
 
         if applyToAllFrames
             mask(:,:,sliceIdx,:) = repmat(autoM,[1 1 1 nVols]);
-            statusLine = sprintf('AUTO MASK (%s) applied to ALL volumes (slice %d).', autoMethodLabel(), sliceIdx);
+            statusLine = sprintf('AUTO MASK (A) applied to ALL volumes (slice %d).', sliceIdx);
         else
             mask(:,:,sliceIdx,volume) = autoM;
-            statusLine = sprintf('AUTO MASK (%s) applied to volume %d (slice %d).', autoMethodLabel(), volume, sliceIdx);
+            statusLine = sprintf('AUTO MASK (A) applied to volume %d (slice %d).', volume, sliceIdx);
         end
 
         render();
@@ -1454,8 +1459,10 @@ end
     function fillRegionAtSeed(x0, y0)
         if ndPSC == 4
             P = squeeze(max(abs(PSC(:,:,sliceIdx,:)),[],4));
-        else
+        elseif ndPSC == 3
             P = max(abs(PSC),[],3);
+        else
+            P = abs(PSC);
         end
 
         P(~isfinite(P)) = 0;
@@ -1482,8 +1489,12 @@ end
         diffMat = abs(P - centerVal);
 
         region = diffMat <= thrDiff;
-        region = bwareaopen(region, 5);
-        region = imfill(region,'holes');
+
+        try
+            region = bwareaopen(region, 5);
+            region = imfill(region,'holes');
+        catch
+        end
 
         if applyToAllFrames
             mask(:,:,sliceIdx,:) = mask(:,:,sliceIdx,:) | repmat(region,[1 1 1 nVols]);
@@ -1498,7 +1509,7 @@ end
 % =========================================================
 %  SMALL HELPERS
 % =========================================================
-    function bg2 = getBg2DForSlice(bgIn, z, nZ_)
+    function bg2 = getBg2DForSlice(bgIn, z, nZ_) %#ok<INUSD>
         if ndims(bgIn) == 2
             bg2 = bgIn;
         elseif ndims(bgIn) == 3
@@ -1526,72 +1537,68 @@ end
         end
     end
 
-    function str = autoMethodLabel()
-        switch strictMode
-            case 2, str = 'A';
-            case 3, str = 'B';
-            otherwise, str = 'Off';
-        end
-    end
-
     function out = tern(cond, a, b)
         if cond, out = a; else, out = b; end
     end
 
-function onCloseVideo(~,~)
-
-    % Stop timer safely
-    try
-        if exist('playTimer','var') && isa(playTimer,'timer')
-            stop(playTimer);
-            delete(playTimer);
+% =========================================================
+%  CLOSE HANDLER
+% =========================================================
+    function onCloseVideo(~,~)
+        try
+            if exist('playTimer','var') && isa(playTimer,'timer')
+                stop(playTimer);
+                delete(playTimer);
+            end
+        catch
         end
-    catch
-    end
 
-    % Push mask back safely (if it exists)
-    try
-        if exist('mask','var')
+        try
             setappdata(fig,'updatedMask',mask);
-        end
-
-        if exist('maskIsInclude','var')
             setappdata(fig,'updatedMaskIsInclude',maskIsInclude);
+        catch
         end
-    catch
+
+        delete(fig);
     end
 
-    delete(fig);
-end
-function setColorbarRange(~,~)
+% =========================================================
+%  COLORBAR RANGE DIALOG (PSC ONLY)
+% =========================================================
+    function setColorbarRange(~,~)
 
-    answer = inputdlg( ...
-        {'Colorbar LOWER limit (%):','Colorbar UPPER limit (%):'}, ...
-        'Set PSC Color Range', ...
-        1, ...
-        {num2str(par.previewCaxis(1)), num2str(par.previewCaxis(2))});
+        answer = inputdlg( ...
+            {'Colorbar LOWER limit (%):','Colorbar UPPER limit (%):'}, ...
+            'Set Signal Change Range', ...
+            1, ...
+            {num2str(par.previewCaxis(1)), num2str(par.previewCaxis(2))});
 
-    if isempty(answer)
-        return;
+        if isempty(answer)
+            return;
+        end
+
+        low  = str2double(answer{1});
+        high = str2double(answer{2});
+
+        if isnan(low) || isnan(high) || high <= low
+            errordlg('Invalid colorbar limits.');
+            return;
+        end
+
+        par.previewCaxis = [low high];
+
+        caxis(ax, par.previewCaxis);
+        if ishandle(cbar)
+            set(cbar,'Limits',par.previewCaxis);
+        end
+
+        % Update threshold slider range too
+        try
+            set(maskThreshSlider,'Min',low,'Max',high);
+        catch
+        end
+
+        render();
     end
 
-    low  = str2double(answer{1});
-    high = str2double(answer{2});
-
-    if isnan(low) || isnan(high) || high <= low
-        errordlg('Invalid colorbar limits.');
-        return;
-    end
-
-    par.previewCaxis = [low high];
-
-    % Update axis scaling
-    caxis(ax, par.previewCaxis);
-    set(cbar,'Limits',par.previewCaxis);
-
-    % Also update threshold slider range
-    set(maskThreshSlider,'Min',low,'Max',high);
-
-    render();
-end
 end % END OF MAIN FUNCTION
