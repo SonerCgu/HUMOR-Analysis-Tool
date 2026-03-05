@@ -297,7 +297,7 @@ fgDim   = [0.70 0.70 0.74];
 selRed  = [1.00 0.25 0.25];
 
 % STRONGER (less washed) blue for UI
-lineCol = [0.00 0.20 0.65];   % dark blue (more visible than light blue)
+lineCol = [0.35 0.80 1];   % lightblue (more visible than light blue)
 
 fig = figure('Name','PCA Components — left click select, right click deselect', ...
     'Color',bgFig,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
@@ -752,7 +752,7 @@ fgDim   = [0.70 0.70 0.74];
 selRed  = [1.00 0.25 0.25];
 
 % STRONGER blue for QC grid lines
-lineCol = [0.00 0.20 0.65];  % dark blue
+lineCol = [0.35 0.80 1];  % light blue
 lineW   = 1.35;              % slightly thicker for visibility
 
 for p = 1:nPages

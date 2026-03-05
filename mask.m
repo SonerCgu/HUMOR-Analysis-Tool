@@ -120,7 +120,7 @@ S.editorOn = true;
 S.previewMasked = false;
 
 % Underlay
-% 1 mean linear, 2 median linear, 3 max linear, 4 external, 5 Gabriel mean dB (DEFAULT)
+% 1 mean linear, 2 median linear, 3 max linear, 4 external, 5 Gabriel mean dB (DEFAULT), 6 MIP(Z) of Mean(T)
 S.underlayMode = 5;
 S.externalFile = '';
 UbaseLabel = 'Gabriel Mean (dB)';
@@ -133,7 +133,7 @@ S.dbHigh = -7;
 S.brightness = 0.00;
 S.contrast   = 1.00;
 S.gamma      = 1.00;
-S.sharpness  = 0.00;     % 0..6
+S.sharpness  = 0.00;     % 0..100
 
 S.globalScaling = false; % used only for linear modes
 S.pctLow  = 1;
@@ -321,7 +321,12 @@ h.togPreview = uicontrol('Style','togglebutton','Parent',ctrlPanel, ...
 % Underlay
 h.underTitle = makeTitle(ctrlPanel,'Underlay');
 h.popUnderlay = uicontrol('Style','popupmenu','Parent',ctrlPanel, ...
-    'String',{'Mean (T) [linear]','Median (T) [linear]','Max (T) [linear]','External file...','Gabriel Mean (dB) [DEFAULT]'}, ...
+    'String',{'Mean (T) [linear]', ...
+          'Median (T) [linear]', ...
+          'Max (T) [linear]', ...
+          'External file...', ...
+          'Gabriel Mean (dB) [DEFAULT]', ...
+          'MIP (Z) of Mean(T) [linear]'}, ...
     'Value',S.underlayMode, ...
     'BackgroundColor',C.bg2,'ForegroundColor','w', ...
     'FontSize',FS_L, ...
@@ -360,7 +365,7 @@ h.dispTitle = makeTitle(ctrlPanel,'Display');
 [h.lblBright,h.slBright,h.txtBright] = makeSliderRow(ctrlPanel,'Brightness',-0.6,0.6,S.brightness,@onDisplayChange,'%.2f');
 [h.lblCont,  h.slCont,  h.txtCont]   = makeSliderRow(ctrlPanel,'Contrast',0.5,3.0,S.contrast,@onDisplayChange,'%.2f');
 [h.lblGamma, h.slGamma, h.txtGamma]  = makeSliderRow(ctrlPanel,'Gamma',0.2,3.0,S.gamma,@onDisplayChange,'%.2f');
-[h.lblSharp, h.slSharp, h.txtSharp]  = makeSliderRow(ctrlPanel,'Sharpness',0,6,S.sharpness,@onDisplayChange,'%.2f');
+[h.lblSharp, h.slSharp, h.txtSharp]  = makeSliderRow(ctrlPanel,'Sharpness',0,100,S.sharpness,@onDisplayChange,'%.2f');
 
 h.chkTone = uicontrol('Style','checkbox','Parent',ctrlPanel, ...
     'String','Soft tone map (optional)', ...
@@ -896,37 +901,52 @@ uiwait(fig);
         end
     end
 
-    function onSaveOnly(~,~)
-        if ~any(maskVol(:))
-            errordlg('Mask is empty. Draw the brain first, then SAVE.','Mask Editor');
-            return;
-        end
+  function onSaveOnly(~,~)
+    if ~any(maskVol(:))
+        errordlg('Mask is empty. Draw the brain first, then SAVE.','Mask Editor');
+        return;
+    end
 
-        brainImage = buildBrainImageForSave_native(); %#ok<NASGU>
+    % Build brain-only image (masked underlay; outside = 0), native orientation
+    brainImage = buildBrainImageForSave_native(); 
 
-        visDir = fullfile(studio.exportPath,'Visualization');
-        if ~exist(visDir,'dir'), mkdir(visDir); end
-        ts = datestr(now,'yyyymmdd_HHMMSS');
+    % Also save the binary brain mask (native orientation)
+    brainMask = logical(maskVol); 
+    if nZ == 1
+        brainMask = brainMask(:,:,1);
+    end
 
-        outFile = fullfile(visDir, sprintf('BrainOnly_%s_%s.mat', safeFileStem(datasetLabel), ts));
+    visDir = fullfile(studio.exportPath,'Visualization');
+    if ~exist(visDir,'dir'), mkdir(visDir); end
+    ts = datestr(now,'yyyymmdd_HHMMSS');
 
+    outFile = fullfile(visDir, sprintf('BrainOnly_%s_%s.mat', safeFileStem(datasetLabel), ts));
+
+    try
+        % Save both variables in ONE file
+        save(outFile,'brainImage','brainMask','-v7.3');
+    catch ME
+        errordlg(ME.message,'Save failed');
+        return;
+    end
+
+    out.files.brainImage_mat = outFile;
+    out.brainImage = brainImage;
+
+    % Keep the output mask updated too
+    out.mask = logical(maskVol);
+
+    updateStatus(['Saved: ' outFile]);
+    try
+        hmsg = msgbox('Saved brainImage and brainMask (native orientation).','Mask Editor','help');
         try
-            save(outFile,'brainImage','-v7.3');
-        catch ME
-            errordlg(ME.message,'Save failed');
-            return;
-        end
-
-        out.files.brainImage_mat = outFile;
-        out.brainImage = brainImage;
-
-        updateStatus(['Saved: ' outFile]);
-        try
-            hmsg = msgbox('Saved brainImage (native orientation) ?','Mask Editor','help');
-            try, pause(0.35); if ishandle(hmsg), close(hmsg); end; catch, end
+            pause(0.35);
+            if ishandle(hmsg), close(hmsg); end
         catch
         end
+    catch
     end
+end
 
     function onCloseReturn(~,~)
         out.cancelled = false;
@@ -1304,6 +1324,9 @@ uiwait(fig);
                 case 5
                     U = underlayGabrielMeanDB(I);
                     UbaseLabel = 'Gabriel Mean (dB)';
+                case 6
+                U = underlayMIP_Z_ofMeanT(I);
+                UbaseLabel = 'MIP (Z) of Mean(T) [linear]';
             end
             U = double(U);
             U(~isfinite(U)) = 0;
@@ -1348,6 +1371,35 @@ uiwait(fig);
         end
     end
 
+function U = underlayMIP_Z_ofMeanT(Iin)
+    % MIP like FSLeyes (axial direction here):
+    % For 4D: a0(y,x,z) = mean_t I(y,x,z,t)
+    %         mip(y,x)  = max_z a0(y,x,z)
+    % We replicate mip across z so the slice slider still works.
+
+    if ndims(Iin) == 3
+        % 2D probe: no Z dimension -> MIP degenerates to Mean(T)
+        U = mean(double(Iin), 3);
+        U = reshape(U, [nY nX 1]);
+        return;
+    end
+
+    % 4D input: [Y X Z T]
+    T = size(Iin, 4);
+
+    % Memory-safe mean over T (avoids double(Iin) full copy)
+    a0 = zeros(nY, nX, nZ, 'double');
+    for tt = 1:T
+        a0 = a0 + double(Iin(:,:,:,tt));
+    end
+    a0 = a0 / max(1, T);
+
+    % Maximum intensity projection along Z
+    mip2 = max(a0, [], 3);  % [Y X]
+
+    % Replicate across Z so Ubase(:,:,z) exists for all z
+    U = repmat(reshape(mip2, [nY nX 1]), [1 1 nZ]);
+end
     function Udb = underlayGabrielMeanDB(Iin)
         % Gabriel style:
         % a0 = mean(I, T); a0 = 20*log10(a0 ./ max(a0(:)));
@@ -1527,14 +1579,25 @@ uiwait(fig);
         U01 = U01 .^ (1/max(eps,gam));
         U01 = min(max(U01,0),1);
 
-        % Sharpness 0..6 (halo-safe)
-        sharp = max(0, min(6, double(sharp)));
-        if sharp > 0
-            amount = 0.25 * sharp;       % 0..1.5
-            B = gaussBlur2D(U01, 1.25);  % stable blur
-            U01 = U01 + amount * (U01 - B);
-            U01 = min(max(U01,0),1);
-        end
+      % Sharpness 0..100 (stronger but still stable)
+sharp = max(0, min(100, double(sharp)));
+if sharp > 0
+    sharpMax  = 100;
+    amountMax = 2.2;                         % max sharpening strength
+   amount = amountMax * (1 - exp(-sharp/25));   % 25 -> reaches ~98% at ~100
+
+    % Slightly larger blur at higher sharpness reduces halos
+    sigma = 1.25 + 0.35*(sharp/sharpMax);
+    B = gaussBlur2D(U01, sigma);
+
+    hi = (U01 - B);
+
+    % Clamp high-frequency boost (prevents harsh ringing/noise blow-up)
+    hi = max(min(hi, 0.25), -0.25);
+
+    U01 = U01 + amount * hi;
+    U01 = min(max(U01,0),1);
+end
     end
 
     function Uo = toneMapSoft(Ui)
