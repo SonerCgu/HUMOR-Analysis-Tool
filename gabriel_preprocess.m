@@ -6,8 +6,8 @@ function out = gabriel_preprocess(Iin, TRin, opts)
 %   - 4D input: Iin [Y X Z T]
 %
 % Steps:
-%   1) Median temporal block-averaging (no offset, no frame loss)
-%   2) Non-rigid drift correction (demons)
+%   1) Block-averaging with MEAN or MEDIAN (user-selectable)
+%   2) Non-rigid drift correction (imregdemons)
 %   3) QC figures: DISPLAY (optional) + PNG export (optional)
 %
 % Notes:
@@ -26,9 +26,10 @@ if ~isfield(opts,'nsub')
 end
 
 nsub = opts.nsub;
-if ~isscalar(nsub) || nsub < 2
+if ~isscalar(nsub) || nsub < 2 || isnan(nsub)
     error('opts.nsub must be an integer >= 2');
 end
+nsub = round(nsub);
 
 if ~isfield(opts,'regSmooth') || isempty(opts.regSmooth)
     opts.regSmooth = 1.3;
@@ -44,6 +45,21 @@ end
 
 if ~isfield(opts,'qcDir') || isempty(opts.qcDir)
     opts.qcDir = 'gabriel_QC';
+end
+
+% ------------------ NEW: block method (median vs mean) ------------------
+if ~isfield(opts,'blockMethod') || isempty(opts.blockMethod)
+    opts.blockMethod = 'median';
+end
+opts.blockMethod = lower(strtrim(opts.blockMethod));
+if ~ismember(opts.blockMethod, {'median','mean'})
+    opts.blockMethod = 'median';
+end
+
+if strcmp(opts.blockMethod,'mean')
+    blockReduce = @(X,dim) mean(X, dim);
+else
+    blockReduce = @(X,dim) median(X, dim);
 end
 
 nd = ndims(Iin);
@@ -64,23 +80,23 @@ if nr < 1
     error('Not enough frames (%d) for nsub = %d', nt, nsub);
 end
 
-fprintf('[Gabriel] Median block averaging (nsub = %d)\n', nsub);
+fprintf('[Gabriel] Block averaging (%s, nsub = %d)\n', opts.blockMethod, nsub);
 fprintf('[Gabriel] Using %d / %d frames\n', nr*nsub, nt);
 
-%% ------------------ STEP 1: SUBSAMPLING (MEDIAN) ------------------
+%% ------------------ STEP 1: SUBSAMPLING (MEAN or MEDIAN) ------------------
 if nd == 3
     % 2D probe
     Ir = zeros(ny, nx, nr, 'like', Iin);
     for i = 1:nr
         idx = (i-1)*nsub + (1:nsub);
-        Ir(:,:,i) = median(Iin(:,:,idx), 3);
+        Ir(:,:,i) = blockReduce(Iin(:,:,idx), 3);
     end
 else
     % Matrix probe
     Ir = zeros(ny, nx, nz, nr, 'like', Iin);
     for i = 1:nr
         idx = (i-1)*nsub + (1:nsub);
-        Ir(:,:,:,i) = median(Iin(:,:,:,idx), 4);
+        Ir(:,:,:,i) = blockReduce(Iin(:,:,:,idx), 4);
     end
 end
 
@@ -93,7 +109,7 @@ assert(nRef <= nr, 'gabriel_preprocess: nRef exceeds number of blocks');
 Ic = Ir;
 
 if nd == 3
-    Iref = median(Ir(:,:,1:nRef), 3);
+    Iref = blockReduce(Ir(:,:,1:nRef), 3);
     for i = 1:nr
         [~, tmp] = imregdemons( ...
             Ir(:,:,i), Iref, ...
@@ -102,7 +118,7 @@ if nd == 3
         Ic(:,:,i) = tmp;
     end
 else
-    Iref = median(Ir(:,:,:,1:nRef), 4);
+    Iref = blockReduce(Ir(:,:,:,1:nRef), 4);
     for i = 1:nr
         [~, tmp] = imregdemons( ...
             Ir(:,:,:,i), Iref, ...
@@ -121,7 +137,7 @@ if opts.saveQC || opts.showQC
         mkdir(opts.qcDir);
     end
 
-    % ---- Global median QC (dimension-safe) ----
+    % ---- Global median QC (dimension-safe; stays median by design) ----
     g_raw = globalMedianOverTime(Iin);
     g_sub = globalMedianOverTime(Ir);
     g_reg = globalMedianOverTime(Ic);
@@ -147,11 +163,11 @@ if opts.saveQC || opts.showQC
 
     % ---- Registration QC (robust for 2D & 3D) ----
     if nd == 3
-        Ipre  = median(Ir(:,:,1:nRef), 3);
-        Ipost = median(Ic(:,:,1:nRef), 3);
+        Ipre  = blockReduce(Ir(:,:,1:nRef), 3);
+        Ipost = blockReduce(Ic(:,:,1:nRef), 3);
     else
-        Ipre  = median(Ir(:,:,:,1:nRef), 4);
-        Ipost = median(Ic(:,:,:,1:nRef), 4);
+        Ipre  = blockReduce(Ir(:,:,:,1:nRef), 4);
+        Ipost = blockReduce(Ic(:,:,:,1:nRef), 4);
     end
 
     Ipre2D  = reduceTo2D(Ipre);
@@ -159,6 +175,9 @@ if opts.saveQC || opts.showQC
     Idiff2D = Ipost2D - Ipre2D;
 
     clim = prctile(abs(Idiff2D(:)), 99);
+    if ~isfinite(clim) || clim <= 0
+        clim = 1;
+    end
 
     QC.figRejected = figure('Color','w','Position',[100 520 1250 420], ...
         'Name','Gabriel QC — Registration check','NumberTitle','off');
@@ -188,7 +207,8 @@ out.TR        = TRin * nsub;
 out.blockDur  = TRin * nsub;
 out.nVols     = nr;
 out.totalTime = nt * TRin;
-out.method    = sprintf('Median block avg (nsub=%d) + demons', nsub);
+out.method    = sprintf('%s block avg (nsub=%d) + demons', ...
+    [upper(opts.blockMethod(1)) opts.blockMethod(2:end)], nsub);
 out.QC        = QC;
 
 fprintf('[Gabriel] blockDur  : %.3f s\n', out.blockDur);

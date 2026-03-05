@@ -1,17 +1,13 @@
 function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
-% SCM_gui — Studio version (MATLAB 2017b + 2023b)
+% SCM_gui â€” Studio version (MATLAB 2017b + 2023b)
 % ==========================================================
 % (UNCHANGED UI/behavior from your version)
 %
-% FIXES/FEATURES IN THIS COPY:
+% ONLY FIXES IN THIS COPY:
 %   1) ROI export no longer overwrites: continues roi1, roi2, roi3... (next free index)
 %   2) ROI export creates subfolders by dataset type (raw / gabriel / ...):
 %        AnalysedData/<dataset>/ROI/<type>/<datasetTag>/roiN.txt
 %      type is derived from loaded dataset (par.* or fileLabel)
-%   3) SCM-series export:
-%        - PNG tiles + 6-per-slide montage PNGs
-%        - Robust PPT export that just drops each montage PNG on a slide
-%          via writePptFromSlidePNGs (simple, 2017b + 2023b safe)
 % ==========================================================
 
 %% ---------------- SAFETY ----------------
@@ -82,7 +78,7 @@ roi.isFrozen = false;
 
 ROI_byZ = cell(1,nZ);
 for zz=1:nZ
-    ROI_byZ{zz} = struct('x1',{},'x2',{},'y1',{},'y2',{},'color',{}); %#ok<AGROW>
+    ROI_byZ{zz} = struct('x1',{},'x2',{},'y1',{},'y2',{},'color',{});
 end
 roiHandles = gobjects(0);
 roiPlotPSC = gobjects(0);
@@ -114,7 +110,7 @@ set(fig,'DefaultUicontrolFontName','Arial');
 set(fig,'DefaultUicontrolFontSize',14);
 
 annotation(fig,'textbox',[0.62 0.004 0.37 0.03], ...
-    'String','SCM GUI · Soner Caner Cagun · MPI Biological Cybernetics', ...
+    'String','SCM GUI Â· Soner Caner Cagun Â· MPI Biological Cybernetics', ...
     'Color',[0.70 0.70 0.70], 'FontSize',10, ...
     'HorizontalAlignment','right','EdgeColor','none','Interpreter','none');
 
@@ -143,7 +139,7 @@ cb.FontSize = 12;
 
 hold(ax,'off');
 
-% Dedicated title above axis
+% Dedicated title above axis (prevents overlap/clipping)
 txtTitle = uicontrol(fig,'Style','text','String',fileLabel, ...
     'Units','pixels','ForegroundColor',[0.95 0.95 0.95], ...
     'BackgroundColor',[0.05 0.05 0.05], ...
@@ -207,9 +203,10 @@ if nZ > 1
 end
 
 %% ---------------- MASK INIT ----------------
+% AUTO: if no mask was provided, try to derive one from the underlay (BrainOnly underlay has zeros outside)
 if isempty(passedMask)
     passedMask = deriveMaskFromUnderlay(bg, nY, nX, nZ, nT);
-    passedMaskIsInclude = true;
+    passedMaskIsInclude = true;  % BrainOnly underlay implies "include" mask
 end
 
 mask2D = true(nY,nX);
@@ -221,7 +218,7 @@ if ~passedMaskIsInclude && ~isempty(passedMask)
 end
 
 %% ==========================================================
-% RIGHT PANEL (CUSTOM BLACK TABS)
+% RIGHT PANEL (CUSTOM BLACK TABS, NO WHITE BOXES)
 %% ==========================================================
 controlsPanel = uipanel('Parent',fig,'Title','SCM Controls', ...
     'Units','pixels', ...
@@ -246,7 +243,7 @@ pOverlay  = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none',
 pUnderlay = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none', ...
     'BackgroundColor',[0.10 0.10 0.10],'Visible','off');
 
-% Status/info line
+% Status/info line (always visible)
 info1 = uicontrol(controlsPanel,'Style','text','String','', ...
     'Units','pixels', ...
     'ForegroundColor',[0.80 0.90 1.00], ...
@@ -318,7 +315,7 @@ lblAlpha  = mkLbl(pOverlay,'Overlay alpha (%)');
 slAlpha   = mkSlider(pOverlay,0,100,100,@updateView);
 txtAlpha  = mkValBox(pOverlay,'100');
 
-lblThr    = mkLblImp(pOverlay,'Threshold (abs %)'); 
+lblThr    = mkLblImp(pOverlay,'Threshold (abs %)');
 ebThr     = mkEdit(pOverlay,'50',@updateView);
 set(ebThr,'ForegroundColor',[1.00 0.35 0.35]);
 
@@ -329,7 +326,7 @@ set(ebCax,'ForegroundColor',[1.00 0.35 0.35]);
 lblAlphaMod = mkLblImp(pOverlay,'Alpha modulation');
 cbAlphaMod  = mkChk(pOverlay,'Alpha modulate by |SCM|',double(state.alphaModOn),@alphaModToggled);
 
-lblModMin = mkLblImp(pOverlay,'Mod Min (abs %)'); 
+lblModMin = mkLblImp(pOverlay,'Mod Min (abs %)');
 ebModMin  = mkEdit(pOverlay,sprintf('%.3g',state.modMin),@updateView);
 set(ebModMin,'ForegroundColor',[1.00 0.35 0.35]);
 
@@ -351,6 +348,7 @@ btnMaskClr  = mkBtn(pOverlay,'Clear mask',@clearMaskCB,[0.20 0.20 0.20],12);
 btnRoiExport = mkBtn(pOverlay,'EXPORT ROIs (TXT)',@exportROIsCB,[0.10 0.35 0.95],14);
 btnScmExport = mkBtn(pOverlay,'EXPORT SCM IMAGE',@exportSCMImageCB,[0.25 0.55 0.25],14);
 
+% NEW (purple): batch export + PPT montage
 btnScmSeries = mkBtn(pOverlay,'EXPORT SCM Time SERIES',@exportScmSeries1minCB,[0.55 0.15 0.65],12);
 
 btnUnfreeze  = mkBtn(pOverlay,'Unfreeze Hover',@unfreezeHover,[0.20 0.20 0.20],12);
@@ -385,7 +383,7 @@ slVlv  = mkSlider(pUnderlay,0,MAX_CONLEV,uState.conectLev,@underlaySliderChanged
 set(slVlv,'SliderStep',[1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnderlay,sprintf('%d',uState.conectLev));
 
-%% ---- Bottom right buttons ----
+%% ---- Bottom right buttons (outside controls panel) ----
 btnCompute = uicontrol(fig,'Style','pushbutton','String','Compute SCM', ...
     'Units','pixels','Callback',@computeSCM, ...
     'BackgroundColor',[0.30 0.30 0.30],'ForegroundColor','w', ...
@@ -557,21 +555,21 @@ function layoutOverlay(w, h)
     set(btnMaskClr ,'Position',[xCtrl+btnW2+btnGap2 y btnW2 rowH]);
     y = y - (rowH + gap);
 
-    % gap before export buttons
+    % keep your spacing tweaks
     gapFromMask = 10;
     y = y - gapFromMask;
 
     exportDown = 6;
-    set(btnRoiExport,'Position',[xLabel (y-exportDown) (w-2*pad) 42]);
-    y = y - (42 + gap + exportDown);
+ set(btnRoiExport,'Position',[xLabel (y-exportDown) (w-2*pad) 42]);
+y = y - (42 + gap + exportDown);
 
-    set(btnScmExport,'Position',[xLabel y (w-2*pad) 38]);
-    y = y - (38 + gap);
+set(btnScmExport,'Position',[xLabel y (w-2*pad) 38]);
+y = y - (38 + gap);
 
-    set(btnScmSeries,'Position',[xLabel y (w-2*pad) 34]);
-    y = y - (34 + gap);
+set(btnScmSeries,'Position',[xLabel y (w-2*pad) 34]);   % smaller
+y = y - (34 + gap);
 
-    set(btnUnfreeze,'Position',[xLabel y (w-2*pad) rowH]);
+set(btnUnfreeze,'Position',[xLabel y (w-2*pad) rowH]);
 
     function setRowSlider(lbl, sl, valbox)
         set(lbl,'Position',[xLabel y wLabel rowH]);
@@ -746,7 +744,7 @@ function mouseClick(~,~)
         tc=computeRoiPSC(x1,x2,y1,y2);
         if numel(tc)~=nT, return; end
         col=roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
-        ROI_byZ{state.z}(end+1)=struct('x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col); %#ok<AGROW>
+        ROI_byZ{state.z}(end+1)=struct('x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col);
         redrawROIsForCurrentSlice();
 
         set(hRoiCoordTxt,'String',sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1,x2,y1,y2), ...
@@ -796,8 +794,8 @@ function computeSCM(~,~)
         map = smooth2D_gauss(map, sig);
     end
 
-    % Hard mask outside brain
-    map(~mask2D) = 0;
+% Hard mask: nothing outside mask can light up (even with smoothing)
+map(~mask2D) = 0;
     set(hOV,'CData',map);
     updateView();
     drawTimeWindows();
@@ -831,6 +829,7 @@ function updateView(~,~)
 
     maps = get(popMap,'String');
     idx  = get(popMap,'Value');
+    cmapName = 'hot';
     if iscell(maps), cmapName = maps{idx};
     else,            cmapName = strtrim(maps(idx,:));
     end
@@ -911,7 +910,7 @@ function updateInfoLines()
 end
 function s = onoff(tf), if tf, s='on'; else, s='off'; end, end %#ok<SEPEX>
 
-%% ===================== ROI EXPORT =====================
+%% ===================== ROI EXPORT (FIXED INDEXING + SUBFOLDERS) =====================
 function exportROIsCB(~,~)
     nTot = 0;
     for zz=1:nZ, nTot = nTot + numel(ROI_byZ{zz}); end
@@ -924,6 +923,7 @@ function exportROIsCB(~,~)
         roiDir = getAutoRoiDir();
         if ~exist(roiDir,'dir'), mkdir(roiDir); end
 
+        % --- FIX: start from next available roi index (no overwrites)
         roiIdx = getNextRoiIndex(roiDir) - 1;
 
         for zz=1:nZ
@@ -933,6 +933,7 @@ function exportROIsCB(~,~)
                 r = ROI(k);
 
                 outFile = fullfile(roiDir, sprintf('roi%d.txt', roiIdx));
+                % ultra-safe: in case file exists, bump until free
                 while exist(outFile,'file')==2
                     roiIdx = roiIdx + 1;
                     outFile = fullfile(roiDir, sprintf('roi%d.txt', roiIdx));
@@ -995,6 +996,7 @@ function nextIdx = getNextRoiIndex(roiDir)
 end
 
 function roiDir = getAutoRoiDir()
+    % Determine AnalysedData root
     base = '';
 
     try
@@ -1029,15 +1031,18 @@ function roiDir = getAutoRoiDir()
         analysedRoot = guessAnalysedRoot(base);
     end
 
-    dsType = deriveDatasetType();
-    tag0   = deriveDatasetTag();
+    % --- FIX: folder split by dataset type (raw/gabriel/...)
+    dsType = deriveDatasetType();      % e.g. 'raw' or 'gabriel'
+    tag0   = deriveDatasetTag();       % sanitized dataset tag
     tag    = stripLeadingType(tag0, dsType);
 
     roiDir = fullfile(analysedRoot, 'ROI', dsType, tag);
 end
 
-%% ===================== SCM IMAGE EXPORT =====================
+%% ===================== SCM IMAGE EXPORT (STATIC VIEW) =====================
 function exportSCMImageCB(~,~)
+    % Auto-save current SCM view as PNG + TIF + JPG (no uiputfile, no msgbox)
+
     tf = [];
     try
         outDir = getAutoScmDir();
@@ -1049,6 +1054,7 @@ function exportSCMImageCB(~,~)
         outTif = fullfile(outDir, [baseName '.tif']);
         outJpg = fullfile(outDir, [baseName '.jpg']);
 
+        % Build an offscreen export figure (exports only the SCM view, not whole GUI)
         tf = figure('Visible','off', ...
             'Color',[0.05 0.05 0.05], ...
             'InvertHardcopy','off', ...
@@ -1058,14 +1064,17 @@ function exportSCMImageCB(~,~)
         ax2 = axes('Parent',tf,'Units','normalized','Position',[0.06 0.10 0.74 0.84]);
         axis(ax2,'image'); axis(ax2,'off'); set(ax2,'YDir','reverse'); hold(ax2,'on');
 
+        % Underlay (RGB as in GUI)
         bgRGB = get(hBG,'CData');
         image(ax2, bgRGB);
 
+        % Overlay + alpha (current)
         ov  = get(hOV,'CData');
         al  = get(hOV,'AlphaData');
         h2  = imagesc(ax2, ov);
         set(h2,'AlphaData', al);
 
+        % Colormap / caxis
         try
             colormap(ax2, colormap(ax));
         catch
@@ -1073,6 +1082,7 @@ function exportSCMImageCB(~,~)
         end
         caxis(ax2, state.cax);
 
+        % ROIs (current slice)
         ROI = ROI_byZ{state.z};
         for k=1:numel(ROI)
             r = ROI(k);
@@ -1080,6 +1090,7 @@ function exportSCMImageCB(~,~)
                 'EdgeColor',r.color,'LineWidth',2);
         end
 
+        % Title + colorbar
         title(ax2, sprintf('%s | Slice %d/%d', fileLabel, state.z, nZ), ...
             'Color','w','FontWeight','bold','Interpreter','none');
 
@@ -1090,6 +1101,8 @@ function exportSCMImageCB(~,~)
 
         set(tf,'PaperPositionMode','auto');
 
+        % ---- Save all 3 formats automatically ----
+        % Use OpenGL for reliable alpha/raster rendering
         print(tf, outPng, '-dpng',  '-r300', '-opengl');
         print(tf, outTif, '-dtiff', '-r300', '-opengl');
         print(tf, outJpg, '-djpeg', '-r300', '-opengl');
@@ -1097,6 +1110,7 @@ function exportSCMImageCB(~,~)
         if isgraphics(tf), close(tf); end
         tf = [];
 
+        % No popup. Optional: update the status line in the panel.
         try
             set(info1,'String',sprintf('Saved SCM: %s (png/tif/jpg)', outDir));
         catch
@@ -1109,6 +1123,8 @@ function exportSCMImageCB(~,~)
 end
 
 function scmDir = getAutoScmDir()
+    % Same as before up to analysedRoot resolution...
+
     base = '';
     try
         if isstruct(par)
@@ -1142,18 +1158,21 @@ function scmDir = getAutoScmDir()
         analysedRoot = guessAnalysedRoot(base);
     end
 
+    % >>> CHANGE IS HERE: no dsType/tag subfolders
     scmDir = fullfile(analysedRoot, 'SCM');
 end
 
-%% ===================== EXPORT 1-MIN SCM SERIES =====================
+%% ===================== EXPORT 1-MIN SCM SERIES (MOCK-LIKE PPT) =====================
 function exportScmSeries1minCB(~,~)
 
-    EXPORT_DPI_TILES  = 200;
-    EXPORT_DPI_SLIDES = 200;
+    % --- SPEED/QUALITY KNOBS ---
+    EXPORT_DPI_TILES  = 200;  % lower = faster (150-200 good)
+    EXPORT_DPI_SLIDES = 200;  % montage slides
     SAVE_TIF = true;
     SAVE_JPG = true;
 
     try
+        % Ask injection + optional limit
         a = inputdlg({ ...
             'Injection start (sec). Empty if unknown:', ...
             'Window length (sec) (default 60):', ...
@@ -1168,6 +1187,7 @@ function exportScmSeries1minCB(~,~)
         doPPT  = str2double(strtrim(a{4})); if ~isfinite(doPPT), doPPT = 1; end
         doPPT  = (doPPT ~= 0);
 
+        % Output dirs
         rootScm = getAutoScmDir();
         if ~exist(rootScm,'dir'), mkdir(rootScm); end
         stamp = datestr(now,'yyyymmdd_HHMMSS');
@@ -1177,20 +1197,23 @@ function exportScmSeries1minCB(~,~)
         dirPNG = fullfile(outDir,'tiles_png'); if ~exist(dirPNG,'dir'), mkdir(dirPNG); end
         dirTIF = fullfile(outDir,'tiles_tif'); if ~exist(dirTIF,'dir'), mkdir(dirTIF); end
         dirJPG = fullfile(outDir,'tiles_jpg'); if ~exist(dirJPG,'dir'), mkdir(dirJPG); end
+tmpSLD = tempname;
+mkdir(tmpSLD);
 
-        tmpSLD = tempname;
-        mkdir(tmpSLD);
-
+        % Tell user where it is (and keep full path in tooltip)
         try
             set(info1,'String',{ ...
-                'Saving to:', ...
-                shortenPath(outDir, 120), ...
-                'Tip: hover here to see full path'});
+    'Saving to:', ...
+    shortenPath(outDir, 120), ...
+    'Tip: hover here to see full path'});
             set(info1,'TooltipString',outDir);
             drawnow;
         catch
         end
 
+ 
+
+        % Baseline indices from GUI baseline window
         [b0,b1] = parseRangeSafe(getStr(ebBase), baseline.start, baseline.end);
         if ~isVolMode
             b0i = clamp(round(b0/TR)+1,1,nT);
@@ -1204,9 +1227,10 @@ function exportScmSeries1minCB(~,~)
         PSCz = getPSCForSlice(state.z);
         baseMap = mean(PSCz(:,:,b0i:b1i),3);
 
-        bgRGB = get(hBG,'CData');
-        cm    = colormap(ax);
-        caxV  = state.cax;
+        % Current GUI look
+        bgRGB = get(hBG,'CData');            % EXACT underlay as currently shown
+        cm    = colormap(ax);                % EXACT colormap currently used
+        caxV  = state.cax;                   % EXACT display range
 
         sigma = str2double(getStr(ebSigma));
         if ~isfinite(sigma), sigma = 0; end
@@ -1220,6 +1244,7 @@ function exportScmSeries1minCB(~,~)
 
         footerInfo = sprintf('Thr=%s | CAX=%s | Base=%s | %s | %s | %s', thrStr, caxStr, baseStr, aStr, modStr, sigStr);
 
+        % Window starts
         totalSec = (nT-1)*TR;
         starts = 0:winLen:(floor(totalSec/winLen)*winLen);
         if isfinite(maxMin)
@@ -1227,8 +1252,9 @@ function exportScmSeries1minCB(~,~)
             starts = starts(starts < maxSec);
         end
 
+        % One offscreen tile figure reused (FAST)
         figT = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
-        set(figT,'Units','pixels','Position',[50 50 1200 880]);
+        set(figT,'Units','pixels','Position',[50 50 1200 880]); % tile aspect close to your brain
         axT = axes('Parent',figT,'Units','normalized','Position',[0 0 1 1]);
         axis(axT,'image'); axis(axT,'off'); set(axT,'YDir','reverse'); hold(axT,'on');
         image(axT, bgRGB);
@@ -1242,6 +1268,7 @@ function exportScmSeries1minCB(~,~)
         tileLBL = {};
         nSaved = 0;
 
+        % ---- export tiles ----
         for wi = 1:numel(starts)
             s0 = starts(wi);
             s1 = s0 + winLen;
@@ -1259,6 +1286,7 @@ function exportScmSeries1minCB(~,~)
 
             alpha = alphaFromCurrentSettings(map);
 
+            % minute label: 0-60 = 1 min, 60-120 = 2 min, ...
             minIdx = floor(s0/winLen) + 1;
 
             phase = '';
@@ -1275,9 +1303,9 @@ function exportScmSeries1minCB(~,~)
             end
 
             if isempty(phase)
-                lbl = sprintf('%.0f–%.0fs | %d min', s0, s1, minIdx);
+                lbl = sprintf('%.0fâ€“%.0fs | %d min', s0, s1, minIdx);
             else
-                lbl = sprintf('%.0f–%.0fs | %d min (%s)', s0, s1, minIdx, phase);
+                lbl = sprintf('%.0fâ€“%.0fs | %d min (%s)', s0, s1, minIdx, phase);
             end
 
             baseName = sprintf('%s_z%02d_w%03d_%0.0f-%0.0fs', sanitizeName(fileLabel), state.z, minIdx, s0, s1);
@@ -1322,8 +1350,8 @@ function exportScmSeries1minCB(~,~)
         perSlide = 6;
         nSlides = ceil(numel(tilePNG)/perSlide);
 
-        fullTitle  = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
-        shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
+     fullTitle  = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ); % slide 1
+shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),     state.z, nZ); % slide 2+
 
         for si = 1:nSlides
             i0 = (si-1)*perSlide + 1;
@@ -1331,12 +1359,12 @@ function exportScmSeries1minCB(~,~)
             idx = i0:i1;
 
             outSlide = fullfile(tmpSLD, sprintf('slide_%02d.png', si));
-            if si == 1
-                tStr = fullTitle;
-            else
-                tStr = shortTitle;
-            end
-            renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
+           if si == 1
+    tStr = fullTitle;
+else
+    tStr = shortTitle;
+end
+renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
             slidePNGs{end+1} = outSlide; %#ok<AGROW>
 
             try
@@ -1347,37 +1375,35 @@ function exportScmSeries1minCB(~,~)
             end
         end
 
-        % ---- PPT: now use SIMPLE helper on montage PNGs ----
+        % ---- PPT: each montage PNG becomes one PPT slide (no overlap, like mock) ----
         pptPath = '';
         if doPPT
             hasPpt = (exist('mlreportgen.ppt.Presentation','class') == 8);
             if hasPpt
                 pptPath = fullfile(outDir, sprintf('%s_series_%s.pptx', sanitizeName(fileLabel), stamp));
-                try
-                    writePptFromSlidePNGs(pptPath, slidePNGs);
-                catch MEppt
-                    warning('[SCM SERIES] PPT creation failed: %s', MEppt.message);
-                    pptPath = '';
-                end
+
+title1 = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
+titleO = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
+
+writePptGridFromTiles(pptPath, tilePNG, tileLBL, cm, caxV, title1, titleO, footerInfo);
+                % cleanup temporary montage PNGs AFTER PPT is done
+try
+    for ii=1:numel(slidePNGs)
+        if exist(slidePNGs{ii},'file')==2
+            delete(slidePNGs{ii});
+        end
+    end
+    if exist(tmpSLD,'dir')==7
+        rmdir(tmpSLD,'s');
+    end
+catch
+end
             else
-                fprintf('[SCM SERIES] PPT API not available (mlreportgen.ppt). Kept PNGs only.\n');
+                fprintf('[SCM SERIES] PPT not available (mlreportgen.ppt missing). Kept slides_png only.\n');
             end
         end
 
-        % ---- cleanup temporary slidePNGs and folder ----
-        try
-            for ii = 1:numel(slidePNGs)
-                if exist(slidePNGs{ii},'file')==2
-                    delete(slidePNGs{ii});
-                end
-            end
-            if exist(tmpSLD,'dir')==7
-                rmdir(tmpSLD,'s');
-            end
-        catch
-        end
-
-        % ---- final status ----
+        % Final status (NOT cut off)
         try
             if ~isempty(pptPath)
                 set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PPT + PNGs)']);
@@ -1396,7 +1422,8 @@ function exportScmSeries1minCB(~,~)
 end
 
 function alpha = alphaFromCurrentSettings(ov)
-    a = get(slAlpha,'Value'); 
+    % Same alpha logic as updateView(), but applied to an arbitrary ov map
+    a = get(slAlpha,'Value'); % 0..100
     thr = str2double(getStr(ebThr)); if ~isfinite(thr), thr = 0; end
 
     mMin = str2double(getStr(ebModMin)); if ~isfinite(mMin), mMin = state.modMin; end
@@ -1428,23 +1455,34 @@ function alpha = alphaFromCurrentSettings(ov)
 end
 
 function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, footerStr, dpiVal)
+    % Creates ONE slide-like PNG with:
+    % - black background
+    % - title on top
+    % - ONE colorbar on left
+    % - 6 images (3 top, 3 bottom)
+    % - time label above each image
+    % - footer bottom-right
+
     figS = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
-    set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]);
+    set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]); % 16:9 like PPT
     set(figS,'PaperPositionMode','auto');
 
-    annotation(figS,'textbox',[0.02 0.885 0.96 0.11], ...
-        'String',titleStr, ...
-        'Color','w','EdgeColor','none', ...
-        'FontName','Arial','FontSize',14,'FontWeight','bold', ...
-        'HorizontalAlignment','center','Interpreter','none');
+    % Title
+  annotation(figS,'textbox',[0.02 0.885 0.96 0.11], ...
+    'String',titleStr, ...
+    'Color','w','EdgeColor','none', ...
+    'FontName','Arial','FontSize',14,'FontWeight','bold', ...
+    'HorizontalAlignment','center','Interpreter','none');
 
+    % Footer (bottom-right)
     annotation(figS,'textbox',[0.42 0.01 0.56 0.06], ...
         'String',footerStr, 'Color','w', 'EdgeColor','none', ...
         'FontName','Arial','FontSize',11,'FontWeight','bold', ...
         'HorizontalAlignment','right','Interpreter','none');
 
+    % Colorbar (left, once)
     axCB = axes('Parent',figS,'Position',[0.03 0.14 0.02 0.74],'Visible','off');
-    imagesc(axCB,[0 1;0 1]);
+    imagesc(axCB,[0 1;0 1]); %#ok<NASGU>
     colormap(axCB, cm);
     caxis(axCB, caxV);
     cbx = colorbar(axCB,'Position',[0.03 0.14 0.02 0.74]);
@@ -1454,6 +1492,7 @@ function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, fo
     cbx.Label.String = 'Signal change (%)';
     cbx.Label.Color = 'w';
 
+    % Grid positions (3x2)
     x0 = 0.08; x1 = 0.98;
     yBot = 0.12; yTop = 0.86;
     gridH = (yTop - yBot);
@@ -1463,7 +1502,12 @@ function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, fo
     cellH = (gridH - rowGap) / 2;
     cellW = (x1 - x0 - 2*colGap) / 3;
 
-    % top row
+    for k=1:6
+        if k > numel(pngList), break; end
+        r = (k<=3) + 1; % r=2 for top row? let's map manually
+    end
+
+    % top row = k=1..3
     for k=1:3
         if k>numel(pngList), break; end
         x = x0 + (k-1)*(cellW+colGap);
@@ -1478,7 +1522,7 @@ function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, fo
             'HorizontalAlignment','center','Interpreter','none');
     end
 
-    % bottom row
+    % bottom row = k=4..6
     for k=4:6
         if k>numel(pngList), break; end
         c = k-3;
@@ -1498,13 +1542,76 @@ function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, fo
     close(figS);
 end
 
+    function makeColorbarPNG(outFile, cm, caxV)
+    fig = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
+    set(fig,'Units','pixels','Position',[50 50 220 900]);
+
+    ax = axes('Parent',fig,'Position',[0.35 0.05 0.25 0.90]);
+    imagesc(ax,[0 1;0 1]);
+    colormap(ax, cm);
+    caxis(ax, caxV);
+    axis(ax,'off');
+
+    cb = colorbar(ax,'Position',[0.35 0.05 0.25 0.90]);
+    cb.Color = 'w';
+    cb.FontName = 'Arial';
+    cb.FontSize = 12;
+    cb.Label.String = 'Signal change (%)';
+    cb.Label.Color = 'w';
+
+    print(fig,outFile,'-dpng','-r200','-opengl');
+    close(fig);
+    end
+
+
+
+function addPptTextBox(slide, str, x, y, w, h, fontSize, isBold, hAlign)
+% Helper: adds a formatted Arial white text box to a slide.
+    import mlreportgen.ppt.*
+
+    tb = TextBox();
+    tb.X = sprintf('%.2fin', x);
+    tb.Y = sprintf('%.2fin', y);
+    tb.Width  = sprintf('%.2fin', w);
+    tb.Height = sprintf('%.2fin', h);
+
+    add(slide, tb);
+
+    % Support multiline strings (split by newline)
+    parts = regexp(char(str), '\n', 'split');
+    if isempty(parts), parts = {char(str)}; end
+
+  for i = 1:numel(parts)
+para = add(tb, parts{i});
+try, para.Font = 'Arial'; catch, end
+try, para.FontSize = fontSize; catch, end
+try, para.Bold = logical(isBold); catch, end
+
+% Set WHITE text (different versions use different property names)
+try, para.FontColor = 'FFFFFF'; catch, end
+try, para.Color     = 'FFFFFF'; catch, end
+
+try, para.HAlign = hAlign; catch, end
+end
+end
+
+    function safeClosePpt(ppt)
+    try
+        if ~isempty(ppt)
+            close(ppt);
+        end
+    catch
+    end
+    end
+
 function writePptFromSlidePNGs(pptPath, slidePNGs)
     import mlreportgen.ppt.*
 
     ppt = Presentation(pptPath);
     open(ppt);
 
-    for i = 1:numel(slidePNGs)
+    for i=1:numel(slidePNGs)
+        % Safety: ensure file exists before adding
         if exist(slidePNGs{i},'file') ~= 2
             warning('Slide image missing, skipping: %s', slidePNGs{i});
             continue;
@@ -1517,8 +1624,7 @@ function writePptFromSlidePNGs(pptPath, slidePNGs)
         end
 
         pic = Picture(slidePNGs{i});
-        pic.X = '0in';  
-        pic.Y = '0in';
+        pic.X = '0in';  pic.Y = '0in';
         pic.Width  = '13.333in';
         pic.Height = '7.5in';
         add(slide, pic);
@@ -1527,13 +1633,54 @@ function writePptFromSlidePNGs(pptPath, slidePNGs)
     close(ppt);
 end
 
-function titleStr = makeFullTitle(lbl)
+
+function titleStr = makeNiceSlideTitle(lbl)
+    % Returns a 2-line compact title: "Animal/ID" + "preproc label"
     s = char(lbl);
+
+    % If it contains "File:" etc, drop that tail
     s = regexprep(s,'\|?\s*File:.*$','');
-    s = shortenMiddle(s, 110);
-    titleStr = s;
+
+    % If it's a path, keep filename only
+    try
+        if contains(s,'/') || contains(s,'\') || contains(s,filesep)
+            [~,s] = fileparts(s);
+        end
+    catch
+    end
+
+    % Remove common huge prefixes
+    s = regexprep(s,'^Project_','');
+    s = regexprep(s,'RawData_','');
+    s = regexprep(s,'AnalysedData_','');
+
+    % Try to extract animal-ish token (WT...._S..)
+    animal = '';
+    tok = regexp(s,'(WT\d+[A-Za-z]?(?:_\w+)?_S\d+)','tokens','once');
+    if ~isempty(tok), animal = tok{1}; end
+    if isempty(animal)
+        tok = regexp(s,'(WT\d+[A-Za-z]?)','tokens','once');
+        if ~isempty(tok), animal = tok{1}; end
+    end
+    if isempty(animal), animal = 'SCM Series'; end
+
+    % Preproc = use the remaining label, shortened
+    preproc = s;
+    preproc = shortenMiddle(preproc, 90);
+
+    % Final 2-line title
+    titleStr = sprintf('%s\n%s', animal, preproc);
 end
 
+
+function out = shortenMiddle(s, maxLen)
+    s = char(s);
+    if numel(s) <= maxLen, out = s; return; end
+    keep = floor((maxLen-3)/2);
+    out = [s(1:keep) '...' s(end-keep+1:end)];
+end
+
+% >>> PASTE HERE <<<
 function s = getAnimalID(lbl)
     s0 = char(lbl);
     tok = regexp(s0,'(WT\d+[A-Za-z]?(?:_\w+)?_S\d+)','tokens','once');
@@ -1543,12 +1690,12 @@ function s = getAnimalID(lbl)
     s = 'Animal';
 end
 
-function out = shortenMiddle(s, maxLen)
-    s = char(s);
-    if numel(s) <= maxLen, out = s; return; end
-    keep = floor((maxLen-3)/2);
-    out = [s(1:keep) '...' s(end-keep+1:end)];
+function s = makeFullTitle(lbl)
+    s = char(lbl);
+    s = regexprep(s,'\|?\s*File:.*$','');
+    s = shortenMiddle(s, 110);
 end
+% >>> END PASTE <<<
 
 function s = shortenPath(p, maxLen)
     p = char(p);
@@ -1556,6 +1703,8 @@ function s = shortenPath(p, maxLen)
     keep = floor((maxLen-3)/2);
     s = [p(1:keep) '...' p(end-keep+1:end)];
 end
+
+
 
 function analysedRoot = guessAnalysedRoot(p0)
     p0 = char(p0);
@@ -1586,6 +1735,7 @@ function analysedRoot = guessAnalysedRoot(p0)
 end
 
 function dsType = deriveDatasetType()
+    % prefer explicit studio info if available; else fall back to fileLabel
     s = '';
     try
         if isstruct(par)
@@ -1599,27 +1749,32 @@ function dsType = deriveDatasetType()
     end
     if isempty(s), s = fileLabel; end
     
-    try
-        ss = char(s);
-        ss = regexprep(ss,'\.nii\.gz$','', 'ignorecase');
-        if contains(ss, filesep) || contains(ss,'/') || contains(ss,'\')
-            [~, ss] = fileparts(ss);
-        end
-        s = ss;
-    catch
+    % --- IMPORTANT: if s is a path, keep only the filename (prevents "RawData" triggering "raw")
+try
+    ss = char(s);
+    % handle .nii.gz
+    ss = regexprep(ss,'\.nii\.gz$','', 'ignorecase');
+    if contains(ss, filesep) || contains(ss,'/') || contains(ss,'\')
+        [~, ss] = fileparts(ss);
     end
+    s = ss;
+catch
+end
 
     if isstring(s), s = char(s); end
     s = lower(strtrim(s));
-    s = regexprep(s,'\|.*$','');
-    s = regexprep(s,'\(.*$','');
+    s = regexprep(s,'\|.*$','');   % drop anything after |
+    s = regexprep(s,'\(.*$','');   % drop (...) tail
     s = strtrim(s);
 
     if contains(s,'gabriel'), dsType = 'gabriel'; return; end
-    if ~isempty(regexp(s,'(^|[_\-\s])raw([_\-\s]|$)','once'))
-        dsType = 'raw'; return;
-    end
+    % Only match "raw" as a token, not as part of folder names like "RawData"
+if ~isempty(regexp(s,'(^|[_\-\s])raw([_\-\s]|$)','once'))
+    dsType = 'raw'; return;
+end
 
+
+    % try first token as type
     tok = regexp(s,'^[a-z0-9]+','match','once');
     if ~isempty(tok)
         dsType = sanitizeName(tok);
@@ -1749,24 +1904,24 @@ function showHelp(~,~)
         'Resize','on','Position',[200 100 980 780],'WindowStyle','modal');
 
     guide = {
-'SCM Viewer — Guide'
+'SCM Viewer â€” Guide'
 ''
 'OVERLAY'
-'  • Threshold hides low |SCM|.'
-'  • Display range sets overlay caxis.'
-'  • Alpha modulation:'
+'  â€¢ Threshold hides low |SCM|.'
+'  â€¢ Display range sets overlay caxis.'
+'  â€¢ Alpha modulation:'
 '       - OFF: hard threshold alpha'
 '       - ON : alpha ramps 0..1 between Mod Min and Mod Max'
 ''
 'UNDERLAY'
-'  • Brightness / Contrast / Gamma control background only.'
-'  • Vessel enhance uses conectSize + conectLev.'
+'  â€¢ Brightness / Contrast / Gamma control background only.'
+'  â€¢ Vessel enhance uses conectSize + conectLev.'
 ''
 'ROI'
-'  • Hover shows live ROI PSC.'
-'  • Left click adds ROI; right click removes nearest ROI.'
-'  • Unfreeze Hover re-enables hover after a click.'
-'  • Export ROIs saves roi1.txt, roi2.txt, ... into AnalysedData/.../ROI/<type>/<datasetTag>/'
+'  â€¢ Hover shows live ROI PSC.'
+'  â€¢ Left click adds ROI; right click removes nearest ROI.'
+'  â€¢ Unfreeze Hover re-enables hover after a click.'
+'  â€¢ Export ROIs saves roi1.txt, roi2.txt, ... into AnalysedData/.../ROI/<type>/<datasetTag>/'
 };
 
     uicontrol(hf,'Style','edit','Units','normalized', ...
@@ -2071,7 +2226,7 @@ end
 function [a,b] = parseRangeSafe(s, da, db)
     if nargin<2, da=0; end
     if nargin<3, db=da; end
-    s = strrep(char(s),'–','-');
+    s = strrep(char(s),'â€“','-');
     v = sscanf(s,'%f-%f');
     if numel(v)~=2 || any(~isfinite(v))
         a=da; b=db;
@@ -2084,28 +2239,41 @@ function out = clamp(x, lo, hi)
     out = min(max(x,lo),hi);
 end
 
+
 function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
+    % Derive a brain include-mask from a "BrainOnly" underlay.
+    % Works when bgIn is:
+    %   - 2D: [Y X]
+    %   - 3D: [Y X Z]  or [Y X T] (if nz==1)
+    %   - 4D: [Y X Z T]
+    %
+    % Heuristic: only auto-mask if there are "enough zeros" suggesting outside-brain is zeroed.
+
     M = [];
 
     if isempty(bgIn) || ~(isnumeric(bgIn) || islogical(bgIn))
         return;
     end
 
+    % Build a representative 3D volume V(Y,X,Z) from bgIn
     V = [];
     try
         if ndims(bgIn) == 2
             V = reshape(double(bgIn), [ny nx 1]);
 
         elseif ndims(bgIn) == 3
+            % Could be [Y X Z] or [Y X T] when nz==1
             if nz > 1 && size(bgIn,3) == nz
                 V = double(bgIn);
             elseif nz == 1 && size(bgIn,3) == nt
-                V = reshape(mean(double(bgIn), 3), [ny nx 1]);
+                V = reshape(mean(double(bgIn), 3), [ny nx 1]); % mean over time
             else
+                % fallback: take first slice as 2D
                 V = reshape(double(bgIn(:,:,1)), [ny nx 1]);
             end
 
         elseif ndims(bgIn) == 4
+            % [Y X Z T] -> mean over time
             V = mean(double(bgIn), 4);
 
         else
@@ -2115,19 +2283,24 @@ function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
         return;
     end
 
+    % Fit/crop/pad to expected dims
     V = V(1:min(ny,size(V,1)), 1:min(nx,size(V,2)), 1:min(nz,size(V,3)));
     if size(V,1) < ny, V(end+1:ny,:,:) = 0; end
     if size(V,2) < nx, V(:,end+1:nx,:) = 0; end
     if size(V,3) < nz, V(:,:,end+1:nz) = 0; end
 
+    % Decide if this looks like BrainOnly (many zeros outside)
     fracZero = mean(V(:) == 0);
     if ~isfinite(fracZero) || fracZero < 0.02
+        % Not enough zeros -> likely a normal underlay; do NOT auto-mask
         M = [];
         return;
     end
 
+    % Derive mask: include where underlay is nonzero
     M = (V ~= 0);
 
+    % Optional: fill holes per slice (safe if IPT available)
     try
         for zz = 1:size(M,3)
             M(:,:,zz) = imfill(M(:,:,zz), 'holes');
@@ -2137,7 +2310,6 @@ function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
 
     M = logical(M);
 end
-
 function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ_)
     if isempty(M0), M2=true(ny,nx); return; end
     M0 = logical(M0);
@@ -2167,9 +2339,9 @@ function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ_)
         end
     end
 
-    M2 = M2(1:min(ny,size(M2,1)), 1:min(nx,size(M2,2)));
-    if size(M2,1)<ny, M2(end+1:ny,:) = false; end
-    if size(M2,2)<nx, M2(:,end+1:nx) = false; end
+   M2 = M2(1:min(ny,size(M2,1)), 1:min(nx,size(M2,2)));
+if size(M2,1)<ny, M2(end+1:ny,:) = false; end
+if size(M2,2)<nx, M2(:,end+1:nx) = false; end
 end
 
 function M = readMask(f)
@@ -2193,6 +2365,7 @@ function M = readMask(f)
     if strcmpi(e,'.mat')
         S = load(f);
 
+        % Prefer these variable names (matches your mask.m save)
         if isfield(S,'brainMask')
             M = S.brainMask;
         elseif isfield(S,'mask')
@@ -2200,8 +2373,10 @@ function M = readMask(f)
         elseif isfield(S,'M')
             M = S.M;
         elseif isfield(S,'brainImage')
+            % Fallback: derive mask from brainImage if mask not present
             M = (S.brainImage > 0);
         else
+            % Last resort: first numeric/logical variable
             fn = fieldnames(S);
             M = [];
             for k = 1:numel(fn)
@@ -2219,6 +2394,7 @@ function M = readMask(f)
         return;
     end
 
+    % .nii
     M = niftiread(f);
     M = logical(M);
 end

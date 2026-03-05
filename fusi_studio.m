@@ -74,7 +74,7 @@ leftPanel = uipanel(fig, ...
 %  LOG PANEL
 % =========================================================
 logPanel = uipanel(fig, ...
-    'Title','HUMoR Log', ...
+    'Title','Studio Log', ...
     'Units','normalized', ...
     'Position',[0.50 0.19 0.47 0.70], ...
     'BackgroundColor',[0.07 0.07 0.07], ...
@@ -641,6 +641,24 @@ function gabrielCallback(~,~)
         errordlg('Load data first.'); return;
     end
 
+    % ---------------------------------------------------------
+    % 1) Ask Mean vs Median FIRST
+    % ---------------------------------------------------------
+    ch = questdlg( ...
+        'Subsampling: use MEDIAN (robust) or MEAN?', ...
+        'Gabriel Subsampling', ...
+        'Median','Mean','Cancel','Median');
+
+    if isempty(ch) || strcmpi(ch,'Cancel')
+        addLog('Gabriel preprocessing cancelled.');
+        return;
+    end
+
+    blockMethod = lower(ch); % 'median' or 'mean'
+
+    % ---------------------------------------------------------
+    % 2) THEN ask nsub
+    % ---------------------------------------------------------
     answ = inputdlg({'Enter subsampling factor (nsub >= 2):'}, ...
         'Gabriel Preprocessing', 1, {'50'});
     if isempty(answ)
@@ -654,17 +672,20 @@ function gabrielCallback(~,~)
     end
 
     setProgramStatus(false);
-    addLog(sprintf('Running Gabriel preprocessing (nsub = %d)...', nsub));
+    addLog(sprintf('Running Gabriel preprocessing (%s, nsub = %d)...', upper(blockMethod), nsub));
     drawnow;
 
     data = getActiveData();
 
     opts = struct();
-    opts.nsub = nsub;
-    opts.regSmooth = 1.3;
-    opts.saveQC = true;
-    opts.showQC = false;
-    opts.qcDir = fullfile(studio.exportPath,'Preprocessing','gabriel_QC');
+    opts.nsub        = nsub;
+    opts.blockMethod = blockMethod;     % <<< NEW: pass choice
+    opts.regSmooth   = 1.3;
+    opts.saveQC      = true;
+    opts.showQC      = false;
+
+    % optional: keep QC folders separate by method
+    opts.qcDir = fullfile(studio.exportPath,'Preprocessing',sprintf('gabriel_QC_%s',blockMethod));
 
     try
         out = gabriel_preprocess(data.I, data.TR, opts);
@@ -678,7 +699,9 @@ function gabrielCallback(~,~)
 
         ts = datestr(now,'yyyymmdd_HHMMSS');
         baseName = studio.activeDataset;
-        fullName = [baseName '_gabriel_' ts];
+
+        % optional: include method + nsub in saved name
+        fullName = sprintf('%s_gabriel_%s_nsub%d_%s', baseName, blockMethod, nsub, ts);
 
         keyName = makeSafeKey(fullName, studio.datasets);
         studio.datasets.(keyName) = newData;
@@ -1552,6 +1575,9 @@ end
 %% ---------------------------------------------------------
 %  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)
 % ---------------------------------------------------------
+%% ---------------------------------------------------------
+%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)  — UPDATED (UNDERLAY CHOOSER)
+% ---------------------------------------------------------
 function videoGUICallback(~,~)
 
     studio = guidata(fig);
@@ -1585,35 +1611,69 @@ function videoGUICallback(~,~)
 
     baseline = struct('start',blStart,'end',blEnd,'mode','sec');
 
+    % ---- par (IMPORTANT: fill these so SCM opened from Video has proper paths) ----
     par = struct();
-    par.interpol = 1;
-    par.LPF = 0;
-    par.HPF = 0;
-    par.gaussSize = 0;
-    par.gaussSig = 0;
+    par.interpol     = 1;
+    par.LPF          = 0;
+    par.HPF          = 0;
+    par.gaussSize    = 0;
+    par.gaussSig     = 0;
     par.previewCaxis = [];
-    par.caxis = [];
+    par.caxis        = [];
+
+    par.exportPath   = studio.exportPath;
+    par.datasetTag   = studio.activeDataset;
+    par.activeDataset = studio.activeDataset;
+
+    if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
+        par.loadedPath = studio.loadedPath;
+        par.rawPath    = studio.loadedPath;
+    else
+        par.loadedPath = '';
+        par.rawPath    = '';
+    end
+
+    par.loadedFile = '';
+    try
+        if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile)
+            lf = studio.loadedFile;
+            fullLf = lf;
+            if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
+                cand = fullfile(studio.loadedPath, lf);
+                if exist(cand,'file')
+                    fullLf = cand;
+                end
+            end
+            par.loadedFile = fullLf;
+        end
+    catch
+        par.loadedFile = '';
+    end
 
     Iraw = data.I;  % keep original precision (usually single)
 
+    % ---- PSC + default bg (VideoGUI reference) ----
     if isfield(data,'PSC') && ~isempty(data.PSC) && isfield(data,'bg') && ~isempty(data.bg)
-        PSCsig = data.PSC;
-        bg     = data.bg;
+        PSCsig    = data.PSC;
+        bgDefault = data.bg;
     else
         try
-            proc   = computePSC(Iraw, data.TR, par, baseline);
+            proc = computePSC(Iraw, data.TR, par, baseline);
         catch
-            proc   = computePSC(double(Iraw), data.TR, par, baseline);
+            proc = computePSC(double(Iraw), data.TR, par, baseline);
         end
-        PSCsig = proc.PSC;
-        bg     = proc.bg;
+        PSCsig    = proc.PSC;
+        bgDefault = proc.bg;
     end
 
-    Iinterp = Iraw;
+    % ---- NEW: choose underlay like SCM ----
+    [bgUnderlay, underlayLabel] = chooseSCMUnderlay(studio, data, bgDefault);
+    if isempty(bgUnderlay)
+        addLog('Video GUI cancelled (no underlay selected).');
+        return;
+    end
 
-    initialFPS = 10;
-    maxFPS     = 240;
-
+    % ---- mask (shared from Mask Editor) ----
     if isfield(studio,'mask') && ~isempty(studio.mask)
         loadedMask = studio.mask;
         loadedMaskIsInclude = studio.maskIsInclude;
@@ -1622,18 +1682,23 @@ function videoGUICallback(~,~)
         loadedMaskIsInclude = true;
     end
 
+    initialFPS = 10;
+    maxFPS     = 240;
+
     setProgramStatus(false);
     drawnow;
 
     try
+        fileLabel = [studio.activeDataset ' | ' underlayLabel];
+
         videoFig = play_fusi_video_final( ...
-            Iraw, Iinterp, PSCsig, bg, ...
+            Iraw, Iraw, PSCsig, bgUnderlay, ...
             par, initialFPS, maxFPS, ...
             data.TR, (data.nVols-1)*data.TR, ...
             baseline, ...
             loadedMask, loadedMaskIsInclude, ...
             data.nVols, false, struct(), ...
-            studio.activeDataset);
+            fileLabel);
 
         addlistener(videoFig,'ObjectBeingDestroyed', @(~,~) setProgramStatus(true));
 
@@ -1643,7 +1708,6 @@ function videoGUICallback(~,~)
         setProgramStatus(true);
     end
 end
-
 %% ---------------------------------------------------------
 %  MASK EDITOR CALLBACK (STANDALONE)
 % ---------------------------------------------------------
@@ -2077,32 +2141,45 @@ function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
         'Select external underlay file (DP/anatomy) from RAW folder...', ...
         'Cancel'};
 
-    choice = questdlg('Choose SCM underlay image:', ...
-                      'SCM Underlay', ...
-                      opts{1}, opts{2}, opts{4}, opts{1});
+    % menu supports >3 options (questdlg does not)
+    idx = menu('Choose SCM underlay image:', opts{:});
 
-    if isempty(choice) || strcmp(choice, opts{5})
+    if idx == 0 || idx == 5
         return;
     end
 
-    switch choice
-        case opts{1}
+    switch idx
+        case 1
             bg = bgDefault;
             label = 'Default (VideoGUI bg)';
 
-        case opts{2}
+        case 2
             bg = computeUnderlayFromActive(data,'mean');
             label = 'Mean(I)';
 
-        case opts{3}
+        case 3
             bg = computeUnderlayFromActive(data,'median');
             label = 'Median(I)';
 
-        case opts{4}
-            startPath = pwd;
-            if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-                startPath = studio.loadedPath;
-            end
+        case 4
+            % Prefer AnalysedData/<dataset>/Visualization (or dataset folder) as start
+startPath = pwd;
+
+if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+    % try Visualization subfolder first
+    visFolder = fullfile(studio.exportPath,'Visualization');
+    if exist(visFolder,'dir')
+        startPath = visFolder;
+    else
+        startPath = studio.exportPath; % fallback to dataset analysed folder
+    end
+
+elseif isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
+    % final fallback: raw folder
+    startPath = studio.loadedPath;
+end
+
+
 
             [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
                                'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif)'}, ...
