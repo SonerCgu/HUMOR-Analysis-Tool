@@ -110,6 +110,9 @@ modMinAbs = 50;
 modMaxAbs = 100;
 
 maskThreshold = 0; % abs PSC threshold - moved to Overlay tab
+% Spatial smoothing of overlay only (display-only, like SCM overlay control)
+overlaySmoothSigma = 0;   % 0 = OFF
+overlaySmoothMax   = 5;   % slider max
 
 % =========================================================
 % MASK STATE (Video/Mask tab)
@@ -442,6 +445,10 @@ edThr  = mkEdit(pOverlay,sprintf('%.3g',maskThreshold),@overlayThrEditChanged);
 lblAlpha = mkLbl(pOverlay,'Overlay alpha (%)');
 slAlpha  = mkSlider(pOverlay,0,100,alphaPct,@overlayAlphaSliderChanged);
 txtAlpha = mkValBox(pOverlay,sprintf('%.0f',alphaPct));
+
+lblSmooth = mkLblImp(pOverlay,'Spatial smoothing sigma');
+slSmooth  = mkSlider(pOverlay,0,overlaySmoothMax,overlaySmoothSigma,@overlaySmoothSliderChanged);
+edSmooth  = mkEdit(pOverlay,sprintf('%.2f',overlaySmoothSigma),@overlaySmoothEditChanged);
 
 lblAlphaMod = mkLblImp(pOverlay,'Alpha modulation');
 chkAlphaMod = mkChk(pOverlay,'Alpha modulate by abs(PSC)',double(alphaModEnable),@overlayAlphaModToggle);
@@ -787,14 +794,15 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
         wVal   = 110;
         wCtrl  = max(120, xVal - xCtrl - 10);
 
-        fixed = 0;
-        fixed = fixed + rowHc;            % cmap
-        fixed = fixed + rowHc;            % range row (plus button)
-        fixed = fixed + rowHc;            % thr slider row
-        fixed = fixed + rowHc;            % alpha slider row
-        fixed = fixed + rowHc;            % alpha mod checkbox row
-        fixed = fixed + 2*rowHc;          % mod min/max
-        nGaps = 7;
+      fixed = 0;
+fixed = fixed + rowHc;            % cmap
+fixed = fixed + rowHc;            % range row (plus button)
+fixed = fixed + rowHc;            % thr slider row
+fixed = fixed + rowHc;            % alpha slider row
+fixed = fixed + rowHc;            % smoothing row
+fixed = fixed + rowHc;            % alpha mod checkbox row
+fixed = fixed + 2*rowHc;          % mod min/max
+nGaps = 8;
         gapc = adaptiveGap(h, fixed, nGaps, 8, 10);
         gapBig = gapc + 6;
 
@@ -818,6 +826,12 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
         set(slAlpha,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
         set(txtAlpha,'Position',[xVal y0 wVal rowHc]);
         y0 = y0 - (rowHc + gapc);
+
+
+        set(lblSmooth,'Position',[xLabel y0 wLabel rowHc]);
+set(slSmooth,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+set(edSmooth,'Position',[xVal y0 wVal rowHc]);
+y0 = y0 - (rowHc + gapc);
 
         set(lblAlphaMod,'Position',[xLabel y0 wLabel rowHc]);
         set(chkAlphaMod,'Position',[xCtrl y0 (wCtrl+wVal+10) rowHc]);
@@ -854,14 +868,33 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
         end
 
         % PSC slice/frame
-        if ndPSC == 4
-            A = squeeze(PSC(:,:,sliceIdx, frame));
-        elseif ndPSC == 3
-            A = PSC(:,:,frame);
+     if ndPSC == 4
+    A = squeeze(PSC(:,:,sliceIdx, frame));
+elseif ndPSC == 3
+    A = PSC(:,:,frame);
+else
+    A = PSC;
+end
+A = double(A);
+A(~isfinite(A)) = 0;
+
+% Display-only spatial smoothing of overlay
+if overlaySmoothSigma > 0
+    filtSize = max(3, 2*ceil(2*overlaySmoothSigma)+1);
+
+    try
+        if exist('imgaussfilt','file')
+            A = imgaussfilt(A, overlaySmoothSigma, ...
+                'FilterSize', filtSize, ...
+                'Padding', 'replicate');
         else
-            A = PSC;
+            h = fspecial('gaussian', [filtSize filtSize], overlaySmoothSigma);
+            A = imfilter(A, h, 'replicate');
         end
-        A(~isfinite(A)) = 0;
+    catch
+        % fallback: leave A unchanged if smoothing fails
+    end
+end
 
         % Keep caxis valid
         cax = par.previewCaxis;
@@ -971,10 +1004,10 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
 
         set(info,'String',sprintf([ ...
             't = %.1f / %.1f s | Vol %d / %d | View: %s (%s)\n' ...
-            'Baseline: %g-%g %s | Editor: %s | Underlay: %s | AlphaMod: %s | alpha=%g%% min=%g max=%g thr=%g%s'], ...
+           'Baseline: %g-%g %s | Editor: %s | Underlay: %s | Smooth=%.2f | AlphaMod: %s | alpha=%g%% min=%g max=%g thr=%g%s'], ...
             t, Tmax, volume, nVols, vm, ms, ...
-            baseline.start, baseline.end, modeStr, ...
-            em, underSrcLabel, alphaState, alphaPct, modMinAbs, modMaxAbs, maskThreshold, extra));
+           baseline.start, baseline.end, modeStr, ...
+em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAbs, maskThreshold, extra));
 
         % Update value boxes
         set(txtFPS,'String',sprintf('%d',fps));
@@ -1226,6 +1259,27 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
         render();
     end
 
+function overlaySmoothSliderChanged(src,~)
+    overlaySmoothSigma = get(src,'Value');
+    overlaySmoothSigma = max(0, min(overlaySmoothMax, overlaySmoothSigma));
+    set(slSmooth,'Value',overlaySmoothSigma);
+    set(edSmooth,'String',sprintf('%.2f',overlaySmoothSigma));
+    render();
+end
+function overlaySmoothEditChanged(src,~)
+    v = str2double(get(src,'String'));
+    if ~isfinite(v)
+        v = overlaySmoothSigma;
+    end
+
+    v = max(0, min(overlaySmoothMax, v));
+    overlaySmoothSigma = v;
+
+    set(slSmooth,'Value',overlaySmoothSigma);
+    set(src,'String',sprintf('%.2f',overlaySmoothSigma));
+    render();
+end
+
     function overlayModMinEdit(src,~)
         v = str2double(get(src,'String'));
         if ~isfinite(v), v = modMinAbs; end
@@ -1350,49 +1404,208 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
 % =========================================================
 % SAVE MP4
 % =========================================================
-    function saveVideo(~,~)
-        [f, p] = uiputfile('*.mp4','Save fUSI video');
-        if isequal(f,0), return; end
+function saveVideo(~,~)
+    txt = [];
+    vid = [];
+    oldVolume  = volume;
+    oldPlaying = playing;
 
+    try
+        % -------------------------------------------------
+        % Resolve analysed root folder robustly
+        % -------------------------------------------------
+        analysedRoot = '';
+
+        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath)
+            analysedRoot = char(par.exportPath);
+        elseif isstruct(par) && isfield(par,'savePath') && ~isempty(par.savePath)
+            analysedRoot = char(par.savePath);
+        elseif isstruct(par) && isfield(par,'outPath') && ~isempty(par.outPath)
+            analysedRoot = char(par.outPath);
+        else
+            analysedRoot = pwd;
+        end
+
+        analysedRoot = strtrim(analysedRoot);
+        analysedRoot = strrep(analysedRoot,'"','');
+
+        if isempty(analysedRoot) || ~exist(analysedRoot,'dir')
+            analysedRoot = pwd;
+        end
+
+        % -------------------------------------------------
+        % Create Videos subfolder
+        % -------------------------------------------------
+        videosDir = fullfile(analysedRoot, 'Videos');
+        if ~exist(videosDir,'dir')
+            [ok,msg] = mkdir(videosDir);
+            if ~ok
+                error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
+            end
+        end
+
+  
+      rawLabel = lower(safeStr(fileLabel));
+if isempty(rawLabel)
+    rawLabel = '';
+end
+
+tags = {};
+
+if contains(rawLabel,'raw'),      tags{end+1} = 'raw'; end
+if contains(rawLabel,'gabriel'),  tags{end+1} = 'gab'; end
+if contains(rawLabel,'median'),   tags{end+1} = 'median'; end
+if contains(rawLabel,'mean'),     tags{end+1} = 'mean'; end
+if contains(rawLabel,'pca'),      tags{end+1} = 'pca'; end
+if contains(rawLabel,'despike') || contains(rawLabel,'despiked')
+    tags{end+1} = 'despike';
+end
+if contains(rawLabel,'smooth') || contains(rawLabel,'smoothed')
+    tags{end+1} = 'smooth';
+end
+if contains(rawLabel,'interp') || contains(rawLabel,'interpol')
+    tags{end+1} = 'interp';
+end
+if contains(rawLabel,'psc'),      tags{end+1} = 'psc'; end
+if contains(rawLabel,'brainonly'), tags{end+1} = 'brain'; end
+
+if isempty(tags)
+    shortLabel = 'video';
+else
+    shortLabel = strjoin(tags,'_');
+end
+
+timeTag = datestr(now,'yyyymmdd_HHMMSS');
+outFile = fullfile(videosDir, ['video_' shortLabel '_' timeTag '.mp4']);  
+
+        disp('--- SAVE VIDEO DEBUG ---');
+        disp(['analysedRoot = ' analysedRoot]);
+        disp(['videosDir    = ' videosDir]);
+        disp(['outFile      = ' outFile]);
+        disp(['path length  = ' num2str(numel(outFile))]);
+
+        % -------------------------------------------------
+        % Prepare video writer
+        % -------------------------------------------------
         exportFPS = fps;
-        vid = VideoWriter(fullfile(p,f), 'MPEG-4');
+        if ~isfinite(exportFPS) || exportFPS <= 0
+            exportFPS = 4;
+        end
+
+        vid = VideoWriter(outFile, 'MPEG-4');
         vid.FrameRate = exportFPS;
         vid.Quality   = 95;
         open(vid);
 
-        txt = text(ax, 0.01, 0.99, '', ...
-            'Units','normalized', 'Color','w', 'FontName','Courier New', ...
-            'FontSize',16, 'FontWeight','bold', ...
+        % -------------------------------------------------
+        % Export overlay text shown only in MP4
+        % -------------------------------------------------
+        txt = text(ax, 0.02, 0.98, '', ...
+            'Units','normalized', ...
+            'Color','w', ...
+            'FontName','Courier New', ...
+            'FontSize',40, ...
+            'FontWeight','bold', ...
             'VerticalAlignment','top', ...
-            'BackgroundColor','k', 'Margin',4);
+            'HorizontalAlignment','left', ...
+            'BackgroundColor','k', ...
+            'Margin',8, ...
+            'Interpreter','none');
 
-        oldVolume = volume;
-        oldPlaying = playing;
         playing = false;
+        if ishandle(playBtn)
+            set(playBtn,'Value',0,'String','Play');
+        end
+        try
+            if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
+                stop(playTimer);
+            end
+        catch
+        end
 
+        % -------------------------------------------------
+        % Write all frames
+        % -------------------------------------------------
         for v = 1:nVols
             volume = v;
-            set(slVol,'Value',v);
+            if ishandle(slVol)
+                set(slVol,'Value',v);
+            end
+
             frame = (v - 1) * par.interpol + 1;
             frame = max(1, min(nFrames, round(frame)));
+
             render();
 
             t = (v - 1) * TR;
-            txt.String = sprintf('t = %.1f / %.1f s | Volume %d / %d', t, Tmax, v, nVols);
+            set(txt,'String',sprintf('t = %.1f / %.1f s | Volume %d / %d', t, Tmax, v, nVols));
 
             drawnow;
-            writeVideo(vid, getframe(ax));
+            fr = getframe(ax);
+
+repeatEachFrame = 2;   % 2 = slower, 3 = even slower
+for rr = 1:repeatEachFrame
+    writeVideo(vid, fr);
+end
         end
 
-        delete(txt);
-        close(vid);
+        % cleanup
+        if ~isempty(txt) && isgraphics(txt)
+            delete(txt);
+            txt = [];
+        end
 
-        volume = oldVolume;
+        if ~isempty(vid)
+            close(vid);
+            vid = [];
+        end
+
+        volume  = oldVolume;
         playing = oldPlaying;
+
+        if ishandle(slVol)
+            set(slVol,'Value',volume);
+        end
+
+        frame = (volume - 1) * par.interpol + 1;
+        frame = max(1, min(nFrames, round(frame)));
         render();
 
-        statusLine = 'Video saved.';
+        statusLine = ['Video saved: ' outFile];
+        render();
+
+    catch ME
+        try
+            if ~isempty(txt) && isgraphics(txt)
+                delete(txt);
+            end
+        catch
+        end
+        try
+            if ~isempty(vid)
+                close(vid);
+            end
+        catch
+        end
+
+        volume  = oldVolume;
+        playing = oldPlaying;
+
+        try
+            if ishandle(slVol)
+                set(slVol,'Value',volume);
+            end
+            frame = (volume - 1) * par.interpol + 1;
+            frame = max(1, min(nFrames, round(frame)));
+            render();
+        catch
+        end
+
+        statusLine = ['Video save failed: ' ME.message];
+        render();
+        errordlg(sprintf('MP4 export failed:\n\n%s', ME.message), 'Save MP4 failed');
     end
+end
 
 % =========================================================
 % SAVE MASK

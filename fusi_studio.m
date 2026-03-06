@@ -16,6 +16,9 @@ studio.atlasTransform = [];
 studio.atlasTransformFile = '';
 studio.allButtons = {};          % proper handle container
 studio.figure = [];              % store figure handle
+studio.publicationReady = [];
+studio.publicationReadyNote = '';
+studio.publicationReadyTime = '';
 
 % Optional shared mask/underlay refs (set by Mask Editor)
 studio.mask = [];
@@ -194,7 +197,7 @@ btnH = 0.055;
 uicontrol(fig,'Style','pushbutton', ...
     'String','HELP', ...
     'Units','normalized', ...
-    'Position',[0.50 btnY 0.10 btnH], ...
+    'Position',[0.50 btnY 0.08 btnH], ...
     'FontWeight','bold', ...
     'FontSize',13, ...
     'BackgroundColor',[0.30 0.50 0.95], ...
@@ -204,7 +207,7 @@ uicontrol(fig,'Style','pushbutton', ...
 uicontrol(fig,'Style','pushbutton', ...
     'String','EXPORT STUDIO LOG', ...
     'Units','normalized', ...
-    'Position',[0.62 btnY 0.14 btnH], ...
+    'Position',[0.60 btnY 0.14 btnH], ...
     'FontWeight','bold', ...
     'FontSize',13, ...
     'BackgroundColor',[0.15 0.65 0.55], ...
@@ -212,9 +215,19 @@ uicontrol(fig,'Style','pushbutton', ...
     'Callback',@exportSessionCallback);
 
 uicontrol(fig,'Style','pushbutton', ...
+    'String','MARK PUB READY', ...
+    'Units','normalized', ...
+    'Position',[0.76 btnY 0.12 btnH], ...
+    'FontWeight','bold', ...
+    'FontSize',13, ...
+    'BackgroundColor',[0.55 0.25 0.80], ...
+    'ForegroundColor','w', ...
+    'Callback',@markPublicationReadyCallback);
+
+uicontrol(fig,'Style','pushbutton', ...
     'String','CLOSE', ...
     'Units','normalized', ...
-    'Position',[0.79 btnY 0.10 btnH], ...
+    'Position',[0.90 btnY 0.07 btnH], ...
     'FontWeight','bold', ...
     'FontSize',13, ...
     'BackgroundColor',[0.85 0.25 0.25], ...
@@ -392,6 +405,9 @@ function loadDataCallback(~,~)
     studio.loadedFile = '';
     studio.loadedPath = '';
     studio.exportPath = '';
+    studio.publicationReady = [];
+studio.publicationReadyNote = '';
+studio.publicationReadyTime = '';
     studio.atlasTransform = [];
     studio.atlasTransformFile = '';
     studio.pipeline = struct( ...
@@ -1930,18 +1946,152 @@ function exportSessionCallback(~,~)
         logContent = {logContent};
     end
 
+    % Optional publication-ready popup
+    choice = questdlg( ...
+        'Also update publication-ready status before exporting?', ...
+        'Export Studio Log', ...
+        'Yes','No','Cancel','Yes');
+
+    if isempty(choice) || strcmpi(choice,'Cancel')
+        addLog('Studio log export cancelled.');
+        return;
+    end
+
+    if strcmpi(choice,'Yes')
+        pubChoice = questdlg( ...
+            'Mark this scan/animal as publication usable?', ...
+            'Publication Ready', ...
+            'Yes','No','Cancel','Yes');
+
+        if isempty(pubChoice) || strcmpi(pubChoice,'Cancel')
+            addLog('Studio log export cancelled.');
+            return;
+        end
+
+        noteAns = inputdlg( ...
+            {'Optional note (e.g. low motion, clean QC, good anatomy):'}, ...
+            'Publication Ready Note', ...
+            1, {studio.publicationReadyNote});
+
+        if isempty(noteAns)
+            note = '';
+        else
+            note = strtrim(noteAns{1});
+        end
+
+        isReady = strcmpi(pubChoice,'Yes');
+
+        studio.publicationReady = isReady;
+        studio.publicationReadyNote = note;
+        studio.publicationReadyTime = datestr(now,'yyyy-mm-dd HH:MM:SS');
+        guidata(fig, studio);
+
+        savePublicationReadyFile(studio, isReady, note);
+    end
+
     ts = datestr(now,'yyyymmdd_HHMMSS');
     outFile = fullfile(studio.exportPath, ['StudioLog_' ts '.txt']);
 
     fid = fopen(outFile,'w');
+    if fid == -1
+        errordlg(['Could not write log file: ' outFile]);
+        return;
+    end
+
+    fprintf(fid,'fUSI Studio Log Export\n');
+    fprintf(fid,'Timestamp: %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'));
+
+    if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile)
+        fprintf(fid,'Loaded file: %s\n', studio.loadedFile);
+    end
+    if isfield(studio,'activeDataset') && ~isempty(studio.activeDataset)
+        fprintf(fid,'Active dataset: %s\n', studio.activeDataset);
+    end
+    if isfield(studio,'exportPath') && ~isempty(studio.exportPath)
+        fprintf(fid,'Export path: %s\n', studio.exportPath);
+    end
+
+    if ~isempty(studio.publicationReady)
+        if studio.publicationReady
+            pubTxt = 'YES';
+        else
+            pubTxt = 'NO';
+        end
+        fprintf(fid,'Publication ready: %s\n', pubTxt);
+        fprintf(fid,'Publication decision time: %s\n', studio.publicationReadyTime);
+        fprintf(fid,'Publication note: %s\n', studio.publicationReadyNote);
+    else
+        fprintf(fid,'Publication ready: not set\n');
+    end
+
+    fprintf(fid,'\n');
+    fprintf(fid,'----------------------------------------\n');
+    fprintf(fid,'Studio Log\n');
+    fprintf(fid,'----------------------------------------\n');
+
     for i = 1:numel(logContent)
         fprintf(fid,'%s\n',logContent{i});
     end
+
     fclose(fid);
 
     addLog(['Studio log exported -> ' outFile]);
 end
 
+%% =========================================================
+%  MARK PUBLICATION READY
+% =========================================================
+function markPublicationReadyCallback(~,~)
+
+    studio = guidata(fig);
+
+    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    choice = questdlg( ...
+        'Mark this scan/animal as publication usable?', ...
+        'Publication Ready', ...
+        'Yes','No','Cancel','Yes');
+
+    if isempty(choice) || strcmpi(choice,'Cancel')
+        addLog('Publication-ready marking cancelled.');
+        return;
+    end
+
+    noteAns = inputdlg( ...
+        {'Optional note (e.g. stable motion, good mask, atlas ok):'}, ...
+        'Publication Ready Note', ...
+        1, {''});
+
+    if isempty(noteAns)
+        note = '';
+    else
+        note = strtrim(noteAns{1});
+    end
+
+    isReady = strcmpi(choice,'Yes');
+
+    studio.publicationReady = isReady;
+    studio.publicationReadyNote = note;
+    studio.publicationReadyTime = datestr(now,'yyyy-mm-dd HH:MM:SS');
+    guidata(fig, studio);
+
+    try
+        savePublicationReadyFile(studio, isReady, note);
+
+        if isReady
+            addLog('Marked as PUBLICATION READY.');
+        else
+            addLog('Marked as NOT publication ready.');
+        end
+
+    catch ME
+        addLog(['Publication-ready save ERROR: ' ME.message]);
+        errordlg(ME.message,'Publication Ready Save Error');
+    end
+end
 %% =========================================================
 %  HELP BUTTON
 % =========================================================
@@ -2309,7 +2459,56 @@ function G = toGray(X)
     end
     G = X;
 end
+%% =========================================================
+%  SAVE PUBLICATION READY FILE
+% =========================================================
+function savePublicationReadyFile(studio, isReady, note)
 
+    if ~isfield(studio,'exportPath') || isempty(studio.exportPath) || ~exist(studio.exportPath,'dir')
+        error('Export path does not exist.');
+    end
+
+    yesFile = fullfile(studio.exportPath,'PUBLICATION_READY_YES.txt');
+    noFile  = fullfile(studio.exportPath,'PUBLICATION_READY_NO.txt');
+
+    % Remove opposite marker if it exists
+    if exist(yesFile,'file'), delete(yesFile); end
+    if exist(noFile,'file'),  delete(noFile);  end
+
+    if isReady
+        outFile = yesFile;
+        statusText = 'YES';
+    else
+        outFile = noFile;
+        statusText = 'NO';
+    end
+
+    fid = fopen(outFile,'w');
+    if fid == -1
+        error('Could not create file: %s', outFile);
+    end
+
+    fprintf(fid,'Publication ready: %s\n', statusText);
+    fprintf(fid,'Timestamp: %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'));
+
+    if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile)
+        fprintf(fid,'Loaded file: %s\n', studio.loadedFile);
+    end
+    if isfield(studio,'activeDataset') && ~isempty(studio.activeDataset)
+        fprintf(fid,'Active dataset: %s\n', studio.activeDataset);
+    end
+    if isfield(studio,'exportPath') && ~isempty(studio.exportPath)
+        fprintf(fid,'Analysed folder: %s\n', studio.exportPath);
+    end
+
+    if nargin >= 3 && ~isempty(note)
+        fprintf(fid,'Note: %s\n', note);
+    else
+        fprintf(fid,'Note: \n');
+    end
+
+    fclose(fid);
+end
 %% =========================================================
 %  MakeSafeKey (struct field-safe, unique, <= namelengthmax)
 % =========================================================
