@@ -3,11 +3,17 @@ function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
 % ==========================================================
 % (UNCHANGED UI/behavior from your version)
 %
-% ONLY FIXES IN THIS COPY:
+% FIXES / FEATURES IN THIS COPY:
 %   1) ROI export no longer overwrites: continues roi1, roi2, roi3... (next free index)
 %   2) ROI export creates subfolders by dataset type (raw / gabriel / ...):
 %        AnalysedData/<dataset>/ROI/<type>/<datasetTag>/roiN.txt
-%      type is derived from loaded dataset (par.* or fileLabel)
+%      type is derived from par/fileLabel
+%   3) SCM image export (single static view)
+%   4) SCM *series* export:
+%        - 60 s windows (user editable)
+%        - each window → brain-only PNG tile (alpha + underlay)
+%        - PPT has black background, white text, left colorbar
+%        - each tile is a separate PNG → single copy-pasteable
 % ==========================================================
 
 %% ---------------- SAFETY ----------------
@@ -560,16 +566,16 @@ function layoutOverlay(w, h)
     y = y - gapFromMask;
 
     exportDown = 6;
- set(btnRoiExport,'Position',[xLabel (y-exportDown) (w-2*pad) 42]);
-y = y - (42 + gap + exportDown);
+    set(btnRoiExport,'Position',[xLabel (y-exportDown) (w-2*pad) 42]);
+    y = y - (42 + gap + exportDown);
 
-set(btnScmExport,'Position',[xLabel y (w-2*pad) 38]);
-y = y - (38 + gap);
+    set(btnScmExport,'Position',[xLabel y (w-2*pad) 38]);
+    y = y - (38 + gap);
 
-set(btnScmSeries,'Position',[xLabel y (w-2*pad) 34]);   % smaller
-y = y - (34 + gap);
+    set(btnScmSeries,'Position',[xLabel y (w-2*pad) 34]);   % smaller
+    y = y - (34 + gap);
 
-set(btnUnfreeze,'Position',[xLabel y (w-2*pad) rowH]);
+    set(btnUnfreeze,'Position',[xLabel y (w-2*pad) rowH]);
 
     function setRowSlider(lbl, sl, valbox)
         set(lbl,'Position',[xLabel y wLabel rowH]);
@@ -666,7 +672,7 @@ end
 
 function mouseMove(~,~)
     if roi.isFrozen, return; end
-    if ~isPointerOverImageAxis(), return; end
+    if ~isPointerOverImageAxis(), return; end   % <-- fixed (~ instead of !)
 
     cp = get(ax,'CurrentPoint');
     x = round(cp(1,1)); ypix = round(cp(1,2));
@@ -699,7 +705,7 @@ end
 
 function mouseScroll(~,evt)
     if nZ<=1, return; end
-    if ~isPointerOverImageAxis(), return; end
+    if ~isPointerOverImageAxis(), return; end   % <-- fixed (~ instead of !)
     dz = -sign(evt.VerticalScrollCount);
     if dz==0, return; end
     state.z = max(1,min(nZ,state.z+dz));
@@ -794,8 +800,8 @@ function computeSCM(~,~)
         map = smooth2D_gauss(map, sig);
     end
 
-% Hard mask: nothing outside mask can light up (even with smoothing)
-map(~mask2D) = 0;
+    % Hard mask: nothing outside mask can light up (even with smoothing)
+    map(~mask2D) = 0;
     set(hOV,'CData',map);
     updateView();
     drawTimeWindows();
@@ -1031,7 +1037,7 @@ function roiDir = getAutoRoiDir()
         analysedRoot = guessAnalysedRoot(base);
     end
 
-    % --- FIX: folder split by dataset type (raw/gabriel/...)
+    % --- folder split by dataset type (raw/gabriel/...) ---
     dsType = deriveDatasetType();      % e.g. 'raw' or 'gabriel'
     tag0   = deriveDatasetTag();       % sanitized dataset tag
     tag    = stripLeadingType(tag0, dsType);
@@ -1102,7 +1108,6 @@ function exportSCMImageCB(~,~)
         set(tf,'PaperPositionMode','auto');
 
         % ---- Save all 3 formats automatically ----
-        % Use OpenGL for reliable alpha/raster rendering
         print(tf, outPng, '-dpng',  '-r300', '-opengl');
         print(tf, outTif, '-dtiff', '-r300', '-opengl');
         print(tf, outJpg, '-djpeg', '-r300', '-opengl');
@@ -1110,9 +1115,8 @@ function exportSCMImageCB(~,~)
         if isgraphics(tf), close(tf); end
         tf = [];
 
-        % No popup. Optional: update the status line in the panel.
         try
-            set(info1,'String',sprintf('Saved SCM: %s (png/tif/jpg)', outDir));
+            set(info1,'String',sprintf('Saved SCM: %s (png/tif/jpg)', shortenPath(outDir,70)));
         catch
         end
 
@@ -1123,8 +1127,6 @@ function exportSCMImageCB(~,~)
 end
 
 function scmDir = getAutoScmDir()
-    % Same as before up to analysedRoot resolution...
-
     base = '';
     try
         if isstruct(par)
@@ -1158,16 +1160,14 @@ function scmDir = getAutoScmDir()
         analysedRoot = guessAnalysedRoot(base);
     end
 
-    % >>> CHANGE IS HERE: no dsType/tag subfolders
     scmDir = fullfile(analysedRoot, 'SCM');
 end
 
-%% ===================== EXPORT 1-MIN SCM SERIES (MOCK-LIKE PPT) =====================
+%% ===================== EXPORT 1-MIN SCM SERIES (TILES + PPT) =====================
 function exportScmSeries1minCB(~,~)
 
     % --- SPEED/QUALITY KNOBS ---
-    EXPORT_DPI_TILES  = 200;  % lower = faster (150-200 good)
-    EXPORT_DPI_SLIDES = 200;  % montage slides
+    EXPORT_DPI_TILES  = 200;  % per-window tile PNGs
     SAVE_TIF = true;
     SAVE_JPG = true;
 
@@ -1197,21 +1197,16 @@ function exportScmSeries1minCB(~,~)
         dirPNG = fullfile(outDir,'tiles_png'); if ~exist(dirPNG,'dir'), mkdir(dirPNG); end
         dirTIF = fullfile(outDir,'tiles_tif'); if ~exist(dirTIF,'dir'), mkdir(dirTIF); end
         dirJPG = fullfile(outDir,'tiles_jpg'); if ~exist(dirJPG,'dir'), mkdir(dirJPG); end
-tmpSLD = tempname;
-mkdir(tmpSLD);
 
-        % Tell user where it is (and keep full path in tooltip)
         try
             set(info1,'String',{ ...
-    'Saving to:', ...
-    shortenPath(outDir, 120), ...
-    'Tip: hover here to see full path'});
+                'Saving SCM tiles to:', ...
+                shortenPath(outDir, 120), ...
+                'Tip: hover here to see full path'});
             set(info1,'TooltipString',outDir);
             drawnow;
         catch
         end
-
- 
 
         % Baseline indices from GUI baseline window
         [b0,b1] = parseRangeSafe(getStr(ebBase), baseline.start, baseline.end);
@@ -1254,7 +1249,7 @@ mkdir(tmpSLD);
 
         % One offscreen tile figure reused (FAST)
         figT = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
-        set(figT,'Units','pixels','Position',[50 50 1200 880]); % tile aspect close to your brain
+        set(figT,'Units','pixels','Position',[50 50 1200 880]);
         axT = axes('Parent',figT,'Units','normalized','Position',[0 0 1 1]);
         axis(axT,'image'); axis(axT,'off'); set(axT,'YDir','reverse'); hold(axT,'on');
         image(axT, bgRGB);
@@ -1286,7 +1281,7 @@ mkdir(tmpSLD);
 
             alpha = alphaFromCurrentSettings(map);
 
-            % minute label: 0-60 = 1 min, 60-120 = 2 min, ...
+            % "minute index" (1-based)
             minIdx = floor(s0/winLen) + 1;
 
             phase = '';
@@ -1345,70 +1340,28 @@ mkdir(tmpSLD);
             return;
         end
 
-        % ---- build montage slide PNGs (6 per slide) ----
-        slidePNGs = {};
-        perSlide = 6;
-        nSlides = ceil(numel(tilePNG)/perSlide);
-
-     fullTitle  = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ); % slide 1
-shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),     state.z, nZ); % slide 2+
-
-        for si = 1:nSlides
-            i0 = (si-1)*perSlide + 1;
-            i1 = min(si*perSlide, numel(tilePNG));
-            idx = i0:i1;
-
-            outSlide = fullfile(tmpSLD, sprintf('slide_%02d.png', si));
-           if si == 1
-    tStr = fullTitle;
-else
-    tStr = shortTitle;
-end
-renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
-            slidePNGs{end+1} = outSlide; %#ok<AGROW>
-
-            try
-                set(info1,'String',sprintf('Building slide PNGs... %d / %d  |  %s', si, nSlides, shortenPath(outDir, 55)));
-                set(info1,'TooltipString',outDir);
-                drawnow limitrate;
-            catch
-            end
-        end
-
-        % ---- PPT: each montage PNG becomes one PPT slide (no overlap, like mock) ----
+        % ---- PPT: each tile is a separate PNG on black slide ----
         pptPath = '';
         if doPPT
             hasPpt = (exist('mlreportgen.ppt.Presentation','class') == 8);
             if hasPpt
                 pptPath = fullfile(outDir, sprintf('%s_series_%s.pptx', sanitizeName(fileLabel), stamp));
 
-title1 = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
-titleO = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
+                title1 = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
+                titleO = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
 
-writePptGridFromTiles(pptPath, tilePNG, tileLBL, cm, caxV, title1, titleO, footerInfo);
-                % cleanup temporary montage PNGs AFTER PPT is done
-try
-    for ii=1:numel(slidePNGs)
-        if exist(slidePNGs{ii},'file')==2
-            delete(slidePNGs{ii});
-        end
-    end
-    if exist(tmpSLD,'dir')==7
-        rmdir(tmpSLD,'s');
-    end
-catch
-end
+                writePptGridFromTiles(pptPath, tilePNG, tileLBL, cm, caxV, title1, titleO, footerInfo);
             else
-                fprintf('[SCM SERIES] PPT not available (mlreportgen.ppt missing). Kept slides_png only.\n');
+                fprintf('[SCM SERIES] PPT not available (mlreportgen.ppt missing). Kept tiles only.\n');
             end
         end
 
         % Final status (NOT cut off)
         try
             if ~isempty(pptPath)
-                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PPT + PNGs)']);
+                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PPT + PNG tiles)']);
             else
-                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PNGs)']);
+                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PNG tiles only)']);
             end
             set(info1,'TooltipString',outDir);
         catch
@@ -1454,194 +1407,214 @@ function alpha = alphaFromCurrentSettings(ov)
     end
 end
 
-function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, footerStr, dpiVal)
-    % Creates ONE slide-like PNG with:
-    % - black background
-    % - title on top
-    % - ONE colorbar on left
-    % - 6 images (3 top, 3 bottom)
-    % - time label above each image
-    % - footer bottom-right
+%% ===================== PPT HELPERS (GRID WITH BRAIN-ONLY PNG TILES) =====================
+function writePptGridFromTiles(pptPath, tilePNG, tileLBL, cm, caxV, titleStr1, titleStrOther, footerStr)
+% Creates PPT with:
+%   - solid black background (single PNG behind everything)
+%   - left colorbar (single PNG)
+%   - 6 brain-only tiles per slide (3x2) -> each tile is a separate PNG
+%   - white text (titles, labels, footer) rendered as PNGs for robustness
+%
+% MATLAB 2017b + 2023b compatible.
 
-    figS = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
-    set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]); % 16:9 like PPT
-    set(figS,'PaperPositionMode','auto');
-
-    % Title
-  annotation(figS,'textbox',[0.02 0.885 0.96 0.11], ...
-    'String',titleStr, ...
-    'Color','w','EdgeColor','none', ...
-    'FontName','Arial','FontSize',14,'FontWeight','bold', ...
-    'HorizontalAlignment','center','Interpreter','none');
-
-    % Footer (bottom-right)
-    annotation(figS,'textbox',[0.42 0.01 0.56 0.06], ...
-        'String',footerStr, 'Color','w', 'EdgeColor','none', ...
-        'FontName','Arial','FontSize',11,'FontWeight','bold', ...
-        'HorizontalAlignment','right','Interpreter','none');
-
-    % Colorbar (left, once)
-    axCB = axes('Parent',figS,'Position',[0.03 0.14 0.02 0.74],'Visible','off');
-    imagesc(axCB,[0 1;0 1]); %#ok<NASGU>
-    colormap(axCB, cm);
-    caxis(axCB, caxV);
-    cbx = colorbar(axCB,'Position',[0.03 0.14 0.02 0.74]);
-    cbx.Color = 'w';
-    cbx.FontName = 'Arial';
-    cbx.FontSize = 10;
-    cbx.Label.String = 'Signal change (%)';
-    cbx.Label.Color = 'w';
-
-    % Grid positions (3x2)
-    x0 = 0.08; x1 = 0.98;
-    yBot = 0.12; yTop = 0.86;
-    gridH = (yTop - yBot);
-    rowGap = 0.06;
-    colGap = 0.02;
-
-    cellH = (gridH - rowGap) / 2;
-    cellW = (x1 - x0 - 2*colGap) / 3;
-
-    for k=1:6
-        if k > numel(pngList), break; end
-        r = (k<=3) + 1; % r=2 for top row? let's map manually
-    end
-
-    % top row = k=1..3
-    for k=1:3
-        if k>numel(pngList), break; end
-        x = x0 + (k-1)*(cellW+colGap);
-        y = yBot + cellH + rowGap;
-        axI = axes('Parent',figS,'Position',[x y cellW cellH]);
-        imshow(imread(pngList{k}),'Parent',axI);
-        axis(axI,'off');
-
-        annotation(figS,'textbox',[x y+cellH+0.005 cellW 0.035], ...
-            'String',lblList{k},'Color','w','EdgeColor','none', ...
-            'FontName','Arial','FontSize',13,'FontWeight','bold', ...
-            'HorizontalAlignment','center','Interpreter','none');
-    end
-
-    % bottom row = k=4..6
-    for k=4:6
-        if k>numel(pngList), break; end
-        c = k-3;
-        x = x0 + (c-1)*(cellW+colGap);
-        y = yBot;
-        axI = axes('Parent',figS,'Position',[x y cellW cellH]);
-        imshow(imread(pngList{k}),'Parent',axI);
-        axis(axI,'off');
-
-        annotation(figS,'textbox',[x y+cellH+0.005 cellW 0.035], ...
-            'String',lblList{k},'Color','w','EdgeColor','none', ...
-            'FontName','Arial','FontSize',13,'FontWeight','bold', ...
-            'HorizontalAlignment','center','Interpreter','none');
-    end
-
-    print(figS, outFile, '-dpng', sprintf('-r%d',dpiVal), '-opengl');
-    close(figS);
-end
-
-    function makeColorbarPNG(outFile, cm, caxV)
-    fig = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
-    set(fig,'Units','pixels','Position',[50 50 220 900]);
-
-    ax = axes('Parent',fig,'Position',[0.35 0.05 0.25 0.90]);
-    imagesc(ax,[0 1;0 1]);
-    colormap(ax, cm);
-    caxis(ax, caxV);
-    axis(ax,'off');
-
-    cb = colorbar(ax,'Position',[0.35 0.05 0.25 0.90]);
-    cb.Color = 'w';
-    cb.FontName = 'Arial';
-    cb.FontSize = 12;
-    cb.Label.String = 'Signal change (%)';
-    cb.Label.Color = 'w';
-
-    print(fig,outFile,'-dpng','-r200','-opengl');
-    close(fig);
-    end
-
-
-
-function addPptTextBox(slide, str, x, y, w, h, fontSize, isBold, hAlign)
-% Helper: adds a formatted Arial white text box to a slide.
     import mlreportgen.ppt.*
 
-    tb = TextBox();
-    tb.X = sprintf('%.2fin', x);
-    tb.Y = sprintf('%.2fin', y);
-    tb.Width  = sprintf('%.2fin', w);
-    tb.Height = sprintf('%.2fin', h);
-
-    add(slide, tb);
-
-    % Support multiline strings (split by newline)
-    parts = regexp(char(str), '\n', 'split');
-    if isempty(parts), parts = {char(str)}; end
-
-  for i = 1:numel(parts)
-para = add(tb, parts{i});
-try, para.Font = 'Arial'; catch, end
-try, para.FontSize = fontSize; catch, end
-try, para.Bold = logical(isBold); catch, end
-
-% Set WHITE text (different versions use different property names)
-try, para.FontColor = 'FFFFFF'; catch, end
-try, para.Color     = 'FFFFFF'; catch, end
-
-try, para.HAlign = hAlign; catch, end
-end
-end
-
-    function safeClosePpt(ppt)
-    try
-        if ~isempty(ppt)
-            close(ppt);
-        end
-    catch
-    end
+    % ---- temp folder ----
+    tmpRoot = tempdir;
+    if isempty(tmpRoot) || exist(tmpRoot,'dir')~=7
+        tmpRoot = pwd;
     end
 
-function writePptFromSlidePNGs(pptPath, slidePNGs)
-    import mlreportgen.ppt.*
+    tag = [datestr(now,'yyyymmdd_HHMMSS') '_' sprintf('%06d', randi(999999))];
+
+    % ---- make colorbar PNG once ----
+    cbPng = fullfile(tmpRoot, ['scm_colorbar_' tag '.png']);
+    makeColorbarPNG(cbPng, cm, caxV);
+
+    % ---- solid black background PNG once ----
+    bgPng = fullfile(tmpRoot, ['scm_bg_' tag '.png']);
+    imwrite(uint8(zeros(32,32,3)), bgPng);
 
     ppt = Presentation(pptPath);
     open(ppt);
 
-    for i=1:numel(slidePNGs)
-        % Safety: ensure file exists before adding
-        if exist(slidePNGs{i},'file') ~= 2
-            warning('Slide image missing, skipping: %s', slidePNGs{i});
-            continue;
-        end
+    perSlide = 6;
+    n = numel(tilePNG);
+    nSlides = ceil(n/perSlide);
 
+    % Slide geometry in inches (16:9)
+    slideW = 13.333; %#ok<NASGU>
+    slideH = 7.5;    %#ok<NASGU>
+
+    % Layout
+    cbX = 0.35; cbY = 1.15; cbW = 0.32; cbH = 5.20;
+
+    gridX0 = cbX + cbW + 0.30;
+    gridX1 = 13.05;
+    gridY0 = 1.15;
+    gridY1 = 6.80;
+
+    cols = 3; rows = 2;
+    gapX = 0.20; gapY = 0.35;
+
+    cellW = (gridX1-gridX0 - (cols-1)*gapX)/cols;
+    cellH = (gridY1-gridY0 - (rows-1)*gapY)/rows;
+
+    titleY  = 0.15; titleH = 0.85;
+    footerY = 6.95; footerH = 0.45;
+
+    idx = 1;
+
+    for s = 1:nSlides
+        % ---- add slide ----
         try
             slide = add(ppt,'Blank');
         catch
             slide = add(ppt);
         end
 
-        pic = Picture(slidePNGs{i});
-        pic.X = '0in';  pic.Y = '0in';
-        pic.Width  = '13.333in';
-        pic.Height = '7.5in';
-        add(slide, pic);
+        % ---- BLACK BACKGROUND FIRST ----
+        bgPic = Picture(bgPng);
+        bgPic.X = '0in';  bgPic.Y = '0in';
+        bgPic.Width  = '13.333in';
+        bgPic.Height = '7.5in';
+        add(slide, bgPic);
+
+        % ---- TITLE ----
+        if s == 1
+            titleText = titleStr1;
+        else
+            titleText = titleStrOther;
+        end
+        addPptTextBox(slide, titleText, 0.20, titleY, 12.90, titleH, 14, true, 'center');
+
+        % ---- COLORBAR PNG (left) ----
+        picCB = Picture(cbPng);
+        picCB.X = sprintf('%.2fin', cbX);
+        picCB.Y = sprintf('%.2fin', cbY);
+        picCB.Width  = sprintf('%.2fin', cbW);
+        picCB.Height = sprintf('%.2fin', cbH);
+        add(slide, picCB);
+
+        % ---- FOOTER ----
+        addPptTextBox(slide, footerStr, 0.20, footerY, 12.90, footerH, 11, true, 'right');
+
+        % ---- 6 IMAGES ----
+        for k = 1:perSlide
+            if idx > n, break; end
+
+            r = floor((k-1)/cols);   % 0..1
+            ccol = mod((k-1), cols); % 0..2
+
+            x = gridX0 + ccol*(cellW+gapX);
+            y = gridY0 + r*(cellH+gapY);
+
+            % label above image
+            addPptTextBox(slide, tileLBL{idx}, x, y-0.22, cellW, 0.25, 14, true, 'center');
+
+            % image itself (brain-only PNG)
+            pic = Picture(tilePNG{idx});
+            pic.X = sprintf('%.2fin', x);
+            pic.Y = sprintf('%.2fin', y);
+            pic.Width  = sprintf('%.2fin', cellW);
+            pic.Height = sprintf('%.2fin', cellH);
+            add(slide, pic);
+
+            idx = idx + 1;
+        end
     end
 
     close(ppt);
+
+    % cleanup
+    try, if exist(cbPng,'file')==2, delete(cbPng); end, catch, end
+    try, if exist(bgPng,'file')==2, delete(bgPng); end, catch, end
 end
 
+function addPptTextBox(slide, str, x, y, w, h, fontSize, isBold, hAlign)
+% Render text as PNG (white on black) and insert as one Picture.
+    import mlreportgen.ppt.*
 
+    tmpPng = [tempname '.png'];
+    renderTextPNG(tmpPng, str, w, h, fontSize, isBold, hAlign);
+
+    pic = Picture(tmpPng);
+    pic.X = sprintf('%.2fin', x);
+    pic.Y = sprintf('%.2fin', y);
+    pic.Width  = sprintf('%.2fin', w);
+    pic.Height = sprintf('%.2fin', h);
+    add(slide, pic);
+
+    try, if exist(tmpPng,'file')==2, delete(tmpPng); end, catch, end
+end
+
+function renderTextPNG(outPng, str, wIn, hIn, fontSize, isBold, hAlign)
+% Create a small black PNG with WHITE text. Size is based on PPT box size.
+    DPI = 250;
+    Wpx = max(50, round(wIn * DPI));
+    Hpx = max(30, round(hIn * DPI));
+
+    figT = figure('Visible','off', 'Color',[0 0 0], 'InvertHardcopy','off', ...
+                 'Units','pixels', 'Position',[50 50 Wpx Hpx]);
+    axT = axes('Parent',figT, 'Units','normalized', 'Position',[0 0 1 1], ...
+              'Visible','off');
+    xlim(axT,[0 1]); ylim(axT,[0 1]);
+
+    switch lower(hAlign)
+        case 'left',   x0 = 0.01; ha = 'left';
+        case 'right',  x0 = 0.99; ha = 'right';
+        otherwise,     x0 = 0.50; ha = 'center';
+    end
+
+    fw = 'normal';
+    if isBold, fw = 'bold'; end
+
+    text(axT, x0, 0.50, char(str), ...
+        'Units','normalized', ...
+        'Color',[1 1 1], ...
+        'FontName','Arial', ...
+        'FontSize',fontSize, ...
+        'FontWeight',fw, ...
+        'HorizontalAlignment',ha, ...
+        'VerticalAlignment','middle', ...
+        'Interpreter','none');
+
+    set(figT,'PaperPositionMode','auto');
+    print(figT, outPng, '-dpng', sprintf('-r%d',DPI), '-opengl');
+    close(figT);
+end
+
+function makeColorbarPNG(outFile, cm, caxV)
+% High-res vertical colorbar PNG (white ticks, label).
+    figC = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
+    set(figC,'Units','pixels','Position',[50 50 420 1800]);
+
+    axC = axes('Parent',figC,'Position',[0.05 0.02 0.25 0.96],'Visible','off');
+    imagesc(axC,[0 1;0 1]);
+    colormap(axC, cm);
+    caxis(axC, caxV);
+    axis(axC,'off');
+
+    cb = colorbar(axC,'Position',[0.45 0.05 0.22 0.90]);
+    cb.Color = 'w';
+    cb.FontName = 'Arial';
+    cb.FontSize = 14;
+    cb.TickDirection = 'out';
+    cb.Label.String = 'Signal change (%)';
+    cb.Label.Color  = 'w';
+    cb.Label.FontName = 'Arial';
+    cb.Label.FontSize = 14;
+
+    set(figC,'PaperPositionMode','auto');
+    print(figC, outFile, '-dpng', '-r300', '-opengl');
+    close(figC);
+end
+
+%% ===================== LABEL HELPERS =====================
 function titleStr = makeNiceSlideTitle(lbl)
-    % Returns a 2-line compact title: "Animal/ID" + "preproc label"
     s = char(lbl);
 
-    % If it contains "File:" etc, drop that tail
     s = regexprep(s,'\|?\s*File:.*$','');
-
-    % If it's a path, keep filename only
     try
         if contains(s,'/') || contains(s,'\') || contains(s,filesep)
             [~,s] = fileparts(s);
@@ -1649,12 +1622,10 @@ function titleStr = makeNiceSlideTitle(lbl)
     catch
     end
 
-    % Remove common huge prefixes
     s = regexprep(s,'^Project_','');
     s = regexprep(s,'RawData_','');
     s = regexprep(s,'AnalysedData_','');
 
-    % Try to extract animal-ish token (WT...._S..)
     animal = '';
     tok = regexp(s,'(WT\d+[A-Za-z]?(?:_\w+)?_S\d+)','tokens','once');
     if ~isempty(tok), animal = tok{1}; end
@@ -1664,14 +1635,11 @@ function titleStr = makeNiceSlideTitle(lbl)
     end
     if isempty(animal), animal = 'SCM Series'; end
 
-    % Preproc = use the remaining label, shortened
     preproc = s;
     preproc = shortenMiddle(preproc, 90);
 
-    % Final 2-line title
     titleStr = sprintf('%s\n%s', animal, preproc);
 end
-
 
 function out = shortenMiddle(s, maxLen)
     s = char(s);
@@ -1680,7 +1648,6 @@ function out = shortenMiddle(s, maxLen)
     out = [s(1:keep) '...' s(end-keep+1:end)];
 end
 
-% >>> PASTE HERE <<<
 function s = getAnimalID(lbl)
     s0 = char(lbl);
     tok = regexp(s0,'(WT\d+[A-Za-z]?(?:_\w+)?_S\d+)','tokens','once');
@@ -1695,7 +1662,6 @@ function s = makeFullTitle(lbl)
     s = regexprep(s,'\|?\s*File:.*$','');
     s = shortenMiddle(s, 110);
 end
-% >>> END PASTE <<<
 
 function s = shortenPath(p, maxLen)
     p = char(p);
@@ -1704,8 +1670,7 @@ function s = shortenPath(p, maxLen)
     s = [p(1:keep) '...' p(end-keep+1:end)];
 end
 
-
-
+%% ===================== PATH / TYPE HELPERS =====================
 function analysedRoot = guessAnalysedRoot(p0)
     p0 = char(p0);
     if exist(p0,'dir') ~= 7
@@ -1748,33 +1713,29 @@ function dsType = deriveDatasetType()
         s = '';
     end
     if isempty(s), s = fileLabel; end
-    
-    % --- IMPORTANT: if s is a path, keep only the filename (prevents "RawData" triggering "raw")
-try
-    ss = char(s);
-    % handle .nii.gz
-    ss = regexprep(ss,'\.nii\.gz$','', 'ignorecase');
-    if contains(ss, filesep) || contains(ss,'/') || contains(ss,'\')
-        [~, ss] = fileparts(ss);
+
+    % if path, keep only filename
+    try
+        ss = char(s);
+        ss = regexprep(ss,'\.nii\.gz$','', 'ignorecase');
+        if contains(ss, filesep) || contains(ss,'/') || contains(ss,'\')
+            [~, ss] = fileparts(ss);
+        end
+        s = ss;
+    catch
     end
-    s = ss;
-catch
-end
 
     if isstring(s), s = char(s); end
     s = lower(strtrim(s));
-    s = regexprep(s,'\|.*$','');   % drop anything after |
-    s = regexprep(s,'\(.*$','');   % drop (...) tail
+    s = regexprep(s,'\|.*$','');
+    s = regexprep(s,'\(.*$','');
     s = strtrim(s);
 
     if contains(s,'gabriel'), dsType = 'gabriel'; return; end
-    % Only match "raw" as a token, not as part of folder names like "RawData"
-if ~isempty(regexp(s,'(^|[_\-\s])raw([_\-\s]|$)','once'))
-    dsType = 'raw'; return;
-end
+    if ~isempty(regexp(s,'(^|[_\-\s])raw([_\-\s]|$)','once'))
+        dsType = 'raw'; return;
+    end
 
-
-    % try first token as type
     tok = regexp(s,'^[a-z0-9]+','match','once');
     if ~isempty(tok)
         dsType = sanitizeName(tok);
@@ -2239,43 +2200,27 @@ function out = clamp(x, lo, hi)
     out = min(max(x,lo),hi);
 end
 
-
 function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
-    % Derive a brain include-mask from a "BrainOnly" underlay.
-    % Works when bgIn is:
-    %   - 2D: [Y X]
-    %   - 3D: [Y X Z]  or [Y X T] (if nz==1)
-    %   - 4D: [Y X Z T]
-    %
-    % Heuristic: only auto-mask if there are "enough zeros" suggesting outside-brain is zeroed.
-
     M = [];
 
     if isempty(bgIn) || ~(isnumeric(bgIn) || islogical(bgIn))
         return;
     end
 
-    % Build a representative 3D volume V(Y,X,Z) from bgIn
     V = [];
     try
         if ndims(bgIn) == 2
             V = reshape(double(bgIn), [ny nx 1]);
-
         elseif ndims(bgIn) == 3
-            % Could be [Y X Z] or [Y X T] when nz==1
             if nz > 1 && size(bgIn,3) == nz
                 V = double(bgIn);
             elseif nz == 1 && size(bgIn,3) == nt
-                V = reshape(mean(double(bgIn), 3), [ny nx 1]); % mean over time
+                V = reshape(mean(double(bgIn), 3), [ny nx 1]);
             else
-                % fallback: take first slice as 2D
                 V = reshape(double(bgIn(:,:,1)), [ny nx 1]);
             end
-
         elseif ndims(bgIn) == 4
-            % [Y X Z T] -> mean over time
             V = mean(double(bgIn), 4);
-
         else
             return;
         end
@@ -2283,24 +2228,19 @@ function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
         return;
     end
 
-    % Fit/crop/pad to expected dims
     V = V(1:min(ny,size(V,1)), 1:min(nx,size(V,2)), 1:min(nz,size(V,3)));
     if size(V,1) < ny, V(end+1:ny,:,:) = 0; end
     if size(V,2) < nx, V(:,end+1:nx,:) = 0; end
     if size(V,3) < nz, V(:,:,end+1:nz) = 0; end
 
-    % Decide if this looks like BrainOnly (many zeros outside)
     fracZero = mean(V(:) == 0);
     if ~isfinite(fracZero) || fracZero < 0.02
-        % Not enough zeros -> likely a normal underlay; do NOT auto-mask
         M = [];
         return;
     end
 
-    % Derive mask: include where underlay is nonzero
     M = (V ~= 0);
 
-    % Optional: fill holes per slice (safe if IPT available)
     try
         for zz = 1:size(M,3)
             M(:,:,zz) = imfill(M(:,:,zz), 'holes');
@@ -2310,6 +2250,7 @@ function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
 
     M = logical(M);
 end
+
 function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ_)
     if isempty(M0), M2=true(ny,nx); return; end
     M0 = logical(M0);
@@ -2339,9 +2280,9 @@ function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ_)
         end
     end
 
-   M2 = M2(1:min(ny,size(M2,1)), 1:min(nx,size(M2,2)));
-if size(M2,1)<ny, M2(end+1:ny,:) = false; end
-if size(M2,2)<nx, M2(:,end+1:nx) = false; end
+    M2 = M2(1:min(ny,size(M2,1)), 1:min(nx,size(M2,2)));
+    if size(M2,1)<ny, M2(end+1:ny,:) = false; end
+    if size(M2,2)<nx, M2(:,end+1:nx) = false; end
 end
 
 function M = readMask(f)
@@ -2365,7 +2306,6 @@ function M = readMask(f)
     if strcmpi(e,'.mat')
         S = load(f);
 
-        % Prefer these variable names (matches your mask.m save)
         if isfield(S,'brainMask')
             M = S.brainMask;
         elseif isfield(S,'mask')
@@ -2373,10 +2313,8 @@ function M = readMask(f)
         elseif isfield(S,'M')
             M = S.M;
         elseif isfield(S,'brainImage')
-            % Fallback: derive mask from brainImage if mask not present
             M = (S.brainImage > 0);
         else
-            % Last resort: first numeric/logical variable
             fn = fieldnames(S);
             M = [];
             for k = 1:numel(fn)
@@ -2394,7 +2332,6 @@ function M = readMask(f)
         return;
     end
 
-    % .nii
     M = niftiread(f);
     M = logical(M);
 end
