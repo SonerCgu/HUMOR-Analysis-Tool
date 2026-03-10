@@ -131,7 +131,7 @@ buttons = { ...
     {'Load fUSI Data'}, ...
     {'Full QC','Specific QC'}, ...
     {'Frame Rejection','Subsampling','Scrubbing','Motor'}, ...
-    {'Will be Removed (was PSC Computation)','Filtering', 'PCA', 'Despike'}, ...
+    {'Temporal smoothing','Filtering', 'PCA', 'Despike'}, ...
     {'Time-Course Viewer','SCM','Video & SCM Mask', 'Mask Editor'}, ...
     {'Registration to Atlas'}, ...
     {'Functional connectivity','Group analysis'}};
@@ -333,8 +333,8 @@ function drawButtons(parent, btns, sectionIndex)
             case 'subsampling',             callback = @gabrielCallback;
             case 'scrubbing',               callback = @scrubbingCallback;
             case 'motor',                   callback = @stepMotorCallback;
-            % keep PSC computation (deprecated but accessible)
-            case 'will be removed (was psc computation)', callback = @computePSCCallback;
+          
+            case 'temporal smoothing',        callback = @temporalSmoothingCallback;
             case 'filtering',               callback = @filteringCallback;
             case 'pca',                     callback = @pcaCallback;
             case 'despike',                 callback = @despikeCallback;
@@ -1022,6 +1022,90 @@ function despikeCallback(~,~)
     catch ME
         addLog(['DESPIKE ERROR: ' ME.message]);
         errordlg(ME.message,'Despike Failure');
+    end
+
+    setProgramStatus(true);
+end
+
+
+
+%% =========================================================
+%  TEMPORAL SMOOTHING (sliding moving-average)
+% =========================================================
+function temporalSmoothingCallback(~,~)
+
+    studio = guidata(fig);
+
+    if ~studio.isLoaded
+        errordlg('Load data first.'); 
+        return;
+    end
+
+    data = getActiveData();
+
+    if ~isstruct(data) || ~isfield(data,'I') || isempty(data.I)
+        errordlg('Active dataset has no data.I to smooth.');
+        return;
+    end
+
+    % Ask smoothing window in seconds
+    defWin = '60';
+    answ = inputdlg({'Temporal smoothing window (seconds):'}, ...
+        'Temporal smoothing', 1, {defWin});
+
+    if isempty(answ)
+        addLog('Temporal smoothing cancelled.');
+        return;
+    end
+
+    winSec = str2double(answ{1});
+    if isnan(winSec) || ~isfinite(winSec) || winSec <= 0
+        errordlg('Invalid window (seconds). Must be > 0.');
+        return;
+    end
+
+    addLog(sprintf('Running temporal smoothing (win=%.3g sec, TR=%.4g sec)...', winSec, data.TR));
+    setProgramStatus(false); drawnow;
+
+    try
+        opts = struct();
+        opts.chunkVoxels = 50000;
+        opts.logFcn = []; % could do @(s) addLog(s) but may spam
+
+        [Iout, stats] = temporalsmoothing(data.I, data.TR, winSec, opts);
+
+        newData = data;
+        newData.I = single(Iout);
+        newData.temporalSmoothing = stats;
+        newData.preprocessing = sprintf('Temporal smoothing (moving avg, %.3g s)', winSec);
+
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+        baseName = studio.activeDataset;
+
+        % seconds tag safe for filenames: 60 -> 60s, 12.5 -> 12p5s
+        secTag = num2str(winSec,'%.6g');
+        secTag = strrep(secTag,'.','p');
+        secTag = strrep(secTag,'-','m');
+
+        fullName = sprintf('%s_temporal_%ss_%s', baseName, secTag, ts);
+        keyName  = makeSafeKey(fullName, studio.datasets);
+
+        studio.datasets.(keyName) = newData;
+        studio.pipeline.preprocDone = true;
+
+        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+            'newData','-v7.3');
+
+        guidata(fig, studio);
+        refreshDatasetDropdown();
+
+        addLog(sprintf('Temporal smoothing complete -> %s', fullName));
+        addLog(sprintf('Window: %.6g sec (%d vols), runtime: %.2f sec', ...
+            stats.winSec, stats.winVol, stats.runtimeSec));
+
+    catch ME
+        addLog(['TEMP SMOOTH ERROR: ' ME.message]);
+        errordlg(ME.message,'Temporal smoothing failed');
     end
 
     setProgramStatus(true);

@@ -133,7 +133,7 @@ S.dbHigh = -7;
 S.brightness = 0.00;
 S.contrast   = 1.00;
 S.gamma      = 1.00;
-S.sharpness  = 0.00;     % 0..100
+S.sharpness  = 0.00;     % 0..300
 
 S.globalScaling = false; % used only for linear modes
 S.pctLow  = 1;
@@ -365,7 +365,7 @@ h.dispTitle = makeTitle(ctrlPanel,'Display');
 [h.lblBright,h.slBright,h.txtBright] = makeSliderRow(ctrlPanel,'Brightness',-0.6,0.6,S.brightness,@onDisplayChange,'%.2f');
 [h.lblCont,  h.slCont,  h.txtCont]   = makeSliderRow(ctrlPanel,'Contrast',0.5,3.0,S.contrast,@onDisplayChange,'%.2f');
 [h.lblGamma, h.slGamma, h.txtGamma]  = makeSliderRow(ctrlPanel,'Gamma',0.2,3.0,S.gamma,@onDisplayChange,'%.2f');
-[h.lblSharp, h.slSharp, h.txtSharp]  = makeSliderRow(ctrlPanel,'Sharpness',0,100,S.sharpness,@onDisplayChange,'%.2f');
+[h.lblSharp, h.slSharp, h.txtSharp]  = makeSliderRow(ctrlPanel,'Sharpness',0,300,S.sharpness,@onDisplayChange,'%.2f');
 
 h.chkTone = uicontrol('Style','checkbox','Parent',ctrlPanel, ...
     'String','Soft tone map (optional)', ...
@@ -1572,33 +1572,46 @@ end
         U01 = min(max(U01,0),1);
     end
 
-    function U01 = applyDisplayAdjust(U01, bright, cont, gam, sharp)
-        U01 = double(U01);
-        U01 = U01 * cont + bright;
-        U01 = min(max(U01,0),1);
-        U01 = U01 .^ (1/max(eps,gam));
-        U01 = min(max(U01,0),1);
+   function U01 = applyDisplayAdjust(U01, bright, cont, gam, sharp)
+    U01 = double(U01);
 
-      % Sharpness 0..100 (stronger but still stable)
-sharp = max(0, min(100, double(sharp)));
-if sharp > 0
-    sharpMax  = 100;
-    amountMax = 2.2;                         % max sharpening strength
-   amount = amountMax * (1 - exp(-sharp/25));   % 25 -> reaches ~98% at ~100
-
-    % Slightly larger blur at higher sharpness reduces halos
-    sigma = 1.25 + 0.35*(sharp/sharpMax);
-    B = gaussBlur2D(U01, sigma);
-
-    hi = (U01 - B);
-
-    % Clamp high-frequency boost (prevents harsh ringing/noise blow-up)
-    hi = max(min(hi, 0.25), -0.25);
-
-    U01 = U01 + amount * hi;
+    % brightness / contrast
+    U01 = U01 * cont + bright;
     U01 = min(max(U01,0),1);
-end
+
+    % gamma
+    U01 = U01 .^ (1/max(eps,gam));
+    U01 = min(max(U01,0),1);
+
+    % -------------------------------------------------
+    % Stronger sharpness with extended dynamic range
+    % -------------------------------------------------
+    sharp = max(0, min(300, double(sharp)));
+
+    if sharp > 0
+        sharpMax = 300;
+
+        % stronger overall gain than before
+        amountMax = 4.5;
+
+        % smoother rise, still keeps low values controllable
+        amount = amountMax * (1 - exp(-sharp/60));
+
+        % slightly broader blur at high sharpness
+        sigma = 1.10 + 0.90*(sharp/sharpMax);
+
+        B = gaussBlur2D(U01, sigma);
+        hi = U01 - B;
+
+        % softer clamp instead of harsh threshold
+        hi = 0.35 * tanh(hi / 0.35);
+
+        U01 = U01 + amount * hi;
+
+        % final valid display range
+        U01 = min(max(U01,0),1);
     end
+end
 
     function Uo = toneMapSoft(Ui)
         Ui = double(Ui);
