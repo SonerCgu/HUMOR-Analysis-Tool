@@ -1,17 +1,9 @@
 function hFig = GroupAnalysis(varargin)
-% GroupAnalysis.m (MATLAB 2017b + 2023b) — FULL SINGLE-FILE
-% =========================================================
-% FIXES (based on your screenshots):
-% 1) Y-axis scaling: revert to normal Ymin/Ymax editable boxes
-%    + add Step (small) + tiny +/- nudges (no giant blocks)
-% 2) Ymax is editable again (no overlap)
-% 3) Preview tab background fixed (dark panel behind axes) -> no weird look
-% 4) UTF-8 CSV export (avoids Windows-1252 error)
-% 5) Display style layout kept clean (Group A/Color A, Group B/Color B separate lines)
+% GroupAnalysis.m
+% MATLAB 2017b + 2023b compatible
+% ASCII-safe copy
 %
-% Table columns:
-%   Use | Subject | Group | Condition | PairID | DataFile | ROIFile | Status
-% =========================================================
+% ROI txt PSC files are plotted directly without baseline subtraction.
 
 % -------------------- Parse inputs -----------------------
 posStudio = [];
@@ -36,7 +28,7 @@ P.addParameter('onClose', [], @(x) isempty(x) || isa(x,'function_handle'));
 P.parse(args{:});
 opt = P.Results;
 
-if ~isempty(posStudio),  opt.studio = posStudio; end
+if ~isempty(posStudio), opt.studio = posStudio; end
 if ~isempty(posOnClose), opt.onClose = posOnClose; end
 
 if isempty(opt.startDir), opt.startDir = pwd; end
@@ -44,7 +36,7 @@ if isfield(opt.studio,'exportPath') && ~isempty(opt.studio.exportPath) && exist(
     opt.startDir = opt.studio.exportPath;
 end
 
-% -------------------- Theme + Fonts ----------------------
+% -------------------- Theme ------------------------------
 C.bg     = [0.06 0.06 0.06];
 C.panel  = [0.10 0.10 0.10];
 C.panel2 = [0.08 0.08 0.08];
@@ -67,7 +59,7 @@ F.table  = 12;
 F.tab    = 15;
 
 % -------------------- Figure -----------------------------
-hFig = figure('Name','fUSI Studio — Group Analysis', ...
+hFig = figure('Name','fUSI Studio - Group Analysis', ...
     'Color',C.bg, 'MenuBar','none','ToolBar','none','NumberTitle','off', ...
     'Position',[120 60 1860 980], 'CloseRequestFcn', @closeMe);
 
@@ -81,9 +73,11 @@ set(hFig, ...
 
 % -------------------- State ------------------------------
 S = struct();
-S.opt = opt; S.C = C; S.F = F;
+S.opt = opt;
+S.C = C;
+S.F = F;
 
-S.subj = cell(0,8);        % Use|Subject|Group|Condition|PairID|DataFile|ROIFile|Status
+S.subj = cell(0,8);   % Use|Subject|Group|Condition|PairID|DataFile|ROIFile|Status
 S.selectedRows = [];
 S.isClosing = false;
 S.last = struct();
@@ -93,41 +87,64 @@ S.groupList = {'PACAP','Vehicle','Control','GroupA','GroupB'};
 S.condList  = {'CondA','CondB','Baseline','Post'};
 S.defaultGroup = 'PACAP';
 S.defaultCond  = 'CondA';
-
 S.applyAllIfNoneSelected = true;
 
-% ROI defaults (minutes)
+% Caches for speed
+try
+    S.cache.roiTC = containers.Map('KeyType','char','ValueType','any');
+    S.cache.pscMap = containers.Map('KeyType','char','ValueType','any');
+catch
+    S.cache.roiTC = [];
+    S.cache.pscMap = [];
+end
+
+% ROI defaults
 S.tc_computePSC = false;
-S.tc_baseMin0   = 0;  S.tc_baseMin1 = 10;
-S.tc_injMin0    = 10; S.tc_injMin1  = 20;
-S.tc_plateauMin0 = 30; S.tc_plateauMin1 = 40;
-S.tc_peakSearchMin0 = 10; S.tc_peakSearchMin1 = 20;
+S.tc_baseMin0   = 0;
+S.tc_baseMin1   = 10;
+S.tc_injMin0    = 5;
+S.tc_injMin1    = 15;
+S.tc_plateauMin0 = 30;
+S.tc_plateauMin1 = 40;
+S.tc_peakSearchMin0 = 10;
+S.tc_peakSearchMin1 = 20;
 S.tc_peakWinMin = 3;
 S.tc_trimPct    = 10;
 S.tc_metric     = 'Robust Peak';
-S.tc_baselineZero = 'Subtract baseline mean';
+S.tc_baselineZero = 'None';
 S.tc_showSEM = true;
+S.tc_showInjectionBox = true;
+S.displaySemAlpha = 0.35;
+S.exportSemAlpha  = 0.20;
 
-% PSC map defaults (sec)
-S.baseStart = 0;  S.baseEnd = 10;
-S.sigStart  = 10; S.sigEnd  = 30;
+% PSC map defaults
+S.baseStart = 0;
+S.baseEnd   = 10;
+S.sigStart  = 10;
+S.sigEnd    = 30;
 S.mapSummary = 'Mean';
 
-% Display style / colors
-S.colorMode = 'Scheme';               % Scheme | Manual A/B
+% Color/style
+S.colorMode = 'Scheme';
 S.colorScheme = 'PACAP/Vehicle';
 S.manualGroupA = 'PACAP';
 S.manualGroupB = 'Vehicle';
 S.manualColorA = 1;
 S.manualColorB = 2;
 
-% Plot scaling + step size (REVERTED normal)
+% Plot scaling
 S.plotTop = struct('auto',true,'forceZero',true,'ymin',0,'ymax',150,'step',5);
 S.plotBot = struct('auto',true,'forceZero',true,'ymin',0,'ymax',150,'step',5);
+
+% Preview style
+S.previewStyle = 'Light';
+S.previewShowGrid = false;
 
 % Stats
 S.testType = 'None';
 S.alpha = 0.05;
+S.annotMode = 'Bottom only';
+S.showPText = true;
 
 % Outliers
 S.outlierMethod = 'None';
@@ -138,7 +155,7 @@ S.outlierInfo = {};
 
 S.outDir = defaultOutDir(opt);
 
-% -------------------- Layout panels ----------------------
+% -------------------- Layout -----------------------------
 leftW = 0.46;
 
 pLeft = uipanel(hFig,'Units','normalized','Position',[0.02 0.05 leftW 0.93], ...
@@ -168,7 +185,7 @@ S.hTable = uitable(pLeft, ...
     'CellSelectionCallback',@onCellSelect, ...
     'CellEditCallback',@onCellEdit);
 
-% -------------------- Quick Assign panel -----------------
+% -------------------- Quick Assign -----------------------
 pQuick = uipanel(pLeft,'Units','normalized','Position',[0.75 0.33 0.22 0.64], ...
     'Title','Quick Assign', 'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontSize',F.base,'FontWeight','bold');
@@ -214,7 +231,7 @@ S.hFillFromROI = mkBtn(pQuick,'Fill DATA from ROI folder',[0.05 0.20 0.90 0.06],
 S.hRevertExcluded = mkBtn(pQuick,'Revert EXCLUDED rows',[0.05 0.13 0.90 0.06],C.btnSecondary,@onRevertExcluded);
 S.hHelp = mkBtn(pQuick,'HELP',[0.05 0.05 0.90 0.06],C.btnHelp,@onHelp);
 
-% -------------------- Left-side buttons ------------------
+% -------------------- Left buttons -----------------------
 S.hAddFiles  = mkBtn(pLeft,'Add Files',[0.03 0.26 0.22 0.06],C.btnSecondary,@onAddFiles);
 S.hAddFolder = mkBtn(pLeft,'Add Folder (scan)',[0.26 0.26 0.22 0.06],C.btnSecondary,@onAddFolder);
 S.hRemove    = mkBtn(pLeft,'Remove selected',[0.49 0.26 0.24 0.06],C.btnDanger,@onRemoveSelected);
@@ -239,12 +256,12 @@ S.hOutEdit = uicontrol(pLeft,'Style','edit','String',S.outDir, ...
 S.hOutBrowse = mkBtn(pLeft,'Browse',[0.64 0.085 0.09 0.045],C.btnSecondary,@onBrowseOut);
 
 S.hHint = uicontrol(pLeft,'Style','text', ...
-    'String','Tip: Edit Group/Condition in table dropdown OR Quick Assign. Uncheck Auto to set Ymin/Ymax.', ...
+    'String','Tip: preview is fully redrawn to avoid overlap/stale plots. CSV exports are UTF-8.', ...
     'Units','normalized','Position',[0.03 0.02 0.70 0.055], ...
     'BackgroundColor',C.panel,'ForegroundColor',C.muted, ...
     'HorizontalAlignment','left','FontSize',F.small);
 
-% -------------------- Tabs (Right) -----------------------
+% -------------------- Tabs -------------------------------
 S.tabGroup = uitabgroup(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.96]);
 try, set(S.tabGroup,'FontSize',F.tab); catch, end
 
@@ -253,10 +270,14 @@ S.tabMAP   = uitab(S.tabGroup,'Title','PSC Maps');
 S.tabSTATS = uitab(S.tabGroup,'Title','Stats');
 S.tabPREV  = uitab(S.tabGroup,'Title','Preview');
 
+pROIBG   = uipanel(S.tabROI,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
+pMAPBG   = uipanel(S.tabMAP,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
+pSTATSBG = uipanel(S.tabSTATS,'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
+
 % -------------------- ROI TAB ----------------------------
 bg2 = C.panel2;
 
-pROItop = uipanel(S.tabROI,'Units','normalized','Position',[0.02 0.92 0.96 0.07], ...
+pROItop = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.92 0.96 0.07], ...
     'Title','', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 uicontrol(pROItop,'Style','text','String','Active mode:', ...
@@ -269,15 +290,25 @@ S.hMode = uicontrol(pROItop,'Style','popupmenu', ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onModeChanged);
 
-pROI = uipanel(S.tabROI,'Units','normalized','Position',[0.02 0.60 0.96 0.30], ...
+pROI = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.60 0.96 0.30], ...
     'Title','ROI settings', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 S.hTC_ComputePSC = uicontrol(pROI,'Style','checkbox', ...
     'String','Compute %SC from raw using baseline (ignored if ROI txt already PSC)', ...
-    'Units','normalized','Position',[0.02 0.82 0.96 0.15], ...
+    'Units','normalized','Position',[0.02 0.82 0.58 0.15], ...
     'Value', double(S.tc_computePSC), ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'Callback',@onROIChanged);
+
+uicontrol(pROI,'Style','text','String','Injection (min):', ...
+    'Units','normalized','Position',[0.62 0.84 0.16 0.10], ...
+    'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
+S.hInj0 = uicontrol(pROI,'Style','edit','String',num2str(S.tc_injMin0), ...
+    'Units','normalized','Position',[0.79 0.84 0.08 0.10], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onROIChanged);
+S.hInj1 = uicontrol(pROI,'Style','edit','String',num2str(S.tc_injMin1), ...
+    'Units','normalized','Position',[0.88 0.84 0.08 0.10], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onROIChanged);
 
 [S.hBase0,S.hBase1] = addPairEditsDark(pROI,0.62,'Baseline (min):',S.tc_baseMin0,S.tc_baseMin1,C,@onROIChanged);
 [S.hPkS0,S.hPkS1]   = addPairEditsDark(pROI,0.42,'Peak search (min):',S.tc_peakSearchMin0,S.tc_peakSearchMin1,C,@onROIChanged);
@@ -304,8 +335,7 @@ S.hTC_Metric = uicontrol(pROI,'Style','popupmenu','String',{'Plateau','Robust Pe
     'Units','normalized','Position',[0.84 0.22 0.12 0.12], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onROIChanged);
 
-% ---------- Display style (clean) ----------
-pStyle = uipanel(S.tabROI,'Units','normalized','Position',[0.02 0.36 0.96 0.22], ...
+pStyle = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.36 0.96 0.22], ...
     'Title','Display style', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 uicontrol(pStyle,'Style','text','String','Color mode:', ...
@@ -323,8 +353,8 @@ S.hColorScheme = uicontrol(pStyle,'Style','popupmenu', ...
     'Units','normalized','Position',[0.56 0.72 0.22 0.22], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onStyleChanged);
 
-S.hShowSEM = uicontrol(pStyle,'Style','checkbox','String','Show SEM shading', ...
-    'Units','normalized','Position',[0.80 0.72 0.18 0.22], ...
+S.hShowSEM = uicontrol(pStyle,'Style','checkbox','String','Show SEM', ...
+    'Units','normalized','Position',[0.80 0.72 0.16 0.22], ...
     'Value', double(S.tc_showSEM), ...
     'BackgroundColor',bg2,'ForegroundColor','w','Callback',@onStyleChanged);
 
@@ -343,6 +373,11 @@ S.hManColorA = uicontrol(pStyle,'Style','popupmenu','String',pNames, ...
     'Units','normalized','Position',[0.56 0.42 0.22 0.22], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onStyleChanged);
 
+S.hShowInjBox = uicontrol(pStyle,'Style','checkbox','String','Injection box', ...
+    'Units','normalized','Position',[0.80 0.42 0.18 0.22], ...
+    'Value', double(S.tc_showInjectionBox), ...
+    'BackgroundColor',bg2,'ForegroundColor','w','Callback',@onStyleChanged);
+
 uicontrol(pStyle,'Style','text','String','Group B:', ...
     'Units','normalized','Position',[0.02 0.10 0.18 0.22], ...
     'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
@@ -357,81 +392,115 @@ S.hManColorB = uicontrol(pStyle,'Style','popupmenu','String',pNames, ...
     'Units','normalized','Position',[0.56 0.12 0.22 0.22], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onStyleChanged);
 
-% ---------- Y scaling (REVERTED normal + small step nudges) ----------
-pY = uipanel(S.tabROI,'Units','normalized','Position',[0.02 0.02 0.96 0.32], ...
-    'Title','Y-axis scaling (Step nudges; uncheck Auto to use Ymin/Ymax)', ...
+pY = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.02 0.96 0.32], ...
+    'Title','Y-axis scaling (uncheck Auto to use Ymin/Ymax)', ...
     'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 [S.hTopAuto,S.hTopZero,S.hTopStep,S.hTopYmin,S.hTopYmax, ...
  S.hTopYminM,S.hTopYminP,S.hTopYmaxM,S.hTopYmaxP] = mkYControlsStepCompact( ...
-    pY,0.62,'Top',S.plotTop,C,@onPlotScaleChanged,@onYStep);
+    pY,0.62,'Top',S.plotTop,C,@onPlotScaleChanged, ...
+    @(varargin) onYStep('Top','ymin',-1), ...
+    @(varargin) onYStep('Top','ymin',+1), ...
+    @(varargin) onYStep('Top','ymax',-1), ...
+    @(varargin) onYStep('Top','ymax',+1));
 
 [S.hBotAuto,S.hBotZero,S.hBotStep,S.hBotYmin,S.hBotYmax, ...
  S.hBotYminM,S.hBotYminP,S.hBotYmaxM,S.hBotYmaxP] = mkYControlsStepCompact( ...
-    pY,0.20,'Bottom',S.plotBot,C,@onPlotScaleChanged,@onYStep);
+    pY,0.20,'Bottom',S.plotBot,C,@onPlotScaleChanged, ...
+    @(varargin) onYStep('Bottom','ymin',-1), ...
+    @(varargin) onYStep('Bottom','ymin',+1), ...
+    @(varargin) onYStep('Bottom','ymax',-1), ...
+    @(varargin) onYStep('Bottom','ymax',+1));
 
 % -------------------- MAP TAB ----------------------------
-pMap = uipanel(S.tabMAP,'Units','normalized','Position',[0.02 0.55 0.96 0.43], ...
+pMap = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.55 0.96 0.43], ...
     'Title','PSC map windows (seconds)', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 S.hBaseStart = makeWinRowDark(pMap,0.70,'Baseline start',num2str(S.baseStart),@onPSCEdit,'baseStart',C);
 S.hBaseEnd   = makeWinRowDark(pMap,0.48,'Baseline end',  num2str(S.baseEnd),  @onPSCEdit,'baseEnd',C);
 S.hSigStart  = makeWinRowDark(pMap,0.26,'Signal start',  num2str(S.sigStart), @onPSCEdit,'sigStart',C);
 S.hSigEnd    = makeWinRowDark(pMap,0.04,'Signal end',    num2str(S.sigEnd),   @onPSCEdit,'sigEnd',C);
 
-uicontrol(S.tabMAP,'Style','text','String','Summary (per group):', ...
+uicontrol(pMAPBG,'Style','text','String','Summary (per group):', ...
     'Units','normalized','Position',[0.04 0.45 0.25 0.05], ...
     'BackgroundColor',C.bg,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
-S.hMapSummary = uicontrol(S.tabMAP,'Style','popupmenu','String',{'Mean','Median'}, ...
+S.hMapSummary = uicontrol(pMAPBG,'Style','popupmenu','String',{'Mean','Median'}, ...
     'Units','normalized','Position',[0.28 0.44 0.20 0.06], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onMapChanged);
 
 % -------------------- STATS TAB --------------------------
-pStats = uipanel(S.tabSTATS,'Units','normalized','Position',[0.02 0.62 0.96 0.36], ...
+pStats = uipanel(pSTATSBG,'Units','normalized','Position',[0.02 0.54 0.96 0.44], ...
     'Title','Metric statistics', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 uicontrol(pStats,'Style','text','String','Test:', ...
-    'Units','normalized','Position',[0.02 0.62 0.12 0.30], ...
+    'Units','normalized','Position',[0.02 0.72 0.12 0.20], ...
     'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
 S.hTest = uicontrol(pStats,'Style','popupmenu', ...
-    'String',{'None','One-sample t-test (vs 0)','Two-sample t-test (Welch)','One-way ANOVA (groups)'}, ...
-    'Units','normalized','Position',[0.14 0.64 0.60 0.30], ...
+    'String',{'None','One-sample t-test (vs 0)','Two-sample t-test (Student, equal var)','Two-sample t-test (Welch)','One-way ANOVA (groups)'}, ...
+    'Units','normalized','Position',[0.14 0.74 0.50 0.20], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onStatsChanged);
 
 uicontrol(pStats,'Style','text','String','Alpha:', ...
-    'Units','normalized','Position',[0.77 0.62 0.10 0.30], ...
+    'Units','normalized','Position',[0.66 0.72 0.10 0.20], ...
     'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
 S.hAlpha = uicontrol(pStats,'Style','edit','String',num2str(S.alpha), ...
-    'Units','normalized','Position',[0.86 0.64 0.12 0.30], ...
+    'Units','normalized','Position',[0.75 0.74 0.10 0.20], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onStatsChanged);
 
-pOut = uipanel(pStats,'Units','normalized','Position',[0.02 0.05 0.96 0.52], ...
+uicontrol(pStats,'Style','text','String','Annotate:', ...
+    'Units','normalized','Position',[0.02 0.52 0.12 0.14], ...
+    'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
+S.hAnnotMode = uicontrol(pStats,'Style','popupmenu', ...
+    'String',{'None','Bottom only','Both'}, ...
+    'Units','normalized','Position',[0.14 0.54 0.25 0.16], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onAnnotChanged);
+
+S.hShowPText = uicontrol(pStats,'Style','checkbox','String','Show p-value text', ...
+    'Units','normalized','Position',[0.42 0.54 0.25 0.16], ...
+    'Value', double(S.showPText), ...
+    'BackgroundColor',bg2,'ForegroundColor','w','Callback',@onAnnotChanged);
+
+uicontrol(pStats,'Style','text', ...
+    'String','Stars: * p<0.05  ** p<0.01  *** p<0.001', ...
+    'Units','normalized','Position',[0.69 0.53 0.29 0.16], ...
+    'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','left');
+
+pOut = uipanel(pStats,'Units','normalized','Position',[0.02 0.02 0.96 0.46], ...
     'Title','Outlier detection', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 uicontrol(pOut,'Style','text','String','Method:', ...
-    'Units','normalized','Position',[0.02 0.62 0.14 0.28], ...
+    'Units','normalized','Position',[0.02 0.77 0.10 0.15], ...
     'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
+
 S.hOutMethod = uicontrol(pOut,'Style','popupmenu','String',{'None','MAD robust z-score','IQR rule'}, ...
-    'Units','normalized','Position',[0.16 0.64 0.30 0.30], ...
+    'Units','normalized','Position',[0.12 0.79 0.20 0.16], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onOutlierChanged);
 
 S.hOutParamLbl = uicontrol(pOut,'Style','text','String','Thr (z):', ...
-    'Units','normalized','Position',[0.48 0.62 0.12 0.28], ...
+    'Units','normalized','Position',[0.34 0.77 0.10 0.15], ...
     'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
+
 S.hOutParam = uicontrol(pOut,'Style','edit','String',num2str(S.outMADthr), ...
-    'Units','normalized','Position',[0.60 0.64 0.12 0.30], ...
+    'Units','normalized','Position',[0.43 0.79 0.08 0.16], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onOutlierChanged);
 
-S.hDetectOut = mkBtn(pOut,'Detect',[0.74 0.64 0.24 0.30],C.btnAction,@onDetectOutliers);
+S.hDetectOut  = mkBtn(pOut,'Detect',[0.53 0.79 0.11 0.16],C.btnAction,@onDetectOutliers);
+S.hExcludeOut = mkBtn(pOut,'Exclude',[0.66 0.79 0.11 0.16],C.btnDanger,@onExcludeOutliers);
+S.hRevertOut  = mkBtn(pOut,'Revert',[0.79 0.79 0.11 0.16],C.btnSecondary,@onRevertExcluded);
 
-S.hOutList = uicontrol(pOut,'Style','listbox','String',{}, ...
-    'Units','normalized','Position',[0.02 0.06 0.72 0.50], ...
-    'BackgroundColor',[0 0 0],'ForegroundColor','w', ...
-    'FontName','Consolas','FontSize',F.small);
+uicontrol(pOut,'Style','text', ...
+    'String','Detected outliers (subject | group | condition | metric | score/range):', ...
+    'Units','normalized','Position',[0.02 0.60 0.96 0.10], ...
+    'BackgroundColor',bg2,'ForegroundColor',C.muted, ...
+    'HorizontalAlignment','left','FontWeight','bold');
 
-S.hExcludeOut = mkBtn(pOut,'EXCLUDE outliers',[0.76 0.30 0.22 0.26],C.btnDanger,@onExcludeOutliers);
-S.hRevertOut  = mkBtn(pOut,'REVERT excluded',[0.76 0.06 0.22 0.20],C.btnSecondary,@onRevertExcluded);
+S.hOutInfo = uicontrol(pOut,'Style','listbox', ...
+    'Units','normalized','Position',[0.02 0.06 0.96 0.50], ...
+    'String',{'No outliers detected yet.'}, ...
+    'BackgroundColor',C.axisBg,'ForegroundColor','w', ...
+    'FontName','Consolas','FontSize',11, ...
+    'Min',0,'Max',2);
 
-pRun = uipanel(S.tabSTATS,'Units','normalized','Position',[0.02 0.02 0.96 0.56], ...
+pRun = uipanel(pSTATSBG,'Units','normalized','Position',[0.02 0.02 0.96 0.48], ...
     'Title','Run / Export', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 S.hRun    = mkBtn(pRun,'RUN ANALYSIS',[0.02 0.62 0.30 0.30],C.btnPrimary,@onRun);
@@ -442,91 +511,109 @@ S.hStatus = uicontrol(pRun,'Style','text','String','Ready.', ...
     'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','left', ...
     'FontSize',F.small);
 
-% -------------------- PREVIEW TAB (FIXED background) -----
-pPrevBG = uipanel(S.tabPREV,'Units','normalized','Position',[0 0 1 1], ...
+% -------------------- PREVIEW TAB ------------------------
+S.hPrevBG = uipanel(S.tabPREV,'Units','normalized','Position',[0 0 1 1], ...
     'BorderType','none','BackgroundColor',C.bg);
 
-pPrevTop = uipanel(pPrevBG,'Units','normalized','Position',[0.02 0.94 0.96 0.05], ...
+S.hPrevTop = uipanel(S.hPrevBG,'Units','normalized','Position',[0.02 0.94 0.96 0.05], ...
     'Title','', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
-mkBtn(pPrevTop,'Export TOP PNG',   [0.02 0.10 0.20 0.80],C.btnAction,@(~,~) onExportPreviewPNG(1));
-mkBtn(pPrevTop,'Export BOTTOM PNG',[0.24 0.10 0.23 0.80],C.btnAction,@(~,~) onExportPreviewPNG(2));
-mkBtn(pPrevTop,'Export BOTH PNGs', [0.49 0.10 0.22 0.80],C.btnAction,@(~,~) onExportPreviewPNG(3));
+mkBtn(S.hPrevTop,'Export TOP PNG',   [0.02 0.10 0.16 0.80],C.btnAction,@(~,~) onExportPreviewPNG(1));
+mkBtn(S.hPrevTop,'Export BOTTOM PNG',[0.19 0.10 0.18 0.80],C.btnAction,@(~,~) onExportPreviewPNG(2));
+mkBtn(S.hPrevTop,'Export BOTH PNGs', [0.38 0.10 0.16 0.80],C.btnAction,@(~,~) onExportPreviewPNG(3));
 
-S.hPrevMsg = uicontrol(pPrevTop,'Style','text','String','', ...
-    'Units','normalized','Position',[0.73 0.10 0.25 0.80], ...
+uicontrol(S.hPrevTop,'Style','text','String','View:', ...
+    'Units','normalized','Position',[0.57 0.15 0.05 0.70], ...
+    'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
+
+S.hPrevStyle = uicontrol(S.hPrevTop,'Style','popupmenu','String',{'Dark','Light'}, ...
+    'Units','normalized','Position',[0.62 0.18 0.10 0.64], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onPreviewStyleChanged);
+
+S.hPrevGrid = uicontrol(S.hPrevTop,'Style','checkbox','String','Grid', ...
+    'Units','normalized','Position',[0.74 0.15 0.08 0.70], ...
+    'Value', double(S.previewShowGrid), ...
+    'BackgroundColor',bg2,'ForegroundColor','w','Callback',@onPreviewStyleChanged);
+
+S.hPrevMsg = uicontrol(S.hPrevTop,'Style','text','String','', ...
+    'Units','normalized','Position',[0.84 0.10 0.14 0.80], ...
     'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','left', ...
     'FontSize',F.small);
 
-S.ax1 = axes('Parent',pPrevBG,'Units','normalized','Position',[0.08 0.56 0.88 0.35], ...
-    'Color',C.axisBg,'XColor','w','YColor','w');
-title(S.ax1,'Top plot','Color','w','FontWeight','bold');
+S.ax1 = axes('Parent',S.hPrevBG,'Units','normalized','Position',[0.09 0.50 0.86 0.27]);
+styleAxesMode(S.ax1, S.previewStyle, S.previewShowGrid);
+recolorAxesText(S.ax1, S.previewStyle);
+title(S.ax1,'Top plot','FontWeight','bold');
+moveTitleUp(S.ax1,titleYForStyle(S.previewStyle));
 
-S.ax2 = axes('Parent',pPrevBG,'Units','normalized','Position',[0.08 0.10 0.88 0.35], ...
-    'Color',C.axisBg,'XColor','w','YColor','w');
-title(S.ax2,'Bottom plot','Color','w','FontWeight','bold');
+S.ax2 = axes('Parent',S.hPrevBG,'Units','normalized','Position',[0.09 0.10 0.86 0.27]);
+styleAxesMode(S.ax2, S.previewStyle, S.previewShowGrid);
+recolorAxesText(S.ax2, S.previewStyle);
+title(S.ax2,'Bottom plot','FontWeight','bold');
+moveTitleUp(S.ax2,titleYForStyle(S.previewStyle));
 
-fixAxesInset(S.ax1); fixAxesInset(S.ax2);
+fixAxesInset(S.ax1);
+fixAxesInset(S.ax2);
 
-% -------------------- init -------------------------------
+% -------------------- Init -------------------------------
 guidata(hFig,S);
+S = guidata(hFig);
+stylePreviewPanels(S);
 syncUIFromState();
 refreshTable();
 clearPreview();
+updateOutlierBox();
 setStatus(false);
-setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
+setStatusText('Ready. Preview redraw is clean and cached computations are enabled.');
 
 % =========================================================
-% Callbacks
+% Nested callbacks
 % =========================================================
     function closeMe(src,~)
-        S = guidata(src);
-        if isempty(S), delete(src); return; end
-        if isfield(S,'isClosing') && S.isClosing, delete(src); return; end
-        S.isClosing = true; guidata(src,S);
+        S0 = guidata(src);
+        if isempty(S0), delete(src); return; end
+        if isfield(S0,'isClosing') && S0.isClosing, delete(src); return; end
+        S0.isClosing = true;
+        guidata(src,S0);
         try, setStatus(true); catch, end
-        if isfield(S.opt,'onClose') && ~isempty(S.opt.onClose)
-            try, S.opt.onClose(); catch, end
+        if isfield(S0.opt,'onClose') && ~isempty(S0.opt.onClose)
+            try, S0.opt.onClose(); catch, end
         end
         delete(src);
     end
 
     function onCellSelect(~,evt)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         if isempty(evt) || ~isfield(evt,'Indices') || isempty(evt.Indices)
-            S.selectedRows = [];
+            S0.selectedRows = [];
         else
-            S.selectedRows = unique(evt.Indices(:,1));
+            S0.selectedRows = unique(evt.Indices(:,1));
         end
-        guidata(hFig,S);
+        guidata(hFig,S0);
         updateSelLabel();
     end
 
     function onCellEdit(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-
-        S.groupList = mergeUniqueStable(S.groupList, uniqueStable(colAsStr(S.subj,3)));
-        S.condList  = mergeUniqueStable(S.condList,  uniqueStable(colAsStr(S.subj,4)));
-        guidata(hFig,S);
-
+        S0 = guidata(hFig);
+        S0.groupList = mergeUniqueStable(S0.groupList, uniqueStable(colAsStr(S0.subj,3)));
+        S0.condList  = mergeUniqueStable(S0.condList,  uniqueStable(colAsStr(S0.subj,4)));
+        guidata(hFig,S0);
         refreshTable();
     end
 
     function onApplyAllToggle(src,~)
-        S = guidata(hFig);
-        S.applyAllIfNoneSelected = logical(get(src,'Value'));
-        guidata(hFig,S);
+        S0 = guidata(hFig);
+        S0.applyAllIfNoneSelected = logical(get(src,'Value'));
+        guidata(hFig,S0);
     end
 
     function rows = getTargetRows()
-        S = guidata(hFig);
-        sel = clampSelRows(S.selectedRows, size(S.subj,1));
-        if ~isempty(sel)
-            rows = sel; return;
-        end
-        if S.applyAllIfNoneSelected
-            rows = find(logicalCol(S.subj,1));
+        S0 = guidata(hFig);
+        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
+        if ~isempty(sel), rows = sel; return; end
+        if S0.applyAllIfNoneSelected
+            rows = find(logicalCol(S0.subj,1));
         else
             rows = [];
         end
@@ -534,76 +621,71 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
 
     function onApplyGroup(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         rows = getTargetRows();
         if isempty(rows), setStatusText('No rows selected.'); return; end
-        g = getSelectedPopupString(S.hQuickGroup);
-        for r=rows(:)', S.subj{r,3} = g; end
-        guidata(hFig,S);
+        g = getSelectedPopupString(S0.hQuickGroup);
+        for r=rows(:)', S0.subj{r,3} = g; end
+        guidata(hFig,S0);
         refreshTable();
         setStatusText(sprintf('Applied Group "%s" to %d row(s).', g, numel(rows)));
     end
 
     function onApplyCond(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         rows = getTargetRows();
         if isempty(rows), setStatusText('No rows selected.'); return; end
-        c = getSelectedPopupString(S.hQuickCond);
-        for r=rows(:)', S.subj{r,4} = c; end
-        guidata(hFig,S);
+        c = getSelectedPopupString(S0.hQuickCond);
+        for r=rows(:)', S0.subj{r,4} = c; end
+        guidata(hFig,S0);
         refreshTable();
         setStatusText(sprintf('Applied Condition "%s" to %d row(s).', c, numel(rows)));
     end
 
     function onApplyBoth(~,~)
-        onApplyGroup();
-        onApplyCond();
+        onApplyGroup([],[]);
+        onApplyCond([],[]);
     end
 
     function onAddGroup(~,~)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         answ = inputdlg({'New group name:'},'Add group',1,{''});
         if isempty(answ), return; end
         nm = strtrim(answ{1});
         if isempty(nm), return; end
-        S.groupList = mergeUniqueStable(S.groupList,{nm});
-        guidata(hFig,S);
+        S0.groupList = mergeUniqueStable(S0.groupList,{nm});
+        guidata(hFig,S0);
         refreshTable();
         setStatusText(['Added group: ' nm]);
     end
 
     function onAddCond(~,~)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         answ = inputdlg({'New condition name:'},'Add condition',1,{''});
         if isempty(answ), return; end
         nm = strtrim(answ{1});
         if isempty(nm), return; end
-        S.condList = mergeUniqueStable(S.condList,{nm});
-        guidata(hFig,S);
+        S0.condList = mergeUniqueStable(S0.condList,{nm});
+        guidata(hFig,S0);
         refreshTable();
         setStatusText(['Added condition: ' nm]);
     end
 
     function onHelp(~,~)
         msg = [ ...
-            "GROUP ANALYSIS — HELP" newline newline ...
-            "FAST group/condition:" newline ...
-            "  - Use table dropdowns in Group/Condition columns" newline ...
-            "  - Or select rows -> Quick Assign -> Apply" newline newline ...
-            "Y-axis scaling:" newline ...
-            "  - If Auto is ON, Ymin/Ymax are ignored." newline ...
-            "  - Uncheck Auto to manually set Ymin/Ymax." newline ...
-            "  - Step + tiny +/- nudges change Ymin/Ymax by that step." newline newline ...
-            "Export:" newline ...
-            "  - Metrics.csv is written in UTF-8 to avoid Windows-1252 errors." ];
-        msgbox(char(msg),'GroupAnalysis Help','help');
+            'ROI txt PSC files are plotted directly.' newline ...
+            'No baseline subtraction is applied unless compute %SC is enabled for raw input.' newline newline ...
+            'Preview is now always fully redrawn from the stored last result to prevent overlap or missing SEM.' newline ...
+            'Repeated analyses reuse cached ROI timecourses and PSC maps when possible.' ];
+        msgbox(msg,'GroupAnalysis Help','help');
     end
 
     function onAddFiles(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        startPath = S.opt.startDir; if ~exist(startPath,'dir'), startPath=pwd; end
+        S0 = guidata(hFig);
+        startPath = S0.opt.startDir;
+        if ~exist(startPath,'dir'), startPath = pwd; end
         [f,p] = uigetfile({'*.mat;*.txt','MAT or TXT (*.mat, *.txt)'}, ...
             'Select DATA (.mat) and/or ROI (.txt/.mat) files', startPath, 'MultiSelect','on');
         if isequal(f,0), return; end
@@ -615,8 +697,9 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
 
     function onAddFolder(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        startPath = S.opt.startDir; if ~exist(startPath,'dir'), startPath=pwd; end
+        S0 = guidata(hFig);
+        startPath = S0.opt.startDir;
+        if ~exist(startPath,'dir'), startPath = pwd; end
         folder = uigetdir(startPath,'Select a folder to scan for .mat and .txt files');
         if isequal(folder,0), return; end
         dm = dir(fullfile(folder,'*.mat'));
@@ -629,78 +712,82 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
 
     function onRemoveSelected(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        sel = clampSelRows(S.selectedRows, size(S.subj,1));
+        S0 = guidata(hFig);
+        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
         if isempty(sel), setStatusText('No rows selected.'); return; end
-        S.subj(sel,:) = [];
-        S.selectedRows = [];
-        guidata(hFig,S);
+        S0.subj(sel,:) = [];
+        S0.selectedRows = [];
+        guidata(hFig,S0);
         refreshTable();
         setStatusText(sprintf('Removed %d row(s).', numel(sel)));
     end
 
     function onSetDataSelected(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        sel = clampSelRows(S.selectedRows, size(S.subj,1));
+        S0 = guidata(hFig);
+        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
         if isempty(sel), setStatusText('Select rows first.'); return; end
-        startPath = S.opt.startDir; if ~exist(startPath,'dir'), startPath=pwd; end
+        startPath = S0.opt.startDir;
+        if ~exist(startPath,'dir'), startPath = pwd; end
         [f,p] = uigetfile({'*.mat','MAT files (*.mat)'}, 'Select DATA (.mat)', startPath);
         if isequal(f,0), return; end
         fp = fullfile(p,f);
-        for r=sel(:)', S.subj{r,6} = fp; end
-        guidata(hFig,S);
+        for r=sel(:)', S0.subj{r,6} = fp; end
+        guidata(hFig,S0);
         refreshTable();
         setStatusText('DATA assigned to selected rows.');
     end
 
     function onSetROISelected(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        sel = clampSelRows(S.selectedRows, size(S.subj,1));
+        S0 = guidata(hFig);
+        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
         if isempty(sel), setStatusText('Select rows first.'); return; end
-        startPath = S.opt.startDir; if ~exist(startPath,'dir'), startPath=pwd; end
+        startPath = S0.opt.startDir;
+        if ~exist(startPath,'dir'), startPath = pwd; end
         [f,p] = uigetfile({'*.txt;*.mat','ROI files (*.txt, *.mat)'}, 'Select ROI file', startPath);
         if isequal(f,0), return; end
         fp = fullfile(p,f);
 
         for r=sel(:)'
-            S.subj{r,7} = fp;
-            subj = strtrimSafe(S.subj{r,2});
-            if get(S.hAutoPair,'Value')==1 && isempty(strtrimSafe(S.subj{r,5}))
-                S.subj{r,5} = subj;
+            S0.subj{r,7} = fp;
+            subj = strtrimSafe(S0.subj{r,2});
+            if get(S0.hAutoPair,'Value')==1 && isempty(strtrimSafe(S0.subj{r,5}))
+                S0.subj{r,5} = subj;
             end
-            if isempty(strtrimSafe(S.subj{r,6}))
+            if isempty(strtrimSafe(S0.subj{r,6}))
                 df = findDataMatNearROI(fp);
                 if isempty(df), df = subj; end
-                S.subj{r,6} = df;
+                S0.subj{r,6} = df;
             end
         end
-        guidata(hFig,S);
+        guidata(hFig,S0);
         refreshTable();
         setStatusText('ROI assigned (DATA auto-filled if possible).');
     end
 
     function onSaveList(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         [f,p] = uiputfile('GroupSubjects.mat','Save subject list');
         if isequal(f,0), return; end
-        subj = S.subj; groupList=S.groupList; condList=S.condList;
+        subj = S0.subj;
+        groupList = S0.groupList;
+        condList = S0.condList;
         save(fullfile(p,f), 'subj','groupList','condList','-v7');
         setStatusText('Saved list.');
     end
 
     function onLoadList(~,~)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         [f,p] = uigetfile({'*.mat','MAT list (*.mat)'},'Load subject list');
         if isequal(f,0), return; end
         L = load(fullfile(p,f));
-        if isfield(L,'subj'), S.subj = L.subj; end
-        if isfield(L,'groupList'), S.groupList = L.groupList; end
-        if isfield(L,'condList'),  S.condList  = L.condList;  end
-        S = sanitizeTable(S);
-        guidata(hFig,S);
+        if isfield(L,'subj'), S0.subj = L.subj; end
+        if isfield(L,'groupList'), S0.groupList = L.groupList; end
+        if isfield(L,'condList'),  S0.condList  = L.condList;  end
+        S0 = sanitizeTableStruct(S0);
+        guidata(hFig,S0);
         refreshTable();
         clearPreview();
         setStatusText('Loaded list.');
@@ -708,219 +795,354 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
 
     function onFillFromROISelected(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        sel = clampSelRows(S.selectedRows, size(S.subj,1));
+        S0 = guidata(hFig);
+        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
         if isempty(sel), setStatusText('Select rows first.'); return; end
 
         for r=sel(:)'
-            roi  = strtrimSafe(S.subj{r,7});
-            subj = strtrimSafe(S.subj{r,2});
+            roi  = strtrimSafe(S0.subj{r,7});
+            subj = strtrimSafe(S0.subj{r,2});
             if isempty(subj) && ~isempty(roi)
                 subj = guessSubjectID(roi);
-                S.subj{r,2} = subj;
+                S0.subj{r,2} = subj;
             end
-            if get(S.hAutoPair,'Value')==1
-                S.subj{r,5} = subj;
+            if get(S0.hAutoPair,'Value')==1
+                S0.subj{r,5} = subj;
             end
-            if isempty(strtrimSafe(S.subj{r,6})) && ~isempty(roi)
+            if isempty(strtrimSafe(S0.subj{r,6})) && ~isempty(roi)
                 df = findDataMatNearROI(roi);
                 if isempty(df), df = subj; end
-                S.subj{r,6} = df;
+                S0.subj{r,6} = df;
             end
         end
 
-        guidata(hFig,S);
+        guidata(hFig,S0);
         refreshTable();
         setStatusText('Filled PairID/DATA from ROI folder.');
     end
 
     function onRevertExcluded(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        for r=1:size(S.subj,1)
-            st = strtrimSafe(S.subj{r,8});
+        S0 = guidata(hFig);
+        for r=1:size(S0.subj,1)
+            st = strtrimSafe(S0.subj{r,8});
             if contains(lower(st),'excluded')
-                S.subj{r,1} = true;
-                S.subj{r,8} = '';
+                S0.subj{r,1} = true;
+                S0.subj{r,8} = '';
             end
         end
-        S.outlierKeys = {};
-        S.outlierInfo = {};
-        guidata(hFig,S);
+        S0.outlierKeys = {};
+        S0.outlierInfo = {};
+        guidata(hFig,S0);
         refreshTable();
-        try, set(S.hOutList,'String',{}); catch, end
+        updateOutlierBox();
+        if isfield(S0,'last') && ~isempty(fieldnames(S0.last))
+            updatePreview();
+        else
+            clearPreview();
+        end
         setStatusText('Reverted excluded rows.');
     end
 
     function onOutEdit(src,~)
-        S = guidata(hFig);
-        S.outDir = strtrim(get(src,'String'));
-        guidata(hFig,S);
+        S0 = guidata(hFig);
+        S0.outDir = strtrim(get(src,'String'));
+        guidata(hFig,S0);
     end
 
     function onBrowseOut(~,~)
-        S = guidata(hFig);
-        d = uigetdir(S.outDir,'Select output folder');
+        S0 = guidata(hFig);
+        d = uigetdir(S0.outDir,'Select output folder');
         if isequal(d,0), return; end
-        S.outDir = d;
-        guidata(hFig,S);
-        set(S.hOutEdit,'String',S.outDir);
+        S0.outDir = d;
+        guidata(hFig,S0);
+        set(S0.hOutEdit,'String',S0.outDir);
     end
 
     function onModeChanged(src,~)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         items = get(src,'String');
-        S.mode = items{get(src,'Value')};
-        guidata(hFig,S);
+        S0.mode = items{get(src,'Value')};
+        guidata(hFig,S0);
         clearPreview();
     end
 
     function onROIChanged(~,~)
-        S = guidata(hFig);
-        S.tc_computePSC = logical(get(S.hTC_ComputePSC,'Value'));
-        S.tc_baseMin0 = safeNum(get(S.hBase0,'String'), S.tc_baseMin0);
-        S.tc_baseMin1 = safeNum(get(S.hBase1,'String'), S.tc_baseMin1);
-        S.tc_peakSearchMin0 = safeNum(get(S.hPkS0,'String'), S.tc_peakSearchMin0);
-        S.tc_peakSearchMin1 = safeNum(get(S.hPkS1,'String'), S.tc_peakSearchMin1);
-        S.tc_plateauMin0 = safeNum(get(S.hPlat0,'String'), S.tc_plateauMin0);
-        S.tc_plateauMin1 = safeNum(get(S.hPlat1,'String'), S.tc_plateauMin1);
-        S.tc_peakWinMin = safeNum(get(S.hTC_PeakWin,'String'), S.tc_peakWinMin);
-        S.tc_trimPct    = safeNum(get(S.hTC_Trim,'String'), S.tc_trimPct);
-        mt = get(S.hTC_Metric,'String');
-        S.tc_metric = mt{get(S.hTC_Metric,'Value')};
-        guidata(hFig,S);
-        if isfield(S,'last') && ~isempty(fieldnames(S.last)), updatePreview(); end
+        S0 = guidata(hFig);
+        S0.tc_computePSC = logical(get(S0.hTC_ComputePSC,'Value'));
+        S0.tc_baseMin0 = safeNum(get(S0.hBase0,'String'), S0.tc_baseMin0);
+        S0.tc_baseMin1 = safeNum(get(S0.hBase1,'String'), S0.tc_baseMin1);
+        S0.tc_injMin0  = safeNum(get(S0.hInj0,'String'),  S0.tc_injMin0);
+        S0.tc_injMin1  = safeNum(get(S0.hInj1,'String'),  S0.tc_injMin1);
+        S0.tc_peakSearchMin0 = safeNum(get(S0.hPkS0,'String'), S0.tc_peakSearchMin0);
+        S0.tc_peakSearchMin1 = safeNum(get(S0.hPkS1,'String'), S0.tc_peakSearchMin1);
+        S0.tc_plateauMin0 = safeNum(get(S0.hPlat0,'String'), S0.tc_plateauMin0);
+        S0.tc_plateauMin1 = safeNum(get(S0.hPlat1,'String'), S0.tc_plateauMin1);
+        S0.tc_peakWinMin = safeNum(get(S0.hTC_PeakWin,'String'), S0.tc_peakWinMin);
+        S0.tc_trimPct    = safeNum(get(S0.hTC_Trim,'String'), S0.tc_trimPct);
+        mt = get(S0.hTC_Metric,'String');
+        S0.tc_metric = mt{get(S0.hTC_Metric,'Value')};
+        guidata(hFig,S0);
+        if isfield(S0,'last') && ~isempty(fieldnames(S0.last)), updatePreview(); end
     end
 
     function onStyleChanged(~,~)
-        S = guidata(hFig);
-        cm = get(S.hColorMode,'String');   S.colorMode = cm{get(S.hColorMode,'Value')};
-        sc = get(S.hColorScheme,'String'); S.colorScheme = sc{get(S.hColorScheme,'Value')};
-        S.tc_showSEM = logical(get(S.hShowSEM,'Value'));
+        S0 = guidata(hFig);
+        cm = get(S0.hColorMode,'String');
+        S0.colorMode = cm{get(S0.hColorMode,'Value')};
+        sc = get(S0.hColorScheme,'String');
+        S0.colorScheme = sc{get(S0.hColorScheme,'Value')};
+        S0.tc_showSEM = logical(get(S0.hShowSEM,'Value'));
+        S0.tc_showInjectionBox = logical(get(S0.hShowInjBox,'Value'));
 
-        S.manualGroupA = getSelectedPopupString(S.hManGroupA);
-        S.manualGroupB = getSelectedPopupString(S.hManGroupB);
-        S.manualColorA = get(S.hManColorA,'Value');
-        S.manualColorB = get(S.hManColorB,'Value');
+        S0.manualGroupA = getSelectedPopupString(S0.hManGroupA);
+        S0.manualGroupB = getSelectedPopupString(S0.hManGroupB);
+        S0.manualColorA = get(S0.hManColorA,'Value');
+        S0.manualColorB = get(S0.hManColorB,'Value');
 
-        guidata(hFig,S);
-        if isfield(S,'last') && ~isempty(fieldnames(S.last)), updatePreview(); end
+        guidata(hFig,S0);
+        if isfield(S0,'last') && ~isempty(fieldnames(S0.last)), updatePreview(); end
+    end
+
+    function onPreviewStyleChanged(~,~)
+        S0 = guidata(hFig);
+        items = get(S0.hPrevStyle,'String');
+        S0.previewStyle = items{get(S0.hPrevStyle,'Value')};
+        S0.previewShowGrid = logical(get(S0.hPrevGrid,'Value'));
+        guidata(hFig,S0);
+        stylePreviewPanels(S0);
+        updatePreview();
+    end
+
+    function onAnnotChanged(~,~)
+        S0 = guidata(hFig);
+        items = get(S0.hAnnotMode,'String');
+        S0.annotMode = items{get(S0.hAnnotMode,'Value')};
+        S0.showPText = logical(get(S0.hShowPText,'Value'));
+        guidata(hFig,S0);
+        if isfield(S0,'last') && ~isempty(fieldnames(S0.last)), updatePreview(); end
     end
 
     function onPlotScaleChanged(~,~)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
 
-        S.plotTop.auto      = logical(get(S.hTopAuto,'Value'));
-        S.plotTop.forceZero = logical(get(S.hTopZero,'Value'));
-        S.plotTop.step      = max(0, safeNum(get(S.hTopStep,'String'), S.plotTop.step));
-        S.plotTop.ymin      = safeNum(get(S.hTopYmin,'String'), S.plotTop.ymin);
-        S.plotTop.ymax      = safeNum(get(S.hTopYmax,'String'), S.plotTop.ymax);
+        S0.plotTop.auto      = logical(get(S0.hTopAuto,'Value'));
+        S0.plotTop.forceZero = logical(get(S0.hTopZero,'Value'));
+        S0.plotTop.step      = max(0, safeNum(get(S0.hTopStep,'String'), S0.plotTop.step));
+        S0.plotTop.ymin      = safeNum(get(S0.hTopYmin,'String'), S0.plotTop.ymin);
+        S0.plotTop.ymax      = safeNum(get(S0.hTopYmax,'String'), S0.plotTop.ymax);
 
-        S.plotBot.auto      = logical(get(S.hBotAuto,'Value'));
-        S.plotBot.forceZero = logical(get(S.hBotZero,'Value'));
-        S.plotBot.step      = max(0, safeNum(get(S.hBotStep,'String'), S.plotBot.step));
-        S.plotBot.ymin      = safeNum(get(S.hBotYmin,'String'), S.plotBot.ymin);
-        S.plotBot.ymax      = safeNum(get(S.hBotYmax,'String'), S.plotBot.ymax);
+        S0.plotBot.auto      = logical(get(S0.hBotAuto,'Value'));
+        S0.plotBot.forceZero = logical(get(S0.hBotZero,'Value'));
+        S0.plotBot.step      = max(0, safeNum(get(S0.hBotStep,'String'), S0.plotBot.step));
+        S0.plotBot.ymin      = safeNum(get(S0.hBotYmin,'String'), S0.plotBot.ymin);
+        S0.plotBot.ymax      = safeNum(get(S0.hBotYmax,'String'), S0.plotBot.ymax);
 
-        guidata(hFig,S);
-        if isfield(S,'last') && ~isempty(fieldnames(S.last)), updatePreview(); end
+        set(S0.hTopStep,'String',num2str(S0.plotTop.step));
+        set(S0.hTopYmin,'String',num2str(S0.plotTop.ymin));
+        set(S0.hTopYmax,'String',num2str(S0.plotTop.ymax));
+        set(S0.hBotStep,'String',num2str(S0.plotBot.step));
+        set(S0.hBotYmin,'String',num2str(S0.plotBot.ymin));
+        set(S0.hBotYmax,'String',num2str(S0.plotBot.ymax));
+
+        guidata(hFig,S0);
+
+        % Always redraw preview so SEM + outliers + stats are consistent
+if isfield(S0,'last') && ~isempty(fieldnames(S0.last))
+    updatePreview();
+end
     end
 
-    function onYStep(whichBtn)
-        S = guidata(hFig);
-        switch whichBtn
-            case 'TopYminM'
-                step = max(0, safeNum(get(S.hTopStep,'String'), S.plotTop.step));
-                set(S.hTopYmin,'String',num2str(safeNum(get(S.hTopYmin,'String'),S.plotTop.ymin)-step));
-            case 'TopYminP'
-                step = max(0, safeNum(get(S.hTopStep,'String'), S.plotTop.step));
-                set(S.hTopYmin,'String',num2str(safeNum(get(S.hTopYmin,'String'),S.plotTop.ymin)+step));
-            case 'TopYmaxM'
-                step = max(0, safeNum(get(S.hTopStep,'String'), S.plotTop.step));
-                set(S.hTopYmax,'String',num2str(safeNum(get(S.hTopYmax,'String'),S.plotTop.ymax)-step));
-            case 'TopYmaxP'
-                step = max(0, safeNum(get(S.hTopStep,'String'), S.plotTop.step));
-                set(S.hTopYmax,'String',num2str(safeNum(get(S.hTopYmax,'String'),S.plotTop.ymax)+step));
+    function onYStep(whichAxis, whichField, signDir)
+        S0 = guidata(hFig);
 
-            case 'BottomYminM'
-                step = max(0, safeNum(get(S.hBotStep,'String'), S.plotBot.step));
-                set(S.hBotYmin,'String',num2str(safeNum(get(S.hBotYmin,'String'),S.plotBot.ymin)-step));
-            case 'BottomYminP'
-                step = max(0, safeNum(get(S.hBotStep,'String'), S.plotBot.step));
-                set(S.hBotYmin,'String',num2str(safeNum(get(S.hBotYmin,'String'),S.plotBot.ymin)+step));
-            case 'BottomYmaxM'
-                step = max(0, safeNum(get(S.hBotStep,'String'), S.plotBot.step));
-                set(S.hBotYmax,'String',num2str(safeNum(get(S.hBotYmax,'String'),S.plotBot.ymax)-step));
-            case 'BottomYmaxP'
-                step = max(0, safeNum(get(S.hBotStep,'String'), S.plotBot.step));
-                set(S.hBotYmax,'String',num2str(safeNum(get(S.hBotYmax,'String'),S.plotBot.ymax)+step));
+        if strcmpi(whichAxis,'Top')
+            step = max(0, safeNum(get(S0.hTopStep,'String'), S0.plotTop.step));
+            S0.plotTop.auto = false;
+            set(S0.hTopAuto,'Value',0);
+
+            if strcmpi(whichField,'ymin')
+                S0.plotTop.forceZero = false;
+                set(S0.hTopZero,'Value',0);
+                v = safeNum(get(S0.hTopYmin,'String'), S0.plotTop.ymin);
+                v = v + signDir * step;
+                S0.plotTop.ymin = v;
+                set(S0.hTopYmin,'String',num2str(v));
+            else
+                v = safeNum(get(S0.hTopYmax,'String'), S0.plotTop.ymax);
+                v = v + signDir * step;
+                S0.plotTop.ymax = v;
+                set(S0.hTopYmax,'String',num2str(v));
+            end
+        else
+            step = max(0, safeNum(get(S0.hBotStep,'String'), S0.plotBot.step));
+            S0.plotBot.auto = false;
+            set(S0.hBotAuto,'Value',0);
+
+            if strcmpi(whichField,'ymin')
+                S0.plotBot.forceZero = false;
+                set(S0.hBotZero,'Value',0);
+                v = safeNum(get(S0.hBotYmin,'String'), S0.plotBot.ymin);
+                v = v + signDir * step;
+                S0.plotBot.ymin = v;
+                set(S0.hBotYmin,'String',num2str(v));
+            else
+                v = safeNum(get(S0.hBotYmax,'String'), S0.plotBot.ymax);
+                v = v + signDir * step;
+                S0.plotBot.ymax = v;
+                set(S0.hBotYmax,'String',num2str(v));
+            end
         end
+
+        guidata(hFig,S0);
         onPlotScaleChanged([],[]);
     end
 
     function onPSCEdit(src,~,fieldName)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         v = str2double(get(src,'String'));
         if ~isfinite(v), return; end
-        S.(fieldName) = v;
-        guidata(hFig,S);
+        S0.(fieldName) = v;
+        guidata(hFig,S0);
     end
 
     function onMapChanged(~,~)
-        S = guidata(hFig);
-        items = get(S.hMapSummary,'String');
-        S.mapSummary = items{get(S.hMapSummary,'Value')};
-        guidata(hFig,S);
+        S0 = guidata(hFig);
+        items = get(S0.hMapSummary,'String');
+        S0.mapSummary = items{get(S0.hMapSummary,'Value')};
+        guidata(hFig,S0);
     end
 
     function onStatsChanged(~,~)
-        S = guidata(hFig);
-        items = get(S.hTest,'String');
-        S.testType = items{get(S.hTest,'Value')};
-        a = str2double(get(S.hAlpha,'String'));
-        if isfinite(a) && a>0 && a<1, S.alpha = a; else, set(S.hAlpha,'String',num2str(S.alpha)); end
-        guidata(hFig,S);
+        S0 = guidata(hFig);
+        items = get(S0.hTest,'String');
+        S0.testType = items{get(S0.hTest,'Value')};
+        a = str2double(get(S0.hAlpha,'String'));
+        if isfinite(a) && a>0 && a<1
+            S0.alpha = a;
+        else
+            set(S0.hAlpha,'String',num2str(S0.alpha));
+        end
+        guidata(hFig,S0);
+        if isfield(S0,'last') && ~isempty(fieldnames(S0.last)), updatePreview(); end
     end
 
     function onOutlierChanged(~,~)
-        S = guidata(hFig);
-        items = get(S.hOutMethod,'String');
-        S.outlierMethod = items{get(S.hOutMethod,'Value')};
+        S0 = guidata(hFig);
+        items = get(S0.hOutMethod,'String');
+        S0.outlierMethod = items{get(S0.hOutMethod,'Value')};
 
-        if strcmpi(S.outlierMethod,'MAD robust z-score')
-            set(S.hOutParamLbl,'String','Thr (z):');
-            v = str2double(get(S.hOutParam,'String'));
-            if isfinite(v) && v>0, S.outMADthr=v; else, set(S.hOutParam,'String',num2str(S.outMADthr)); end
-        elseif strcmpi(S.outlierMethod,'IQR rule')
-            set(S.hOutParamLbl,'String','k (IQR):');
-            v = str2double(get(S.hOutParam,'String'));
-            if isfinite(v) && v>0, S.outIQRk=v; else, set(S.hOutParam,'String',num2str(S.outIQRk)); end
+        if strcmpi(S0.outlierMethod,'MAD robust z-score')
+            set(S0.hOutParamLbl,'String','Thr (z):');
+            v = str2double(get(S0.hOutParam,'String'));
+            if isfinite(v) && v>0, S0.outMADthr = v; else, set(S0.hOutParam,'String',num2str(S0.outMADthr)); end
+        elseif strcmpi(S0.outlierMethod,'IQR rule')
+            set(S0.hOutParamLbl,'String','k (IQR):');
+            v = str2double(get(S0.hOutParam,'String'));
+            if isfinite(v) && v>0, S0.outIQRk = v; else, set(S0.hOutParam,'String',num2str(S0.outIQRk)); end
+        else
+            set(S0.hOutParamLbl,'String','Param:');
         end
-        guidata(hFig,S);
+        guidata(hFig,S0);
+    end
+
+    function onDetectOutliers(~,~)
+        S0 = guidata(hFig);
+        if ~isfield(S0,'last') || isempty(fieldnames(S0.last)) || ~isfield(S0.last,'metricVals')
+            errordlg('Run ROI Timecourse analysis first.','Outliers');
+            return;
+        end
+        if ~strcmpi(S0.last.mode,'ROI Timecourse')
+            errordlg('Outlier detection applies to ROI Timecourse only.','Outliers');
+            return;
+        end
+        onOutlierChanged([],[]);
+        S0 = guidata(hFig);
+
+        [keysOut, info] = detectOutliers(double(S0.last.metricVals(:)), S0.last.subjTable, S0);
+        S0.outlierKeys = keysOut;
+        S0.outlierInfo = info;
+        guidata(hFig,S0);
+
+        updateOutlierBox();
+
+        if isempty(info)
+            setStatusText('No outliers detected.');
+        else
+            setStatusText(sprintf('Detected %d outlier(s). Preview updated.', numel(info)));
+        end
+        updatePreview();
+    end
+
+    function onExcludeOutliers(~,~)
+        syncSubjFromTable();
+        S0 = guidata(hFig);
+        if isempty(S0.outlierKeys)
+            errordlg('No outliers detected. Click Detect first.','Exclude outliers');
+            return;
+        end
+        keysAll = makeRowKeys(S0.subj);
+        for i=1:numel(S0.outlierKeys)
+            hit = find(strcmp(keysAll, S0.outlierKeys{i}), 1, 'first');
+            if ~isempty(hit)
+                S0.subj{hit,1} = false;
+                S0.subj{hit,8} = htmlRed('EXCLUDED (outlier)');
+            end
+        end
+        guidata(hFig,S0);
+        refreshTable();
+        % Clear preview so user never sees stale results after excluding
+S0.last = struct();
+guidata(hFig,S0);
+clearPreview();
+        setStatusText('Outliers excluded. RUN again.');
     end
 
     function onRun(~,~)
         syncSubjFromTable();
-        S = guidata(hFig);
-        if isempty(S.subj), errordlg('Add subject files first.','Group Analysis'); return; end
-        subjActive = getActiveRows(S.subj);
-        if isempty(subjActive), errordlg('No active rows (Use=true).','Group Analysis'); return; end
+        S0 = guidata(hFig);
+        if isempty(S0.subj)
+            errordlg('Add subject files first.','Group Analysis');
+            return;
+        end
+        subjActive = getActiveRows(S0.subj);
+        if isempty(subjActive)
+            errordlg('No active rows (Use=true).','Group Analysis');
+            return;
+        end
 
         setStatus(false);
         setStatusText('Running...');
         drawnow;
 
         try
-            if strcmpi(S.mode,'ROI Timecourse')
-                R = runROITimecourseAnalysis(S, subjActive);
+            onStatsChanged([],[]);
+            onAnnotChanged([],[]);
+            onROIChanged([],[]);
+            onStyleChanged([],[]);
+            onPlotScaleChanged([],[]);
+
+            S0 = guidata(hFig);
+            S0.outlierKeys = {};
+            S0.outlierInfo = {};
+            guidata(hFig,S0);
+            updateOutlierBox();
+
+            if strcmpi(S0.mode,'ROI Timecourse')
+                [R, cacheOut] = runROITimecourseAnalysis(S0, subjActive, S0.cache);
             else
-                R = runPSCMapAnalysis(S, subjActive);
+                [R, cacheOut] = runPSCMapAnalysis(S0, subjActive, S0.cache);
             end
-            S = guidata(hFig);
-            S.last = R;
-            guidata(hFig,S);
+
+            R.plotTop = S0.plotTop;
+            R.plotBot = S0.plotBot;
+
+            S0 = guidata(hFig);
+            S0.last = R;
+            S0.cache = cacheOut;
+            guidata(hFig,S0);
+
             updatePreview();
-            try, set(S.hOutList,'String',{}); catch, end
             setStatusText('Done.');
         catch ME
             setStatusText(['ERROR: ' ME.message]);
@@ -928,59 +1150,21 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
         end
     end
 
-    function onDetectOutliers(~,~)
-        S = guidata(hFig);
-        if ~isfield(S,'last') || isempty(fieldnames(S.last)) || ~isfield(S.last,'metricVals')
-            errordlg('Run ROI Timecourse analysis first.','Outliers'); return;
-        end
-        if ~strcmpi(S.last.mode,'ROI Timecourse')
-            errordlg('Outlier detection applies to ROI Timecourse only.','Outliers'); return;
-        end
-        onOutlierChanged([],[]);
-        S = guidata(hFig);
-
-        [keysOut, info] = detectOutliers(double(S.last.metricVals(:)), S.last.subjTable, S);
-        S.outlierKeys = keysOut;
-        S.outlierInfo = info;
-        guidata(hFig,S);
-
-        set(S.hOutList,'String',S.outlierInfo);
-        updatePreview();
-        setStatusText(sprintf('Outlier detection: %d outlier(s).', numel(keysOut)));
-    end
-
-    function onExcludeOutliers(~,~)
-        syncSubjFromTable();
-        S = guidata(hFig);
-        if isempty(S.outlierKeys)
-            errordlg('No outliers detected. Click Detect first.','Exclude outliers'); return;
-        end
-        keysAll = makeRowKeys(S.subj);
-        for i=1:numel(S.outlierKeys)
-            hit = find(strcmp(keysAll, S.outlierKeys{i}), 1, 'first');
-            if ~isempty(hit)
-                S.subj{hit,1} = false;
-                S.subj{hit,8} = htmlRed('EXCLUDED (outlier)');
-            end
-        end
-        guidata(hFig,S);
-        refreshTable();
-        setStatusText('Outliers excluded (Use=false + red Status). RUN again.');
-    end
-
     function outBase = exportStartFolder()
+        S0 = guidata(hFig);
         if exist('Z:\fUS','dir')
             outBase = 'Z:\fUS';
         else
-            outBase = S.outDir;
+            outBase = S0.outDir;
             if isempty(outBase) || ~exist(outBase,'dir'), outBase = pwd; end
         end
     end
 
     function onExport(~,~)
-        S = guidata(hFig);
-        if ~isfield(S,'last') || isempty(fieldnames(S.last))
-            errordlg('Run analysis first.','Export'); return;
+        S0 = guidata(hFig);
+        if ~isfield(S0,'last') || isempty(fieldnames(S0.last))
+            errordlg('Run analysis first.','Export');
+            return;
         end
 
         outParent = uigetdir(exportStartFolder(),'Choose export folder (will create a subfolder)');
@@ -995,13 +1179,12 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
         outFolder = fullfile(outParent, folderName);
         if ~exist(outFolder,'dir'), mkdir(outFolder); end
 
-        R = S.last; %#ok<NASGU>
+        R = S0.last; %#ok<NASGU>
         save(fullfile(outFolder,'Results.mat'),'R','-v7.3');
 
-        % UTF-8 CSV export
         try
-            if isfield(S.last,'metrics') && isfield(S.last.metrics,'table') && ~isempty(S.last.metrics.table)
-                writeCellCSV_UTF8(fullfile(outFolder,'Metrics.csv'), S.last.metrics.table);
+            if isfield(S0.last,'metrics') && isfield(S0.last.metrics,'table') && ~isempty(S0.last.metrics.table)
+                writeCellCSV_UTF8(fullfile(outFolder,'Metrics.csv'), S0.last.metrics.table);
             end
         catch
         end
@@ -1010,9 +1193,10 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
     end
 
     function onExportPreviewPNG(which)
-        S = guidata(hFig);
-        if ~isfield(S,'last') || isempty(fieldnames(S.last))
-            errordlg('Run analysis first.','Preview export'); return;
+        S0 = guidata(hFig);
+        if ~isfield(S0,'last') || isempty(fieldnames(S0.last))
+            errordlg('Run analysis first.','Preview export');
+            return;
         end
 
         outDir = uigetdir(exportStartFolder(),'Choose folder to save preview PNG(s)');
@@ -1026,203 +1210,293 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
 
         try
             if which==1 || which==3
-                f = figure('Visible','off','Color',S.C.axisBg); ax = axes('Parent',f);
-                exportOnePreview(ax,1,S,'dark');
-                saveas(f, fullfile(outDir, [baseName '_Top.png'])); close(f);
+                exportPreviewPNG(fullfile(outDir, [baseName '_Top.png']), 1, S0);
             end
             if which==2 || which==3
-                f = figure('Visible','off','Color',S.C.axisBg); ax = axes('Parent',f);
-                exportOnePreview(ax,2,S,'dark');
-                saveas(f, fullfile(outDir, [baseName '_Bottom.png'])); close(f);
+                exportPreviewPNG(fullfile(outDir, [baseName '_Bottom.png']), 2, S0);
             end
-            set(S.hPrevMsg,'String','Saved PNG(s).');
-            setStatusText(['Saved preview PNG(s) to: ' outDir]);
+            set(S0.hPrevMsg,'String','Saved PNG(s).');
+            setStatusText(['Saved PNG(s) to: ' outDir]);
         catch ME
-            set(S.hPrevMsg,'String',['Export failed: ' ME.message]);
+            set(S0.hPrevMsg,'String',['Export failed: ' ME.message]);
             errordlg(ME.message,'Preview export');
         end
     end
 
-% =========================================================
-% Preview rendering
-% =========================================================
-    function clearPreview()
-        cla(S.ax1); cla(S.ax2);
-        title(S.ax1,'Top plot','Color','w','FontWeight','bold');
-        title(S.ax2,'Bottom plot','Color','w','FontWeight','bold');
-        fixAxesInset(S.ax1); fixAxesInset(S.ax2);
+   function clearPreview()
+    S0 = guidata(hFig);
+
+    % Remove any old colorbars that might sit around
+    deleteAllColorbars(hFig);
+
+    % EXTRA SAFETY: if any stray axes were created earlier, delete them
+    try
+        axAll = findall(S0.hPrevBG,'Type','axes');
+        for k = 1:numel(axAll)
+            if axAll(k) ~= S0.ax1 && axAll(k) ~= S0.ax2
+                delete(axAll(k));
+            end
+        end
+    catch
     end
 
+    % Hard-clear the two preview axes (removes lines, patches, text, legends)
+    hardClearAx(S0.ax1, S0.previewStyle, S0.previewShowGrid, 'Top plot');
+    hardClearAx(S0.ax2, S0.previewStyle, S0.previewShowGrid, 'Bottom plot');
+   end
+
+function hardClearAx(ax, styleName, showGrid, ttl)
+    if isempty(ax) || ~ishandle(ax), return; end
+
+    % kill legend explicitly (legend isn't always removed by cla in older versions)
+    try
+        lg = legend(ax);
+        if ishghandle(lg), delete(lg); end
+    catch
+    end
+
+    % force replace mode so nothing ever "adds"
+    try, set(ax,'NextPlot','replace'); catch, end
+    try, hold(ax,'off'); catch, end
+
+    % strongest clear
+    try
+        cla(ax,'reset');   % removes children + resets state that can cause accumulation
+    catch
+        try, cla(ax); catch, end
+        try, delete(allchild(ax)); catch, end
+    end
+
+    % restore style
+    styleAxesMode(ax, styleName, showGrid);
+    recolorAxesText(ax, styleName);
+    title(ax, ttl, 'FontWeight','bold');
+    moveTitleUp(ax, titleYForStyle(styleName));
+    fixAxesInset(ax);
+end
+
     function updatePreview()
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         clearPreview();
-        if ~isfield(S,'last') || isempty(fieldnames(S.last)), return; end
-        R = S.last;
+
+        if ~isfield(S0,'last') || isempty(fieldnames(S0.last))
+            return;
+        end
+
+        R = S0.last;
+        [~,fg] = previewColors(S0.previewStyle);
 
         if strcmpi(R.mode,'PSC Map')
+            styleAxesMode(S0.ax1, S0.previewStyle, false);
+            styleAxesMode(S0.ax2, S0.previewStyle, false);
+
             if ~isempty(R.group)
-                imagesc_auto(S.ax1, squeeze2D(R.group(1).map));
-                title(S.ax1, ['PSC Map: ' R.group(1).name], 'Color','w','FontWeight','bold');
-                colorbar(S.ax1);
+                displayNames = getDisplayNamesFromR(R);
+                imagesc_mode(S0.ax1, squeeze2D(R.group(1).map), S0.previewStyle);
+                title(S0.ax1, ['PSC Map: ' displayNames{1}], 'Color', fg, 'FontWeight', 'bold');
+                moveTitleUp(S0.ax1, titleYForStyle(S0.previewStyle));
+                cb1 = colorbar(S0.ax1);
+                styleColorbarMode(cb1, S0.previewStyle);
+                recolorAxesText(S0.ax1, S0.previewStyle);
             end
+
             if numel(R.group) >= 2
-                imagesc_auto(S.ax2, squeeze2D(R.group(2).map));
-                title(S.ax2, ['PSC Map: ' R.group(2).name], 'Color','w','FontWeight','bold');
-                colorbar(S.ax2);
+                displayNames = getDisplayNamesFromR(R);
+                imagesc_mode(S0.ax2, squeeze2D(R.group(2).map), S0.previewStyle);
+                title(S0.ax2, ['PSC Map: ' displayNames{2}], 'Color', fg, 'FontWeight', 'bold');
+                moveTitleUp(S0.ax2, titleYForStyle(S0.previewStyle));
+                cb2 = colorbar(S0.ax2);
+                styleColorbarMode(cb2, S0.previewStyle);
+                recolorAxesText(S0.ax2, S0.previewStyle);
+            else
+                title(S0.ax2, 'No second group map', 'Color', fg, 'FontWeight', 'bold');
+                moveTitleUp(S0.ax2, titleYForStyle(S0.previewStyle));
+                recolorAxesText(S0.ax2, S0.previewStyle);
             end
-            fixAxesInset(S.ax1); fixAxesInset(S.ax2);
+
+            fixAxesInset(S0.ax1);
+            fixAxesInset(S0.ax2);
+            drawnow limitrate;
             return;
         end
 
         t = R.tMin(:)';
 
-        % TOP timecourse
-        cla(S.ax1); hold(S.ax1,'on');
-        set(S.ax1,'Color',S.C.axisBg,'XColor','w','YColor','w','FontSize',S.F.base);
+        % ---------------- TOP plot ----------------
+        hold(S0.ax1, 'on');
+        styleAxesMode(S0.ax1, S0.previewStyle, S0.previewShowGrid);
 
-        if isfield(R,'infusion') && numel(R.infusion)==2
-            x0=R.infusion(1); x1=R.infusion(2);
-            patch(S.ax1,[x0 x1 x1 x0],[-1e9 -1e9 1e9 1e9],[0.8 0.8 0.8],'FaceAlpha',0.10,'EdgeColor','none');
-        end
-
+        displayNames = getDisplayNamesFromR(R);
         leg = {};
+        lineHs = [];
         allTop = [];
-        for g=1:numel(R.group)
+
+        for g = 1:numel(R.group)
             col = R.groupColors.(makeField(R.group(g).name));
             mu  = R.group(g).mean(:)';
             se  = R.group(g).sem(:)';
+
             if R.showSEM
-                shadedLineColored(S.ax1, t, mu, se, col, col);
+                [hLine, ~] = shadedLineColored(S0.ax1, t, mu, se, col, col, S0.displaySemAlpha);
             else
-                plot(S.ax1, t, mu, 'LineWidth',2.4, 'Color',col);
+                hLine = plot(S0.ax1, t, mu, 'LineWidth', 2.4, 'Color', col);
             end
+
+            lineHs = [lineHs hLine]; %#ok<AGROW>
+            leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
             allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
-            leg{end+1} = sprintf('%s (n=%d)', R.group(g).name, R.group(g).n); %#ok<AGROW>
         end
 
-        grid(S.ax1,'on');
-        xlabel(S.ax1,'Time (min)','Color','w');
-        ylabel(S.ax1, tern(R.unitsPercent,'Signal change (%)','ROI signal (a.u.)'), 'Color','w');
-        title(S.ax1, sprintf('Mean ROI timecourse | baseline: %s', R.baselineZero), 'Color','w','FontWeight','bold');
-        legend(S.ax1, leg, 'TextColor','w','Location','northwest','Box','off');
+        xlabel(S0.ax1, 'Time (min)', 'Color', fg);
+        ylabel(S0.ax1, tern(R.unitsPercent, 'Signal change (%)', 'ROI signal (a.u.)'), 'Color', fg);
+        title(S0.ax1, 'Mean ROI timecourse', 'Color', fg, 'FontWeight', 'bold');
+        moveTitleUp(S0.ax1, titleYForStyle(S0.previewStyle));
 
-        applyYLim(S.ax1, allTop, R.plotTop);
-        fixAxesInset(S.ax1);
-        hold(S.ax1,'off');
+        if ~isempty(lineHs)
+            lg = legend(S0.ax1, lineHs, leg, 'Location', 'northwest', 'Box', 'off');
+            styleLegendMode(lg, S0.previewStyle);
+        end
 
-        % BOTTOM metric scatter
-        cla(S.ax2); hold(S.ax2,'on');
-        set(S.ax2,'Color',S.C.axisBg,'XColor','w','YColor','w','FontSize',S.F.base);
-        grid(S.ax2,'on');
+        applyYLim(S0.ax1, allTop, S0.plotTop);
+
+        if S0.tc_showInjectionBox
+            drawInjectionPatch(S0.ax1, S0.tc_injMin0, S0.tc_injMin1, [0.60 0.60 0.60], 0.35);
+        end
+
+        recolorAxesText(S0.ax1, S0.previewStyle);
+        fixAxesInset(S0.ax1);
+        hold(S0.ax1, 'off');
+
+        % ---------------- BOTTOM plot ----------------
+        hold(S0.ax2, 'on');
+        styleAxesMode(S0.ax2, S0.previewStyle, S0.previewShowGrid);
 
         gNames = R.groupNames;
         metricVals = R.metricVals(:);
-        grpCol = cellfun(@(x) strtrim(char(x)), R.subjTable(:,3), 'UniformOutput',false);
+        grpCol = cellfun(@(x) strtrim(char(x)), R.subjTable(:,3), 'UniformOutput', false);
         xTicks = 1:numel(gNames);
 
         allBot = [];
-        keysActive = makeRowKeys(R.subjTable);
+        rowX = nan(size(metricVals));
 
-        for g=1:numel(gNames)
+        for g = 1:numel(gNames)
             idxG = strcmpi(grpCol, gNames{g});
-            rowsG = find(idxG);
-            if isempty(rowsG), continue; end
+            idxRows = find(idxG & isfinite(metricVals));
+            yAll = metricVals(idxRows);
+            if isempty(yAll)
+                continue;
+            end
+
             col = R.groupColors.(makeField(gNames{g}));
-
-            for rr = rowsG(:)'
-                y = metricVals(rr);
-                if ~isfinite(y), continue; end
-                jitter = (rand-0.5)*0.18;
-                xx = xTicks(g)+jitter;
-
-                h = scatter(S.ax2, xx, y, 70, col, 'filled');
-                if ~isempty(S.outlierKeys) && any(strcmp(S.outlierKeys, keysActive{rr}))
-                    set(h,'MarkerEdgeColor',[1 0.2 0.2],'LineWidth',1.8);
-                else
-                    set(h,'MarkerEdgeColor',col,'LineWidth',0.8);
-                end
-
-                allBot = [allBot; y]; %#ok<AGROW>
+            rowKeys = makeRowKeys(R.subjTable(idxRows,:));
+            jitter = zeros(size(yAll));
+            for ii=1:numel(rowKeys)
+                jitter(ii) = deterministicJitter(rowKeys{ii}, 0.18);
             end
+            rowX(idxRows) = xTicks(g) + jitter;
 
-            yAll = metricVals(idxG); yAll = yAll(isfinite(yAll));
-            if ~isempty(yAll)
-                plot(S.ax2,[xTicks(g)-0.25 xTicks(g)+0.25],[mean(yAll) mean(yAll)],'LineWidth',2.8,'Color',col);
+            scatter(S0.ax2, rowX(idxRows), yAll, 70, col, 'filled', ...
+                'MarkerEdgeColor', col, 'LineWidth', 0.8);
+
+            plot(S0.ax2, [xTicks(g)-0.25 xTicks(g)+0.25], [mean(yAll) mean(yAll)], ...
+                'LineWidth', 2.8, 'Color', col);
+
+            allBot = [allBot; yAll(:)]; %#ok<AGROW>
+        end
+
+        set(S0.ax2, 'XLim', [0.5 numel(gNames)+0.5], 'XTick', xTicks, 'XTickLabel', displayNames);
+        ylabel(S0.ax2, tern(R.unitsPercent, 'Signal change (%)', 'Metric (a.u.)'), 'Color', fg);
+        title(S0.ax2, ['Metric: ' R.metricName], 'Color', fg, 'FontWeight', 'bold');
+        moveTitleUp(S0.ax2, titleYForStyle(S0.previewStyle));
+
+        applyYLim(S0.ax2, allBot, S0.plotBot);
+
+        highlightOutliersOnScatter(S0.ax2, R, S0, rowX, S0.previewStyle);
+        recolorAxesText(S0.ax2, S0.previewStyle);
+        fixAxesInset(S0.ax2);
+
+        if isfield(R, 'stats') && isfield(R.stats, 'p') && isfinite(R.stats.p)
+            if strcmpi(S0.annotMode, 'Bottom only') || strcmpi(S0.annotMode, 'Both')
+                annotateStatsBottom(S0.ax2, R, S0);
+            end
+            if strcmpi(S0.annotMode, 'Both')
+                annotateStatsTopText(S0.ax1, R, S0);
             end
         end
 
-        set(S.ax2,'XLim',[0.5 numel(gNames)+0.5], 'XTick',xTicks, 'XTickLabel',gNames);
-        ylabel(S.ax2, tern(R.unitsPercent,'Signal change (%)','Metric (a.u.)'), 'Color','w');
-
-        ttl = ['Metric: ' R.metricName];
-        if isfield(R,'stats') && isfield(R.stats,'p') && ~isempty(R.stats.p) && isfinite(R.stats.p)
-            ttl = sprintf('%s | p=%.4g', ttl, R.stats.p);
-        end
-        title(S.ax2, ttl, 'Color','w','FontWeight','bold');
-
-        applyYLim(S.ax2, allBot, R.plotBot);
-        fixAxesInset(S.ax2);
-        hold(S.ax2,'off');
+        hold(S0.ax2, 'off');
+        drawnow limitrate;
     end
 
-% =========================================================
-% UI helpers
-% =========================================================
     function updateSelLabel()
-        S = guidata(hFig);
-        sel = clampSelRows(S.selectedRows, size(S.subj,1));
+        S0 = guidata(hFig);
+        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
         if isempty(sel)
-            set(S.hSelInfo,'String','Selected: none');
+            set(S0.hSelInfo,'String','Selected: none');
         else
-            set(S.hSelInfo,'String',sprintf('Selected: %d row(s)', numel(sel)));
+            set(S0.hSelInfo,'String',sprintf('Selected: %d row(s)', numel(sel)));
+        end
+    end
+
+    function updateOutlierBox()
+        S0 = guidata(hFig);
+        if isempty(S0.outlierInfo)
+            msg = {'No outliers detected yet.'};
+        else
+            msg = S0.outlierInfo(:);
+        end
+        try
+            set(S0.hOutInfo,'String',msg,'Value',1);
+        catch
+            try, set(S0.hOutInfo,'String',msg); catch, end
         end
     end
 
     function syncSubjFromTable()
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         try
-            dt = get(S.hTable,'Data');
-            if iscell(dt), S.subj = dt; end
+            dt = get(S0.hTable,'Data');
+            if iscell(dt), S0.subj = dt; end
         catch
         end
-        S = sanitizeTable(S);
-        guidata(hFig,S);
+        S0 = sanitizeTableStruct(S0);
+        guidata(hFig,S0);
     end
 
     function refreshTable()
-        S = guidata(hFig);
-        S = sanitizeTable(S);
+        S0 = guidata(hFig);
+        S0 = sanitizeTableStruct(S0);
 
-        S.groupList = mergeUniqueStable(S.groupList, uniqueStable(colAsStr(S.subj,3)));
-        S.condList  = mergeUniqueStable(S.condList,  uniqueStable(colAsStr(S.subj,4)));
+        S0.groupList = mergeUniqueStable(S0.groupList, uniqueStable(colAsStr(S0.subj,3)));
+        S0.condList  = mergeUniqueStable(S0.condList,  uniqueStable(colAsStr(S0.subj,4)));
 
-        colFmt = {'logical','char',S.groupList,S.condList,'char','char','char','char'};
-        try, set(S.hTable,'ColumnFormat',colFmt); catch, end
-        set(S.hTable,'Data',S.subj);
-        set(S.hTable,'RowName','numbered');
+        colFmt = {'logical','char',S0.groupList,S0.condList,'char','char','char','char'};
+        try, set(S0.hTable,'ColumnFormat',colFmt); catch, end
+        set(S0.hTable,'Data',S0.subj);
+        set(S0.hTable,'RowName','numbered');
 
-        set(S.hQuickGroup,'String',S.groupList);
-        set(S.hQuickCond,'String',S.condList);
+        set(S0.hQuickGroup,'String',S0.groupList);
+        set(S0.hQuickCond,'String',S0.condList);
 
-        set(S.hManGroupA,'String',S.groupList);
-        set(S.hManGroupB,'String',S.groupList);
+        set(S0.hManGroupA,'String',S0.groupList);
+        set(S0.hManGroupB,'String',S0.groupList);
 
-        guidata(hFig,S);
-        drawnow;
+        guidata(hFig,S0);
+        drawnow limitrate;
         updateSelLabel();
     end
 
     function addFileSmart(fp)
-        S = guidata(hFig);
+        S0 = guidata(hFig);
         [~,~,ext] = fileparts(fp);
         ext = lower(ext);
 
         subj = guessSubjectID(fp);
-        if isempty(subj), subj = ['S' num2str(size(S.subj,1)+1)]; end
+        if isempty(subj), subj = ['S' num2str(size(S0.subj,1)+1)]; end
 
         rowIdx = [];
-        if ~isempty(S.subj)
-            rowIdx = find(strcmpi(colAsStr(S.subj,2), subj), 1, 'first');
+        if ~isempty(S0.subj)
+            rowIdx = find(strcmpi(colAsStr(S0.subj,2), subj), 1, 'first');
         end
 
         isROI = false;
@@ -1238,14 +1512,14 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
             end
         end
 
-        gdef = getSelectedPopupString(S.hQuickGroup);
-        cdef = getSelectedPopupString(S.hQuickCond);
-        if isempty(gdef), gdef = S.defaultGroup; end
-        if isempty(cdef), cdef = S.defaultCond; end
+        gdef = getSelectedPopupString(S0.hQuickGroup);
+        cdef = getSelectedPopupString(S0.hQuickCond);
+        if isempty(gdef), gdef = S0.defaultGroup; end
+        if isempty(cdef), cdef = S0.defaultCond; end
 
         if isempty(rowIdx)
             newRow = {true, subj, gdef, cdef, '', '', '', ''};
-            if get(S.hAutoPair,'Value')==1, newRow{5} = subj; end
+            if get(S0.hAutoPair,'Value')==1, newRow{5} = subj; end
             if isROI
                 newRow{7} = fp;
                 df = findDataMatNearROI(fp);
@@ -1254,59 +1528,76 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
             else
                 newRow{6} = fp;
             end
-            S.subj(end+1,:) = newRow;
+            S0.subj(end+1,:) = newRow;
         else
             if isROI
-                S.subj{rowIdx,7} = fp;
-                if get(S.hAutoPair,'Value')==1 && isempty(strtrimSafe(S.subj{rowIdx,5}))
-                    S.subj{rowIdx,5} = subj;
+                S0.subj{rowIdx,7} = fp;
+                if get(S0.hAutoPair,'Value')==1 && isempty(strtrimSafe(S0.subj{rowIdx,5}))
+                    S0.subj{rowIdx,5} = subj;
                 end
-                if isempty(strtrimSafe(S.subj{rowIdx,6}))
+                if isempty(strtrimSafe(S0.subj{rowIdx,6}))
                     df = findDataMatNearROI(fp);
                     if isempty(df), df = subj; end
-                    S.subj{rowIdx,6} = df;
+                    S0.subj{rowIdx,6} = df;
                 end
             else
-                S.subj{rowIdx,6} = fp;
+                S0.subj{rowIdx,6} = fp;
             end
         end
 
-        S = sanitizeTable(S);
-        guidata(hFig,S);
+        S0 = sanitizeTableStruct(S0);
+        guidata(hFig,S0);
     end
 
     function syncUIFromState()
-        S = guidata(hFig);
-        set(S.hTC_ComputePSC,'Value',double(S.tc_computePSC));
-        set(S.hBase0,'String',num2str(S.tc_baseMin0));
-        set(S.hBase1,'String',num2str(S.tc_baseMin1));
-        set(S.hPkS0,'String',num2str(S.tc_peakSearchMin0));
-        set(S.hPkS1,'String',num2str(S.tc_peakSearchMin1));
-        set(S.hPlat0,'String',num2str(S.tc_plateauMin0));
-        set(S.hPlat1,'String',num2str(S.tc_plateauMin1));
-        set(S.hTC_PeakWin,'String',num2str(S.tc_peakWinMin));
-        set(S.hTC_Trim,'String',num2str(S.tc_trimPct));
-        set(S.hShowSEM,'Value',double(S.tc_showSEM));
-        set(S.hOutEdit,'String',S.outDir);
+        S0 = guidata(hFig);
+        set(S0.hTC_ComputePSC,'Value',double(S0.tc_computePSC));
+        set(S0.hBase0,'String',num2str(S0.tc_baseMin0));
+        set(S0.hBase1,'String',num2str(S0.tc_baseMin1));
+        set(S0.hInj0,'String',num2str(S0.tc_injMin0));
+        set(S0.hInj1,'String',num2str(S0.tc_injMin1));
+        set(S0.hPkS0,'String',num2str(S0.tc_peakSearchMin0));
+        set(S0.hPkS1,'String',num2str(S0.tc_peakSearchMin1));
+        set(S0.hPlat0,'String',num2str(S0.tc_plateauMin0));
+        set(S0.hPlat1,'String',num2str(S0.tc_plateauMin1));
+        set(S0.hTC_PeakWin,'String',num2str(S0.tc_peakWinMin));
+        set(S0.hTC_Trim,'String',num2str(S0.tc_trimPct));
+        set(S0.hShowSEM,'Value',double(S0.tc_showSEM));
+        set(S0.hShowInjBox,'Value',double(S0.tc_showInjectionBox));
+        set(S0.hOutEdit,'String',S0.outDir);
 
-        set(S.hTopAuto,'Value',double(S.plotTop.auto));
-        set(S.hTopZero,'Value',double(S.plotTop.forceZero));
-        set(S.hTopStep,'String',num2str(S.plotTop.step));
-        set(S.hTopYmin,'String',num2str(S.plotTop.ymin));
-        set(S.hTopYmax,'String',num2str(S.plotTop.ymax));
+        set(S0.hTopAuto,'Value',double(S0.plotTop.auto));
+        set(S0.hTopZero,'Value',double(S0.plotTop.forceZero));
+        set(S0.hTopStep,'String',num2str(S0.plotTop.step));
+        set(S0.hTopYmin,'String',num2str(S0.plotTop.ymin));
+        set(S0.hTopYmax,'String',num2str(S0.plotTop.ymax));
 
-        set(S.hBotAuto,'Value',double(S.plotBot.auto));
-        set(S.hBotZero,'Value',double(S.plotBot.forceZero));
-        set(S.hBotStep,'String',num2str(S.plotBot.step));
-        set(S.hBotYmin,'String',num2str(S.plotBot.ymin));
-        set(S.hBotYmax,'String',num2str(S.plotBot.ymax));
+        set(S0.hBotAuto,'Value',double(S0.plotBot.auto));
+        set(S0.hBotZero,'Value',double(S0.plotBot.forceZero));
+        set(S0.hBotStep,'String',num2str(S0.plotBot.step));
+        set(S0.hBotYmin,'String',num2str(S0.plotBot.ymin));
+        set(S0.hBotYmax,'String',num2str(S0.plotBot.ymax));
 
-        setPopupToString(S.hColorMode, S.colorMode);
-        setPopupToString(S.hColorScheme, S.colorScheme);
-        setPopupToString(S.hManGroupA, S.manualGroupA);
-        setPopupToString(S.hManGroupB, S.manualGroupB);
-        try, set(S.hManColorA,'Value',S.manualColorA); catch, end
-        try, set(S.hManColorB,'Value',S.manualColorB); catch, end
+        setPopupToString(S0.hColorMode, S0.colorMode);
+        setPopupToString(S0.hColorScheme, S0.colorScheme);
+        setPopupToString(S0.hManGroupA, S0.manualGroupA);
+        setPopupToString(S0.hManGroupB, S0.manualGroupB);
+        try, set(S0.hManColorA,'Value',S0.manualColorA); catch, end
+        try, set(S0.hManColorB,'Value',S0.manualColorB); catch, end
+
+        setPopupToString(S0.hTest, S0.testType);
+        set(S0.hAlpha,'String',num2str(S0.alpha));
+        setPopupToString(S0.hAnnotMode, S0.annotMode);
+        set(S0.hShowPText,'Value',double(S0.showPText));
+
+        setPopupToString(S0.hPrevStyle, S0.previewStyle);
+        set(S0.hPrevGrid,'Value',double(S0.previewShowGrid));
+        % Metric dropdown
+if strcmpi(S0.tc_metric,'Robust Peak')
+    set(S0.hTC_Metric,'Value',2);   % {'Plateau','Robust Peak'}
+else
+    set(S0.hTC_Metric,'Value',1);
+end
     end
 
     function setPopupToString(h, desired)
@@ -1319,8 +1610,9 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
     end
 
     function setStatusText(txt)
-        try, set(S.hStatus,'String',txt); catch, end
-        drawnow;
+        S0 = guidata(hFig);
+        try, set(S0.hStatus,'String',txt); catch, end
+        drawnow limitrate;
     end
 
     function setStatus(isReady)
@@ -1328,12 +1620,11 @@ setStatusText('Ready. (Y scaling reverted; Step nudges are small)');
             try, opt.statusFcn(logical(isReady)); catch, end
         end
     end
-
-end % END main function
+end
 
 
 % ======================================================================
-% =======================  LOCAL FUNCTIONS  ============================
+% Local helpers
 % ======================================================================
 
 function h = mkBtn(parent, txt, pos, bg, cb)
@@ -1355,9 +1646,10 @@ if isstring(s), s = char(s); end
 s = strtrim(char(s));
 if isempty(s), s = 'export'; end
 s = regexprep(s,'[<>:"/\\|?*\x00-\x1F]','_');
-s = regexprep(s,'[^A-Za-z0-9_\-]','_'); % ASCII-only to avoid encoding issues
+s = regexprep(s,'[^A-Za-z0-9_\-]','_');
 s = regexprep(s,'_+','_');
-s = regexprep(s,'^[\._]+',''); s = regexprep(s,'[\._]+$','');
+s = regexprep(s,'^[\._]+','');
+s = regexprep(s,'[\._]+$','');
 if isempty(s), s = 'export'; end
 maxLen = 60;
 if numel(s) > maxLen, s = s(1:maxLen); end
@@ -1378,7 +1670,8 @@ end
 
 function sel = clampSelRows(sel, nRows)
 if isempty(sel), sel=[]; return; end
-sel = unique(sel(:)'); sel = sel(sel>=1 & sel<=nRows);
+sel = unique(sel(:)');
+sel = sel(sel>=1 & sel<=nRows);
 end
 
 function tf = logicalCol(tbl, col)
@@ -1393,7 +1686,7 @@ use = logicalCol(subjTable,1);
 rows = subjTable(use,:);
 end
 
-function S = sanitizeTable(S)
+function S = sanitizeTableStruct(S)
 if isempty(S.subj), return; end
 if size(S.subj,2) < 8, S.subj(:,end+1:8) = {''}; end
 if size(S.subj,2) > 8, S.subj = S.subj(:,1:8); end
@@ -1450,6 +1743,24 @@ function s = htmlRed(txt)
 s = ['<html><font color="red"><b>' txt '</b></font></html>'];
 end
 
+function stylePreviewPanels(S)
+if strcmpi(S.previewStyle,'Light')
+    set(S.hPrevBG,  'BackgroundColor',[1 1 1]);
+    set(S.hPrevTop, 'BackgroundColor',[0.96 0.96 0.96], 'ForegroundColor','k');
+
+    try, set(S.hPrevStyle,'BackgroundColor',[1 1 1],'ForegroundColor','k'); catch, end
+    try, set(S.hPrevGrid, 'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor','k'); catch, end
+    try, set(S.hPrevMsg,  'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor',[0.2 0.2 0.2]); catch, end
+else
+    set(S.hPrevBG,  'BackgroundColor',S.C.bg);
+    set(S.hPrevTop, 'BackgroundColor',S.C.panel2, 'ForegroundColor','w');
+
+    try, set(S.hPrevStyle,'BackgroundColor',S.C.editBg,'ForegroundColor','w'); catch, end
+    try, set(S.hPrevGrid, 'BackgroundColor',S.C.panel2,'ForegroundColor','w'); catch, end
+    try, set(S.hPrevMsg,  'BackgroundColor',S.C.panel2,'ForegroundColor',S.C.muted); catch, end
+end
+end
+
 function [h0,h1] = addPairEditsDark(parent, y, label, v0, v1, C, cb)
 bg = get(parent,'BackgroundColor');
 uicontrol(parent,'Style','text','String',label, ...
@@ -1463,7 +1774,7 @@ h1 = uicontrol(parent,'Style','edit','String',num2str(v1), ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',cb);
 end
 
-function [hAuto,hZero,hStep,hYmin,hYmax,hYminM,hYminP,hYmaxM,hYmaxP] = mkYControlsStepCompact(parent, y0, label, cfg, C, cbEdit, cbStep)
+function [hAuto,hZero,hStep,hYmin,hYmax,hYminM,hYminP,hYmaxM,hYmaxP] = mkYControlsStepCompact(parent, y0, label, cfg, C, cbEdit, cbYminM, cbYminP, cbYmaxM, cbYmaxP)
 bg = get(parent,'BackgroundColor');
 rowH = 0.18;
 
@@ -1498,12 +1809,12 @@ hYmin = uicontrol(parent,'Style','edit','String',num2str(cfg.ymin), ...
 hYminM = uicontrol(parent,'Style','pushbutton','String','-', ...
     'Units','normalized','Position',[0.69 y0+0.01 0.035 rowH], ...
     'BackgroundColor',C.btnSecondary,'ForegroundColor','w','FontWeight','bold', ...
-    'Callback',@(s,e) cbStep([label 'YminM']));
+    'Callback',cbYminM);
 
 hYminP = uicontrol(parent,'Style','pushbutton','String','+', ...
     'Units','normalized','Position',[0.73 y0+0.01 0.035 rowH], ...
     'BackgroundColor',C.btnSecondary,'ForegroundColor','w','FontWeight','bold', ...
-    'Callback',@(s,e) cbStep([label 'YminP']));
+    'Callback',cbYminP);
 
 uicontrol(parent,'Style','text','String','Ymax:', ...
     'Units','normalized','Position',[0.78 y0 0.06 rowH], ...
@@ -1516,12 +1827,12 @@ hYmax = uicontrol(parent,'Style','edit','String',num2str(cfg.ymax), ...
 hYmaxM = uicontrol(parent,'Style','pushbutton','String','-', ...
     'Units','normalized','Position',[0.92 y0+0.01 0.035 rowH], ...
     'BackgroundColor',C.btnSecondary,'ForegroundColor','w','FontWeight','bold', ...
-    'Callback',@(s,e) cbStep([label 'YmaxM']));
+    'Callback',cbYmaxM);
 
 hYmaxP = uicontrol(parent,'Style','pushbutton','String','+', ...
     'Units','normalized','Position',[0.96 y0+0.01 0.035 rowH], ...
     'BackgroundColor',C.btnSecondary,'ForegroundColor','w','FontWeight','bold', ...
-    'Callback',@(s,e) cbStep([label 'YmaxP']));
+    'Callback',cbYmaxP);
 end
 
 function hEdit = makeWinRowDark(parent, y, label, init, cb, tag, C)
@@ -1545,25 +1856,191 @@ catch
 end
 end
 
-function applyYLim(ax, dataVec, plotCfg)
-if isempty(dataVec), return; end
-dataVec = dataVec(isfinite(dataVec));
-if isempty(dataVec), return; end
-if plotCfg.auto
-    lo = min(dataVec); hi = max(dataVec);
-    if plotCfg.forceZero, lo = 0; end
-    if lo==hi
-        lo = lo-1; hi = hi+1;
-    else
-        pad = 0.06*(hi-lo);
-        lo = lo - pad; hi = hi + pad;
-        if plotCfg.forceZero, lo = 0; end
-    end
-    ylim(ax,[lo hi]);
+function [bg,fg] = previewColors(styleName)
+if strcmpi(styleName,'Dark')
+    bg = [0 0 0];
+    fg = [1 1 1];
 else
-    lo = plotCfg.ymin; hi = plotCfg.ymax;
-    if plotCfg.forceZero, lo = 0; end
-    if isfinite(lo) && isfinite(hi) && lo<hi, ylim(ax,[lo hi]); end
+    bg = [1 1 1];
+    fg = [0 0 0];
+end
+end
+
+function styleAxesMode(ax, styleName, showGrid)
+[bg,fg] = previewColors(styleName);
+set(ax,'Color',bg,'XColor',fg,'YColor',fg);
+if strcmpi(styleName,'Dark')
+    try, set(ax,'GridColor',[0.7 0.7 0.7]); catch, end
+    try, set(ax,'MinorGridColor',[0.8 0.8 0.8]); catch, end
+else
+    try, set(ax,'GridColor',[0.2 0.2 0.2]); catch, end
+    try, set(ax,'MinorGridColor',[0.3 0.3 0.3]); catch, end
+end
+try, set(ax,'GridAlpha',0.18); catch, end
+try, set(ax,'MinorGridAlpha',0.10); catch, end
+if showGrid
+    grid(ax,'on');
+else
+    grid(ax,'off');
+end
+box(ax,'off');
+end
+
+function recolorAxesText(ax, styleName)
+[~,fg] = previewColors(styleName);
+try, set(ax,'XColor',fg,'YColor',fg); catch, end
+try, set(get(ax,'Title'),'Color',fg); catch, end
+try, set(get(ax,'XLabel'),'Color',fg); catch, end
+try, set(get(ax,'YLabel'),'Color',fg); catch, end
+end
+
+function styleColorbarMode(cb, styleName)
+[~,fg] = previewColors(styleName);
+try, set(cb,'Color',fg); catch, end
+try, set(get(cb,'Label'),'Color',fg); catch, end
+try, set(cb,'Box','off'); catch, end
+end
+
+function styleLegendMode(lg, styleName)
+[bg,fg] = previewColors(styleName);
+try, set(lg,'TextColor',fg); catch, end
+try, set(lg,'Color',bg); catch, end
+try, set(lg,'EdgeColor','none'); catch, end
+end
+
+function moveTitleUp(ax, yPos)
+if nargin < 2, yPos = 1.09; end
+th = get(ax,'Title');
+set(th,'Units','normalized');
+pos = get(th,'Position');
+pos(2) = yPos;
+set(th,'Position',pos);
+end
+
+function y = titleYForStyle(styleName)
+if strcmpi(styleName,'Light')
+    y = 1.01;
+else
+    y = 1.05;
+end
+end
+
+function deleteAllColorbars(h)
+try
+    delete(findall(h,'Type','ColorBar'));
+catch
+    try, delete(findall(h,'Tag','Colorbar')); catch, end
+end
+end
+
+function clearAxisClean(ax, styleName, showGrid, ttl)
+try
+    lg = legend(ax);
+    if ishghandle(lg), delete(lg); end
+catch
+end
+try
+    cla(ax);
+catch
+end
+styleAxesMode(ax, styleName, showGrid);
+recolorAxesText(ax, styleName);
+title(ax,ttl,'FontWeight','bold');
+moveTitleUp(ax,titleYForStyle(styleName));
+try
+    xlabel(ax,'');
+    ylabel(ax,'');
+    hold(ax,'off');
+catch
+end
+end
+
+function applyYLim(ax, dataVec, plotCfg)
+    if isempty(dataVec), return; end
+    dataVec = dataVec(isfinite(dataVec));
+    if isempty(dataVec), return; end
+
+    % ---- set YLim ----
+    if plotCfg.auto
+        lo = min(dataVec);
+        hi = max(dataVec);
+        if plotCfg.forceZero, lo = 0; end
+        if lo==hi
+            lo = lo-1;
+            hi = hi+1;
+        else
+            pad = 0.06*(hi-lo);
+            lo = lo - pad;
+            hi = hi + pad;
+            if plotCfg.forceZero, lo = 0; end
+        end
+        ylim(ax,[lo hi]);
+    else
+        lo = plotCfg.ymin;
+        hi = plotCfg.ymax;
+        if plotCfg.forceZero, lo = 0; end
+        if isfinite(lo) && isfinite(hi) && lo<hi
+            ylim(ax,[lo hi]);
+        end
+    end
+
+    % ---- set YTick using plotCfg.step ----
+    step = plotCfg.step;
+    if ~isfinite(step) || step <= 0
+        % let MATLAB decide
+        try, set(ax,'YTickMode','auto'); catch, end
+        return;
+    end
+
+    yl = ylim(ax);
+    lo = yl(1); hi = yl(2);
+    if ~isfinite(lo) || ~isfinite(hi) || hi<=lo, return; end
+
+    if plotCfg.forceZero
+        t0 = 0;
+    else
+        t0 = floor(lo/step)*step;
+    end
+    t1 = ceil(hi/step)*step;
+
+    ticks = t0:step:t1;
+
+    % keep ticks inside current limits
+    ticks = ticks(ticks >= lo-1e-9 & ticks <= hi+1e-9);
+
+    % avoid insane tick counts
+    if numel(ticks) > 60
+        try, set(ax,'YTickMode','auto'); catch, end
+        return;
+    end
+
+    if ~isempty(ticks)
+        try, set(ax,'YTick',ticks); catch, end
+    end
+end
+
+function h = drawInjectionPatch(ax, x0, x1, col, alphaVal)
+if ~isfinite(x0) || ~isfinite(x1), h = []; return; end
+if x1 <= x0, h = []; return; end
+
+yl = ylim(ax);
+h = patch(ax,[x0 x1 x1 x0],[yl(1) yl(1) yl(2) yl(2)],col, ...
+    'FaceAlpha',alphaVal, ...
+    'EdgeColor','none', ...
+    'HitTest','off', ...
+    'HandleVisibility','off', ...
+    'Tag','GA_InjectionPatch');
+
+try
+    ann = get(h,'Annotation');
+    leg = get(ann,'LegendInformation');
+    set(leg,'IconDisplayStyle','off');
+catch
+end
+
+try
+    uistack(h,'bottom');
+catch
 end
 end
 
@@ -1596,7 +2073,8 @@ for i=1:numel(cand)
         w = whos('-file', fn);
         names = {w.name};
         if any(strcmp(names,'newData')) || any(strcmp(names,'data')) || any(strcmp(names,'I')) || any(strcmp(names,'TR'))
-            fpData = fn; return;
+            fpData = fn;
+            return;
         end
     catch
     end
@@ -1609,12 +2087,15 @@ field = regexprep(field,'[^A-Z0-9_]','_');
 if isempty(field), field='GROUP'; end
 end
 
-function imagesc_auto(ax, A)
+function imagesc_mode(ax, A, styleName)
 A = double(A);
 A(~isfinite(A)) = 0;
+cla(ax);
+styleAxesMode(ax, styleName, false);
 imagesc(ax, A);
-axis(ax,'image'); axis(ax,'off');
-set(ax,'XColor','w','YColor','w');
+axis(ax,'image');
+axis(ax,'off');
+recolorAxesText(ax, styleName);
 end
 
 function Y = squeeze2D(X)
@@ -1626,11 +2107,158 @@ else
 end
 end
 
-function shadedLineColored(ax, x, y, e, lineColor, fillColor)
-x = x(:)'; y = y(:)'; e = e(:)';
-up = y+e; dn = y-e;
-patch(ax, [x fliplr(x)], [up fliplr(dn)], fillColor, 'FaceAlpha',0.20, 'EdgeColor','none');
-plot(ax, x, y, 'LineWidth',2.4, 'Color',lineColor);
+function [hLine,hPatch] = shadedLineColored(ax, x, y, e, lineColor, fillColor, semAlpha)
+if nargin < 7 || isempty(semAlpha)
+    semAlpha = 0.20;
+end
+
+x = x(:)';
+y = y(:)';
+e = e(:)';
+
+up = y + e;
+dn = y - e;
+
+hPatch = patch(ax, [x fliplr(x)], [up fliplr(dn)], fillColor, ...
+    'FaceAlpha',semAlpha, ...
+    'EdgeColor','none', ...
+    'HandleVisibility','off');
+
+try
+    ann = get(hPatch,'Annotation');
+    leg = get(ann,'LegendInformation');
+    set(leg,'IconDisplayStyle','off');
+catch
+end
+
+hLine = plot(ax, x, y, 'LineWidth',2.4, 'Color',lineColor);
+end
+
+function dispNames = resolveDisplayGroupNames(rawNames, S)
+n = numel(rawNames);
+dispNames = cell(size(rawNames));
+isPAC = false(1,n);
+isVEH = false(1,n);
+
+for i=1:n
+    u = upper(strtrimSafe(rawNames{i}));
+    isPAC(i) = contains(u,'PACAP');
+    isVEH(i) = contains(u,'VEH') || contains(u,'VEHICLE') || contains(u,'CONTROL');
+end
+
+if strcmpi(S.colorScheme,'PACAP/Vehicle') && n==2
+    if sum(isPAC)==1
+        pacIdx = find(isPAC,1,'first');
+        otherIdx = setdiff(1:2,pacIdx);
+        dispNames{pacIdx} = 'PACAP';
+        dispNames{otherIdx} = 'Vehicle';
+        return;
+    elseif sum(isVEH)==1
+        vehIdx = find(isVEH,1,'first');
+        otherIdx = setdiff(1:2,vehIdx);
+        dispNames{vehIdx} = 'Vehicle';
+        dispNames{otherIdx} = 'PACAP';
+        return;
+    else
+        dispNames{1} = 'PACAP';
+        dispNames{2} = 'Vehicle';
+        return;
+    end
+end
+
+for i=1:n
+    rawName = strtrimSafe(rawNames{i});
+    u = upper(rawName);
+    if contains(u,'PACAP')
+        dispNames{i} = 'PACAP';
+    elseif contains(u,'VEH') || contains(u,'VEHICLE') || contains(u,'CONTROL')
+        dispNames{i} = 'Vehicle';
+    else
+        if strcmpi(S.colorMode,'Manual A/B')
+            if i==1 && ~isempty(strtrimSafe(S.manualGroupA))
+                dispNames{i} = strtrimSafe(S.manualGroupA);
+            elseif i==2 && ~isempty(strtrimSafe(S.manualGroupB))
+                dispNames{i} = strtrimSafe(S.manualGroupB);
+            else
+                dispNames{i} = rawName;
+            end
+        else
+            dispNames{i} = rawName;
+        end
+    end
+    if isempty(dispNames{i})
+        dispNames{i} = sprintf('Group%d',i);
+    end
+end
+end
+
+function dispNames = getDisplayNamesFromR(R)
+if isfield(R,'groupDisplayNames') && ~isempty(R.groupDisplayNames)
+    dispNames = R.groupDisplayNames;
+else
+    dispNames = R.groupNames;
+end
+end
+
+function j = deterministicJitter(key, amp)
+if nargin < 2, amp = 0.18; end
+if isempty(key), key = 'x'; end
+c = double(char(key(:)'));
+w = 1:numel(c);
+h = sum(c .* w);
+u = mod(h,100000) / 100000;
+j = (u - 0.5) * amp;
+end
+
+function highlightOutliersOnScatter(ax, R, S, rowX, styleName)
+if isempty(S.outlierKeys), return; end
+if ~isfield(R,'subjTable') || isempty(R.subjTable), return; end
+if numel(rowX) ~= size(R.subjTable,1), return; end
+
+[bg,fg] = previewColors(styleName);
+keysAll = makeRowKeys(R.subjTable);
+y = R.metricVals(:);
+
+for i=1:numel(S.outlierKeys)
+    hit = find(strcmp(keysAll, S.outlierKeys{i}), 1, 'first');
+    if isempty(hit), continue; end
+    if ~isfinite(rowX(hit)) || ~isfinite(y(hit)), continue; end
+
+    scatter(ax, rowX(hit), y(hit), 150, ...
+        'MarkerFaceColor','none', ...
+        'MarkerEdgeColor',[1 0.45 0.45], ...
+        'LineWidth',2.0);
+
+    sid = strtrimSafe(R.subjTable{hit,2});
+    txt = sprintf('%s: %.4g', sid, y(hit));
+    text(ax, rowX(hit)+0.03, y(hit), txt, ...
+        'Color',fg, ...
+        'FontSize',9, ...
+        'FontWeight','bold', ...
+        'BackgroundColor',bg, ...
+        'Margin',1, ...
+        'Clipping','on', ...
+        'HorizontalAlignment','left', ...
+        'VerticalAlignment','middle');
+end
+end
+
+function exportPreviewPNG(outFile, which, S)
+[figBg,~] = previewColors(S.previewStyle);
+f = figure('Visible','off','Color',figBg,'InvertHardcopy','off', ...
+    'MenuBar','none','ToolBar','none','NumberTitle','off','Renderer','opengl');
+set(f,'Position',[100 100 1400 820]);
+
+ax = axes('Parent',f,'Units','normalized','Position',[0.09 0.12 0.86 0.62]);
+styleAxesMode(ax, S.previewStyle, S.previewShowGrid);
+recolorAxesText(ax, S.previewStyle);
+
+exportOnePreview(ax, which, S, S.previewStyle);
+
+set(f,'InvertHardcopy','off');
+set(f,'PaperPositionMode','auto');
+print(f, outFile, '-dpng', '-r250');
+close(f);
 end
 
 function y = tern(cond,a,b)
@@ -1650,9 +2278,11 @@ end
 end
 
 function writeCellCSV_UTF8(fn, C)
-fid = fopen(fn,'w','n','UTF-8');
+fid = fopen(fn,'w');
 if fid<0, return; end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fwrite(fid, uint8([239 187 191]), 'uint8');
+
 [nr,nc] = size(C);
 for r=1:nr
     row = cell(1,nc);
@@ -1696,15 +2326,131 @@ rgb = [ ...
     0.45 0.55 0.65];
 end
 
-% ===================== BACKEND ANALYSIS =====================
-% (kept minimal but functional; same behavior as before)
+function stars = p_to_stars(p)
+if ~isfinite(p)
+    stars = 'p=?';
+elseif p < 0.001
+    stars = '***';
+elseif p < 0.01
+    stars = '**';
+elseif p < 0.05
+    stars = '*';
+else
+    stars = 'n.s.';
+end
+end
+
+function annotateStatsBottom(ax, R, S)
+p = R.stats.p;
+alpha = R.stats.alpha;
+stars = p_to_stars(p);
+[~,fg] = previewColors(S.previewStyle);
+
+yl = ylim(ax);
+ySpan = yl(2)-yl(1);
+if ~isfinite(ySpan) || ySpan<=0, ySpan = 1; end
+yBar = yl(2) - 0.10*ySpan;
+
+gN = numel(R.groupNames);
+tType = '';
+if isfield(R.stats,'type'), tType = strtrimSafe(R.stats.type); end
+
+isTwo = contains(lower(tType),'student') || contains(lower(tType),'welch') || contains(lower(tType),'two-sample') || contains(lower(tType),'t-test');
+
+if gN >= 2 && isTwo
+    x1 = 1;
+    x2 = 2;
+    plot(ax, [x1 x1 x2 x2], [yBar-0.02*ySpan yBar yBar yBar-0.02*ySpan], '-', 'LineWidth', 2, 'Color', fg);
+    text(ax, (x1+x2)/2, yBar + 0.02*ySpan, stars, ...
+        'Color',fg,'FontSize',16,'FontWeight','bold', ...
+        'HorizontalAlignment','center','VerticalAlignment','bottom');
+    if S.showPText
+        text(ax, (x1+x2)/2, yBar - 0.06*ySpan, sprintf('p=%.3g (alpha=%.3g)', p, alpha), ...
+            'Color',fg,'FontSize',11, ...
+            'HorizontalAlignment','center','VerticalAlignment','top');
+    end
+else
+    txt = sprintf('%s | p=%.3g', shortType(tType), p);
+    text(ax, mean(xlim(ax)), yl(2)-0.04*ySpan, txt, ...
+        'Color',fg,'FontSize',12,'FontWeight','bold', ...
+        'HorizontalAlignment','center','VerticalAlignment','top');
+    if isfinite(p) && p < alpha
+        text(ax, mean(xlim(ax)), yl(2)-0.09*ySpan, stars, ...
+            'Color',fg,'FontSize',16,'FontWeight','bold', ...
+            'HorizontalAlignment','center','VerticalAlignment','top');
+    end
+end
+end
+
+function annotateStatsTopText(ax, R, S)
+p = R.stats.p;
+alpha = R.stats.alpha;
+stars = p_to_stars(p);
+[~,fg] = previewColors(S.previewStyle);
+
+xl = xlim(ax);
+yl = ylim(ax);
+x = xl(2) - 0.02*(xl(2)-xl(1));
+y = yl(2) - 0.05*(yl(2)-yl(1));
+
+txt = sprintf('%s  p=%.3g', stars, p);
+text(ax, x, y, txt, ...
+    'Color',fg,'FontSize',12,'FontWeight','bold', ...
+    'HorizontalAlignment','right','VerticalAlignment','top');
+if S.showPText
+    text(ax, x, y - 0.06*(yl(2)-yl(1)), sprintf('alpha=%.3g', alpha), ...
+        'Color',0.7*fg,'FontSize',10, ...
+        'HorizontalAlignment','right','VerticalAlignment','top');
+end
+end
+
+function s = shortType(s)
+s = strtrimSafe(s);
+if isempty(s), s = 'Test'; end
+if numel(s)>26, s = [s(1:26) '...']; end
+end
+
+function p = tcdf_local(x, v)
+x = double(x);
+v = double(v);
+p = nan(size(x));
+ok = isfinite(x) & isfinite(v) & (v > 0);
+if ~any(ok), return; end
+xo = x(ok);
+p_ok = zeros(size(xo));
+for i = 1:numel(xo)
+    xi = xo(i);
+    vi = v;
+    z = vi / (vi + xi*xi);
+    ib = betainc(z, vi/2, 0.5);
+    if xi >= 0
+        p_ok(i) = 1 - 0.5*ib;
+    else
+        p_ok(i) = 0.5*ib;
+    end
+end
+p(ok) = p_ok;
+end
+
+function p = fcdf_local(x, v1, v2)
+x = double(x);
+v1 = double(v1);
+v2 = double(v2);
+p = nan(size(x));
+ok = isfinite(x) & (x>=0) & isfinite(v1) & isfinite(v2) & (v1>0) & (v2>0);
+if ~any(ok), return; end
+xo = x(ok);
+z = (v1 .* xo) ./ (v1 .* xo + v2);
+p(ok) = betainc(z, v1/2, v2/2);
+end
 
 function mu = nanmean_local(X, dim)
 try
     mu = mean(X, dim, 'omitnan');
 catch
     n = sum(isfinite(X),dim);
-    X2 = X; X2(~isfinite(X2)) = 0;
+    X2 = X;
+    X2(~isfinite(X2)) = 0;
     mu = sum(X2,dim) ./ max(1,n);
 end
 end
@@ -1730,7 +2476,9 @@ rs(dim) = sz(dim);
 end
 
 function [ok, tMin, psc] = tryReadSCMroiExportTxt(fname)
-ok=false; tMin=[]; psc=[];
+ok = false;
+tMin = [];
+psc = [];
 if nargin<1 || isempty(fname), return; end
 fname = strtrim(char(fname));
 if exist(fname,'file')~=2, return; end
@@ -1738,7 +2486,7 @@ fid = fopen(fname,'r');
 if fid<0, return; end
 cln = onCleanup(@() fclose(fid)); %#ok<NASGU>
 
-inTable=false;
+inTable = false;
 while true
     ln = fgetl(fid);
     if ~ischar(ln), break; end
@@ -1746,7 +2494,7 @@ while true
     if isempty(ln), continue; end
     if ln(1)=='#'
         if ~isempty(strfind(lower(ln),'# columns:')) && ~isempty(strfind(lower(ln),'psc'))
-            inTable=true;
+            inTable = true;
         end
         continue;
     end
@@ -1758,47 +2506,7 @@ while true
         end
     end
 end
-if numel(tMin) >= 5 && numel(psc)==numel(tMin), ok=true; end
-end
-
-function X = applyBaselineZero(X, tMin, b0, b1, mode)
-mode = strtrimSafe(mode);
-if strcmpi(mode,'None'), return; end
-baseIdx = (tMin>=b0) & (tMin<=b1);
-if ~any(baseIdx), return; end
-for i=1:size(X,1)
-    try
-        b = mean(X(i,baseIdx),2,'omitnan');
-    catch
-        bb = X(i,baseIdx); bb = bb(isfinite(bb));
-        if isempty(bb), b=0; else, b=mean(bb); end
-    end
-    if ~isfinite(b), b=0; end
-    X(i,:) = X(i,:) - b;
-end
-end
-
-function [tcRaw, tMin] = extractROITC_legacyMat(fp)
-L = load(fp);
-if isfield(L,'roiTC'), tc = L.roiTC;
-elseif isfield(L,'TC'), tc = L.TC;
-else, error('ROI mat must contain roiTC or TC: %s', fp);
-end
-tc = double(tc);
-if size(tc,1) > size(tc,2), tc = tc.'; end
-if size(tc,1) > 1
-    try, tc = mean(tc,1,'omitnan'); catch, tc = mean(tc,1); end
-end
-tcRaw = tc(:)';
-
-if isfield(L,'tSec') && ~isempty(L.tSec)
-    tMin = double(L.tSec(:)')/60;
-elseif isfield(L,'TR') && ~isempty(L.TR)
-    TR = double(L.TR);
-    tMin = (0:(numel(tcRaw)-1))*(TR/60);
-else
-    error('ROI mat must contain tSec or TR.');
-end
+if numel(tMin) >= 5 && numel(psc)==numel(tMin), ok = true; end
 end
 
 function D = loadPipelineStruct(fp)
@@ -1834,44 +2542,51 @@ function tc = roiMeanTimecourse(I, roi)
 d = ndims(I);
 if d~=3 && d~=4, error('I must be [Y X T] or [Y X Z T].'); end
 sz = size(I);
-Y = sz(1); X = sz(2);
-if d==4, Z = sz(3); T = sz(4); else, Z=1; T=sz(3); end
+Y = sz(1);
+X = sz(2);
+if d==4
+    Z = sz(3);
+    T = sz(4);
+else
+    Z = 1;
+    T = sz(3);
+end
 
 roi = double(roi);
 if size(roi,2)==1
-    lin = roi(:,1); lin = lin(lin>=1);
+    lin = round(roi(:,1));
     if d==3
-        lin = lin(lin<=Y*X);
-        [r,c] = ind2sub([Y X], lin); z = ones(size(r));
+        lin = lin(lin>=1 & lin<=Y*X);
     else
-        lin = lin(lin<=Y*X*Z);
-        [r,c,z] = ind2sub([Y X Z], lin);
+        lin = lin(lin>=1 & lin<=Y*X*Z);
     end
 elseif size(roi,2)==2
-    r=roi(:,1); c=roi(:,2); z=ones(size(r));
-else
-    r=roi(:,1); c=roi(:,2); z=roi(:,3);
-end
-
-r=round(r); c=round(c); z=round(z);
-keep = (r>=1 & r<=Y & c>=1 & c<=X & z>=1 & z<=Z);
-r=r(keep); c=c(keep); z=z(keep);
-if isempty(r), error('ROI has no valid points after bounds check.'); end
-
-tc = zeros(1,T);
-if d==3
-    lin = sub2ind([Y X], r, c);
-    for t=1:T
-        frame = double(I(:,:,t));
-        tc(t) = mean(frame(lin));
-    end
-else
+    r = round(roi(:,1));
+    c = round(roi(:,2));
+    z = ones(size(r));
+    keep = (r>=1 & r<=Y & c>=1 & c<=X);
+    r = r(keep); c = c(keep); z = z(keep);
     lin = sub2ind([Y X Z], r, c, z);
-    for t=1:T
-        frame = double(I(:,:,:,t));
-        tc(t) = mean(frame(lin));
-    end
+else
+    r = round(roi(:,1));
+    c = round(roi(:,2));
+    z = round(roi(:,3));
+    keep = (r>=1 & r<=Y & c>=1 & c<=X & z>=1 & z<=Z);
+    r = r(keep); c = c(keep); z = z(keep);
+    lin = sub2ind([Y X Z], r, c, z);
 end
+
+lin = unique(lin(:));
+if isempty(lin), error('ROI has no valid points after bounds check.'); end
+
+if d==3
+    flat = reshape(I, Y*X, T);
+else
+    flat = reshape(I, Y*X*Z, T);
+end
+
+vals = double(flat(lin,:));
+tc = mean(vals,1);
 tc(~isfinite(tc)) = NaN;
 end
 
@@ -1879,46 +2594,84 @@ function [tcRaw, tMin] = extractROITC_fromDataAndROI(dataFile, roiFile)
 D = loadPipelineStruct(dataFile);
 if ~isfield(D,'I') || isempty(D.I), error('DATA file missing I: %s', dataFile); end
 if ~isfield(D,'TR') || isempty(D.TR), error('DATA file missing TR: %s', dataFile); end
-I = D.I; TR = double(D.TR);
+I = D.I;
+TR = double(D.TR);
 roi = readROITxt(roiFile);
 tcRaw = roiMeanTimecourse(I, roi);
 T = numel(tcRaw);
 tMin = (0:(T-1))*(TR/60);
 end
 
+function [tcRaw, tMin] = extractROITC_legacyMat(fp)
+L = load(fp);
+if isfield(L,'roiTC')
+    tc = L.roiTC;
+elseif isfield(L,'TC')
+    tc = L.TC;
+else
+    error('ROI mat must contain roiTC or TC: %s', fp);
+end
+tc = double(tc);
+if size(tc,1) > size(tc,2), tc = tc.'; end
+if size(tc,1) > 1
+    try, tc = mean(tc,1,'omitnan'); catch, tc = mean(tc,1); end
+end
+tcRaw = tc(:)';
+
+if isfield(L,'tSec') && ~isempty(L.tSec)
+    tMin = double(L.tSec(:)')/60;
+elseif isfield(L,'TR') && ~isempty(L.TR)
+    TR = double(L.TR);
+    tMin = (0:(numel(tcRaw)-1))*(TR/60);
+else
+    error('ROI mat must contain tSec or TR.');
+end
+end
+
 function m = trimmedMean(x, trimPct)
-x = x(:); x = x(isfinite(x));
-if isempty(x), m=NaN; return; end
+x = x(:);
+x = x(isfinite(x));
+if isempty(x), m = NaN; return; end
 x = sort(x,'ascend');
 n = numel(x);
 tp = max(0, min(49, round(trimPct)));
 k = floor((tp/100)*n/2);
-i0 = 1+k; i1 = n-k;
-if i1 < i0, m = mean(x); else, m = mean(x(i0:i1)); end
+i0 = 1+k;
+i1 = n-k;
+if i1 < i0
+    m = mean(x);
+else
+    m = mean(x(i0:i1));
+end
 end
 
 function pv = robustPeak(y, tMin, s0, s1, winMin, trimPct)
-y = double(y(:)'); tMin = double(tMin(:)');
+y = double(y(:)');
+tMin = double(tMin(:)');
 pv = NaN;
 idxAll = find(tMin>=s0 & tMin<=s1);
 if numel(idxAll)<1, return; end
-dt = median(diff(tMin)); if ~isfinite(dt) || dt<=0, dt=0.1; end
+dt = median(diff(tMin));
+if ~isfinite(dt) || dt<=0, dt = 0.1; end
 w = max(1, round(winMin/dt));
-iStart = idxAll(1); iEnd = idxAll(end);
-best=-Inf;
+iStart = idxAll(1);
+iEnd = idxAll(end);
+best = -Inf;
 for i=iStart:(iEnd-w+1)
-    j=i+w-1;
-    seg = y(i:j); seg = seg(isfinite(seg));
+    j = i+w-1;
+    seg = y(i:j);
+    seg = seg(isfinite(seg));
     if isempty(seg), continue; end
     val = trimmedMean(seg, trimPct);
-    if val > best, best=val; end
+    if val > best, best = val; end
 end
-if isfinite(best), pv=best; end
+if isfinite(best), pv = best; end
 end
 
 function colors = assignGroupColorsWithMode(gNames, S)
 colors = struct();
 [~,pal] = palette20();
+
 if strcmpi(S.colorMode,'Manual A/B')
     colA = pal(max(1,min(size(pal,1),S.manualColorA)),:);
     colB = pal(max(1,min(size(pal,1),S.manualColorB)),:);
@@ -1927,9 +2680,12 @@ if strcmpi(S.colorMode,'Manual A/B')
     base = lines(max(1,numel(gNames)));
     for i=1:numel(gNames)
         nm = strtrimSafe(gNames{i});
-        if ~isempty(gA) && strcmpi(nm,gA), col = colA;
-        elseif ~isempty(gB) && strcmpi(nm,gB), col = colB;
-        else, col = base(i,:);
+        if ~isempty(gA) && strcmpi(nm,gA)
+            col = colA;
+        elseif ~isempty(gB) && strcmpi(nm,gB)
+            col = colB;
+        else
+            col = base(i,:);
         end
         colors.(makeField(nm)) = col;
     end
@@ -1937,16 +2693,63 @@ if strcmpi(S.colorMode,'Manual A/B')
 end
 
 scheme = strtrimSafe(S.colorScheme);
-if strcmpi(scheme,'PACAP/Vehicle')
+
+if strcmpi(scheme,'Blue/Red')
+    base = [0.20 0.65 0.90; 0.90 0.25 0.25];
+elseif strcmpi(scheme,'Purple/Green')
+    base = [0.65 0.40 0.95; 0.25 0.85 0.55];
+elseif strcmpi(scheme,'Gray/Orange')
+    base = [0.65 0.65 0.65; 0.95 0.55 0.20];
+elseif strcmpi(scheme,'Distinct')
+    base = lines(max(2,numel(gNames)));
+else
+    base = [];
+end
+
+if ~isempty(base) && ~strcmpi(scheme,'PACAP/Vehicle')
     for i=1:numel(gNames)
+        colors.(makeField(gNames{i})) = base(1+mod(i-1,size(base,1)),:);
+    end
+    return;
+end
+
+if strcmpi(scheme,'PACAP/Vehicle')
+    n = numel(gNames);
+    isPAC = false(1,n);
+    isVEH = false(1,n);
+    for i=1:n
         nmU = upper(strtrimSafe(gNames{i}));
-        if ~isempty(strfind(nmU,'PACAP'))
+        isPAC(i) = contains(nmU,'PACAP');
+        isVEH(i) = contains(nmU,'VEH') || contains(nmU,'CONTROL') || contains(nmU,'VEHICLE');
+    end
+
+    if n==2 && sum(isPAC)==1
+        pacIdx = find(isPAC,1,'first');
+        otherIdx = setdiff(1:2,pacIdx);
+        colors.(makeField(gNames{pacIdx})) = [0.20 0.65 0.90];
+        colors.(makeField(gNames{otherIdx})) = [0.65 0.65 0.65];
+        return;
+    elseif n==2 && sum(isVEH)==1
+        vehIdx = find(isVEH,1,'first');
+        otherIdx = setdiff(1:2,vehIdx);
+        colors.(makeField(gNames{vehIdx})) = [0.65 0.65 0.65];
+        colors.(makeField(gNames{otherIdx})) = [0.20 0.65 0.90];
+        return;
+    elseif n==2
+        colors.(makeField(gNames{1})) = [0.20 0.65 0.90];
+        colors.(makeField(gNames{2})) = [0.65 0.65 0.65];
+        return;
+    end
+
+    for i=1:n
+        nmU = upper(strtrimSafe(gNames{i}));
+        if contains(nmU,'PACAP')
             col = [0.20 0.65 0.90];
-        elseif ~isempty(strfind(nmU,'VEH')) || ~isempty(strfind(nmU,'CONTROL')) || ~isempty(strfind(nmU,'VEHICLE'))
-            col = [0.80 0.80 0.80];
+        elseif contains(nmU,'VEH') || contains(nmU,'CONTROL') || contains(nmU,'VEHICLE')
+            col = [0.65 0.65 0.65];
         else
-            base = lines(numel(gNames));
-            col = base(i,:);
+            b2 = lines(n);
+            col = b2(i,:);
         end
         colors.(makeField(gNames{i})) = col;
     end
@@ -1960,50 +2763,90 @@ end
 end
 
 function stats = computeStats(metricVals, grpCol, S)
-stats = struct('type',S.testType,'alpha',S.alpha,'p',[],'t',[],'F',[],'df',[],'desc','');
+stats = struct('type',S.testType,'alpha',S.alpha,'p',NaN,'t',NaN,'F',NaN,'df',NaN,'desc','');
 testType = strtrimSafe(S.testType);
 if strcmpi(testType,'None')
     stats.desc = 'No test.';
     return;
 end
+
 gNames = uniqueStable(grpCol);
+
 if strcmpi(testType,'One-sample t-test (vs 0)')
     [t,p,df] = oneSampleT_vec(metricVals);
-    stats.t=t; stats.p=p; stats.df=df; stats.desc='One-sample t-test vs 0';
+    stats.t = t;
+    stats.p = p;
+    stats.df = df;
+    stats.desc = 'One-sample vs 0';
+
+elseif strcmpi(testType,'Two-sample t-test (Student, equal var)')
+    if numel(gNames)<2, error('Need >=2 groups.'); end
+    a = metricVals(strcmpi(grpCol,gNames{1}));
+    b = metricVals(strcmpi(grpCol,gNames{2}));
+    [t,p,df] = studentT_equalVar_vec(a,b);
+    stats.t = t;
+    stats.p = p;
+    stats.df = df;
+    stats.desc = [gNames{1} ' vs ' gNames{2}];
+
 elseif strcmpi(testType,'Two-sample t-test (Welch)')
     if numel(gNames)<2, error('Need >=2 groups.'); end
     a = metricVals(strcmpi(grpCol,gNames{1}));
     b = metricVals(strcmpi(grpCol,gNames{2}));
     [t,p,df] = welchT_vec(a,b);
-    stats.t=t; stats.p=p; stats.df=df; stats.desc=[gNames{1} ' vs ' gNames{2}];
+    stats.t = t;
+    stats.p = p;
+    stats.df = df;
+    stats.desc = [gNames{1} ' vs ' gNames{2}];
+
 else
     [F,p,df] = oneWayANOVA_metric(metricVals, grpCol);
-    stats.F=F; stats.p=p; stats.df=df; stats.desc='One-way ANOVA';
+    stats.F = F;
+    stats.p = p;
+    stats.df = df;
+    stats.desc = 'ANOVA';
 end
 end
 
 function [t,p,df] = oneSampleT_vec(x)
-x = x(:); x = x(isfinite(x));
+x = x(:);
+x = x(isfinite(x));
 n = numel(x);
-if n < 2, t=NaN; p=NaN; df=max(0,n-1); return; end
-mu = mean(x); sd = std(x,0); se = sd/sqrt(n);
+if n < 2, t = NaN; p = NaN; df = max(0,n-1); return; end
+mu = mean(x);
+sd = std(x,0);
+se = sd/sqrt(n);
 t = mu / max(eps,se);
 df = n-1;
-if exist('tcdf','file')==2, p = 2*tcdf(-abs(t),df); else, p = NaN; end
+p = 2 * tcdf_local(-abs(t), df);
+end
+
+function [t,p,df] = studentT_equalVar_vec(a,b)
+a = a(:); b = b(:);
+a = a(isfinite(a)); b = b(isfinite(b));
+n1 = numel(a); n2 = numel(b);
+if n1<2 || n2<2, t = NaN; p = NaN; df = NaN; return; end
+m1 = mean(a); m2 = mean(b);
+v1 = var(a,0); v2 = var(b,0);
+df = n1 + n2 - 2;
+sp2 = ((n1-1)*v1 + (n2-1)*v2) / max(1,df);
+den = sqrt(sp2 * (1/n1 + 1/n2));
+t = (m1 - m2) / max(eps, den);
+p = 2 * tcdf_local(-abs(t), df);
 end
 
 function [t,p,df] = welchT_vec(a,b)
 a = a(:); b = b(:);
 a = a(isfinite(a)); b = b(isfinite(b));
-n1=numel(a); n2=numel(b);
-if n1<2 || n2<2, t=NaN; p=NaN; df=NaN; return; end
-m1=mean(a); m2=mean(b);
-v1=var(a,0); v2=var(b,0);
+n1 = numel(a); n2 = numel(b);
+if n1<2 || n2<2, t = NaN; p = NaN; df = NaN; return; end
+m1 = mean(a); m2 = mean(b);
+v1 = var(a,0); v2 = var(b,0);
 den = sqrt(v1/n1 + v2/n2);
 t = (m1-m2) / max(eps,den);
-df = (v1/n1 + v2/n2)^2 / ( (v1^2)/(n1^2*max(1,n1-1)) + (v2^2)/(n2^2*max(1,n2-1)) );
+df = (v1/n1 + v2/n2)^2 / ((v1^2)/(n1^2*max(1,n1-1)) + (v2^2)/(n2^2*max(1,n2-1)));
 df = max(1, df);
-if exist('tcdf','file')==2, p = 2*tcdf(-abs(t),df); else, p = NaN; end
+p = 2 * tcdf_local(-abs(t), df);
 end
 
 function [F,p,df] = oneWayANOVA_metric(x, groupLabels)
@@ -2015,9 +2858,10 @@ g = cellfun(@(s) strtrimSafe(s), g, 'UniformOutput',false);
 u = uniqueStable(g);
 k = numel(u);
 n = numel(x);
-if k < 2 || n < 3, F=NaN; p=NaN; df=[k-1 n-k]; return; end
+if k < 2 || n < 3, F = NaN; p = NaN; df = [k-1 n-k]; return; end
 grand = mean(x);
-SSb=0; SSw=0;
+SSb = 0;
+SSw = 0;
 for i=1:k
     xi = x(strcmpi(g,u{i}));
     if isempty(xi), continue; end
@@ -2025,21 +2869,24 @@ for i=1:k
     SSb = SSb + numel(xi)*(mi-grand)^2;
     SSw = SSw + sum((xi-mi).^2);
 end
-df1=k-1; df2=n-k;
+df1 = k-1;
+df2 = n-k;
 MSb = SSb / max(1,df1);
 MSw = SSw / max(1,df2);
 F = MSb / max(eps,MSw);
 df = [df1 df2];
-if exist('fcdf','file')==2, p = 1 - fcdf(F,df1,df2); else, p = NaN; end
+p = 1 - fcdf_local(F, df1, df2);
 end
 
 function [keysOut, info] = detectOutliers(metricVals, subjTable, S)
-keysOut = {}; info = {};
+keysOut = {};
+info = {};
 x = metricVals(:);
 valid = isfinite(x);
 if sum(valid) < 3, return; end
 
 method = strtrimSafe(S.outlierMethod);
+
 if strcmpi(method,'MAD robust z-score')
     thr = S.outMADthr;
     xv = x(valid);
@@ -2048,29 +2895,93 @@ if strcmpi(method,'MAD robust z-score')
     if madv <= 0 || ~isfinite(madv), return; end
     rz = 0.6745 * (x - med) / madv;
     idxOut = find(valid & abs(rz) > thr);
+
+    keysAll = makeRowKeys(subjTable);
+    for ii = idxOut(:)'
+        sid = strtrimSafe(subjTable{ii,2});
+        grp = strtrimSafe(subjTable{ii,3});
+        cd  = strtrimSafe(subjTable{ii,4});
+        info{end+1,1} = sprintf('%s | %s | %s | metric=%.4g | MADz=%.4g > %.4g', ...
+            sid, grp, cd, x(ii), abs(rz(ii)), thr); %#ok<AGROW>
+        keysOut{end+1,1} = keysAll{ii}; %#ok<AGROW>
+    end
+
 elseif strcmpi(method,'IQR rule')
     k = S.outIQRk;
     xv = x(valid);
-    q1 = prctile(xv,25); q3 = prctile(xv,75);
+    q1 = prctile(xv,25);
+    q3 = prctile(xv,75);
     iqrV = q3-q1;
     lo = q1 - k*iqrV;
     hi = q3 + k*iqrV;
     idxOut = find(valid & (x<lo | x>hi));
+
+    keysAll = makeRowKeys(subjTable);
+    for ii = idxOut(:)'
+        sid = strtrimSafe(subjTable{ii,2});
+        grp = strtrimSafe(subjTable{ii,3});
+        cd  = strtrimSafe(subjTable{ii,4});
+        info{end+1,1} = sprintf('%s | %s | %s | metric=%.4g | outside [%.4g, %.4g]', ...
+            sid, grp, cd, x(ii), lo, hi); %#ok<AGROW>
+        keysOut{end+1,1} = keysAll{ii}; %#ok<AGROW>
+    end
 else
     return;
 end
+end
 
-keysAll = makeRowKeys(subjTable);
-for ii = idxOut(:)'
-    sid = strtrimSafe(subjTable{ii,2});
-    grp = strtrimSafe(subjTable{ii,3});
-    cd  = strtrimSafe(subjTable{ii,4});
-    info{end+1,1} = sprintf('%s | %s | %s | %.4g', sid, grp, cd, x(ii)); %#ok<AGROW>
-    keysOut{end+1,1} = keysAll{ii}; %#ok<AGROW>
+function key = makeCacheKey(varargin)
+parts = cellfun(@(x) strtrimSafe(x), varargin, 'UniformOutput', false);
+key = strjoin(parts,'||');
+end
+
+function [entry, cache] = getCachedROIEntry(cache, dataFile, roiFile)
+entry = [];
+key = makeCacheKey('ROI',dataFile,roiFile);
+
+if isstruct(cache) && isfield(cache,'roiTC') && isa(cache.roiTC,'containers.Map')
+    if isKey(cache.roiTC, key)
+        entry = cache.roiTC(key);
+        return;
+    end
+end
+
+[okTxt, tMin, psc] = tryReadSCMroiExportTxt(roiFile);
+if okTxt
+    entry.tc = double(psc(:))';
+    entry.tMin = double(tMin(:))';
+    entry.isPSCInput = true;
+else
+    if isempty(roiFile) || exist(roiFile,'file')~=2
+        error('ROIFile missing or not found: %s', roiFile);
+    end
+    [~,~,ext] = fileparts(roiFile);
+    ext = lower(ext);
+    if strcmp(ext,'.mat')
+        [tcRaw, tMin2] = extractROITC_legacyMat(roiFile);
+        entry.tc = double(tcRaw(:))';
+        entry.tMin = double(tMin2(:))';
+        entry.isPSCInput = false;
+    else
+        if isempty(dataFile) || exist(dataFile,'file')~=2
+            error('DATA .mat required for raw ROI txt: %s', dataFile);
+        end
+        [tcRaw, tMin2] = extractROITC_fromDataAndROI(dataFile, roiFile);
+        entry.tc = double(tcRaw(:))';
+        entry.tMin = double(tMin2(:))';
+        entry.isPSCInput = false;
+    end
+end
+
+if isstruct(cache) && isfield(cache,'roiTC') && isa(cache.roiTC,'containers.Map')
+    try
+        cache.roiTC(key) = entry;
+    catch
+    end
 end
 end
 
-function R = runROITimecourseAnalysis(S, subjActive)
+function [R, cache] = runROITimecourseAnalysis(S, subjActive, cache)
 grpCol = colAsStr(subjActive,3);
 grpCol(cellfun(@isempty,grpCol)) = {'GroupA'};
 gNames = uniqueStable(grpCol);
@@ -2084,58 +2995,44 @@ isPSCInput = false(N,1);
 for i=1:N
     dataFile = strtrimSafe(subjActive{i,6});
     roiFile  = strtrimSafe(subjActive{i,7});
-
-    [okTxt, tMin, psc] = tryReadSCMroiExportTxt(roiFile);
-    if okTxt
-        tcAll{i} = double(psc(:))';
-        tAll{i}  = double(tMin(:))';
-        isPSCInput(i) = true;
-    else
-        if isempty(roiFile) || exist(roiFile,'file')~=2
-            error('Row %d: ROIFile missing or not found.', i);
-        end
-        [~,~,ext] = fileparts(roiFile);
-        ext = lower(ext);
-        if strcmp(ext,'.mat')
-            [tcRaw, tMin2] = extractROITC_legacyMat(roiFile);
-            tcAll{i} = tcRaw(:)'; tAll{i} = tMin2(:)';
-        else
-            if isempty(dataFile) || exist(dataFile,'file')~=2
-                error('Row %d: DATA .mat required (ROI is not SCM PSC-table txt).', i);
-            end
-            [tcRaw, tMin2] = extractROITC_fromDataAndROI(dataFile, roiFile);
-            tcAll{i} = tcRaw(:)'; tAll{i} = tMin2(:)';
-        end
-    end
+    [entry, cache] = getCachedROIEntry(cache, dataFile, roiFile);
+    tcAll{i} = entry.tc;
+    tAll{i}  = entry.tMin;
+    isPSCInput(i) = entry.isPSCInput;
 end
 
 t0 = max(cellfun(@(x) x(1), tAll));
 t1 = min(cellfun(@(x) x(end), tAll));
-dt = median(diff(tAll{1}));
+dtAll = nan(N,1);
+for i=1:N
+    di = diff(tAll{i});
+    di = di(isfinite(di) & di>0);
+    if ~isempty(di), dtAll(i) = median(di); end
+end
+dt = median(dtAll(isfinite(dtAll)));
 if ~isfinite(dt) || dt<=0, dt = 0.1; end
 if t1<=t0, error('Time axes do not overlap across subjects.'); end
 tCommon = t0:dt:t1;
 
 Xraw = nan(N,numel(tCommon));
 for i=1:N
-    Xraw(i,:) = interp1(tAll{i}(:), tcAll{i}(:), tCommon(:), 'linear','extrap').';
+    Xraw(i,:) = interp1(tAll{i}(:), tcAll{i}(:), tCommon(:), 'linear', NaN).';
 end
 
 X = Xraw;
+
 if S.tc_computePSC
     baseIdx = (tCommon>=S.tc_baseMin0) & (tCommon<=S.tc_baseMin1);
     if ~any(baseIdx), error('Baseline window has no samples.'); end
     for i=1:N
         if isPSCInput(i), continue; end
         b = nanmean_local(Xraw(i,baseIdx),2);
-        if ~isfinite(b) || b==0, b=eps; end
+        if ~isfinite(b) || b==0, b = eps; end
         X(i,:) = 100*(Xraw(i,:)-b)./b;
     end
 end
 
 unitsPercent = any(isPSCInput) || S.tc_computePSC;
-X = applyBaselineZero(X, tCommon, S.tc_baseMin0, S.tc_baseMin1, S.tc_baselineZero);
-
 groupColors = assignGroupColorsWithMode(gNames, S);
 
 groupTC = struct([]);
@@ -2189,8 +3086,8 @@ R.mode = 'ROI Timecourse';
 R.tMin = tCommon;
 R.group = groupTC;
 R.groupNames = gNames;
+R.groupDisplayNames = resolveDisplayGroupNames(gNames, S);
 R.groupColors = groupColors;
-R.infusion = [S.tc_injMin0 S.tc_injMin1];
 R.unitsPercent = unitsPercent;
 R.metricName = metricName;
 R.metricVals = metricVals;
@@ -2200,15 +3097,6 @@ R.subjTable = subjActive;
 R.plotTop = S.plotTop;
 R.plotBot = S.plotBot;
 R.showSEM = S.tc_showSEM;
-R.baselineZero = S.tc_baselineZero;
-end
-
-function idx = secToIdx(s0,s1,TR,T)
-i0 = floor(s0/TR) + 1;
-i1 = floor(s1/TR);
-i0 = max(1, min(T, i0));
-i1 = max(1, min(T, i1));
-if i1 < i0, idx = i0; else, idx = i0:i1; end
 end
 
 function M = meanOverFrames(I, idx, dimT)
@@ -2244,9 +3132,11 @@ function md = nanmedian_local(X, dim)
 try
     md = median(X, dim, 'omitnan');
 catch
-    sz = size(X); nd = numel(sz);
+    sz = size(X);
+    nd = numel(sz);
     dim = max(1, min(nd, dim));
-    perm = 1:nd; perm([dim nd]) = [nd dim];
+    perm = 1:nd;
+    perm([dim nd]) = [nd dim];
     Y = permute(X, perm);
     Y = reshape(Y, [], sz(dim));
     Y(~isfinite(Y)) = NaN;
@@ -2267,11 +3157,20 @@ catch
 end
 end
 
+function idx = secToIdx(s0,s1,TR,T)
+i0 = floor(s0/TR) + 1;
+i1 = floor(s1/TR);
+i0 = max(1, min(T, i0));
+i1 = max(1, min(T, i1));
+if i1 < i0, idx = i0; else, idx = i0:i1; end
+end
+
 function M = extractPSCMap(fp, b0, b1, s0, s1)
 D = loadPipelineStruct(fp);
 if ~isfield(D,'TR') || isempty(D.TR), error('Missing TR in %s', fp); end
 if ~isfield(D,'I')  || isempty(D.I),  error('Missing I in %s', fp); end
-I = D.I; TR = double(D.TR);
+I = D.I;
+TR = double(D.TR);
 dimT = ndims(I);
 T = size(I, dimT);
 
@@ -2288,7 +3187,26 @@ M = 100 * (sigMean - baseMean) ./ baseMean;
 M(~isfinite(M)) = 0;
 end
 
-function R = runPSCMapAnalysis(S, subjActive)
+function [mapOut, cache] = getCachedPSCMap(cache, dataFile, b0, b1, s0, s1)
+key = makeCacheKey('PSC',dataFile,num2str(b0),num2str(b1),num2str(s0),num2str(s1));
+if isstruct(cache) && isfield(cache,'pscMap') && isa(cache.pscMap,'containers.Map')
+    if isKey(cache.pscMap,key)
+        mapOut = cache.pscMap(key);
+        return;
+    end
+end
+
+mapOut = extractPSCMap(dataFile, b0, b1, s0, s1);
+
+if isstruct(cache) && isfield(cache,'pscMap') && isa(cache.pscMap,'containers.Map')
+    try
+        cache.pscMap(key) = mapOut;
+    catch
+    end
+end
+end
+
+function [R, cache] = runPSCMapAnalysis(S, subjActive, cache)
 if S.baseEnd <= S.baseStart, error('Baseline end must be > baseline start.'); end
 if S.sigEnd  <= S.sigStart,  error('Signal end must be > signal start.'); end
 
@@ -2303,7 +3221,7 @@ for i=1:size(subjActive,1)
     if isempty(fp) || exist(fp,'file')~=2
         error('Row %d missing DATA .mat for PSC Map mode.', i);
     end
-    maps{i} = extractPSCMap(fp, S.baseStart, S.baseEnd, S.sigStart, S.sigEnd);
+    [maps{i}, cache] = getCachedPSCMap(cache, fp, S.baseStart, S.baseEnd, S.sigStart, S.sigEnd);
 end
 
 groupSummary = struct([]);
@@ -2321,67 +3239,132 @@ end
 R = struct();
 R.mode = 'PSC Map';
 R.group = groupSummary;
+R.groupNames = gNames;
+R.groupDisplayNames = resolveDisplayGroupNames(gNames, S);
+R.stats = struct('p',NaN,'alpha',S.alpha,'type','None');
 end
 
 function exportOnePreview(ax, which, S, style)
-if nargin<4, style='light'; end
 R = S.last;
 cla(ax);
-isDark = strcmpi(style,'dark');
-if isDark
-    set(ax,'Color',S.C.axisBg,'XColor','w','YColor','w');
-else
-    set(ax,'Color','w','XColor','k','YColor','k');
-end
+styleAxesMode(ax, style, S.previewShowGrid);
+recolorAxesText(ax, style);
+[~,fg] = previewColors(style);
 
 if strcmpi(R.mode,'PSC Map')
+    displayNames = getDisplayNamesFromR(R);
     if which==1
-        imagesc(ax, squeeze2D(R.group(1).map)); axis(ax,'image'); axis(ax,'off'); colorbar(ax);
-        title(ax,R.group(1).name,'Color', tern(isDark,'w','k'));
+        imagesc_mode(ax, squeeze2D(R.group(1).map), style);
+        cb = colorbar(ax);
+        styleColorbarMode(cb, style);
+        title(ax, ['PSC Map: ' displayNames{1}], 'Color', fg);
+        moveTitleUp(ax, titleYForStyle(style));
+        recolorAxesText(ax, style);
     else
         if numel(R.group)>=2
-            imagesc(ax, squeeze2D(R.group(2).map)); axis(ax,'image'); axis(ax,'off'); colorbar(ax);
-            title(ax,R.group(2).name,'Color', tern(isDark,'w','k'));
+            imagesc_mode(ax, squeeze2D(R.group(2).map), style);
+            cb = colorbar(ax);
+            styleColorbarMode(cb, style);
+            title(ax, ['PSC Map: ' displayNames{2}], 'Color', fg);
+            moveTitleUp(ax, titleYForStyle(style));
+            recolorAxesText(ax, style);
+        else
+            title(ax, 'No second group map', 'Color', fg);
+            moveTitleUp(ax, titleYForStyle(style));
+            recolorAxesText(ax, style);
         end
     end
     return;
 end
 
 t = R.tMin(:)';
+displayNames = getDisplayNamesFromR(R);
+
 if which==1
     hold(ax,'on');
+    allTop = [];
+    leg = {};
+    lineHs = [];
+
     for g=1:numel(R.group)
         col = R.groupColors.(makeField(R.group(g).name));
         mu  = R.group(g).mean(:)';
         se  = R.group(g).sem(:)';
-        if R.showSEM, shadedLineColored(ax,t,mu,se,col,col);
-        else, plot(ax,t,mu,'LineWidth',2.2,'Color',col);
+
+        if R.showSEM
+            [hLine,~] = shadedLineColored(ax, t, mu, se, col, col, S.exportSemAlpha);
+        else
+            hLine = plot(ax, t, mu, 'LineWidth', 2.4, 'Color', col);
         end
+
+        lineHs = [lineHs hLine]; %#ok<AGROW>
+        leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
+        allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
     end
-    grid(ax,'on');
-    xlabel(ax,'Time (min)','Color',tern(isDark,'w','k'));
-    ylabel(ax, tern(R.unitsPercent,'Signal change (%)','ROI signal'), 'Color',tern(isDark,'w','k'));
-    title(ax,'Mean ROI timecourse','Color',tern(isDark,'w','k'));
+
+    xlabel(ax,'Time (min)','Color',fg);
+    ylabel(ax, tern(R.unitsPercent,'Signal change (%)','ROI signal'), 'Color',fg);
+    title(ax,'Mean ROI timecourse','Color',fg);
+    moveTitleUp(ax, titleYForStyle(style));
+
+    if ~isempty(lineHs)
+        lg = legend(ax, lineHs, leg, 'Location','northwest','Box','off');
+        styleLegendMode(lg, style);
+    end
+
+    applyYLim(ax, allTop, S.plotTop);
+
+    if S.tc_showInjectionBox
+        drawInjectionPatch(ax, S.tc_injMin0, S.tc_injMin1, [0.60 0.60 0.60], 0.25);
+    end
+
+    recolorAxesText(ax, style);
     hold(ax,'off');
+
 else
     gNames = R.groupNames;
     metricVals = R.metricVals(:);
     grpCol = cellfun(@(x) strtrim(char(x)), R.subjTable(:,3), 'UniformOutput',false);
     xTicks = 1:numel(gNames);
+
     hold(ax,'on');
+    allBot = [];
+    rowX = nan(size(metricVals));
+
     for g=1:numel(gNames)
         idx = strcmpi(grpCol,gNames{g});
-        y = metricVals(idx); y = y(isfinite(y));
+        idxRows = find(idx & isfinite(metricVals));
+        y = metricVals(idxRows);
         if isempty(y), continue; end
+
         col = R.groupColors.(makeField(gNames{g}));
-        jitter = (rand(size(y))-0.5)*0.18;
-        scatter(ax,xTicks(g)+jitter,y,60,col,'filled');
+        rowKeys = makeRowKeys(R.subjTable(idxRows,:));
+        jitter = zeros(size(y));
+        for ii=1:numel(rowKeys)
+            jitter(ii) = deterministicJitter(rowKeys{ii}, 0.18);
+        end
+        rowX(idxRows) = xTicks(g)+jitter;
+
+        scatter(ax,rowX(idxRows),y,60,col,'filled');
         plot(ax,[xTicks(g)-0.25 xTicks(g)+0.25],[mean(y) mean(y)],'LineWidth',2.5,'Color',col);
+
+        allBot = [allBot; y(:)]; %#ok<AGROW>
     end
-    set(ax,'XLim',[0.5 numel(gNames)+0.5],'XTick',xTicks,'XTickLabel',gNames);
-    ylabel(ax,'Metric','Color',tern(isDark,'w','k'));
-    title(ax,['Metric: ' R.metricName],'Color',tern(isDark,'w','k'));
-    grid(ax,'on');
+
+    set(ax,'XLim',[0.5 numel(gNames)+0.5],'XTick',xTicks,'XTickLabel',displayNames);
+    ylabel(ax, tern(R.unitsPercent,'Signal change (%)','Metric (a.u.)'), 'Color',fg);
+    title(ax,['Metric: ' R.metricName],'Color',fg);
+    moveTitleUp(ax, titleYForStyle(style));
+
+    applyYLim(ax, allBot, S.plotBot);
+
+    highlightOutliersOnScatter(ax, R, S, rowX, style);
+    recolorAxesText(ax, style);
+
+    if isfield(R,'stats') && isfield(R.stats,'p') && isfinite(R.stats.p)
+        annotateStatsBottom(ax, R, S);
+    end
+
     hold(ax,'off');
 end
 end

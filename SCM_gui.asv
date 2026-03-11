@@ -3,17 +3,15 @@ function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
 % ==========================================================
 % (UNCHANGED UI/behavior from your version)
 %
-% FIXES / FEATURES IN THIS COPY:
+% FIXES/FEATURES IN THIS COPY:
 %   1) ROI export no longer overwrites: continues roi1, roi2, roi3... (next free index)
 %   2) ROI export creates subfolders by dataset type (raw / gabriel / ...):
 %        AnalysedData/<dataset>/ROI/<type>/<datasetTag>/roiN.txt
-%      type is derived from par/fileLabel
-%   3) SCM image export (single static view)
-%   4) SCM *series* export:
-%        - 60 s windows (user editable)
-%        - each window → brain-only PNG tile (alpha + underlay)
-%        - PPT has black background, white text, left colorbar
-%        - each tile is a separate PNG → single copy-pasteable
+%      type is derived from loaded dataset (par.* or fileLabel)
+%   3) SCM-series export:
+%        - PNG tiles + 6-per-slide montage PNGs
+%        - Robust PPT export that just drops each montage PNG on a slide
+%          via writePptFromSlidePNGs (simple, 2017b + 2023b safe)
 % ==========================================================
 
 %% ---------------- SAFETY ----------------
@@ -74,21 +72,25 @@ state.cax = [0 100];
 
 % simplified alpha modulation
 state.alphaModOn = true;
-state.modMin = 50;
-state.modMax = 100;
+state.modMin = 20;
+state.modMax = 30;
 
 % ROI
-roi.size = 12;
+roi.size = 5;
 roi.colors = lines(12);
 roi.isFrozen = false;
 
 ROI_byZ = cell(1,nZ);
 for zz=1:nZ
-    ROI_byZ{zz} = struct('x1',{},'x2',{},'y1',{},'y2',{},'color',{});
+    ROI_byZ{zz} = struct('id',{},'x1',{},'x2',{},'y1',{},'y2',{},'color',{}); %#ok<AGROW>
 end
 roiHandles = gobjects(0);
 roiPlotPSC = gobjects(0);
+roiTextHandles = gobjects(0);   % NEW: labels on the image
 
+roi.nextId = 1;                 % NEW: global ROI counter (per GUI session)
+roi.lastAddStamp = 0;   % seconds since midnight in "now" units
+roi.exportSetId = [];   % ROI set number (ROI1, ROI2, ...) assigned on first export
 % Underlay
 uState.mode       = 3;
 uState.brightness = -0.04;   % -0.8..0.8
@@ -145,7 +147,7 @@ cb.FontSize = 12;
 
 hold(ax,'off');
 
-% Dedicated title above axis (prevents overlap/clipping)
+% Dedicated title above axis
 txtTitle = uicontrol(fig,'Style','text','String',fileLabel, ...
     'Units','pixels','ForegroundColor',[0.95 0.95 0.95], ...
     'BackgroundColor',[0.05 0.05 0.05], ...
@@ -174,6 +176,16 @@ hLivePSC = plot(axTC, tmin, nan(1,nT), ':', 'LineWidth', 3.2);
 hLivePSC.Color = [1.00 0.60 0.10];
 hLivePSC.Visible = 'off';
 
+% ---------------- FAST HOVER SETTINGS ----------------
+state.hoverMaxPts = 700;                         % aim <= ~700 points on hover
+state.hoverStride = max(1, ceil(nT/state.hoverMaxPts));
+state.hoverIdx    = 1:state.hoverStride:nT;
+state.tminHover   = tmin(state.hoverIdx);
+
+roi.lastHoverStamp = 0;
+roi.lastHoverXY    = [-inf -inf];
+state.hoverPSCEnabled = (nT <= 20000);          % keep enabled, but throttled
+state.hoverMinDtSec = 0.06;                     % update PSC max ~16 fps
 % live ROI coordinate label in top-right of timecourse axis
 hRoiCoordTxt = text(axTC, 0.99, 0.98, '', ...
     'Units','normalized', ...
@@ -209,10 +221,9 @@ if nZ > 1
 end
 
 %% ---------------- MASK INIT ----------------
-% AUTO: if no mask was provided, try to derive one from the underlay (BrainOnly underlay has zeros outside)
 if isempty(passedMask)
     passedMask = deriveMaskFromUnderlay(bg, nY, nX, nZ, nT);
-    passedMaskIsInclude = true;  % BrainOnly underlay implies "include" mask
+    passedMaskIsInclude = true;
 end
 
 mask2D = true(nY,nX);
@@ -224,7 +235,7 @@ if ~passedMaskIsInclude && ~isempty(passedMask)
 end
 
 %% ==========================================================
-% RIGHT PANEL (CUSTOM BLACK TABS, NO WHITE BOXES)
+% RIGHT PANEL (CUSTOM BLACK TABS)
 %% ==========================================================
 controlsPanel = uipanel('Parent',fig,'Title','SCM Controls', ...
     'Units','pixels', ...
@@ -249,7 +260,7 @@ pOverlay  = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none',
 pUnderlay = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none', ...
     'BackgroundColor',[0.10 0.10 0.10],'Visible','off');
 
-% Status/info line (always visible)
+% Status/info line
 info1 = uicontrol(controlsPanel,'Style','text','String','', ...
     'Units','pixels', ...
     'ForegroundColor',[0.80 0.90 1.00], ...
@@ -309,20 +320,30 @@ lblROIsz  = mkLbl(pOverlay,'ROI size (px)');
 slROI     = mkSlider(pOverlay,1,220,roi.size,@(~,~)setROIsize());
 txtROIsz  = mkValBox(pOverlay,sprintf('%d',roi.size));
 
+% --- NEW: Add ROI by entering center (x y) ---
+lblRoiXY    = mkLbl(pOverlay,'Add ROI by center (x y)');
+% Edit box: do NOT add ROI on focus-loss. Only Enter key should add.
+ebRoiXY = mkEdit(pOverlay,'',@roiXYNoop);
+set(ebRoiXY,'TooltipString','Type x y (pixels), e.g. 120 80 (or 120,80). Press ENTER to add ROI on current slice.');
+set(ebRoiXY,'KeyPressFcn',@roiXYKey);
+
+% Button: adds ROI
+btnRoiAddXY = mkBtn(pOverlay,'ADD ROI',@addRoiFromXY,[0.30 0.30 0.30],12);
+set(btnRoiAddXY,'TooltipString','Adds ROI at the typed x,y (center) using current ROI size on current slice.');
 lblBase   = mkLblImp(pOverlay,'Baseline window (s)');
-ebBase    = mkEdit(pOverlay,sprintf('%g-%g',baseline.start,baseline.end),@onWindowEdited);
+ebBase = mkEdit(pOverlay,'30-240',@onWindowEdited);
 set(ebBase,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblSig    = mkLblImp(pOverlay,'Signal window (s)');
-ebSig     = mkEdit(pOverlay,sprintf('%g-%g',baseline.end+10,baseline.end+40),@onWindowEdited);
+ebSig  = mkEdit(pOverlay,'840-900',@onWindowEdited);
 set(ebSig,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblAlpha  = mkLbl(pOverlay,'Overlay alpha (%)');
 slAlpha   = mkSlider(pOverlay,0,100,100,@updateView);
 txtAlpha  = mkValBox(pOverlay,'100');
 
-lblThr    = mkLblImp(pOverlay,'Threshold (abs %)');
-ebThr     = mkEdit(pOverlay,'50',@updateView);
+lblThr    = mkLblImp(pOverlay,'Threshold (abs %)'); 
+ebThr    = mkEdit(pOverlay,'0',@updateView);
 set(ebThr,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblCax    = mkLblImp(pOverlay,'Display range (min max)');
@@ -332,12 +353,12 @@ set(ebCax,'ForegroundColor',[1.00 0.35 0.35]);
 lblAlphaMod = mkLblImp(pOverlay,'Alpha modulation');
 cbAlphaMod  = mkChk(pOverlay,'Alpha modulate by |SCM|',double(state.alphaModOn),@alphaModToggled);
 
-lblModMin = mkLblImp(pOverlay,'Mod Min (abs %)');
-ebModMin  = mkEdit(pOverlay,sprintf('%.3g',state.modMin),@updateView);
+lblModMin = mkLblImp(pOverlay,'Mod Min (abs %)'); 
+ebModMin = mkEdit(pOverlay,'20',@updateView);
 set(ebModMin,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblModMax = mkLblImp(pOverlay,'Mod Max (abs %)');
-ebModMax  = mkEdit(pOverlay,sprintf('%.3g',state.modMax),@updateView);
+ebModMax = mkEdit(pOverlay,'30',@updateView);
 set(ebModMax,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblMap    = mkLbl(pOverlay,'Colormap');
@@ -354,7 +375,6 @@ btnMaskClr  = mkBtn(pOverlay,'Clear mask',@clearMaskCB,[0.20 0.20 0.20],12);
 btnRoiExport = mkBtn(pOverlay,'EXPORT ROIs (TXT)',@exportROIsCB,[0.10 0.35 0.95],14);
 btnScmExport = mkBtn(pOverlay,'EXPORT SCM IMAGE',@exportSCMImageCB,[0.25 0.55 0.25],14);
 
-% NEW (purple): batch export + PPT montage
 btnScmSeries = mkBtn(pOverlay,'EXPORT SCM Time SERIES',@exportScmSeries1minCB,[0.55 0.15 0.65],12);
 
 btnUnfreeze  = mkBtn(pOverlay,'Unfreeze Hover',@unfreezeHover,[0.20 0.20 0.20],12);
@@ -389,7 +409,7 @@ slVlv  = mkSlider(pUnderlay,0,MAX_CONLEV,uState.conectLev,@underlaySliderChanged
 set(slVlv,'SliderStep',[1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnderlay,sprintf('%d',uState.conectLev));
 
-%% ---- Bottom right buttons (outside controls panel) ----
+%% ---- Bottom right buttons ----
 btnCompute = uicontrol(fig,'Style','pushbutton','String','Compute SCM', ...
     'Units','pixels','Callback',@computeSCM, ...
     'BackgroundColor',[0.30 0.30 0.30],'ForegroundColor','w', ...
@@ -534,6 +554,11 @@ function layoutOverlay(w, h)
     y = h - 46;
 
     setRowSlider(lblROIsz, slROI, txtROIsz);
+    % --- NEW row: ROI center (x y) + ADD button ---
+set(lblRoiXY,'Position',[xLabel y wLabel rowH]);
+set(ebRoiXY ,'Position',[xCtrl  y wCtrl  rowH]);
+set(btnRoiAddXY,'Position',[xVal y wVal  rowH]);
+y = y - (rowH + gap);
     setRowEdit(lblBase, ebBase);
     setRowEdit(lblSig,  ebSig);
 
@@ -561,7 +586,7 @@ function layoutOverlay(w, h)
     set(btnMaskClr ,'Position',[xCtrl+btnW2+btnGap2 y btnW2 rowH]);
     y = y - (rowH + gap);
 
-    % keep your spacing tweaks
+    % gap before export buttons
     gapFromMask = 10;
     y = y - gapFromMask;
 
@@ -572,7 +597,7 @@ function layoutOverlay(w, h)
     set(btnScmExport,'Position',[xLabel y (w-2*pad) 38]);
     y = y - (38 + gap);
 
-    set(btnScmSeries,'Position',[xLabel y (w-2*pad) 34]);   % smaller
+    set(btnScmSeries,'Position',[xLabel y (w-2*pad) 34]);
     y = y - (34 + gap);
 
     set(btnUnfreeze,'Position',[xLabel y (w-2*pad) rowH]);
@@ -669,10 +694,9 @@ function setROIsize()
     roi.size = max(1, round(get(slROI,'Value')));
     set(txtROIsz,'String',sprintf('%d',roi.size));
 end
-
 function mouseMove(~,~)
     if roi.isFrozen, return; end
-    if ~isPointerOverImageAxis(), return; end   % <-- fixed (~ instead of !)
+    if ~isPointerOverImageAxis(), return; end
 
     cp = get(ax,'CurrentPoint');
     x = round(cp(1,1)); ypix = round(cp(1,2));
@@ -683,6 +707,12 @@ function mouseMove(~,~)
         return;
     end
 
+    % If mouse hasn't moved to a new pixel, do nothing
+    if x==roi.lastHoverXY(1) && ypix==roi.lastHoverXY(2)
+        return;
+    end
+    roi.lastHoverXY = [x ypix];
+
     hlf = floor(roi.size/2);
     x1=max(1,x-hlf); x2=min(nX,x+hlf);
     y1=max(1,ypix-hlf); y2=min(nY,ypix+hlf);
@@ -690,6 +720,105 @@ function mouseMove(~,~)
     col = roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
     set(hLiveRect,'Position',[x1 y1 x2-x1+1 y2-y1+1],'EdgeColor',col,'Visible','on');
 
+    set(hRoiCoordTxt,'String',sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1,x2,y1,y2), ...
+        'Visible','on');
+
+    % Throttle PSC update
+    if ~state.hoverPSCEnabled
+        return;
+    end
+    tNow = now;
+    if roi.lastHoverStamp ~= 0 && (tNow - roi.lastHoverStamp)*86400 < state.hoverMinDtSec
+        return;
+    end
+    roi.lastHoverStamp = tNow;
+
+    % Compute only on downsampled timepoints
+    tc = computeRoiPSC_idx(x1,x2,y1,y2,state.hoverIdx);
+    if ~isempty(tc)
+        set(hLivePSC,'YData',tc,'Visible','on');
+    else
+        set(hLivePSC,'Visible','off');
+    end
+
+    % IMPORTANT: do NOT call drawTimeWindows() here (expensive)
+    drawnow limitrate nocallbacks;
+end
+
+function roiXYNoop(~,~)
+    % Intentionally empty: prevents double-add when edit box loses focus.
+end
+
+function roiXYKey(src, evt)
+    try
+        if isfield(evt,'Key') && (strcmpi(evt.Key,'return') || strcmpi(evt.Key,'enter'))
+            addRoiFromXY();
+        end
+    catch
+    end
+end
+
+function tc = computeRoiPSC_idx(x1,x2,y1,y2, idx)
+    try
+        if ndims(PSC)==3
+            blk = PSC(y1:y2, x1:x2, idx);
+            tc  = squeeze(mean(mean(blk,1),2));
+        else
+            blk = PSC(y1:y2, x1:x2, state.z, idx);
+            tc  = squeeze(mean(mean(blk,1),2));
+        end
+        tc = tc(:)';   % row
+    catch
+        tc = [];
+    end
+end
+
+function addRoiFromXY(~,~)
+    % --- Debounce: prevents accidental double-add (focus loss + click) ---
+    tNow = now;
+    if roi.lastAddStamp ~= 0
+        if (tNow - roi.lastAddStamp) * 86400 < 0.20   % 200 ms
+            return;
+        end
+    end
+    roi.lastAddStamp = tNow;
+
+    % Read "x y" or "x,y"
+    s = strtrim(getStr(ebRoiXY));
+    if isempty(s), return; end
+    s = strrep(s,',',' ');
+    v = sscanf(s,'%f');
+    if numel(v) < 2 || ~isfinite(v(1)) || ~isfinite(v(2))
+        warndlg('Enter ROI center as:  x y   (e.g., 120 80 or 120,80)','Add ROI');
+        return;
+    end
+
+    x = round(v(1));
+    ypix = round(v(2));
+
+    % Clamp to bounds
+    x    = clamp(x,    1, nX);
+    ypix = clamp(ypix, 1, nY);
+
+    % Center -> rectangle (same logic as mouseClick)
+    hlf = floor(roi.size/2);
+    x1 = max(1, x-hlf); x2 = min(nX, x+hlf);
+    y1 = max(1, ypix-hlf); y2 = min(nY, ypix+hlf);
+
+    % Color chosen like existing
+    col = roi.colors(mod(numel(ROI_byZ{state.z}), size(roi.colors,1)) + 1, :);
+
+    % Add ROI with stable ID
+    ROI_byZ{state.z}(end+1) = struct( ...
+        'id', roi.nextId, 'x1', x1, 'x2', x2, 'y1', y1, 'y2', y2, 'color', col);
+    roi.nextId = roi.nextId + 1;
+
+    roi.isFrozen = true;
+
+    redrawROIsForCurrentSlice();
+
+    % Show live rectangle + PSC
+    set(hLiveRect,'Position',[x1 y1 x2-x1+1 y2-y1+1],'EdgeColor',col,'Visible','on');
     tc = computeRoiPSC(x1,x2,y1,y2);
     if numel(tc)==nT
         set(hLivePSC,'YData',tc,'Visible','on');
@@ -703,9 +832,10 @@ function mouseMove(~,~)
     drawTimeWindows();
 end
 
+
 function mouseScroll(~,evt)
     if nZ<=1, return; end
-    if ~isPointerOverImageAxis(), return; end   % <-- fixed (~ instead of !)
+    if ~isPointerOverImageAxis(), return; end
     dz = -sign(evt.VerticalScrollCount);
     if dz==0, return; end
     state.z = max(1,min(nZ,state.z+dz));
@@ -750,7 +880,9 @@ function mouseClick(~,~)
         tc=computeRoiPSC(x1,x2,y1,y2);
         if numel(tc)~=nT, return; end
         col=roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
-        ROI_byZ{state.z}(end+1)=struct('x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col);
+        ROI_byZ{state.z}(end+1)=struct( ...
+    'id',roi.nextId,'x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col);
+roi.nextId = roi.nextId + 1;
         redrawROIsForCurrentSlice();
 
         set(hRoiCoordTxt,'String',sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1,x2,y1,y2), ...
@@ -800,7 +932,7 @@ function computeSCM(~,~)
         map = smooth2D_gauss(map, sig);
     end
 
-    % Hard mask: nothing outside mask can light up (even with smoothing)
+    % Hard mask outside brain
     map(~mask2D) = 0;
     set(hOV,'CData',map);
     updateView();
@@ -835,7 +967,6 @@ function updateView(~,~)
 
     maps = get(popMap,'String');
     idx  = get(popMap,'Value');
-    cmapName = 'hot';
     if iscell(maps), cmapName = maps{idx};
     else,            cmapName = strtrim(maps(idx,:));
     end
@@ -916,12 +1047,21 @@ function updateInfoLines()
 end
 function s = onoff(tf), if tf, s='on'; else, s='off'; end, end %#ok<SEPEX>
 
-%% ===================== ROI EXPORT (FIXED INDEXING + SUBFOLDERS) =====================
+%% ===================== ROI EXPORT =====================
 function exportROIsCB(~,~)
+    % Export all ROIs currently stored in ROI_byZ.
+    % Naming:
+    %   ROI<SET>_d1.txt, ROI<SET>_d2.txt, ...
+    % SET is auto-chosen once per SCM_gui session by scanning existing ROI*.txt.
+    % Within the same SCM_gui session, repeated exports continue d numbering.
+
+    % Count total ROIs in memory
     nTot = 0;
-    for zz=1:nZ, nTot = nTot + numel(ROI_byZ{zz}); end
+    for zz=1:nZ
+        nTot = nTot + numel(ROI_byZ{zz});
+    end
     if nTot == 0
-        warndlg('No ROIs to export. Add ROIs with left-click first.','Export ROIs');
+        warndlg('No ROIs to export. Add ROIs first.','Export ROIs');
         return;
     end
 
@@ -929,56 +1069,94 @@ function exportROIsCB(~,~)
         roiDir = getAutoRoiDir();
         if ~exist(roiDir,'dir'), mkdir(roiDir); end
 
-        % --- FIX: start from next available roi index (no overwrites)
-        roiIdx = getNextRoiIndex(roiDir) - 1;
+        % --- 1) Choose ROI<SET> once per GUI session ---
+        if ~isfield(roi,'exportSetId') || isempty(roi.exportSetId) || ~isfinite(roi.exportSetId)
+            roi.exportSetId = detectNextRoiSetId(roiDir);   % ROI1, ROI2, ...
+        end
+        setId = roi.exportSetId;
 
+        % --- 2) Continue d index for this ROI<SET> if files already exist ---
+        dStart = detectNextDIndexForSet(roiDir, setId);      % next free d#
+
+        % --- 3) Flatten all ROIs (stable order: slice then ROI marker id) ---
+        flat = struct('z',{},'id',{},'x1',{},'x2',{},'y1',{},'y2',{},'color',{});
         for zz=1:nZ
             ROI = ROI_byZ{zz};
             for k=1:numel(ROI)
-                roiIdx = roiIdx + 1;
                 r = ROI(k);
-
-                outFile = fullfile(roiDir, sprintf('roi%d.txt', roiIdx));
-                % ultra-safe: in case file exists, bump until free
-                while exist(outFile,'file')==2
-                    roiIdx = roiIdx + 1;
-                    outFile = fullfile(roiDir, sprintf('roi%d.txt', roiIdx));
-                end
-
-                fid = fopen(outFile,'w');
-                if fid<0, error('Could not write ROI file: %s', outFile); end
-
-                fprintf(fid,'# ROI export from SCM_gui\n');
-                fprintf(fid,'# Date: %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'));
-                fprintf(fid,'# FileLabel: %s\n', fileLabel);
-                fprintf(fid,'# TR_sec: %.6g\n', TR);
-                fprintf(fid,'# nY nX nZ nT: %d %d %d %d\n', nY,nX,nZ,nT);
-                fprintf(fid,'# BaselineWindow: %s\n', getStr(ebBase));
-                fprintf(fid,'# SignalWindow:   %s\n', getStr(ebSig));
-                fprintf(fid,'# ROI_INDEX: %d\n', roiIdx);
-                fprintf(fid,'# SLICE: %d\n', zz);
-
-                fprintf(fid,'# x1 x2 y1 y2\n');
-                fprintf(fid,'%d %d %d %d\n', r.x1, r.x2, r.y1, r.y2);
-
-                fprintf(fid,'# color_rgb\n');
-                fprintf(fid,'%.6f %.6f %.6f\n', r.color(1), r.color(2), r.color(3));
-
-                tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
-                if isempty(tc) || numel(tc) ~= nT
-                    tc = nan(1,nT);
-                end
-
-                fprintf(fid,'# columns: time_sec\ttime_min\tPSC\n');
-                for ii = 1:nT
-                    fprintf(fid,'%.6f\t%.6f\t%.6f\n', tsec(ii), tmin(ii), tc(ii));
-                end
-
-                fclose(fid);
+                flat(end+1) = struct('z',zz,'id',r.id,'x1',r.x1,'x2',r.x2,'y1',r.y1,'y2',r.y2,'color',r.color); %#ok<AGROW>
             end
         end
 
-        msgbox(sprintf('Exported %d ROIs to:\n%s', nTot, roiDir),'Export ROIs');
+        % sort by z then id (so exported order is deterministic)
+        if ~isempty(flat)
+            Zs  = [flat.z]';
+            IDs = [flat.id]';
+            [~,ord] = sortrows([Zs IDs],[1 2]);
+            flat = flat(ord);
+        end
+
+        % --- 4) Write files ROI<SET>_d#.txt ---
+        dIdx = dStart;
+        for i=1:numel(flat)
+            r = flat(i);
+
+            outFile = fullfile(roiDir, sprintf('ROI%d_d%d.txt', setId, dIdx));
+
+            % safety: if somehow exists, bump until free
+            while exist(outFile,'file')==2
+                dIdx = dIdx + 1;
+                outFile = fullfile(roiDir, sprintf('ROI%d_d%d.txt', setId, dIdx));
+            end
+
+            fid = fopen(outFile,'w');
+            if fid<0
+                error('Could not write ROI file: %s', outFile);
+            end
+
+            fprintf(fid,'# ROI export from SCM_gui\n');
+            fprintf(fid,'# Date: %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'));
+            fprintf(fid,'# FileLabel: %s\n', fileLabel);
+            fprintf(fid,'# TR_sec: %.6g\n', TR);
+            fprintf(fid,'# nY nX nZ nT: %d %d %d %d\n', nY,nX,nZ,nT);
+
+            fprintf(fid,'# ROI_SET_ID: %d\n', setId);     % ROI<SET>
+            fprintf(fid,'# ROI_D_INDEX: %d\n', dIdx);     % d#
+            fprintf(fid,'# ROI_MARKER_ID: %d\n', r.id);   % number shown on GUI rectangle
+            fprintf(fid,'# SLICE: %d\n', r.z);
+
+            fprintf(fid,'# BaselineWindow: %s\n', getStr(ebBase));
+            fprintf(fid,'# SignalWindow:   %s\n', getStr(ebSig));
+
+            fprintf(fid,'# x1 x2 y1 y2\n');
+            fprintf(fid,'%d %d %d %d\n', r.x1, r.x2, r.y1, r.y2);
+
+            fprintf(fid,'# color_rgb\n');
+            fprintf(fid,'%.6f %.6f %.6f\n', r.color(1), r.color(2), r.color(3));
+
+            % PSC timecourse for this ROI
+            % (needs correct slice for computeRoiPSC -> temporarily set state.z)
+            zOld = state.z;
+            state.z = r.z;
+            tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
+            state.z = zOld;
+
+            if isempty(tc) || numel(tc) ~= nT
+                tc = nan(1,nT);
+            end
+
+            fprintf(fid,'# columns: time_sec\ttime_min\tPSC\n');
+            for ii=1:nT
+                fprintf(fid,'%.6f\t%.6f\t%.6f\n', tsec(ii), tmin(ii), tc(ii));
+            end
+
+            fclose(fid);
+            dIdx = dIdx + 1;
+        end
+
+        msgbox(sprintf('Exported %d ROI(s) to:\n%s\n(as ROI%d_d#.txt)', numel(flat), roiDir, setId), ...
+            'Export ROIs');
+
     catch ME
         errordlg(ME.message,'ROI export failed');
     end
@@ -1002,7 +1180,6 @@ function nextIdx = getNextRoiIndex(roiDir)
 end
 
 function roiDir = getAutoRoiDir()
-    % Determine AnalysedData root
     base = '';
 
     try
@@ -1037,18 +1214,15 @@ function roiDir = getAutoRoiDir()
         analysedRoot = guessAnalysedRoot(base);
     end
 
-    % --- folder split by dataset type (raw/gabriel/...) ---
-    dsType = deriveDatasetType();      % e.g. 'raw' or 'gabriel'
-    tag0   = deriveDatasetTag();       % sanitized dataset tag
+    dsType = deriveDatasetType();
+    tag0   = deriveDatasetTag();
     tag    = stripLeadingType(tag0, dsType);
 
     roiDir = fullfile(analysedRoot, 'ROI', dsType, tag);
 end
 
-%% ===================== SCM IMAGE EXPORT (STATIC VIEW) =====================
+%% ===================== SCM IMAGE EXPORT =====================
 function exportSCMImageCB(~,~)
-    % Auto-save current SCM view as PNG + TIF + JPG (no uiputfile, no msgbox)
-
     tf = [];
     try
         outDir = getAutoScmDir();
@@ -1060,7 +1234,6 @@ function exportSCMImageCB(~,~)
         outTif = fullfile(outDir, [baseName '.tif']);
         outJpg = fullfile(outDir, [baseName '.jpg']);
 
-        % Build an offscreen export figure (exports only the SCM view, not whole GUI)
         tf = figure('Visible','off', ...
             'Color',[0.05 0.05 0.05], ...
             'InvertHardcopy','off', ...
@@ -1070,17 +1243,14 @@ function exportSCMImageCB(~,~)
         ax2 = axes('Parent',tf,'Units','normalized','Position',[0.06 0.10 0.74 0.84]);
         axis(ax2,'image'); axis(ax2,'off'); set(ax2,'YDir','reverse'); hold(ax2,'on');
 
-        % Underlay (RGB as in GUI)
         bgRGB = get(hBG,'CData');
         image(ax2, bgRGB);
 
-        % Overlay + alpha (current)
         ov  = get(hOV,'CData');
         al  = get(hOV,'AlphaData');
         h2  = imagesc(ax2, ov);
         set(h2,'AlphaData', al);
 
-        % Colormap / caxis
         try
             colormap(ax2, colormap(ax));
         catch
@@ -1088,7 +1258,6 @@ function exportSCMImageCB(~,~)
         end
         caxis(ax2, state.cax);
 
-        % ROIs (current slice)
         ROI = ROI_byZ{state.z};
         for k=1:numel(ROI)
             r = ROI(k);
@@ -1096,7 +1265,6 @@ function exportSCMImageCB(~,~)
                 'EdgeColor',r.color,'LineWidth',2);
         end
 
-        % Title + colorbar
         title(ax2, sprintf('%s | Slice %d/%d', fileLabel, state.z, nZ), ...
             'Color','w','FontWeight','bold','Interpreter','none');
 
@@ -1107,7 +1275,6 @@ function exportSCMImageCB(~,~)
 
         set(tf,'PaperPositionMode','auto');
 
-        % ---- Save all 3 formats automatically ----
         print(tf, outPng, '-dpng',  '-r300', '-opengl');
         print(tf, outTif, '-dtiff', '-r300', '-opengl');
         print(tf, outJpg, '-djpeg', '-r300', '-opengl');
@@ -1116,7 +1283,7 @@ function exportSCMImageCB(~,~)
         tf = [];
 
         try
-            set(info1,'String',sprintf('Saved SCM: %s (png/tif/jpg)', shortenPath(outDir,70)));
+            set(info1,'String',sprintf('Saved SCM: %s (png/tif/jpg)', outDir));
         catch
         end
 
@@ -1163,16 +1330,15 @@ function scmDir = getAutoScmDir()
     scmDir = fullfile(analysedRoot, 'SCM');
 end
 
-%% ===================== EXPORT 1-MIN SCM SERIES (TILES + PPT) =====================
+%% ===================== EXPORT 1-MIN SCM SERIES =====================
 function exportScmSeries1minCB(~,~)
 
-    % --- SPEED/QUALITY KNOBS ---
-    EXPORT_DPI_TILES  = 200;  % per-window tile PNGs
+    EXPORT_DPI_TILES  = 200;
+    EXPORT_DPI_SLIDES = 200;
     SAVE_TIF = true;
     SAVE_JPG = true;
 
     try
-        % Ask injection + optional limit
         a = inputdlg({ ...
             'Injection start (sec). Empty if unknown:', ...
             'Window length (sec) (default 60):', ...
@@ -1187,7 +1353,6 @@ function exportScmSeries1minCB(~,~)
         doPPT  = str2double(strtrim(a{4})); if ~isfinite(doPPT), doPPT = 1; end
         doPPT  = (doPPT ~= 0);
 
-        % Output dirs
         rootScm = getAutoScmDir();
         if ~exist(rootScm,'dir'), mkdir(rootScm); end
         stamp = datestr(now,'yyyymmdd_HHMMSS');
@@ -1198,9 +1363,12 @@ function exportScmSeries1minCB(~,~)
         dirTIF = fullfile(outDir,'tiles_tif'); if ~exist(dirTIF,'dir'), mkdir(dirTIF); end
         dirJPG = fullfile(outDir,'tiles_jpg'); if ~exist(dirJPG,'dir'), mkdir(dirJPG); end
 
+        tmpSLD = tempname;
+        mkdir(tmpSLD);
+
         try
             set(info1,'String',{ ...
-                'Saving SCM tiles to:', ...
+                'Saving to:', ...
                 shortenPath(outDir, 120), ...
                 'Tip: hover here to see full path'});
             set(info1,'TooltipString',outDir);
@@ -1208,7 +1376,6 @@ function exportScmSeries1minCB(~,~)
         catch
         end
 
-        % Baseline indices from GUI baseline window
         [b0,b1] = parseRangeSafe(getStr(ebBase), baseline.start, baseline.end);
         if ~isVolMode
             b0i = clamp(round(b0/TR)+1,1,nT);
@@ -1222,10 +1389,9 @@ function exportScmSeries1minCB(~,~)
         PSCz = getPSCForSlice(state.z);
         baseMap = mean(PSCz(:,:,b0i:b1i),3);
 
-        % Current GUI look
-        bgRGB = get(hBG,'CData');            % EXACT underlay as currently shown
-        cm    = colormap(ax);                % EXACT colormap currently used
-        caxV  = state.cax;                   % EXACT display range
+        bgRGB = get(hBG,'CData');
+        cm    = colormap(ax);
+        caxV  = state.cax;
 
         sigma = str2double(getStr(ebSigma));
         if ~isfinite(sigma), sigma = 0; end
@@ -1239,7 +1405,6 @@ function exportScmSeries1minCB(~,~)
 
         footerInfo = sprintf('Thr=%s | CAX=%s | Base=%s | %s | %s | %s', thrStr, caxStr, baseStr, aStr, modStr, sigStr);
 
-        % Window starts
         totalSec = (nT-1)*TR;
         starts = 0:winLen:(floor(totalSec/winLen)*winLen);
         if isfinite(maxMin)
@@ -1247,7 +1412,6 @@ function exportScmSeries1minCB(~,~)
             starts = starts(starts < maxSec);
         end
 
-        % One offscreen tile figure reused (FAST)
         figT = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
         set(figT,'Units','pixels','Position',[50 50 1200 880]);
         axT = axes('Parent',figT,'Units','normalized','Position',[0 0 1 1]);
@@ -1263,7 +1427,6 @@ function exportScmSeries1minCB(~,~)
         tileLBL = {};
         nSaved = 0;
 
-        % ---- export tiles ----
         for wi = 1:numel(starts)
             s0 = starts(wi);
             s1 = s0 + winLen;
@@ -1281,7 +1444,6 @@ function exportScmSeries1minCB(~,~)
 
             alpha = alphaFromCurrentSettings(map);
 
-            % "minute index" (1-based)
             minIdx = floor(s0/winLen) + 1;
 
             phase = '';
@@ -1340,28 +1502,72 @@ function exportScmSeries1minCB(~,~)
             return;
         end
 
-        % ---- PPT: each tile is a separate PNG on black slide ----
+        % ---- build montage slide PNGs (6 per slide) ----
+        slidePNGs = {};
+        perSlide = 6;
+        nSlides = ceil(numel(tilePNG)/perSlide);
+
+        fullTitle  = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
+        shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
+
+        for si = 1:nSlides
+            i0 = (si-1)*perSlide + 1;
+            i1 = min(si*perSlide, numel(tilePNG));
+            idx = i0:i1;
+
+            outSlide = fullfile(tmpSLD, sprintf('slide_%02d.png', si));
+            if si == 1
+                tStr = fullTitle;
+            else
+                tStr = shortTitle;
+            end
+            renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
+            slidePNGs{end+1} = outSlide; %#ok<AGROW>
+
+            try
+                set(info1,'String',sprintf('Building slide PNGs... %d / %d  |  %s', si, nSlides, shortenPath(outDir, 55)));
+                set(info1,'TooltipString',outDir);
+                drawnow limitrate;
+            catch
+            end
+        end
+
+        % ---- PPT: now use SIMPLE helper on montage PNGs ----
         pptPath = '';
         if doPPT
             hasPpt = (exist('mlreportgen.ppt.Presentation','class') == 8);
             if hasPpt
                 pptPath = fullfile(outDir, sprintf('%s_series_%s.pptx', sanitizeName(fileLabel), stamp));
-
-                title1 = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
-                titleO = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
-
-                writePptGridFromTiles(pptPath, tilePNG, tileLBL, cm, caxV, title1, titleO, footerInfo);
+                try
+                    writePptFromSlidePNGs(pptPath, slidePNGs);
+                catch MEppt
+                    warning('[SCM SERIES] PPT creation failed: %s', MEppt.message);
+                    pptPath = '';
+                end
             else
-                fprintf('[SCM SERIES] PPT not available (mlreportgen.ppt missing). Kept tiles only.\n');
+                fprintf('[SCM SERIES] PPT API not available (mlreportgen.ppt). Kept PNGs only.\n');
             end
         end
 
-        % Final status (NOT cut off)
+        % ---- cleanup temporary slidePNGs and folder ----
+        try
+            for ii = 1:numel(slidePNGs)
+                if exist(slidePNGs{ii},'file')==2
+                    delete(slidePNGs{ii});
+                end
+            end
+            if exist(tmpSLD,'dir')==7
+                rmdir(tmpSLD,'s');
+            end
+        catch
+        end
+
+        % ---- final status ----
         try
             if ~isempty(pptPath)
-                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PPT + PNG tiles)']);
+                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PPT + PNGs)']);
             else
-                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PNG tiles only)']);
+                set(info1,'String',['DONE. Saved: ' shortenPath(outDir, 80) '  (PNGs)']);
             end
             set(info1,'TooltipString',outDir);
         catch
@@ -1375,8 +1581,7 @@ function exportScmSeries1minCB(~,~)
 end
 
 function alpha = alphaFromCurrentSettings(ov)
-    % Same alpha logic as updateView(), but applied to an arbitrary ov map
-    a = get(slAlpha,'Value'); % 0..100
+    a = get(slAlpha,'Value'); 
     thr = str2double(getStr(ebThr)); if ~isfinite(thr), thr = 0; end
 
     mMin = str2double(getStr(ebModMin)); if ~isfinite(mMin), mMin = state.modMin; end
@@ -1407,245 +1612,111 @@ function alpha = alphaFromCurrentSettings(ov)
     end
 end
 
-%% ===================== PPT HELPERS (GRID WITH BRAIN-ONLY PNG TILES) =====================
-function writePptGridFromTiles(pptPath, tilePNG, tileLBL, cm, caxV, titleStr1, titleStrOther, footerStr)
-% Creates PPT with:
-%   - solid black background (single PNG behind everything)
-%   - left colorbar (single PNG)
-%   - 6 brain-only tiles per slide (3x2) -> each tile is a separate PNG
-%   - white text (titles, labels, footer) rendered as PNGs for robustness
-%
-% MATLAB 2017b + 2023b compatible.
+function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, footerStr, dpiVal)
+    figS = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
+    set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]);
+    set(figS,'PaperPositionMode','auto');
 
-    import mlreportgen.ppt.*
+    annotation(figS,'textbox',[0.02 0.885 0.96 0.11], ...
+        'String',titleStr, ...
+        'Color','w','EdgeColor','none', ...
+        'FontName','Arial','FontSize',14,'FontWeight','bold', ...
+        'HorizontalAlignment','center','Interpreter','none');
 
-    % ---- temp folder ----
-    tmpRoot = tempdir;
-    if isempty(tmpRoot) || exist(tmpRoot,'dir')~=7
-        tmpRoot = pwd;
+    annotation(figS,'textbox',[0.42 0.01 0.56 0.06], ...
+        'String',footerStr, 'Color','w', 'EdgeColor','none', ...
+        'FontName','Arial','FontSize',11,'FontWeight','bold', ...
+        'HorizontalAlignment','right','Interpreter','none');
+
+    axCB = axes('Parent',figS,'Position',[0.03 0.14 0.02 0.74],'Visible','off');
+    imagesc(axCB,[0 1;0 1]);
+    colormap(axCB, cm);
+    caxis(axCB, caxV);
+    cbx = colorbar(axCB,'Position',[0.03 0.14 0.02 0.74]);
+    cbx.Color = 'w';
+    cbx.FontName = 'Arial';
+    cbx.FontSize = 10;
+    cbx.Label.String = 'Signal change (%)';
+    cbx.Label.Color = 'w';
+
+    x0 = 0.08; x1 = 0.98;
+    yBot = 0.12; yTop = 0.86;
+    gridH = (yTop - yBot);
+    rowGap = 0.06;
+    colGap = 0.02;
+
+    cellH = (gridH - rowGap) / 2;
+    cellW = (x1 - x0 - 2*colGap) / 3;
+
+    % top row
+    for k=1:3
+        if k>numel(pngList), break; end
+        x = x0 + (k-1)*(cellW+colGap);
+        y = yBot + cellH + rowGap;
+        axI = axes('Parent',figS,'Position',[x y cellW cellH]);
+        imshow(imread(pngList{k}),'Parent',axI);
+        axis(axI,'off');
+
+        annotation(figS,'textbox',[x y+cellH+0.005 cellW 0.035], ...
+            'String',lblList{k},'Color','w','EdgeColor','none', ...
+            'FontName','Arial','FontSize',13,'FontWeight','bold', ...
+            'HorizontalAlignment','center','Interpreter','none');
     end
 
-    tag = [datestr(now,'yyyymmdd_HHMMSS') '_' sprintf('%06d', randi(999999))];
+    % bottom row
+    for k=4:6
+        if k>numel(pngList), break; end
+        c = k-3;
+        x = x0 + (c-1)*(cellW+colGap);
+        y = yBot;
+        axI = axes('Parent',figS,'Position',[x y cellW cellH]);
+        imshow(imread(pngList{k}),'Parent',axI);
+        axis(axI,'off');
 
-    % ---- make colorbar PNG once ----
-    cbPng = fullfile(tmpRoot, ['scm_colorbar_' tag '.png']);
-    makeColorbarPNG(cbPng, cm, caxV);
+        annotation(figS,'textbox',[x y+cellH+0.005 cellW 0.035], ...
+            'String',lblList{k},'Color','w','EdgeColor','none', ...
+            'FontName','Arial','FontSize',13,'FontWeight','bold', ...
+            'HorizontalAlignment','center','Interpreter','none');
+    end
 
-    % ---- solid black background PNG once ----
-    bgPng = fullfile(tmpRoot, ['scm_bg_' tag '.png']);
-    imwrite(uint8(zeros(32,32,3)), bgPng);
+    print(figS, outFile, '-dpng', sprintf('-r%d',dpiVal), '-opengl');
+    close(figS);
+end
+
+function writePptFromSlidePNGs(pptPath, slidePNGs)
+    import mlreportgen.ppt.*
 
     ppt = Presentation(pptPath);
     open(ppt);
 
-    perSlide = 6;
-    n = numel(tilePNG);
-    nSlides = ceil(n/perSlide);
+    for i = 1:numel(slidePNGs)
+        if exist(slidePNGs{i},'file') ~= 2
+            warning('Slide image missing, skipping: %s', slidePNGs{i});
+            continue;
+        end
 
-    % Slide geometry in inches (16:9)
-    slideW = 13.333; %#ok<NASGU>
-    slideH = 7.5;    %#ok<NASGU>
-
-    % Layout
-    cbX = 0.35; cbY = 1.15; cbW = 0.32; cbH = 5.20;
-
-    gridX0 = cbX + cbW + 0.30;
-    gridX1 = 13.05;
-    gridY0 = 1.15;
-    gridY1 = 6.80;
-
-    cols = 3; rows = 2;
-    gapX = 0.20; gapY = 0.35;
-
-    cellW = (gridX1-gridX0 - (cols-1)*gapX)/cols;
-    cellH = (gridY1-gridY0 - (rows-1)*gapY)/rows;
-
-    titleY  = 0.15; titleH = 0.85;
-    footerY = 6.95; footerH = 0.45;
-
-    idx = 1;
-
-    for s = 1:nSlides
-        % ---- add slide ----
         try
             slide = add(ppt,'Blank');
         catch
             slide = add(ppt);
         end
 
-        % ---- BLACK BACKGROUND FIRST ----
-        bgPic = Picture(bgPng);
-        bgPic.X = '0in';  bgPic.Y = '0in';
-        bgPic.Width  = '13.333in';
-        bgPic.Height = '7.5in';
-        add(slide, bgPic);
-
-        % ---- TITLE ----
-        if s == 1
-            titleText = titleStr1;
-        else
-            titleText = titleStrOther;
-        end
-        addPptTextBox(slide, titleText, 0.20, titleY, 12.90, titleH, 14, true, 'center');
-
-        % ---- COLORBAR PNG (left) ----
-        picCB = Picture(cbPng);
-        picCB.X = sprintf('%.2fin', cbX);
-        picCB.Y = sprintf('%.2fin', cbY);
-        picCB.Width  = sprintf('%.2fin', cbW);
-        picCB.Height = sprintf('%.2fin', cbH);
-        add(slide, picCB);
-
-        % ---- FOOTER ----
-        addPptTextBox(slide, footerStr, 0.20, footerY, 12.90, footerH, 11, true, 'right');
-
-        % ---- 6 IMAGES ----
-        for k = 1:perSlide
-            if idx > n, break; end
-
-            r = floor((k-1)/cols);   % 0..1
-            ccol = mod((k-1), cols); % 0..2
-
-            x = gridX0 + ccol*(cellW+gapX);
-            y = gridY0 + r*(cellH+gapY);
-
-            % label above image
-            addPptTextBox(slide, tileLBL{idx}, x, y-0.22, cellW, 0.25, 14, true, 'center');
-
-            % image itself (brain-only PNG)
-            pic = Picture(tilePNG{idx});
-            pic.X = sprintf('%.2fin', x);
-            pic.Y = sprintf('%.2fin', y);
-            pic.Width  = sprintf('%.2fin', cellW);
-            pic.Height = sprintf('%.2fin', cellH);
-            add(slide, pic);
-
-            idx = idx + 1;
-        end
+        pic = Picture(slidePNGs{i});
+        pic.X = '0in';  
+        pic.Y = '0in';
+        pic.Width  = '13.333in';
+        pic.Height = '7.5in';
+        add(slide, pic);
     end
 
     close(ppt);
-
-    % cleanup
-    try, if exist(cbPng,'file')==2, delete(cbPng); end, catch, end
-    try, if exist(bgPng,'file')==2, delete(bgPng); end, catch, end
 end
 
-function addPptTextBox(slide, str, x, y, w, h, fontSize, isBold, hAlign)
-% Render text as PNG (white on black) and insert as one Picture.
-    import mlreportgen.ppt.*
-
-    tmpPng = [tempname '.png'];
-    renderTextPNG(tmpPng, str, w, h, fontSize, isBold, hAlign);
-
-    pic = Picture(tmpPng);
-    pic.X = sprintf('%.2fin', x);
-    pic.Y = sprintf('%.2fin', y);
-    pic.Width  = sprintf('%.2fin', w);
-    pic.Height = sprintf('%.2fin', h);
-    add(slide, pic);
-
-    try, if exist(tmpPng,'file')==2, delete(tmpPng); end, catch, end
-end
-
-function renderTextPNG(outPng, str, wIn, hIn, fontSize, isBold, hAlign)
-% Create a small black PNG with WHITE text. Size is based on PPT box size.
-    DPI = 250;
-    Wpx = max(50, round(wIn * DPI));
-    Hpx = max(30, round(hIn * DPI));
-
-    figT = figure('Visible','off', 'Color',[0 0 0], 'InvertHardcopy','off', ...
-                 'Units','pixels', 'Position',[50 50 Wpx Hpx]);
-    axT = axes('Parent',figT, 'Units','normalized', 'Position',[0 0 1 1], ...
-              'Visible','off');
-    xlim(axT,[0 1]); ylim(axT,[0 1]);
-
-    switch lower(hAlign)
-        case 'left',   x0 = 0.01; ha = 'left';
-        case 'right',  x0 = 0.99; ha = 'right';
-        otherwise,     x0 = 0.50; ha = 'center';
-    end
-
-    fw = 'normal';
-    if isBold, fw = 'bold'; end
-
-    text(axT, x0, 0.50, char(str), ...
-        'Units','normalized', ...
-        'Color',[1 1 1], ...
-        'FontName','Arial', ...
-        'FontSize',fontSize, ...
-        'FontWeight',fw, ...
-        'HorizontalAlignment',ha, ...
-        'VerticalAlignment','middle', ...
-        'Interpreter','none');
-
-    set(figT,'PaperPositionMode','auto');
-    print(figT, outPng, '-dpng', sprintf('-r%d',DPI), '-opengl');
-    close(figT);
-end
-
-function makeColorbarPNG(outFile, cm, caxV)
-% High-res vertical colorbar PNG (white ticks, label).
-    figC = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
-    set(figC,'Units','pixels','Position',[50 50 420 1800]);
-
-    axC = axes('Parent',figC,'Position',[0.05 0.02 0.25 0.96],'Visible','off');
-    imagesc(axC,[0 1;0 1]);
-    colormap(axC, cm);
-    caxis(axC, caxV);
-    axis(axC,'off');
-
-    cb = colorbar(axC,'Position',[0.45 0.05 0.22 0.90]);
-    cb.Color = 'w';
-    cb.FontName = 'Arial';
-    cb.FontSize = 14;
-    cb.TickDirection = 'out';
-    cb.Label.String = 'Signal change (%)';
-    cb.Label.Color  = 'w';
-    cb.Label.FontName = 'Arial';
-    cb.Label.FontSize = 14;
-
-    set(figC,'PaperPositionMode','auto');
-    print(figC, outFile, '-dpng', '-r300', '-opengl');
-    close(figC);
-end
-
-%% ===================== LABEL HELPERS =====================
-function titleStr = makeNiceSlideTitle(lbl)
+function titleStr = makeFullTitle(lbl)
     s = char(lbl);
-
     s = regexprep(s,'\|?\s*File:.*$','');
-    try
-        if contains(s,'/') || contains(s,'\') || contains(s,filesep)
-            [~,s] = fileparts(s);
-        end
-    catch
-    end
-
-    s = regexprep(s,'^Project_','');
-    s = regexprep(s,'RawData_','');
-    s = regexprep(s,'AnalysedData_','');
-
-    animal = '';
-    tok = regexp(s,'(WT\d+[A-Za-z]?(?:_\w+)?_S\d+)','tokens','once');
-    if ~isempty(tok), animal = tok{1}; end
-    if isempty(animal)
-        tok = regexp(s,'(WT\d+[A-Za-z]?)','tokens','once');
-        if ~isempty(tok), animal = tok{1}; end
-    end
-    if isempty(animal), animal = 'SCM Series'; end
-
-    preproc = s;
-    preproc = shortenMiddle(preproc, 90);
-
-    titleStr = sprintf('%s\n%s', animal, preproc);
-end
-
-function out = shortenMiddle(s, maxLen)
-    s = char(s);
-    if numel(s) <= maxLen, out = s; return; end
-    keep = floor((maxLen-3)/2);
-    out = [s(1:keep) '...' s(end-keep+1:end)];
+    s = shortenMiddle(s, 110);
+    titleStr = s;
 end
 
 function s = getAnimalID(lbl)
@@ -1657,10 +1728,11 @@ function s = getAnimalID(lbl)
     s = 'Animal';
 end
 
-function s = makeFullTitle(lbl)
-    s = char(lbl);
-    s = regexprep(s,'\|?\s*File:.*$','');
-    s = shortenMiddle(s, 110);
+function out = shortenMiddle(s, maxLen)
+    s = char(s);
+    if numel(s) <= maxLen, out = s; return; end
+    keep = floor((maxLen-3)/2);
+    out = [s(1:keep) '...' s(end-keep+1:end)];
 end
 
 function s = shortenPath(p, maxLen)
@@ -1670,7 +1742,6 @@ function s = shortenPath(p, maxLen)
     s = [p(1:keep) '...' p(end-keep+1:end)];
 end
 
-%% ===================== PATH / TYPE HELPERS =====================
 function analysedRoot = guessAnalysedRoot(p0)
     p0 = char(p0);
     if exist(p0,'dir') ~= 7
@@ -1700,7 +1771,6 @@ function analysedRoot = guessAnalysedRoot(p0)
 end
 
 function dsType = deriveDatasetType()
-    % prefer explicit studio info if available; else fall back to fileLabel
     s = '';
     try
         if isstruct(par)
@@ -1713,8 +1783,7 @@ function dsType = deriveDatasetType()
         s = '';
     end
     if isempty(s), s = fileLabel; end
-
-    % if path, keep only filename
+    
     try
         ss = char(s);
         ss = regexprep(ss,'\.nii\.gz$','', 'ignorecase');
@@ -2128,8 +2197,9 @@ function tc = computeRoiPSC(x1,x2,y1,y2)
 end
 
 function redrawROIsForCurrentSlice()
-    deleteIfValid(roiHandles); roiHandles = gobjects(0);
-    deleteIfValid(roiPlotPSC); roiPlotPSC = gobjects(0);
+   deleteIfValid(roiHandles);     roiHandles = gobjects(0);
+deleteIfValid(roiPlotPSC);     roiPlotPSC = gobjects(0);
+deleteIfValid(roiTextHandles); roiTextHandles = gobjects(0);  % NEW
 
     ROI = ROI_byZ{state.z};
     if isempty(ROI), return; end
@@ -2138,7 +2208,17 @@ function redrawROIsForCurrentSlice()
         r=ROI(k);
         roiHandles(end+1)=rectangle(ax,'Position',[r.x1 r.y1 r.x2-r.x1+1 r.y2-r.y1+1], ...
             'EdgeColor',r.color,'LineWidth',2); %#ok<AGROW>
-
+% NEW: draw ROI id label near top-left of rectangle
+xLab = r.x1;
+yLab = max(1, r.y1 - 2);
+roiTextHandles(end+1) = text(ax, xLab, yLab, sprintf('%d', r.id), ...
+    'Color', r.color, ...
+    'FontWeight','bold', ...
+    'FontSize', 12, ...
+    'Interpreter','none', ...
+    'VerticalAlignment','bottom', ...
+    'BackgroundColor',[0 0 0], ...
+    'Margin', 1); %#ok<AGROW>
         tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
         if numel(tc)==nT
             roiPlotPSC(end+1)=plot(axTC,tmin,tc,':','Color',r.color,'LineWidth',2.4); %#ok<AGROW>
@@ -2211,6 +2291,7 @@ function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
     try
         if ndims(bgIn) == 2
             V = reshape(double(bgIn), [ny nx 1]);
+
         elseif ndims(bgIn) == 3
             if nz > 1 && size(bgIn,3) == nz
                 V = double(bgIn);
@@ -2219,8 +2300,10 @@ function M = deriveMaskFromUnderlay(bgIn, ny, nx, nz, nt)
             else
                 V = reshape(double(bgIn(:,:,1)), [ny nx 1]);
             end
+
         elseif ndims(bgIn) == 4
             V = mean(double(bgIn), 4);
+
         else
             return;
         end
@@ -2378,6 +2461,48 @@ function U = clip01_percentile(A,pLow,pHigh)
     U=min(max(U,0),1);
 end
 
+
+function nextSetId = detectNextRoiSetId(roiDir)
+    % Looks for existing files ROI<SET>_d<k>.txt and returns max(SET)+1
+    nextSetId = 1;
+    if exist(roiDir,'dir')~=7, return; end
+
+    d = dir(fullfile(roiDir,'*.txt'));
+    if isempty(d), return; end
+
+    maxSet = 0;
+    for i=1:numel(d)
+        name = d(i).name;
+        tok = regexp(name,'(?i)^ROI(\d+)_d(\d+)\.txt$','tokens','once');
+        if isempty(tok), continue; end
+        sId = str2double(tok{1});
+        if isfinite(sId)
+            maxSet = max(maxSet, sId);
+        end
+    end
+    nextSetId = maxSet + 1;
+end
+
+function nextD = detectNextDIndexForSet(roiDir, setId)
+    % For a given ROI<SET>, finds max d# already present and returns max+1
+    nextD = 1;
+    if exist(roiDir,'dir')~=7, return; end
+
+    d = dir(fullfile(roiDir,'*.txt'));
+    if isempty(d), return; end
+
+    maxD = 0;
+    for i=1:numel(d)
+        name = d(i).name;
+        tok = regexp(name, sprintf('(?i)^ROI%d_d(\\d+)\\.txt$', setId), 'tokens','once');
+        if isempty(tok), continue; end
+        di = str2double(tok{1});
+        if isfinite(di)
+            maxD = max(maxD, di);
+        end
+    end
+    nextD = maxD + 1;
+end
 function q = prctile_fallback(v,p)
     try
         q = prctile(v,p); return;
