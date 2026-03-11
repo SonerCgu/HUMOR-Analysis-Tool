@@ -27,7 +27,15 @@ else
 end
 tsec = (0:nT-1)*TR;
 tmin = tsec/60;
+% ---------------- FAST HOVER (shows PSC but stays responsive) ----------------
+state.hoverMaxPts   = 1200;                           % hover preview length
+state.hoverStride   = max(1, ceil(nT/state.hoverMaxPts));
+state.hoverIdx      = 1:state.hoverStride:nT;
+state.tminHover     = tmin(state.hoverIdx);
 
+roi.lastHoverStamp  = 0;
+roi.lastHoverXY     = [-inf -inf];
+state.hoverMinDtSec = 0.06;                           % ~16 fps max
 % Backward-compat shim for old arg order
 if ~(isnumeric(nVolsOrig) && isscalar(nVolsOrig) && isfinite(nVolsOrig))
     varargin  = [{nVolsOrig} varargin];
@@ -72,21 +80,25 @@ state.cax = [0 100];
 
 % simplified alpha modulation
 state.alphaModOn = true;
-state.modMin = 50;
-state.modMax = 100;
+state.modMin = 20;
+state.modMax = 30;
 
 % ROI
-roi.size = 12;
+roi.size = 5;
 roi.colors = lines(12);
 roi.isFrozen = false;
 
 ROI_byZ = cell(1,nZ);
 for zz=1:nZ
-    ROI_byZ{zz} = struct('x1',{},'x2',{},'y1',{},'y2',{},'color',{}); %#ok<AGROW>
+    ROI_byZ{zz} = struct('id',{},'x1',{},'x2',{},'y1',{},'y2',{},'color',{}); %#ok<AGROW>
 end
 roiHandles = gobjects(0);
 roiPlotPSC = gobjects(0);
+roiTextHandles = gobjects(0);   % NEW: labels on the image
 
+roi.nextId = 1;                 % NEW: global ROI counter (per GUI session)
+roi.lastAddStamp = 0;   % seconds since midnight in "now" units
+roi.exportSetId = [];   % ROI set number (ROI1, ROI2, ...) assigned on first export
 % Underlay
 uState.mode       = 3;
 uState.brightness = -0.04;   % -0.8..0.8
@@ -114,7 +126,7 @@ set(fig,'DefaultUicontrolFontName','Arial');
 set(fig,'DefaultUicontrolFontSize',14);
 
 annotation(fig,'textbox',[0.62 0.004 0.37 0.03], ...
-    'String','SCM GUI · Soner Caner Cagun · MPI Biological Cybernetics', ...
+    'String','SCM GUI - Soner Caner Cagun - MPI Biological Cybernetics', ...
     'Color',[0.70 0.70 0.70], 'FontSize',10, ...
     'HorizontalAlignment','right','EdgeColor','none','Interpreter','none');
 
@@ -168,9 +180,11 @@ hBaseTxt = text(axTC,0,0,'','Color',[1.00 0.35 0.35], ...
 hSigTxt  = text(axTC,0,0,'','Color',[1.00 0.75 0.35], ...
     'FontSize',11,'FontWeight','bold','Visible','off');
 
-hLivePSC = plot(axTC, tmin, nan(1,nT), ':', 'LineWidth', 3.2);
+% Live hover PSC (downsampled)
+hLivePSC = plot(axTC, state.tminHover, nan(1,numel(state.tminHover)), ':', 'LineWidth', 3.2);
 hLivePSC.Color = [1.00 0.60 0.10];
 hLivePSC.Visible = 'off';
+
 
 % live ROI coordinate label in top-right of timecourse axis
 hRoiCoordTxt = text(axTC, 0.99, 0.98, '', ...
@@ -304,14 +318,25 @@ mkBtn = @(pp,lbl,cbk,bgcol,fs) uicontrol(pp,'Style','pushbutton','String',lbl, .
 % ---------------- Overlay panel controls ----------------
 lblROIsz  = mkLbl(pOverlay,'ROI size (px)');
 slROI     = mkSlider(pOverlay,1,220,roi.size,@(~,~)setROIsize());
-txtROIsz  = mkValBox(pOverlay,sprintf('%d',roi.size));
+txtROIsz = mkEdit(pOverlay, sprintf('%d',roi.size), @onRoiSizeEdited);
+set(txtROIsz,'TooltipString','Type ROI size in pixels, press Enter.');
 
+% --- NEW: Add ROI by entering center (x y) ---
+lblRoiXY    = mkLbl(pOverlay,'Add ROI by center (x y)');
+% Edit box: do NOT add ROI on focus-loss. Only Enter key should add.
+ebRoiXY = mkEdit(pOverlay,'',@roiXYNoop);
+set(ebRoiXY,'TooltipString','Type x y (pixels), e.g. 120 80 (or 120,80). Press ENTER to add ROI on current slice.');
+set(ebRoiXY,'KeyPressFcn',@roiXYKey);
+
+% Button: adds ROI
+btnRoiAddXY = mkBtn(pOverlay,'ADD ROI',@addRoiFromXY,[0.30 0.30 0.30],12);
+set(btnRoiAddXY,'TooltipString','Adds ROI at the typed x,y (center) using current ROI size on current slice.');
 lblBase   = mkLblImp(pOverlay,'Baseline window (s)');
-ebBase    = mkEdit(pOverlay,sprintf('%g-%g',baseline.start,baseline.end),@onWindowEdited);
+ebBase = mkEdit(pOverlay,'30-240',@onWindowEdited);
 set(ebBase,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblSig    = mkLblImp(pOverlay,'Signal window (s)');
-ebSig     = mkEdit(pOverlay,sprintf('%g-%g',baseline.end+10,baseline.end+40),@onWindowEdited);
+ebSig  = mkEdit(pOverlay,'840-900',@onWindowEdited);
 set(ebSig,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblAlpha  = mkLbl(pOverlay,'Overlay alpha (%)');
@@ -319,7 +344,7 @@ slAlpha   = mkSlider(pOverlay,0,100,100,@updateView);
 txtAlpha  = mkValBox(pOverlay,'100');
 
 lblThr    = mkLblImp(pOverlay,'Threshold (abs %)'); 
-ebThr     = mkEdit(pOverlay,'50',@updateView);
+ebThr    = mkEdit(pOverlay,'0',@updateView);
 set(ebThr,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblCax    = mkLblImp(pOverlay,'Display range (min max)');
@@ -330,18 +355,18 @@ lblAlphaMod = mkLblImp(pOverlay,'Alpha modulation');
 cbAlphaMod  = mkChk(pOverlay,'Alpha modulate by |SCM|',double(state.alphaModOn),@alphaModToggled);
 
 lblModMin = mkLblImp(pOverlay,'Mod Min (abs %)'); 
-ebModMin  = mkEdit(pOverlay,sprintf('%.3g',state.modMin),@updateView);
+ebModMin = mkEdit(pOverlay,'20',@updateView);
 set(ebModMin,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblModMax = mkLblImp(pOverlay,'Mod Max (abs %)');
-ebModMax  = mkEdit(pOverlay,sprintf('%.3g',state.modMax),@updateView);
+ebModMax = mkEdit(pOverlay,'30',@updateView);
 set(ebModMax,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblMap    = mkLbl(pOverlay,'Colormap');
 popMap    = mkPopup(pOverlay,cmapNames,1,@updateView);
 
 lblSigma  = mkLblImp(pOverlay,'SCM smoothing sigma');
-ebSigma   = mkEdit(pOverlay,'0',@computeSCM);
+ebSigma  = mkEdit(pOverlay,'1',@computeSCM);
 set(ebSigma,'ForegroundColor',[1.00 0.35 0.35]);
 
 lblMask   = mkLbl(pOverlay,'Mask');
@@ -419,10 +444,9 @@ alphaModToggled();
 updateUnderlayControlsEnable();
 updateInfoLines();
 layoutUI();
-computeSCM();
-drawTimeWindows();
-redrawROIsForCurrentSlice();
-updateView();
+
+computeSCM();                 % already updates view + windows
+redrawROIsForCurrentSlice();  % just draws any stored ROIs
 
 %% ==========================================================
 % UI / TAB SWITCHING
@@ -530,6 +554,11 @@ function layoutOverlay(w, h)
     y = h - 46;
 
     setRowSlider(lblROIsz, slROI, txtROIsz);
+    % --- NEW row: ROI center (x y) + ADD button ---
+set(lblRoiXY,'Position',[xLabel y wLabel rowH]);
+set(ebRoiXY ,'Position',[xCtrl  y wCtrl  rowH]);
+set(btnRoiAddXY,'Position',[xVal y wVal  rowH]);
+y = y - (rowH + gap);
     setRowEdit(lblBase, ebBase);
     setRowEdit(lblSig,  ebSig);
 
@@ -618,10 +647,9 @@ end
 %% ==========================================================
 % CALLBACKS
 %% ==========================================================
-function onWindowEdited(~,~)
-    drawTimeWindows();
+    function onWindowEdited(~,~)
     computeSCM();
-end
+    end
 
 function sliceChanged(~,~)
     zNew = round(get(slZ,'Value'));
@@ -661,8 +689,18 @@ function unfreezeHover(~,~)
     set(hRoiCoordTxt,'Visible','off','String','');
 end
 
-function setROIsize()
+    function setROIsize()
     roi.size = max(1, round(get(slROI,'Value')));
+    set(txtROIsz,'String',sprintf('%d',roi.size));
+    end
+
+function onRoiSizeEdited(~,~)
+    v = str2double(strtrim(getStr(txtROIsz)));
+    if ~isfinite(v), v = roi.size; end
+    v = round(v);
+    v = max(1, min(220, v));     % same slider max
+    roi.size = v;
+    set(slROI,'Value',roi.size);
     set(txtROIsz,'String',sprintf('%d',roi.size));
 end
 
@@ -679,6 +717,12 @@ function mouseMove(~,~)
         return;
     end
 
+    % If pixel hasn't changed, skip
+    if x==roi.lastHoverXY(1) && ypix==roi.lastHoverXY(2)
+        return;
+    end
+    roi.lastHoverXY = [x ypix];
+
     hlf = floor(roi.size/2);
     x1=max(1,x-hlf); x2=min(nX,x+hlf);
     y1=max(1,ypix-hlf); y2=min(nY,ypix+hlf);
@@ -686,18 +730,147 @@ function mouseMove(~,~)
     col = roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
     set(hLiveRect,'Position',[x1 y1 x2-x1+1 y2-y1+1],'EdgeColor',col,'Visible','on');
 
-    tc = computeRoiPSC(x1,x2,y1,y2);
-    if numel(tc)==nT
-        set(hLivePSC,'YData',tc,'Visible','on');
-    else
-        set(hLivePSC,'Visible','off');
+    set(hRoiCoordTxt,'String',sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1,x2,y1,y2), ...
+        'Visible','on');
+
+    % Throttle PSC update
+    tNow = now;
+    if roi.lastHoverStamp ~= 0 && (tNow - roi.lastHoverStamp)*86400 < state.hoverMinDtSec
+        return;
     end
+    roi.lastHoverStamp = tNow;
+
+    tc = computeRoiPSC_idx(x1,x2,y1,y2, state.hoverIdx);
+if isempty(tc) || numel(tc) ~= numel(state.tminHover)
+    set(hLivePSC,'Visible','off');
+    return;
+end
+
+set(hLivePSC,'XData', state.tminHover, 'YData', tc, 'Visible','on');
+
+    % Light autoscale (optional)
+    mn = min(tc); mx = max(tc);
+    if isfinite(mn) && isfinite(mx) && mx>mn
+        padY = 0.15*(mx-mn);
+        set(axTC,'YLim',[mn-padY mx+padY]);
+    end
+
+    drawnow limitrate nocallbacks;
+end
+
+function roiXYNoop(~,~)
+    % Intentionally empty: prevents double-add when edit box loses focus.
+end
+
+function roiXYKey(src, evt)
+    try
+        if isfield(evt,'Key') && (strcmpi(evt.Key,'return') || strcmpi(evt.Key,'enter'))
+            addRoiFromXY();
+        end
+    catch
+    end
+end
+
+    function tc = computeRoiPSC(x1,x2,y1,y2)
+    % FULL length timecourse (nT) for current slice state.z
+    try
+        if ndims(PSC)==3
+            blk = PSC(y1:y2, x1:x2, :);
+            tc  = squeeze(mean(mean(blk,1),2));
+        else
+            blk = PSC(y1:y2, x1:x2, state.z, :);
+            tc  = squeeze(mean(mean(blk,1),2));
+        end
+        tc = tc(:)'; % row
+    catch
+        tc = [];
+    end
+
+    % Auto-scale (safe)
+    if ~isempty(tc) && all(isfinite(tc))
+        mn = min(tc); mx = max(tc);
+        if isfinite(mn) && isfinite(mx) && mx>mn
+            padY = 0.15*(mx-mn);
+            set(axTC,'YLim',[mn-padY mx+padY]);
+        end
+    end
+end
+
+function tc = computeRoiPSC_idx(x1,x2,y1,y2, idx)
+    % DOWNSAMPLED timecourse for hover (length = numel(idx))
+    try
+        if ndims(PSC)==3
+            blk = PSC(y1:y2, x1:x2, idx);
+            tc  = squeeze(mean(mean(blk,1),2));
+        else
+            blk = PSC(y1:y2, x1:x2, state.z, idx);
+            tc  = squeeze(mean(mean(blk,1),2));
+        end
+        tc = tc(:)'; % row
+    catch
+        tc = [];
+    end
+end
+
+function addRoiFromXY(~,~)
+    % --- Debounce: prevents accidental double-add (focus loss + click) ---
+    tNow = now;
+    if roi.lastAddStamp ~= 0
+        if (tNow - roi.lastAddStamp) * 86400 < 0.20   % 200 ms
+            return;
+        end
+    end
+    roi.lastAddStamp = tNow;
+
+    % Read "x y" or "x,y"
+    s = strtrim(getStr(ebRoiXY));
+    if isempty(s), return; end
+    s = strrep(s,',',' ');
+    v = sscanf(s,'%f');
+    if numel(v) < 2 || ~isfinite(v(1)) || ~isfinite(v(2))
+        warndlg('Enter ROI center as:  x y   (e.g., 120 80 or 120,80)','Add ROI');
+        return;
+    end
+
+    x = round(v(1));
+    ypix = round(v(2));
+
+    % Clamp to bounds
+    x    = clamp(x,    1, nX);
+    ypix = clamp(ypix, 1, nY);
+
+    % Center -> rectangle (same logic as mouseClick)
+    hlf = floor(roi.size/2);
+    x1 = max(1, x-hlf); x2 = min(nX, x+hlf);
+    y1 = max(1, ypix-hlf); y2 = min(nY, ypix+hlf);
+
+    % Color chosen like existing
+    col = roi.colors(mod(numel(ROI_byZ{state.z}), size(roi.colors,1)) + 1, :);
+
+    % Add ROI with stable ID
+    ROI_byZ{state.z}(end+1) = struct( ...
+        'id', roi.nextId, 'x1', x1, 'x2', x2, 'y1', y1, 'y2', y2, 'color', col);
+    roi.nextId = roi.nextId + 1;
+
+    roi.isFrozen = true;
+
+    redrawROIsForCurrentSlice();
+
+    % Show live rectangle + PSC
+    set(hLiveRect,'Position',[x1 y1 x2-x1+1 y2-y1+1],'EdgeColor',col,'Visible','on');
+   tcHover = computeRoiPSC_idx(x1,x2,y1,y2, state.hoverIdx);
+if ~isempty(tcHover) && numel(tcHover)==numel(state.tminHover)
+    set(hLivePSC,'XData', state.tminHover, 'YData', tcHover, 'Visible','on');
+else
+    set(hLivePSC,'Visible','off');
+end
 
     set(hRoiCoordTxt,'String',sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1,x2,y1,y2), ...
         'Visible','on');
 
     drawTimeWindows();
 end
+
 
 function mouseScroll(~,evt)
     if nZ<=1, return; end
@@ -746,8 +919,15 @@ function mouseClick(~,~)
         tc=computeRoiPSC(x1,x2,y1,y2);
         if numel(tc)~=nT, return; end
         col=roi.colors(mod(numel(ROI_byZ{state.z}),size(roi.colors,1))+1,:);
-        ROI_byZ{state.z}(end+1)=struct('x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col); %#ok<AGROW>
+        ROI_byZ{state.z}(end+1)=struct( ...
+    'id',roi.nextId,'x1',x1,'x2',x2,'y1',y1,'y2',y2,'color',col);
+roi.nextId = roi.nextId + 1;
         redrawROIsForCurrentSlice();
+        % Also show hover-like live trace for the clicked ROI
+tcHover = computeRoiPSC_idx(x1,x2,y1,y2, state.hoverIdx);
+if ~isempty(tcHover) && numel(tcHover)==numel(state.tminHover)
+    set(hLivePSC,'XData', state.tminHover, 'YData', tcHover, 'Visible','on');
+end
 
         set(hRoiCoordTxt,'String',sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1,x2,y1,y2), ...
             'Visible','on');
@@ -913,10 +1093,19 @@ function s = onoff(tf), if tf, s='on'; else, s='off'; end, end %#ok<SEPEX>
 
 %% ===================== ROI EXPORT =====================
 function exportROIsCB(~,~)
+    % Export all ROIs currently stored in ROI_byZ.
+    % Naming:
+    %   ROI<SET>_d1.txt, ROI<SET>_d2.txt, ...
+    % SET is auto-chosen once per SCM_gui session by scanning existing ROI*.txt.
+    % Within the same SCM_gui session, repeated exports continue d numbering.
+
+    % Count total ROIs in memory
     nTot = 0;
-    for zz=1:nZ, nTot = nTot + numel(ROI_byZ{zz}); end
+    for zz=1:nZ
+        nTot = nTot + numel(ROI_byZ{zz});
+    end
     if nTot == 0
-        warndlg('No ROIs to export. Add ROIs with left-click first.','Export ROIs');
+        warndlg('No ROIs to export. Add ROIs first.','Export ROIs');
         return;
     end
 
@@ -924,54 +1113,94 @@ function exportROIsCB(~,~)
         roiDir = getAutoRoiDir();
         if ~exist(roiDir,'dir'), mkdir(roiDir); end
 
-        roiIdx = getNextRoiIndex(roiDir) - 1;
+        % --- 1) Choose ROI<SET> once per GUI session ---
+        if ~isfield(roi,'exportSetId') || isempty(roi.exportSetId) || ~isfinite(roi.exportSetId)
+            roi.exportSetId = detectNextRoiSetId(roiDir);   % ROI1, ROI2, ...
+        end
+        setId = roi.exportSetId;
 
+        % --- 2) Continue d index for this ROI<SET> if files already exist ---
+        dStart = detectNextDIndexForSet(roiDir, setId);      % next free d#
+
+        % --- 3) Flatten all ROIs (stable order: slice then ROI marker id) ---
+        flat = struct('z',{},'id',{},'x1',{},'x2',{},'y1',{},'y2',{},'color',{});
         for zz=1:nZ
             ROI = ROI_byZ{zz};
             for k=1:numel(ROI)
-                roiIdx = roiIdx + 1;
                 r = ROI(k);
-
-                outFile = fullfile(roiDir, sprintf('roi%d.txt', roiIdx));
-                while exist(outFile,'file')==2
-                    roiIdx = roiIdx + 1;
-                    outFile = fullfile(roiDir, sprintf('roi%d.txt', roiIdx));
-                end
-
-                fid = fopen(outFile,'w');
-                if fid<0, error('Could not write ROI file: %s', outFile); end
-
-                fprintf(fid,'# ROI export from SCM_gui\n');
-                fprintf(fid,'# Date: %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'));
-                fprintf(fid,'# FileLabel: %s\n', fileLabel);
-                fprintf(fid,'# TR_sec: %.6g\n', TR);
-                fprintf(fid,'# nY nX nZ nT: %d %d %d %d\n', nY,nX,nZ,nT);
-                fprintf(fid,'# BaselineWindow: %s\n', getStr(ebBase));
-                fprintf(fid,'# SignalWindow:   %s\n', getStr(ebSig));
-                fprintf(fid,'# ROI_INDEX: %d\n', roiIdx);
-                fprintf(fid,'# SLICE: %d\n', zz);
-
-                fprintf(fid,'# x1 x2 y1 y2\n');
-                fprintf(fid,'%d %d %d %d\n', r.x1, r.x2, r.y1, r.y2);
-
-                fprintf(fid,'# color_rgb\n');
-                fprintf(fid,'%.6f %.6f %.6f\n', r.color(1), r.color(2), r.color(3));
-
-                tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
-                if isempty(tc) || numel(tc) ~= nT
-                    tc = nan(1,nT);
-                end
-
-                fprintf(fid,'# columns: time_sec\ttime_min\tPSC\n');
-                for ii = 1:nT
-                    fprintf(fid,'%.6f\t%.6f\t%.6f\n', tsec(ii), tmin(ii), tc(ii));
-                end
-
-                fclose(fid);
+                flat(end+1) = struct('z',zz,'id',r.id,'x1',r.x1,'x2',r.x2,'y1',r.y1,'y2',r.y2,'color',r.color); %#ok<AGROW>
             end
         end
 
-        msgbox(sprintf('Exported %d ROIs to:\n%s', nTot, roiDir),'Export ROIs');
+        % sort by z then id (so exported order is deterministic)
+        if ~isempty(flat)
+            Zs  = [flat.z]';
+            IDs = [flat.id]';
+            [~,ord] = sortrows([Zs IDs],[1 2]);
+            flat = flat(ord);
+        end
+
+        % --- 4) Write files ROI<SET>_d#.txt ---
+        dIdx = dStart;
+        for i=1:numel(flat)
+            r = flat(i);
+
+            outFile = fullfile(roiDir, sprintf('ROI%d_d%d.txt', setId, dIdx));
+
+            % safety: if somehow exists, bump until free
+            while exist(outFile,'file')==2
+                dIdx = dIdx + 1;
+                outFile = fullfile(roiDir, sprintf('ROI%d_d%d.txt', setId, dIdx));
+            end
+
+            fid = fopen(outFile,'w');
+            if fid<0
+                error('Could not write ROI file: %s', outFile);
+            end
+
+            fprintf(fid,'# ROI export from SCM_gui\n');
+            fprintf(fid,'# Date: %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'));
+            fprintf(fid,'# FileLabel: %s\n', fileLabel);
+            fprintf(fid,'# TR_sec: %.6g\n', TR);
+            fprintf(fid,'# nY nX nZ nT: %d %d %d %d\n', nY,nX,nZ,nT);
+
+            fprintf(fid,'# ROI_SET_ID: %d\n', setId);     % ROI<SET>
+            fprintf(fid,'# ROI_D_INDEX: %d\n', dIdx);     % d#
+            fprintf(fid,'# ROI_MARKER_ID: %d\n', r.id);   % number shown on GUI rectangle
+            fprintf(fid,'# SLICE: %d\n', r.z);
+
+            fprintf(fid,'# BaselineWindow: %s\n', getStr(ebBase));
+            fprintf(fid,'# SignalWindow:   %s\n', getStr(ebSig));
+
+            fprintf(fid,'# x1 x2 y1 y2\n');
+            fprintf(fid,'%d %d %d %d\n', r.x1, r.x2, r.y1, r.y2);
+
+            fprintf(fid,'# color_rgb\n');
+            fprintf(fid,'%.6f %.6f %.6f\n', r.color(1), r.color(2), r.color(3));
+
+            % PSC timecourse for this ROI
+            % (needs correct slice for computeRoiPSC -> temporarily set state.z)
+            zOld = state.z;
+            state.z = r.z;
+            tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
+            state.z = zOld;
+
+            if isempty(tc) || numel(tc) ~= nT
+                tc = nan(1,nT);
+            end
+
+            fprintf(fid,'# columns: time_sec\ttime_min\tPSC\n');
+            for ii=1:nT
+                fprintf(fid,'%.6f\t%.6f\t%.6f\n', tsec(ii), tmin(ii), tc(ii));
+            end
+
+            fclose(fid);
+            dIdx = dIdx + 1;
+        end
+
+        msgbox(sprintf('Exported %d ROI(s) to:\n%s\n(as ROI%d_d#.txt)', numel(flat), roiDir, setId), ...
+            'Export ROIs');
+
     catch ME
         errordlg(ME.message,'ROI export failed');
     end
@@ -1994,26 +2223,11 @@ function drawTimeWindows()
     uistack(hBasePatch,'bottom'); uistack(hSigPatch,'bottom');
 end
 
-%% ---------------- ROI PSC ----------------
-function tc = computeRoiPSC(x1,x2,y1,y2)
-    PSCz = getPSCForSlice(state.z);
-    tc = squeeze(mean(mean(PSCz(y1:y2,x1:x2,:),1),2));
-    tc = tc(:)';
-
-    if numel(tc)~=nT, tc=[]; return; end
-
-    if all(isfinite(tc))
-        mn=min(tc); mx=max(tc);
-        if mx>mn
-            padY=0.15*(mx-mn);
-            set(axTC,'YLim',[mn-padY mx+padY]);
-        end
-    end
-end
 
 function redrawROIsForCurrentSlice()
-    deleteIfValid(roiHandles); roiHandles = gobjects(0);
-    deleteIfValid(roiPlotPSC); roiPlotPSC = gobjects(0);
+   deleteIfValid(roiHandles);     roiHandles = gobjects(0);
+deleteIfValid(roiPlotPSC);     roiPlotPSC = gobjects(0);
+deleteIfValid(roiTextHandles); roiTextHandles = gobjects(0);  % NEW
 
     ROI = ROI_byZ{state.z};
     if isempty(ROI), return; end
@@ -2022,7 +2236,17 @@ function redrawROIsForCurrentSlice()
         r=ROI(k);
         roiHandles(end+1)=rectangle(ax,'Position',[r.x1 r.y1 r.x2-r.x1+1 r.y2-r.y1+1], ...
             'EdgeColor',r.color,'LineWidth',2); %#ok<AGROW>
-
+% NEW: draw ROI id label near top-left of rectangle
+xLab = r.x1;
+yLab = max(1, r.y1 - 2);
+roiTextHandles(end+1) = text(ax, xLab, yLab, sprintf('%d', r.id), ...
+    'Color', r.color, ...
+    'FontWeight','bold', ...
+    'FontSize', 12, ...
+    'Interpreter','none', ...
+    'VerticalAlignment','bottom', ...
+    'BackgroundColor',[0 0 0], ...
+    'Margin', 1); %#ok<AGROW>
         tc = computeRoiPSC(r.x1,r.x2,r.y1,r.y2);
         if numel(tc)==nT
             roiPlotPSC(end+1)=plot(axTC,tmin,tc,':','Color',r.color,'LineWidth',2.4); %#ok<AGROW>
@@ -2265,6 +2489,48 @@ function U = clip01_percentile(A,pLow,pHigh)
     U=min(max(U,0),1);
 end
 
+
+function nextSetId = detectNextRoiSetId(roiDir)
+    % Looks for existing files ROI<SET>_d<k>.txt and returns max(SET)+1
+    nextSetId = 1;
+    if exist(roiDir,'dir')~=7, return; end
+
+    d = dir(fullfile(roiDir,'*.txt'));
+    if isempty(d), return; end
+
+    maxSet = 0;
+    for i=1:numel(d)
+        name = d(i).name;
+        tok = regexp(name,'(?i)^ROI(\d+)_d(\d+)\.txt$','tokens','once');
+        if isempty(tok), continue; end
+        sId = str2double(tok{1});
+        if isfinite(sId)
+            maxSet = max(maxSet, sId);
+        end
+    end
+    nextSetId = maxSet + 1;
+end
+
+function nextD = detectNextDIndexForSet(roiDir, setId)
+    % For a given ROI<SET>, finds max d# already present and returns max+1
+    nextD = 1;
+    if exist(roiDir,'dir')~=7, return; end
+
+    d = dir(fullfile(roiDir,'*.txt'));
+    if isempty(d), return; end
+
+    maxD = 0;
+    for i=1:numel(d)
+        name = d(i).name;
+        tok = regexp(name, sprintf('(?i)^ROI%d_d(\\d+)\\.txt$', setId), 'tokens','once');
+        if isempty(tok), continue; end
+        di = str2double(tok{1});
+        if isfinite(di)
+            maxD = max(maxD, di);
+        end
+    end
+    nextD = maxD + 1;
+end
 function q = prctile_fallback(v,p)
     try
         q = prctile(v,p); return;
