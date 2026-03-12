@@ -154,6 +154,9 @@ S.outlierKeys = {};
 S.outlierInfo = {};
 
 S.outDir = defaultOutDir(opt);
+% Preview-only temporal smoothing (upper plot)
+S.tc_previewSmooth = false;     % checkbox
+S.tc_previewSmoothWinSec = 60;  % seconds (e.g., 60 / 100)
 
 % -------------------- Layout -----------------------------
 leftW = 0.46;
@@ -535,10 +538,25 @@ S.hPrevGrid = uicontrol(S.hPrevTop,'Style','checkbox','String','Grid', ...
     'Value', double(S.previewShowGrid), ...
     'BackgroundColor',bg2,'ForegroundColor','w','Callback',@onPreviewStyleChanged);
 
-S.hPrevMsg = uicontrol(S.hPrevTop,'Style','text','String','', ...
-    'Units','normalized','Position',[0.84 0.10 0.14 0.80], ...
-    'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','left', ...
-    'FontSize',F.small);
+% Smooth checkbox
+S.hSmoothEnable = uicontrol(S.hPrevTop,'Style','checkbox','String','Smooth', ...
+    'Units','normalized','Position',[0.82 0.15 0.08 0.70], ...
+    'Value', double(S.tc_previewSmooth), ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'Callback',@onSmoothChanged);
+
+% Win label
+uicontrol(S.hPrevTop,'Style','text','String','Win (s):', ...
+    'Units','normalized','Position',[0.90 0.15 0.05 0.70], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+% Win edit
+S.hSmoothWin = uicontrol(S.hPrevTop,'Style','edit','String',num2str(S.tc_previewSmoothWinSec), ...
+    'Units','normalized','Position',[0.95 0.18 0.04 0.64], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onSmoothChanged);
+
 
 S.ax1 = axes('Parent',S.hPrevBG,'Units','normalized','Position',[0.09 0.50 0.86 0.27]);
 styleAxesMode(S.ax1, S.previewStyle, S.previewShowGrid);
@@ -914,6 +932,30 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
         updatePreview();
     end
 
+function onSmoothChanged(~,~)
+    S0 = guidata(hFig);
+
+    S0.tc_previewSmooth = logical(get(S0.hSmoothEnable,'Value'));
+
+    v = str2double(get(S0.hSmoothWin,'String'));
+    if ~(isfinite(v) && v > 0)
+        v = S0.tc_previewSmoothWinSec;
+        set(S0.hSmoothWin,'String',num2str(v));
+    end
+    S0.tc_previewSmoothWinSec = v;
+
+    guidata(hFig,S0);
+
+    if isfield(S0,'last') && ~isempty(fieldnames(S0.last))
+        updatePreview();  % full redraw so SEM stays correct
+
+        dtSec = median(diff(S0.last.tMin))*60; % tMin is minutes
+winVol = max(1, round(S0.tc_previewSmoothWinSec / dtSec));
+setStatusText(sprintf('Preview smoothing: win=%.1fs => %d pts (dt=%.2fs)', ...
+    S0.tc_previewSmoothWinSec, winVol, dtSec));
+    end
+end
+
     function onAnnotChanged(~,~)
         S0 = guidata(hFig);
         items = get(S0.hAnnotMode,'String');
@@ -1215,10 +1257,10 @@ clearPreview();
             if which==2 || which==3
                 exportPreviewPNG(fullfile(outDir, [baseName '_Bottom.png']), 2, S0);
             end
-            set(S0.hPrevMsg,'String','Saved PNG(s).');
+            setStatusText('Saved PNG(s).');
             setStatusText(['Saved PNG(s) to: ' outDir]);
         catch ME
-            set(S0.hPrevMsg,'String',['Export failed: ' ME.message]);
+            setStatusText(['Export failed: ' ME.message]);
             errordlg(ME.message,'Preview export');
         end
     end
@@ -1331,21 +1373,44 @@ end
         lineHs = [];
         allTop = [];
 
-        for g = 1:numel(R.group)
-            col = R.groupColors.(makeField(R.group(g).name));
-            mu  = R.group(g).mean(:)';
-            se  = R.group(g).sem(:)';
+       for g = 1:numel(R.group)
 
-            if R.showSEM
-                [hLine, ~] = shadedLineColored(S0.ax1, t, mu, se, col, col, S0.displaySemAlpha);
-            else
-                hLine = plot(S0.ax1, t, mu, 'LineWidth', 2.4, 'Color', col);
-            end
+    % ---- get data FIRST (must exist!) ----
+    mu = R.group(g).mean(:)';   % 1 x T
+    se = R.group(g).sem(:)';    % 1 x T
 
-            lineHs = [lineHs hLine]; %#ok<AGROW>
-            leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
-            allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
-        end
+    % ---- optional smoothing (must happen AFTER mu/se assignment) ----
+    if S0.tc_previewSmooth
+        dtSec = median(diff(t)) * 60;  % t is minutes
+        mu = smooth1D_edgeCentered(mu, dtSec, S0.tc_previewSmoothWinSec);
+        se = smooth1D_edgeCentered(se, dtSec, S0.tc_previewSmoothWinSec);
+        se(se<0) = 0;
+    end
+
+    % ---- colors ----
+    col = R.groupColors.(makeField(R.group(g).name));
+
+    lineCol = col;
+    fillCol = col;
+
+    % PACAP/Vehicle: make Vehicle line black, SEM stays gray
+    if strcmpi(S0.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
+        lineCol = [0.10 0.10 0.10]; % softer "black" (dark gray)
+% or [0.30 0.30 0.30] for even lighter
+        fillCol = [0.65 0.65 0.65];
+    end
+
+    % ---- plot ----
+    if R.showSEM
+        [hLine, ~] = shadedLineColored(S0.ax1, t, mu, se, lineCol, fillCol, S0.displaySemAlpha);
+    else
+        hLine = plot(S0.ax1, t, mu, 'LineWidth', 2.4, 'Color', lineCol);
+    end
+
+    lineHs = [lineHs hLine]; %#ok<AGROW>
+    leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
+    allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
+end
 
         xlabel(S0.ax1, 'Time (min)', 'Color', fg);
         ylabel(S0.ax1, tern(R.unitsPercent, 'Signal change (%)', 'ROI signal (a.u.)'), 'Color', fg);
@@ -1584,6 +1649,8 @@ end
         setPopupToString(S0.hManGroupB, S0.manualGroupB);
         try, set(S0.hManColorA,'Value',S0.manualColorA); catch, end
         try, set(S0.hManColorB,'Value',S0.manualColorB); catch, end
+        try, set(S0.hSmoothEnable,'Value',double(S0.tc_previewSmooth)); catch, end
+try, set(S0.hSmoothWin,'String',num2str(S0.tc_previewSmoothWinSec)); catch, end
 
         setPopupToString(S0.hTest, S0.testType);
         set(S0.hAlpha,'String',num2str(S0.alpha));
@@ -1727,7 +1794,45 @@ for i=1:numel(b)
     if ~any(strcmpi(out,b{i})), out{end+1}=b{i}; end %#ok<AGROW>
 end
 end
+function y2 = smooth1D_edgeCentered(y, dtSec, winSec)
+% Centered moving-average smoothing with endpoint replication (edge pad)
+% y: row or column vector
+% dtSec: sampling interval in seconds
+% winSec: window in seconds
 
+y = double(y(:)');  % row
+n = numel(y);
+y2 = y;
+
+if n < 2 || ~isfinite(dtSec) || dtSec <= 0 || ~isfinite(winSec) || winSec <= 0
+    return;
+end
+
+% Fill NaNs (so smoothing doesn't collapse)
+if any(~isfinite(y))
+    idx = find(isfinite(y));
+    if numel(idx) < 2
+        return;
+    end
+    y = interp1(idx, y(idx), 1:n, 'linear', 'extrap');
+end
+
+winVol = max(1, round(winSec / dtSec));
+if winVol <= 1
+    y2 = y;
+    return;
+end
+
+prePad  = floor(winVol/2);
+postPad = winVol - 1 - prePad;
+
+L = repmat(y(1), 1, prePad);
+R = repmat(y(end), 1, postPad);
+ypad = [L y R];
+
+k = ones(1, winVol) / winVol;
+y2 = conv(ypad, k, 'valid');  % length n
+end
 function col = getSelectedPopupString(hPop)
 col = '';
 try
@@ -1747,6 +1852,17 @@ function stylePreviewPanels(S)
 if strcmpi(S.previewStyle,'Light')
     set(S.hPrevBG,  'BackgroundColor',[1 1 1]);
     set(S.hPrevTop, 'BackgroundColor',[0.96 0.96 0.96], 'ForegroundColor','k');
+
+    % also recolor smoothing controls (if they exist)
+if isfield(S,'hSmoothEnable') && ishghandle(S.hSmoothEnable)
+    if strcmpi(S.previewStyle,'Light')
+        set(S.hSmoothEnable,'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor','k');
+        try, set(S.hSmoothWin,'BackgroundColor',[1 1 1],'ForegroundColor','k'); catch, end
+    else
+        set(S.hSmoothEnable,'BackgroundColor',S.C.panel2,'ForegroundColor','w');
+        try, set(S.hSmoothWin,'BackgroundColor',S.C.editBg,'ForegroundColor','w'); catch, end
+    end
+end
 
     try, set(S.hPrevStyle,'BackgroundColor',[1 1 1],'ForegroundColor','k'); catch, end
     try, set(S.hPrevGrid, 'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor','k'); catch, end
@@ -2201,13 +2317,22 @@ end
 end
 
 function j = deterministicJitter(key, amp)
-if nargin < 2, amp = 0.18; end
+% Stable jitter from a string key (no toolboxes). Works in 2017b+.
+% Returns a deterministic value in [-amp/2, +amp/2].
+
+if nargin < 2 || isempty(amp), amp = 0.22; end
 if isempty(key), key = 'x'; end
-c = double(char(key(:)'));
-w = 1:numel(c);
-h = sum(c .* w);
-u = mod(h,100000) / 100000;
-j = (u - 0.5) * amp;
+
+% FNV-1a 32-bit hash over bytes
+s = uint8(char(key));
+h = uint32(2166136261);
+for k = 1:numel(s)
+    h = bitxor(h, uint32(s(k)));
+    h = uint32(mod(uint64(h) * 16777619, 2^32));
+end
+
+u = double(h) / double(intmax('uint32'));  % [0,1]
+j = (u - 0.5) * amp;                       % [-amp/2, +amp/2]
 end
 
 function highlightOutliersOnScatter(ax, R, S, rowX, styleName)
@@ -3286,21 +3411,37 @@ if which==1
     leg = {};
     lineHs = [];
 
-    for g=1:numel(R.group)
-        col = R.groupColors.(makeField(R.group(g).name));
-        mu  = R.group(g).mean(:)';
-        se  = R.group(g).sem(:)';
+  for g=1:numel(R.group)
 
-        if R.showSEM
-            [hLine,~] = shadedLineColored(ax, t, mu, se, col, col, S.exportSemAlpha);
-        else
-            hLine = plot(ax, t, mu, 'LineWidth', 2.4, 'Color', col);
-        end
+    mu = R.group(g).mean(:)';
+    se = R.group(g).sem(:)';
 
-        lineHs = [lineHs hLine]; %#ok<AGROW>
-        leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
-        allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
+    if S.tc_previewSmooth
+        dtSec = median(diff(t))*60;
+        mu = smooth1D_edgeCentered(mu, dtSec, S.tc_previewSmoothWinSec);
+        se = smooth1D_edgeCentered(se, dtSec, S.tc_previewSmoothWinSec);
+        se(se<0) = 0;
     end
+
+    col = R.groupColors.(makeField(R.group(g).name));
+
+    lineCol = col;
+    fillCol = col;
+    if strcmpi(S.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
+        lineCol = [0 0 0];
+        fillCol = [0.65 0.65 0.65];
+    end
+
+    if R.showSEM
+        [hLine,~] = shadedLineColored(ax, t, mu, se, lineCol, fillCol, S.exportSemAlpha);
+    else
+        hLine = plot(ax, t, mu, 'LineWidth', 2.4, 'Color', lineCol);
+    end
+
+    lineHs = [lineHs hLine]; %#ok<AGROW>
+    leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
+    allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
+end
 
     xlabel(ax,'Time (min)','Color',fg);
     ylabel(ax, tern(R.unitsPercent,'Signal change (%)','ROI signal'), 'Color',fg);
