@@ -1,35 +1,63 @@
 classdef registration_ccf < handle
+% =========================================================
+% Atlas registration GUI
+%
+% ASCII only
+% MATLAB 2017b compatible
+%
+% Main goals:
+%   - Use your nice mask-editor brainImage / MIP / anatomy as overlay
+%   - Better contrast controls for overlay
+%   - Keep atlas fixed, move overlay
+%   - Save Transformation.mat
+%   - Preview/register functional files to atlas space
+%
+% Constructor supports:
+%   R = registration_ccf(atlas, scananatomy)
+%   R = registration_ccf(atlas, scananatomy, initialTransf)
+%   R = registration_ccf(atlas, scananatomy, initialTransf, logFcn)
+%   R = registration_ccf(atlas, scananatomy, initialTransf, logFcn, saveDir)
+%   R = registration_ccf(atlas, scananatomy, initialTransf, logFcn, saveDir, funcCandidates)
+% =========================================================
 
     properties
         H
         atlas
+
         ms1
         ms2
         DataNoScale
+
         scale
-        r1
-        r2
-        r3
         Trot
         TF
         T0
+
+        r1
+        r2
+        r3
+
         mapRegions
         mapHistology
         mapVascular
         linmap
+
         hlinesS
         hlinesC
         hlinesT
-
-        overlayOpacity = 0.65
-        overlayIntensity = 1.0
-        overlayCmapName = 'hot'
 
         logFcn = []
         saveDir = ''
 
         funcFiles = {}
         funcLabels = {}
+
+        overlayOpacity = 0.65
+        overlayCmapName = 'gray'
+        overlayInvert = false
+        overlayWinMin = 0.05
+        overlayWinMax = 0.95
+        showAtlasLines = true
 
         lastScrollT = -inf
         scrollMinDt = 0.03
@@ -67,7 +95,9 @@ classdef registration_ccf < handle
         uiSliceInfo
 
         uiOpacity
-        uiIntensity
+        uiWinMin
+        uiWinMax
+        uiInvert
         uiCmapPopup
         uiOverlayStatus
 
@@ -82,13 +112,10 @@ classdef registration_ccf < handle
         uiAtlasVasc
         uiAtlasHist
         uiAtlasReg
+        uiShowLines
 
         uiHelp
         uiClose
-
-        uiLab4
-        uiLab5
-        uiLab6
 
         uiFuncPopup
         uiFuncPreview
@@ -98,12 +125,6 @@ classdef registration_ccf < handle
 
     methods
         function R = registration_ccf(atlas, scananatomy, varargin)
-            % Supports:
-            % R = registration_ccf(atlas, scananatomy)
-            % R = registration_ccf(atlas, scananatomy, initialTransf)
-            % R = registration_ccf(atlas, scananatomy, initialTransf, logFcn)
-            % R = registration_ccf(atlas, scananatomy, initialTransf, logFcn, saveDir)
-            % R = registration_ccf(atlas, scananatomy, initialTransf, logFcn, saveDir, funcCandidates)
 
             initialTransf = [];
             logFcn = [];
@@ -131,8 +152,6 @@ classdef registration_ccf < handle
 
             if ~isempty(logFcn) && isa(logFcn,'function_handle')
                 R.logFcn = logFcn;
-            else
-                R.logFcn = [];
             end
 
             if ~isempty(saveDir) && ischar(saveDir) && exist(saveDir,'dir')
@@ -156,15 +175,16 @@ classdef registration_ccf < handle
             R.atlas = atlas;
             R.log(sprintf('[Atlas GUI] Save directory: %s', R.saveDir));
 
+            % Normalize anatomy overlay and bring it into atlas voxel/orientation space
             scananatomy.Data = equalizeImages(double(scananatomy.Data));
             tmp = interpolate3D(atlas, scananatomy);
 
-            R.ms2 = mapscan(double(tmp.Data), hot(256), 'fix');
-            R.ms2.caxis = [0.10 0.80];
+            R.ms2 = mapscan(double(tmp.Data), gray(256), 'fix');
+            R.ms2.caxis = [0 1];
 
             R.mapHistology = mapscan(atlas.Histology, gray(256), 'index');
-            R.mapVascular  = mapscan(atlas.Vascular, gray(256), 'auto');
-            R.mapRegions   = mapscan(atlas.Regions, atlas.infoRegions.rgb, 'index');
+            R.mapVascular  = mapscan(atlas.Vascular,  gray(256), 'auto');
+            R.mapRegions   = mapscan(atlas.Regions,   atlas.infoRegions.rgb, 'index');
 
             R.ms1 = R.mapVascular;
             R.linmap = atlas.Lines;
@@ -185,8 +205,8 @@ classdef registration_ccf < handle
         function buildGUI(R)
 
             scr = get(0,'ScreenSize');
-            W = min(1420, scr(3)-120);
-            Hh = min(920, scr(4)-100);
+            W = min(1460, scr(3)-80);
+            Hh = min(940, scr(4)-80);
             x0 = max(40, floor((scr(3)-W)/2));
             y0 = max(40, floor((scr(4)-Hh)/2));
 
@@ -207,9 +227,9 @@ classdef registration_ccf < handle
             set(f,'WindowScrollWheelFcn',@(src,evt)R.onScroll(evt));
 
             leftX = 0.03;
-            midX  = 0.36;
-            ctrlX = 0.69;
-            axW   = 0.30;
+            midX  = 0.35;
+            ctrlX = 0.68;
+            axW   = 0.28;
             axH   = 0.24;
             gapY  = 0.04;
 
@@ -219,17 +239,17 @@ classdef registration_ccf < handle
 
             uicontrol(f,'Style','text', ...
                 'Units','normalized', ...
-                'Position',[0.03 0.94 0.64 0.045], ...
-                'String','Atlas GUI - Registration to Allen CCF', ...
+                'Position',[0.03 0.94 0.63 0.045], ...
+                'String','Atlas GUI - Register anatomy first, then preview functional in atlas space', ...
                 'BackgroundColor',bg, ...
                 'ForegroundColor',fg, ...
-                'FontSize',18, ...
+                'FontSize',16, ...
                 'FontWeight','bold', ...
                 'HorizontalAlignment','left');
 
             R.uiSliceInfo = uicontrol(f,'Style','text', ...
                 'Units','normalized', ...
-                'Position',[0.69 0.94 0.28 0.045], ...
+                'Position',[0.68 0.94 0.29 0.045], ...
                 'String','Coronal: -/-   Sagittal: -/-   Axial: -/-', ...
                 'BackgroundColor',bg, ...
                 'ForegroundColor',[0.7 0.95 0.7], ...
@@ -245,129 +265,182 @@ classdef registration_ccf < handle
             R.H.axes5 = axes('Parent',f,'Units','normalized','Position',[midX yMid axW axH], 'Color','k');
             R.H.axes6 = axes('Parent',f,'Units','normalized','Position',[midX yBot axW axH], 'Color','k');
 
-            R.uiLab4 = uicontrol(f,'Style','text','Units','normalized', ...
-                'Position',[midX yTop+axH+0.005 axW 0.02], ...
-                'String','Coronal', 'BackgroundColor',bg,'ForegroundColor',fg, ...
-                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
-
-            R.uiLab5 = uicontrol(f,'Style','text','Units','normalized', ...
-                'Position',[midX yMid+axH+0.005 axW 0.02], ...
-                'String','Sagittal', 'BackgroundColor',bg,'ForegroundColor',fg, ...
-                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
-
-            R.uiLab6 = uicontrol(f,'Style','text','Units','normalized', ...
-                'Position',[midX yBot+axH+0.005 axW 0.02], ...
-                'String','Axial', 'BackgroundColor',bg,'ForegroundColor',fg, ...
-                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
-
             axAll = [R.H.axes1 R.H.axes2 R.H.axes3 R.H.axes4 R.H.axes5 R.H.axes6];
             for k = 1:numel(axAll)
                 axis(axAll(k),'image');
                 axis(axAll(k),'off');
-                set(axAll(k),'Box','off','XColor',bg,'YColor',bg,'LineWidth',1);
+                set(axAll(k),'Box','off');
             end
+
+            uicontrol(f,'Style','text','Units','normalized', ...
+                'Position',[leftX yTop+axH+0.005 axW 0.02], ...
+                'String','Atlas - Coronal', ...
+                'BackgroundColor',bg,'ForegroundColor',fg, ...
+                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
+
+            uicontrol(f,'Style','text','Units','normalized', ...
+                'Position',[leftX yMid+axH+0.005 axW 0.02], ...
+                'String','Atlas - Sagittal', ...
+                'BackgroundColor',bg,'ForegroundColor',fg, ...
+                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
+
+            uicontrol(f,'Style','text','Units','normalized', ...
+                'Position',[leftX yBot+axH+0.005 axW 0.02], ...
+                'String','Atlas - Axial', ...
+                'BackgroundColor',bg,'ForegroundColor',fg, ...
+                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
+
+            uicontrol(f,'Style','text','Units','normalized', ...
+                'Position',[midX yTop+axH+0.005 axW 0.02], ...
+                'String','Overlay on Atlas - Coronal', ...
+                'BackgroundColor',bg,'ForegroundColor',fg, ...
+                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
+
+            uicontrol(f,'Style','text','Units','normalized', ...
+                'Position',[midX yMid+axH+0.005 axW 0.02], ...
+                'String','Overlay on Atlas - Sagittal', ...
+                'BackgroundColor',bg,'ForegroundColor',fg, ...
+                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
+
+            uicontrol(f,'Style','text','Units','normalized', ...
+                'Position',[midX yBot+axH+0.005 axW 0.02], ...
+                'String','Overlay on Atlas - Axial', ...
+                'BackgroundColor',bg,'ForegroundColor',fg, ...
+                'FontSize',11,'FontWeight','bold','HorizontalAlignment','center');
 
             ctrlPanel = uipanel(f, ...
                 'Units','normalized', ...
-                'Position',[ctrlX 0.08 0.28 0.84], ...
+                'Position',[ctrlX 0.06 0.29 0.87], ...
                 'BackgroundColor',panelBG, ...
                 'ForegroundColor',fg, ...
                 'Title','Controls', ...
                 'FontSize',12, ...
-                'FontWeight','bold', ...
-                'BorderType','line', ...
-                'HighlightColor',panelBG, ...
-                'ShadowColor',panelBG);
+                'FontWeight','bold');
 
+            % Overlay display panel
             ovPanel = uipanel(ctrlPanel, ...
                 'Units','normalized', ...
-                'Position',[0.06 0.67 0.88 0.30], ...
+                'Position',[0.05 0.69 0.90 0.28], ...
                 'BackgroundColor',panelBG2, ...
                 'ForegroundColor',fg, ...
-                'Title','Anatomy overlay', ...
+                'Title','Overlay display', ...
                 'FontSize',11, ...
                 'FontWeight','bold');
 
             uicontrol(ovPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.78 0.35 0.14], ...
-                'String','Opacity', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Position',[0.06 0.79 0.26 0.12], ...
+                'String','Opacity', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
                 'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
             R.uiOpacity = uicontrol(ovPanel,'Style','slider','Units','normalized', ...
-                'Position',[0.42 0.82 0.52 0.10], ...
+                'Position',[0.36 0.82 0.58 0.10], ...
                 'Min',0,'Max',1,'Value',R.overlayOpacity, ...
                 'BackgroundColor',panelBG2, ...
                 'Callback',@(src,evt)R.onOverlayChanged());
 
             uicontrol(ovPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.56 0.35 0.14], ...
-                'String','Intensity', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Position',[0.06 0.57 0.26 0.12], ...
+                'String','Window min', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
                 'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
-            R.uiIntensity = uicontrol(ovPanel,'Style','slider','Units','normalized', ...
-                'Position',[0.42 0.60 0.52 0.10], ...
-                'Min',0.60,'Max',1.40,'Value',R.overlayIntensity, ...
-                'BackgroundColor',panelBG2, ...
+            R.uiWinMin = uicontrol(ovPanel,'Style','edit','Units','normalized', ...
+                'Position',[0.36 0.58 0.20 0.12], ...
+                'String',num2str(R.overlayWinMin), ...
+                'BackgroundColor',[0.12 0.12 0.12], ...
+                'ForegroundColor',fg, ...
                 'Callback',@(src,evt)R.onOverlayChanged());
 
             uicontrol(ovPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.34 0.35 0.14], ...
-                'String','Overlay colormap', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Position',[0.60 0.57 0.20 0.12], ...
+                'String','Window max', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
                 'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
-            cmapList = {'hot','gray','parula','jet','winter','autumn','spring','summer','bone','copper'};
+            R.uiWinMax = uicontrol(ovPanel,'Style','edit','Units','normalized', ...
+                'Position',[0.80 0.58 0.14 0.12], ...
+                'String',num2str(R.overlayWinMax), ...
+                'BackgroundColor',[0.12 0.12 0.12], ...
+                'ForegroundColor',fg, ...
+                'Callback',@(src,evt)R.onOverlayChanged());
+
+            uicontrol(ovPanel,'Style','text','Units','normalized', ...
+                'Position',[0.06 0.34 0.26 0.12], ...
+                'String','Colormap', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
+
+            cmapList = {'gray','bone','hot','copper','parula','jet'};
             R.uiCmapPopup = uicontrol(ovPanel,'Style','popupmenu','Units','normalized', ...
-                'Position',[0.42 0.36 0.52 0.14], ...
+                'Position',[0.36 0.35 0.32 0.14], ...
                 'String',cmapList, ...
-                'Value',max(1,find(strcmp(cmapList,R.overlayCmapName),1,'first')), ...
+                'Value',1, ...
                 'BackgroundColor',[0.15 0.15 0.15], ...
                 'ForegroundColor',fg, ...
                 'Callback',@(src,evt)R.onOverlayChanged());
 
+            R.uiInvert = uicontrol(ovPanel,'Style','checkbox','Units','normalized', ...
+                'Position',[0.72 0.34 0.22 0.14], ...
+                'String','Invert', ...
+                'Value',0, ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Callback',@(src,evt)R.onOverlayChanged());
+
             R.uiOverlayStatus = uicontrol(ovPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.08 0.88 0.16], ...
+                'Position',[0.06 0.08 0.88 0.14], ...
                 'String','', ...
                 'BackgroundColor',panelBG2,'ForegroundColor',[0.7 0.95 0.7], ...
                 'HorizontalAlignment','left','FontSize',9);
 
+            % Transform panel
             trPanel = uipanel(ctrlPanel, ...
                 'Units','normalized', ...
-                'Position',[0.06 0.42 0.88 0.21], ...
+                'Position',[0.05 0.47 0.90 0.18], ...
                 'BackgroundColor',panelBG2, ...
                 'ForegroundColor',fg, ...
-                'Title','Transformation matrix', ...
+                'Title','Transform', ...
                 'FontSize',11, ...
                 'FontWeight','bold');
 
             uicontrol(trPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.70 0.40 0.18], ...
-                'String','Scale Coronal (X)', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Position',[0.05 0.66 0.36 0.16], ...
+                'String','Scale X', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
                 'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
             R.uiScaleCorX = uicontrol(trPanel,'Style','edit','Units','normalized', ...
-                'Position',[0.46 0.73 0.16 0.18], ...
-                'String','1', 'BackgroundColor',[0.12 0.12 0.12], 'ForegroundColor',fg);
+                'Position',[0.30 0.66 0.16 0.18], ...
+                'String','1', ...
+                'BackgroundColor',[0.12 0.12 0.12], ...
+                'ForegroundColor',fg);
 
             uicontrol(trPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.48 0.40 0.18], ...
-                'String','Scale Sagittal (Y)', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Position',[0.05 0.40 0.36 0.16], ...
+                'String','Scale Y', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
                 'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
             R.uiScaleSagY = uicontrol(trPanel,'Style','edit','Units','normalized', ...
-                'Position',[0.46 0.51 0.16 0.18], ...
-                'String','1', 'BackgroundColor',[0.12 0.12 0.12], 'ForegroundColor',fg);
+                'Position',[0.30 0.40 0.16 0.18], ...
+                'String','1', ...
+                'BackgroundColor',[0.12 0.12 0.12], ...
+                'ForegroundColor',fg);
 
             uicontrol(trPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.26 0.40 0.18], ...
-                'String','Scale Axial (Z)', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Position',[0.05 0.14 0.36 0.16], ...
+                'String','Scale Z', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
                 'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
             R.uiScaleAxiZ = uicontrol(trPanel,'Style','edit','Units','normalized', ...
-                'Position',[0.46 0.29 0.16 0.18], ...
-                'String','1', 'BackgroundColor',[0.12 0.12 0.12], 'ForegroundColor',fg);
+                'Position',[0.30 0.14 0.16 0.18], ...
+                'String','1', ...
+                'BackgroundColor',[0.12 0.12 0.12], ...
+                'ForegroundColor',fg);
 
             R.uiApply = uicontrol(trPanel,'Style','pushbutton','Units','normalized', ...
-                'Position',[0.66 0.56 0.30 0.24], ...
+                'Position',[0.56 0.54 0.37 0.26], ...
                 'String','1. Apply', ...
                 'BackgroundColor',[0.20 0.45 0.95], ...
                 'ForegroundColor','w', ...
@@ -375,7 +448,7 @@ classdef registration_ccf < handle
                 'Callback',@(src,evt)R.onApply());
 
             R.uiSave = uicontrol(trPanel,'Style','pushbutton','Units','normalized', ...
-                'Position',[0.66 0.28 0.30 0.24], ...
+                'Position',[0.56 0.18 0.37 0.26], ...
                 'String','2. Save', ...
                 'BackgroundColor',[0.15 0.70 0.55], ...
                 'ForegroundColor','w', ...
@@ -383,39 +456,35 @@ classdef registration_ccf < handle
                 'Callback',@(src,evt)R.onSave());
 
             R.uiSaveStatus = uicontrol(trPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.02 0.90 0.16], ...
+                'Position',[0.05 0.01 0.88 0.10], ...
                 'String','', ...
                 'BackgroundColor',panelBG2, ...
                 'ForegroundColor',[0.7 0.95 0.7], ...
                 'HorizontalAlignment','left', ...
                 'FontSize',9);
 
+            % Functional panel
             funcPanel = uipanel(ctrlPanel, ...
                 'Units','normalized', ...
-                'Position',[0.06 0.21 0.88 0.17], ...
+                'Position',[0.05 0.28 0.90 0.15], ...
                 'BackgroundColor',panelBG2, ...
                 'ForegroundColor',fg, ...
-                'Title','Functional preview and register', ...
+                'Title','Functional preview/register', ...
                 'FontSize',11, ...
                 'FontWeight','bold');
 
             popupStrings = {'No functional candidates found'};
             popupEnable = 'off';
             btnEnable = 'off';
+
             if ~isempty(R.funcLabels)
                 popupStrings = R.funcLabels;
                 popupEnable = 'on';
                 btnEnable = 'on';
             end
 
-            uicontrol(funcPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.72 0.24 0.16], ...
-                'String','Selected file', ...
-                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
-                'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
-
             R.uiFuncPopup = uicontrol(funcPanel,'Style','popupmenu','Units','normalized', ...
-                'Position',[0.06 0.50 0.88 0.20], ...
+                'Position',[0.05 0.56 0.90 0.22], ...
                 'String',popupStrings, ...
                 'Value',1, ...
                 'Enable',popupEnable, ...
@@ -423,7 +492,7 @@ classdef registration_ccf < handle
                 'ForegroundColor',fg);
 
             R.uiFuncPreview = uicontrol(funcPanel,'Style','pushbutton','Units','normalized', ...
-                'Position',[0.06 0.20 0.40 0.20], ...
+                'Position',[0.05 0.24 0.42 0.20], ...
                 'String','Preview selected', ...
                 'Enable',btnEnable, ...
                 'BackgroundColor',[0.32 0.48 0.86], ...
@@ -432,7 +501,7 @@ classdef registration_ccf < handle
                 'Callback',@(src,evt)R.onPreviewFunctional());
 
             R.uiFuncRegister = uicontrol(funcPanel,'Style','pushbutton','Units','normalized', ...
-                'Position',[0.54 0.20 0.40 0.20], ...
+                'Position',[0.53 0.24 0.42 0.20], ...
                 'String','Register selected', ...
                 'Enable',btnEnable, ...
                 'BackgroundColor',[0.64 0.42 0.20], ...
@@ -441,54 +510,98 @@ classdef registration_ccf < handle
                 'Callback',@(src,evt)R.onRegisterFunctional());
 
             R.uiFuncStatus = uicontrol(funcPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.02 0.88 0.12], ...
+                'Position',[0.05 0.03 0.90 0.12], ...
                 'String','', ...
                 'BackgroundColor',panelBG2, ...
                 'ForegroundColor',[0.7 0.95 0.7], ...
                 'HorizontalAlignment','left', ...
                 'FontSize',9);
 
-            plPanel = uipanel(ctrlPanel, ...
+            % Plane and atlas panel
+            miscPanel = uipanel(ctrlPanel, ...
                 'Units','normalized', ...
-                'Position',[0.06 0.09 0.88 0.09], ...
+                'Position',[0.05 0.10 0.90 0.14], ...
                 'BackgroundColor',panelBG2, ...
                 'ForegroundColor',fg, ...
-                'Title','Planes (scroll on images)', ...
+                'Title','Planes and atlas', ...
                 'FontSize',11, ...
                 'FontWeight','bold');
 
-            uicontrol(plPanel,'Style','text','Units','normalized', ...
-                'Position',[0.06 0.42 0.22 0.35], ...
-                'String','Coronal', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
-                'FontSize',10,'FontWeight','bold','HorizontalAlignment','left');
+            uicontrol(miscPanel,'Style','text','Units','normalized', ...
+                'Position',[0.03 0.58 0.16 0.18], ...
+                'String','Cor', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
-            R.uiEditCor = uicontrol(plPanel,'Style','edit','Units','normalized', ...
-                'Position',[0.22 0.45 0.13 0.34], ...
-                'String','1', 'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor',fg, ...
+            R.uiEditCor = uicontrol(miscPanel,'Style','edit','Units','normalized', ...
+                'Position',[0.14 0.58 0.12 0.20], ...
+                'String','1', ...
+                'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor',fg, ...
                 'Callback',@(src,evt)R.onPlaneEdited());
 
-            uicontrol(plPanel,'Style','text','Units','normalized', ...
-                'Position',[0.40 0.42 0.22 0.35], ...
-                'String','Sagittal', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
-                'FontSize',10,'FontWeight','bold','HorizontalAlignment','left');
+            uicontrol(miscPanel,'Style','text','Units','normalized', ...
+                'Position',[0.30 0.58 0.16 0.18], ...
+                'String','Sag', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
-            R.uiEditSag = uicontrol(plPanel,'Style','edit','Units','normalized', ...
-                'Position',[0.59 0.45 0.13 0.34], ...
-                'String','1', 'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor',fg, ...
+            R.uiEditSag = uicontrol(miscPanel,'Style','edit','Units','normalized', ...
+                'Position',[0.40 0.58 0.12 0.20], ...
+                'String','1', ...
+                'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor',fg, ...
                 'Callback',@(src,evt)R.onPlaneEdited());
 
-            uicontrol(plPanel,'Style','text','Units','normalized', ...
-                'Position',[0.74 0.42 0.16 0.35], ...
-                'String','Axial', 'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
-                'FontSize',10,'FontWeight','bold','HorizontalAlignment','left');
+            uicontrol(miscPanel,'Style','text','Units','normalized', ...
+                'Position',[0.56 0.58 0.16 0.18], ...
+                'String','Axi', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'HorizontalAlignment','left','FontSize',10,'FontWeight','bold');
 
-            R.uiEditAxi = uicontrol(plPanel,'Style','edit','Units','normalized', ...
-                'Position',[0.84 0.45 0.10 0.34], ...
-                'String','1', 'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor',fg, ...
+            R.uiEditAxi = uicontrol(miscPanel,'Style','edit','Units','normalized', ...
+                'Position',[0.66 0.58 0.12 0.20], ...
+                'String','1', ...
+                'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor',fg, ...
                 'Callback',@(src,evt)R.onPlaneEdited());
+
+            R.uiShowLines = uicontrol(miscPanel,'Style','checkbox','Units','normalized', ...
+                'Position',[0.03 0.28 0.30 0.18], ...
+                'String','Atlas lines', ...
+                'Value',1, ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg, ...
+                'Callback',@(src,evt)R.onShowLines());
+
+            atlasModeStrings = {'vascular','histology','regions'};
+            R.uiAtlasGroup = uibuttongroup(miscPanel, ...
+                'Units','normalized', ...
+                'Position',[0.38 0.10 0.57 0.35], ...
+                'BackgroundColor',panelBG2, ...
+                'ForegroundColor',fg, ...
+                'SelectionChangedFcn',@(src,evt)R.onAtlasMode(evt.NewValue.Tag));
+
+            R.uiAtlasVasc = uicontrol(R.uiAtlasGroup,'Style','radiobutton', ...
+                'Units','normalized', ...
+                'Position',[0.02 0.10 0.30 0.80], ...
+                'String',atlasModeStrings{1}, ...
+                'Tag','vascular', ...
+                'Value',1, ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg);
+
+            R.uiAtlasHist = uicontrol(R.uiAtlasGroup,'Style','radiobutton', ...
+                'Units','normalized', ...
+                'Position',[0.34 0.10 0.30 0.80], ...
+                'String',atlasModeStrings{2}, ...
+                'Tag','histology', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg);
+
+            R.uiAtlasReg = uicontrol(R.uiAtlasGroup,'Style','radiobutton', ...
+                'Units','normalized', ...
+                'Position',[0.66 0.10 0.30 0.80], ...
+                'String',atlasModeStrings{3}, ...
+                'Tag','regions', ...
+                'BackgroundColor',panelBG2,'ForegroundColor',fg);
 
             R.uiHelp = uicontrol(ctrlPanel,'Style','pushbutton','Units','normalized', ...
-                'Position',[0.06 0.01 0.42 0.06], ...
+                'Position',[0.05 0.02 0.42 0.05], ...
                 'String','HELP', ...
                 'BackgroundColor',[0.25 0.45 0.95], ...
                 'ForegroundColor','w', ...
@@ -496,47 +609,14 @@ classdef registration_ccf < handle
                 'Callback',@(src,evt)R.onHelp());
 
             R.uiClose = uicontrol(ctrlPanel,'Style','pushbutton','Units','normalized', ...
-                'Position',[0.52 0.01 0.42 0.06], ...
+                'Position',[0.53 0.02 0.42 0.05], ...
                 'String','CLOSE', ...
                 'BackgroundColor',[0.85 0.25 0.25], ...
                 'ForegroundColor','w', ...
                 'FontWeight','bold', ...
                 'Callback',@(src,evt)R.onClose());
 
-            atlasPanel = uipanel(f, ...
-                'Units','normalized', ...
-                'Position',[0.03 0.03 0.63 0.05], ...
-                'BackgroundColor',panelBG, ...
-                'ForegroundColor',fg, ...
-                'Title','Atlas underlay (left + right)', ...
-                'FontSize',11, ...
-                'FontWeight','bold');
-
-            R.uiAtlasGroup = uibuttongroup(atlasPanel, ...
-                'Units','normalized', ...
-                'Position',[0.01 0.05 0.98 0.90], ...
-                'BackgroundColor',panelBG, ...
-                'ForegroundColor',fg, ...
-                'SelectionChangedFcn',@(src,evt)R.onAtlasMode(evt.NewValue.Tag));
-
-            R.uiAtlasVasc = uicontrol(R.uiAtlasGroup,'Style','radiobutton', ...
-                'Units','normalized','Position',[0.05 0.10 0.25 0.80], ...
-                'String','Vascular', 'Tag','vascular', ...
-                'BackgroundColor',panelBG,'ForegroundColor',fg, ...
-                'FontSize',11,'FontWeight','bold','Value',1);
-
-            R.uiAtlasHist = uicontrol(R.uiAtlasGroup,'Style','radiobutton', ...
-                'Units','normalized','Position',[0.35 0.10 0.25 0.80], ...
-                'String','Histology', 'Tag','histology', ...
-                'BackgroundColor',panelBG,'ForegroundColor',fg, ...
-                'FontSize',11,'FontWeight','bold');
-
-            R.uiAtlasReg = uicontrol(R.uiAtlasGroup,'Style','radiobutton', ...
-                'Units','normalized','Position',[0.65 0.10 0.25 0.80], ...
-                'String','Regions', 'Tag','regions', ...
-                'BackgroundColor',panelBG,'ForegroundColor',fg, ...
-                'FontSize',11,'FontWeight','bold');
-
+            % Create images
             R.im1 = image(zeros(R.ms1.ny, R.ms1.nz, 3), 'Parent', R.H.axes1);
             R.im2 = image(zeros(R.ms1.nx, R.ms1.nz, 3), 'Parent', R.H.axes2);
             R.im3 = image(zeros(R.ms1.ny, R.ms1.nx, 3), 'Parent', R.H.axes3);
@@ -570,6 +650,7 @@ classdef registration_ccf < handle
 
             R.applyOverlayColormap();
 
+            % Crosshairs
             R.line1x = line(R.H.axes1, [1 R.ms1.nz], [R.ms1.y0 R.ms1.y0], 'Color',[1 1 1], 'HitTest','off');
             R.line1y = line(R.H.axes1, [R.ms1.z0 R.ms1.z0], [1 R.ms1.ny], 'Color',[1 1 1], 'HitTest','off');
 
@@ -666,26 +747,25 @@ classdef registration_ccf < handle
             set(R.im5Under,'CData',aSag);
             set(R.im6Under,'CData',permute(aAxi,[2 1 3]));
 
-            baseWin = [0.10 0.80];
-            cen = mean(baseWin);
-            half = (baseWin(2) - baseWin(1)) / 2;
-            half = half / R.overlayIntensity;
-            win = [cen-half, cen+half];
-            win(1) = max(0, win(1));
-            win(2) = min(1, win(2));
-            if win(2) <= win(1)
-                win = baseWin;
+            oCor = squeeze(R.ms2.D(x0,:,:));
+            oSag = squeeze(R.ms2.D(:,y0,:));
+            oAxi = squeeze(R.ms2.D(:,:,z0))';
+
+            if R.overlayInvert
+                oCor = 1 - oCor;
+                oSag = 1 - oSag;
+                oAxi = 1 - oAxi;
             end
 
-            ms2 = R.ms2;
+            wmin = R.overlayWinMin;
+            wmax = R.overlayWinMax;
+            if wmax <= wmin
+                wmax = wmin + 0.01;
+            end
 
-            oCor = squeeze(ms2.D(x0,:,:));
-            oSag = squeeze(ms2.D(:,y0,:));
-            oAxi = squeeze(ms2.D(:,:,z0))';
-
-            set(R.H.axes4,'CLim',win);
-            set(R.H.axes5,'CLim',win);
-            set(R.H.axes6,'CLim',win);
+            set(R.H.axes4,'CLim',[wmin wmax]);
+            set(R.H.axes5,'CLim',[wmin wmax]);
+            set(R.H.axes6,'CLim',[wmin wmax]);
 
             if isempty(R.r1) || ~isvalidHandleObj(R.r1)
                 set(R.im4,'CData',oCor);
@@ -728,54 +808,73 @@ classdef registration_ccf < handle
             set(R.line6y,'XData',[x0 x0],'YData',[1 R.ms1.ny]);
 
             safeDeleteGraphics(R.hlinesC);
-            R.hlinesC = addLines(R.H.axes4, R.linmap.Cor, clampToNumel(R.linmap.Cor, x0));
-
             safeDeleteGraphics(R.hlinesT);
-            R.hlinesT = addLines(R.H.axes5, R.linmap.Tra, clampToNumel(R.linmap.Tra, y0));
-
             safeDeleteGraphics(R.hlinesS);
-            R.hlinesS = addLines(R.H.axes6, R.linmap.Sag, clampToNumel(R.linmap.Sag, z0));
+
+            if R.showAtlasLines
+                R.hlinesC = addLines(R.H.axes4, R.linmap.Cor, clampToNumel(R.linmap.Cor, x0));
+                R.hlinesT = addLines(R.H.axes5, R.linmap.Tra, clampToNumel(R.linmap.Tra, y0));
+                R.hlinesS = addLines(R.H.axes6, R.linmap.Sag, clampToNumel(R.linmap.Sag, z0));
+            end
 
             drawnow;
         end
 
         function onOverlayChanged(R)
+
             if ~isempty(R.uiOpacity) && isgraphics(R.uiOpacity)
                 R.overlayOpacity = get(R.uiOpacity,'Value');
             end
-            if ~isempty(R.uiIntensity) && isgraphics(R.uiIntensity)
-                R.overlayIntensity = get(R.uiIntensity,'Value');
+
+            wmin = str2double(get(R.uiWinMin,'String'));
+            wmax = str2double(get(R.uiWinMax,'String'));
+            if ~isfinite(wmin)
+                wmin = R.overlayWinMin;
+            end
+            if ~isfinite(wmax)
+                wmax = R.overlayWinMax;
+            end
+
+            wmin = max(0, min(1, wmin));
+            wmax = max(0, min(1, wmax));
+            if wmax <= wmin
+                wmax = min(1, wmin + 0.01);
+            end
+
+            R.overlayWinMin = wmin;
+            R.overlayWinMax = wmax;
+            set(R.uiWinMin,'String',num2str(R.overlayWinMin));
+            set(R.uiWinMax,'String',num2str(R.overlayWinMax));
+
+            R.overlayInvert = logical(get(R.uiInvert,'Value'));
+
+            cmapList = get(R.uiCmapPopup,'String');
+            idx = get(R.uiCmapPopup,'Value');
+            if iscell(cmapList)
+                R.overlayCmapName = cmapList{idx};
+            else
+                R.overlayCmapName = deblank(cmapList(idx,:));
             end
 
             R.applyOverlayColormap();
             R.refresh();
 
-            set(R.uiOverlayStatus,'String',sprintf('Opacity %.2f | Intensity %.2f | %s', ...
-                R.overlayOpacity, R.overlayIntensity, R.overlayCmapName));
+            set(R.uiOverlayStatus,'String',sprintf( ...
+                'Opacity %.2f | Win [%.2f %.2f] | %s | Invert %d', ...
+                R.overlayOpacity, R.overlayWinMin, R.overlayWinMax, R.overlayCmapName, double(R.overlayInvert)));
         end
 
         function applyOverlayColormap(R)
             try
-                cmapList = get(R.uiCmapPopup,'String');
-                idx = get(R.uiCmapPopup,'Value');
-                if iscell(cmapList)
-                    R.overlayCmapName = cmapList{idx};
-                else
-                    R.overlayCmapName = deblank(cmapList(idx,:));
-                end
+                cmap = feval(R.overlayCmapName, 256);
             catch
+                cmap = gray(256);
+                R.overlayCmapName = 'gray';
             end
 
-            try
-                map = feval(R.overlayCmapName, 256);
-            catch
-                map = hot(256);
-                R.overlayCmapName = 'hot';
-            end
-
-            colormap(R.H.axes4, map);
-            colormap(R.H.axes5, map);
-            colormap(R.H.axes6, map);
+            colormap(R.H.axes4, cmap);
+            colormap(R.H.axes5, cmap);
+            colormap(R.H.axes6, cmap);
         end
 
         function onPlaneEdited(R)
@@ -817,7 +916,13 @@ classdef registration_ccf < handle
             R.refresh();
         end
 
+        function onShowLines(R)
+            R.showAtlasLines = logical(get(R.uiShowLines,'Value'));
+            R.refresh();
+        end
+
         function onApply(R)
+
             sx = str2double(get(R.uiScaleCorX,'String'));
             sy = str2double(get(R.uiScaleSagY,'String'));
             sz = str2double(get(R.uiScaleAxiZ,'String'));
@@ -841,6 +946,7 @@ classdef registration_ccf < handle
         function onSave(R)
             Transf = R.getCurrentTransform();
             outFile = fullfile(R.saveDir,'Transformation.mat');
+
             try
                 save(outFile,'Transf');
                 set(R.uiSaveStatus,'String',['Saved: ' outFile]);
@@ -852,6 +958,7 @@ classdef registration_ccf < handle
         end
 
         function onPreviewFunctional(R)
+
             if isempty(R.funcFiles)
                 set(R.uiFuncStatus,'String','No functional candidates.');
                 return;
@@ -872,10 +979,12 @@ classdef registration_ccf < handle
                 set(R.uiFuncStatus,'String','Preview opened.');
             catch ME
                 set(R.uiFuncStatus,'String',['Preview failed: ' ME.message]);
+                R.log(['[Atlas GUI] Preview failed: ' ME.message]);
             end
         end
 
         function onRegisterFunctional(R)
+
             if isempty(R.funcFiles)
                 set(R.uiFuncStatus,'String','No functional candidates.');
                 return;
@@ -909,8 +1018,8 @@ classdef registration_ccf < handle
 
                 set(R.uiFuncStatus,'String',['Registered saved: ' outFile]);
                 R.log(sprintf('[Atlas GUI] Registered scan saved -> %s', outFile));
-
                 set(R.H.figure1,'Pointer','arrow');
+
             catch ME
                 set(R.H.figure1,'Pointer','arrow');
                 set(R.uiFuncStatus,'String',['Register failed: ' ME.message]);
@@ -930,7 +1039,13 @@ classdef registration_ccf < handle
             oSag = squeeze(regVol(:,y0,:));
             oAxi = squeeze(regVol(:,:,z0))';
 
-            win = estimateDisplayRange(regVol);
+            if R.overlayInvert
+                oCor = 1 - rescaleSafe(oCor);
+                oSag = 1 - rescaleSafe(oSag);
+                oAxi = 1 - rescaleSafe(oAxi);
+            end
+
+            win = estimateDisplayRange01(regVol);
             cmap = getOverlayCmap(R.overlayCmapName);
 
             hf = figure( ...
@@ -939,15 +1054,15 @@ classdef registration_ccf < handle
                 'MenuBar','none', ...
                 'ToolBar','none', ...
                 'NumberTitle','off', ...
-                'Position',[100 100 1350 500]);
+                'Position',[100 100 1380 520]);
 
             ax1 = axes('Parent',hf,'Units','normalized','Position',[0.03 0.12 0.29 0.76], 'Color','k');
             ax2 = axes('Parent',hf,'Units','normalized','Position',[0.355 0.12 0.29 0.76], 'Color','k');
             ax3 = axes('Parent',hf,'Units','normalized','Position',[0.68 0.12 0.29 0.76], 'Color','k');
 
-            drawOverlayPreview(ax1, aCor, oCor, win, cmap, R.overlayOpacity, sprintf('Coronal x = %d', x0));
-            drawOverlayPreview(ax2, aSag, oSag, win, cmap, R.overlayOpacity, sprintf('Sagittal y = %d', y0));
-            drawOverlayPreview(ax3, permute(aAxi,[2 1 3]), oAxi, win, cmap, R.overlayOpacity, sprintf('Axial z = %d', z0));
+            drawOverlayPreview(ax1, aCor, rescaleSafe(oCor), [R.overlayWinMin R.overlayWinMax], cmap, R.overlayOpacity, sprintf('Coronal x = %d', x0));
+            drawOverlayPreview(ax2, aSag, rescaleSafe(oSag), [R.overlayWinMin R.overlayWinMax], cmap, R.overlayOpacity, sprintf('Sagittal y = %d', y0));
+            drawOverlayPreview(ax3, permute(aAxi,[2 1 3]), rescaleSafe(oAxi), [R.overlayWinMin R.overlayWinMax], cmap, R.overlayOpacity, sprintf('Axial z = %d', z0));
 
             uicontrol('Style','text','Parent',hf,'Units','normalized', ...
                 'Position',[0.02 0.93 0.96 0.05], ...
@@ -955,7 +1070,7 @@ classdef registration_ccf < handle
                 'ForegroundColor',[1 1 1], ...
                 'HorizontalAlignment','left', ...
                 'FontSize',11, ...
-                'String',sprintf('Source: %s | %s', srcFile, descText));
+                'String',sprintf('Source: %s | %s | display range estimate [%.3f %.3f]', srcFile, descText, win(1), win(2)));
         end
 
         function onHelp(R)
@@ -967,21 +1082,25 @@ classdef registration_ccf < handle
                 'Position',[200 120 900 650]);
 
             txt = {
-                'Atlas GUI - Manual registration help'
+                'Atlas GUI - Help'
                 ' '
                 'Recommended workflow:'
-                '1) Adjust anatomy overlay on the right.'
-                '2) Scroll slices to verify alignment.'
-                '3) Press Apply to commit the current manual adjustment.'
-                '4) Press Save to write Transformation.mat.'
-                '5) Use the functional dropdown to preview or register a selected scan.'
+                '1) Select your nice BrainOnly / brainImage / MIP-like anatomy in coreg.'
+                '2) In this GUI, mainly align coronal first.'
+                '3) Then verify and refine with sagittal and axial.'
+                '4) Use Apply, then Save.'
+                '5) Use Preview selected or Register selected for functional outputs.'
                 ' '
-                'Functional buttons:'
-                '  - Preview selected   : preview a registered mean/static volume'
-                '  - Register selected  : save the selected scan registered to atlas space'
+                'Mouse interaction on right panels:'
+                '  - Left drag  = translate overlay'
+                '  - Right drag = rotate overlay'
                 ' '
-                'Atlas underlay stays fixed.'
-                'Anatomy overlay is the movable image.'
+                'Important:'
+                'A reliable 3D transform should not be based on coronal only.'
+                'Use coronal as primary view, but confirm sagittal and axial too.'
+                ' '
+                'The overlay display controls are only for contrast/visibility.'
+                'They do not change the data used for the saved transformation.'
                 };
 
             uicontrol(hf,'Style','edit','Max',2,'Min',0, ...
@@ -1000,6 +1119,7 @@ classdef registration_ccf < handle
         end
 
         function onScroll(R, evt)
+
             if R.anyDragging()
                 return;
             end
@@ -1038,6 +1158,7 @@ classdef registration_ccf < handle
         end
 
         function ax = getAxesUnderPointer(R)
+
             fig = R.H.figure1;
             cp = get(fig,'CurrentPoint');
             axList = [R.H.axes1 R.H.axes2 R.H.axes3 R.H.axes4 R.H.axes5 R.H.axes6];
@@ -1057,6 +1178,7 @@ classdef registration_ccf < handle
         end
 
         function clampIndices(R)
+
             nx = min(R.ms1.nx, size(R.ms2.D,1));
             ny = min(R.ms1.ny, size(R.ms2.D,2));
             nz = min(R.ms1.nz, size(R.ms2.D,3));
@@ -1092,133 +1214,152 @@ classdef registration_ccf < handle
     end
 end
 
+
 function DataNorm = equalizeImages(Data)
-    DataNorm = Data - min(Data(:));
-    mx = max(DataNorm(:));
-    if mx > 0
-        DataNorm = DataNorm ./ mx;
-    end
 
-    m = median(DataNorm(:));
-    if m <= 0
-        m = 0.5;
-    end
-
-    comp = -2 / log2(m);
-    DataNorm = DataNorm .^ comp;
-    DataNorm = DataNorm - min(DataNorm(:));
-
-    mx = max(DataNorm(:));
-    if mx > 0
-        DataNorm = DataNorm ./ mx;
-    end
+DataNorm = Data - min(Data(:));
+mx = max(DataNorm(:));
+if mx > 0
+    DataNorm = DataNorm ./ mx;
 end
+
+m = median(DataNorm(:));
+if m <= 0
+    m = 0.5;
+end
+
+comp = -2 / log2(m);
+DataNorm = DataNorm .^ comp;
+
+DataNorm = DataNorm - min(DataNorm(:));
+mx = max(DataNorm(:));
+if mx > 0
+    DataNorm = DataNorm ./ mx;
+end
+
+end
+
 
 function tot = build3DrotationMatrix(R)
-    tot = eye(4);
 
-    if isempty(R.r1) || isempty(R.r2) || isempty(R.r3)
-        return;
-    end
+tot = eye(4);
 
-    tmpx = R.r1.T0;
-    tmpx(1:2,1:2) = tmpx(1:2,1:2)';
-    tmpx(3,1:2) = fliplr(tmpx(3,1:2));
-    tmp = [tmpx(1,:); zeros(1,3); tmpx(2:end,:)];
-    tmp = [tmp(:,1), zeros(4,1), tmp(:,2:end)];
-    tmp(2,2) = 1;
-    tot = tot * tmp;
-
-    tmpx = R.r2.T0;
-    tmpx(1:2,1:2) = tmpx(1:2,1:2)';
-    tmpx(3,1:2) = fliplr(tmpx(3,1:2));
-    tmp = [zeros(1,3); tmpx(1:end,:)];
-    tmp = [zeros(4,1), tmp(:,1:end)];
-    tmp(1,1) = 1;
-    tot = tot * tmp;
-
-    tmpx = R.r3.T0;
-    tmpx(1:2,1:2) = tmpx(1:2,1:2)';
-    tmpx(3,1:2) = fliplr(tmpx(3,1:2));
-    tmp = [tmpx(1:2,:); zeros(1,3); tmpx(3:end,:)];
-    tmp = [tmp(:,1:2), zeros(4,1), tmp(:,3:end)];
-    tmp(3,3) = 1;
-    tot = tot * tmp;
+if isempty(R.r1) || isempty(R.r2) || isempty(R.r3)
+    return;
 end
+
+tmpx = R.r1.T0;
+tmpx(1:2,1:2) = tmpx(1:2,1:2)';
+tmpx(3,1:2)   = fliplr(tmpx(3,1:2));
+tmp = [tmpx(1,:); zeros(1,3); tmpx(2:end,:)];
+tmp = [tmp(:,1), zeros(4,1), tmp(:,2:end)];
+tmp(2,2) = 1;
+tot = tot * tmp;
+
+tmpx = R.r2.T0;
+tmpx(1:2,1:2) = tmpx(1:2,1:2)';
+tmpx(3,1:2)   = fliplr(tmpx(3,1:2));
+tmp = [zeros(1,3); tmpx(1:end,:)];
+tmp = [zeros(4,1), tmp(:,1:end)];
+tmp(1,1) = 1;
+tot = tot * tmp;
+
+tmpx = R.r3.T0;
+tmpx(1:2,1:2) = tmpx(1:2,1:2)';
+tmpx(3,1:2)   = fliplr(tmpx(3,1:2));
+tmp = [tmpx(1:2,:); zeros(1,3); tmpx(3:end,:)];
+tmp = [tmp(:,1:2), zeros(4,1), tmp(:,3:end)];
+tmp(3,3) = 1;
+tot = tot * tmp;
+
+end
+
 
 function idx = clampToNumel(LL, idx)
-    n = numel(LL);
-    if n < 1
-        idx = 1;
-        return;
-    end
-    idx = max(1, min(n, idx));
+n = numel(LL);
+if n < 1
+    idx = 1;
+    return;
 end
+idx = max(1, min(n, idx));
+end
+
 
 function h = addLines(ax, LL, ip)
-    if isempty(LL) || ip < 1 || ip > numel(LL)
-        h = gobjects(0);
-        return;
-    end
-    L = LL{ip};
-    hold(ax,'on');
-    nb = length(L);
-    h = gobjects(nb,1);
-    for ib = 1:nb
-        x = L{ib};
-        h(ib) = plot(ax, x(:,2), x(:,1), 'w:', 'LineWidth', 1, 'HitTest','off');
-    end
-    hold(ax,'off');
+
+if isempty(LL) || ip < 1 || ip > numel(LL)
+    h = gobjects(0);
+    return;
 end
+
+L = LL{ip};
+hold(ax,'on');
+nb = length(L);
+h = gobjects(nb,1);
+
+for ib = 1:nb
+    x = L{ib};
+    h(ib) = plot(ax, x(:,2), x(:,1), 'w:', 'LineWidth', 1, 'HitTest','off');
+end
+
+hold(ax,'off');
+
+end
+
 
 function safeDeleteGraphics(h)
-    try
-        if isempty(h)
-            return;
-        end
-        for k = 1:numel(h)
-            if isgraphics(h(k))
-                delete(h(k));
-            end
-        end
-    catch
+try
+    if isempty(h)
+        return;
     end
+    for k = 1:numel(h)
+        if isgraphics(h(k))
+            delete(h(k));
+        end
+    end
+catch
 end
+end
+
 
 function tf = safeIsDragging(r)
-    tf = false;
-    try
-        if ~isempty(r) && ismethod(r,'isDragging')
-            tf = r.isDragging();
-        end
-    catch
-        tf = false;
+tf = false;
+try
+    if ~isempty(r) && ismethod(r,'isDragging')
+        tf = r.isDragging();
     end
+catch
+    tf = false;
 end
+end
+
 
 function tf = isvalidHandleObj(obj)
+tf = false;
+try
+    tf = ~isempty(obj) && isvalid(obj);
+catch
     tf = false;
-    try
-        tf = ~isempty(obj) && isvalid(obj);
-    catch
-        tf = false;
-    end
+end
 end
 
+
 function safeResetMove(r)
-    try
-        if ~isempty(r) && ismethod(r,'resetTransform')
-            r.resetTransform();
-        end
-    catch
+try
+    if ~isempty(r) && ismethod(r,'resetTransform')
+        r.resetTransform();
     end
+catch
 end
+end
+
 
 function [scan, descText] = loadFunctionalCandidateFile(f)
 
 if endsWithLowerLocal(f,'.mat')
     S = load(f);
     [scan, descText] = detectBestFunctionalFromMat(S);
+
 elseif endsWithLowerLocal(f,'.nii') || endsWithLowerLocal(f,'.nii.gz')
     [D, vox] = loadNiftiMaybeGzLocal(f);
     scan = struct();
@@ -1228,6 +1369,7 @@ elseif endsWithLowerLocal(f,'.nii') || endsWithLowerLocal(f,'.nii.gz')
     end
     scan.VoxelSize = vox;
     descText = sprintf('NIfTI [%s]', joinDimsLocal(size(scan.Data)));
+
 else
     error('Unsupported functional candidate: %s', f);
 end
@@ -1235,11 +1377,13 @@ end
 if ~isfield(scan,'Data') || isempty(scan.Data)
     error('Loaded functional candidate has empty Data.');
 end
+
 if ~isfield(scan,'VoxelSize') || isempty(scan.VoxelSize)
     scan.VoxelSize = [1 1 1];
 end
 
 end
+
 
 function [scanBest, descText] = detectBestFunctionalFromMat(S)
 
@@ -1259,51 +1403,103 @@ if isempty(voxHint)
     voxHint = [1 1 1];
 end
 
-bestScore = -inf;
 scanBest = [];
 descText = '';
+
+preferredNumeric = { ...
+    'brainImage', ...
+    'I', ...
+    'PSC', ...
+    'Data', ...
+    'anatomical_reference', ...
+    'anatomical_reference_raw' ...
+    };
+
+for i = 1:numel(preferredNumeric)
+    nm = preferredNumeric{i};
+    if isfield(S, nm)
+        v = S.(nm);
+        if (isnumeric(v) || islogical(v)) && ~isempty(v)
+            if ndims(v) >= 2 && ndims(v) <= 4
+                scanBest = struct();
+                scanBest.Data = double(v);
+                scanBest.VoxelSize = voxHint;
+                descText = sprintf('MAT numeric %s [%s]', nm, joinDimsLocal(size(v)));
+                return;
+            end
+        end
+    end
+end
+
+preferredStruct = { ...
+    'registered', ...
+    'scan', ...
+    'scanfus', ...
+    'anatomic', ...
+    'proc', ...
+    'out' ...
+    };
+
+for i = 1:numel(preferredStruct)
+    nm = preferredStruct{i};
+    if isfield(S, nm)
+        v = S.(nm);
+        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+            scanBest = struct();
+            scanBest.Data = double(v.Data);
+            if isfield(v,'VoxelSize') && ~isempty(v.VoxelSize)
+                scanBest.VoxelSize = v.VoxelSize;
+            else
+                scanBest.VoxelSize = voxHint;
+            end
+            descText = sprintf('MAT struct %s.Data [%s]', nm, joinDimsLocal(size(v.Data)));
+            return;
+        end
+    end
+end
+
+for i = 1:numel(fields)
+    v = S.(fields{i});
+    if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+        if ndims(v.Data) >= 2 && ndims(v.Data) <= 4
+            scanBest = struct();
+            scanBest.Data = double(v.Data);
+            if isfield(v,'VoxelSize') && ~isempty(v.VoxelSize)
+                scanBest.VoxelSize = v.VoxelSize;
+            else
+                scanBest.VoxelSize = voxHint;
+            end
+            descText = sprintf('MAT struct %s.Data [%s]', fields{i}, joinDimsLocal(size(v.Data)));
+            return;
+        end
+    end
+end
+
+bestScore = -inf;
 
 for i = 1:numel(fields)
     v = S.(fields{i});
 
-    if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
-        D = double(v.Data);
-        if ndims(D) >= 2 && ndims(D) <= 4
-            tmp = struct();
-            tmp.Data = D;
-            if isfield(v,'VoxelSize') && ~isempty(v.VoxelSize)
-                tmp.VoxelSize = v.VoxelSize;
-            else
-                tmp.VoxelSize = voxHint;
-            end
-            sc = 1000 * ndims(D) + log(double(numel(D)) + 1);
+    if (isnumeric(v) || islogical(v)) && ~isempty(v)
+        if ndims(v) >= 2 && ndims(v) <= 4
+            sc = 1000 * ndims(v) + log(double(numel(v)) + 1);
             if sc > bestScore
                 bestScore = sc;
-                scanBest = tmp;
-                descText = sprintf('MAT struct %s [%s]', fields{i}, joinDimsLocal(size(D)));
-            end
-        end
-    elseif (isnumeric(v) || islogical(v)) && ~isempty(v)
-        D = double(v);
-        if ndims(D) >= 2 && ndims(D) <= 4
-            tmp = struct();
-            tmp.Data = D;
-            tmp.VoxelSize = voxHint;
-            sc = 1000 * ndims(D) + log(double(numel(D)) + 1);
-            if sc > bestScore
-                bestScore = sc;
-                scanBest = tmp;
-                descText = sprintf('MAT numeric %s [%s]', fields{i}, joinDimsLocal(size(D)));
+                scanBest = struct();
+                scanBest.Data = double(v);
+                scanBest.VoxelSize = voxHint;
+                descText = sprintf('MAT numeric %s [%s]', fields{i}, joinDimsLocal(size(v)));
             end
         end
     end
 end
 
 if isempty(scanBest)
-    error('No suitable functional candidate found inside MAT file.');
+    error('No suitable functional candidate found. No numeric 2D/3D/4D variable or struct.Data field was found.');
 end
 
 end
+
 
 function [scanPrev, descText] = makePreviewScan(scanIn)
 
@@ -1313,6 +1509,7 @@ D = double(scanIn.Data);
 if ndims(D) == 4
     scanPrev.Data = mean(D,4);
     descText = sprintf('Preview = mean over time of 4D [%s]', joinDimsLocal(size(D)));
+
 elseif ndims(D) == 3
     if size(D,3) == 1
         scanPrev.Data = D;
@@ -1324,9 +1521,11 @@ elseif ndims(D) == 3
         scanPrev.Data = D;
         descText = sprintf('Preview = static 3D volume [%s]', joinDimsLocal(size(D)));
     end
+
 elseif ndims(D) == 2
     scanPrev.Data = reshape(D, [size(D,1) size(D,2) 1]);
     descText = sprintf('Preview = single 2D image [%s]', joinDimsLocal(size(D)));
+
 else
     error('Unsupported preview dimensionality.');
 end
@@ -1337,6 +1536,7 @@ end
 
 end
 
+
 function [registered, descText] = registerFullOrStaticScan(atlas, scanIn, TransfNow)
 
 registered = struct();
@@ -1346,6 +1546,7 @@ D = double(scanIn.Data);
 
 if ndims(D) == 4
     T = size(D,4);
+
     tmpFirst = struct();
     tmpFirst.Data = squeeze(D(:,:,:,1));
     tmpFirst.VoxelSize = scanIn.VoxelSize;
@@ -1367,6 +1568,7 @@ if ndims(D) == 4
 elseif ndims(D) == 3
     if size(D,3) > 16
         T = size(D,3);
+
         tmpFirst = struct();
         tmpFirst.Data = reshape(D(:,:,1), [size(D,1) size(D,2) 1]);
         tmpFirst.VoxelSize = scanIn.VoxelSize;
@@ -1398,36 +1600,42 @@ elseif ndims(D) == 2
     tmp.VoxelSize = scanIn.VoxelSize;
     registered.Data = single(register_data(atlas, tmp, TransfNow));
     descText = sprintf('2D image registered as single plane [%s]', joinDimsLocal(size(D)));
+
 else
     error('Unsupported scan dimensionality for registration.');
 end
 
 end
 
-function drawOverlayPreview(ax, underRGB, overData, win, cmap, alphaVal, ttl)
+
+function drawOverlayPreview(ax, underRGB, overData01, win, cmap, alphaVal, ttl)
+
 axes(ax); %#ok<LAXES>
 cla(ax);
 image(underRGB, 'Parent', ax);
 axis(ax,'image');
 axis(ax,'off');
 hold(ax,'on');
-h = imagesc(overData, 'Parent', ax);
+h = imagesc(overData01, 'Parent', ax);
 set(h,'AlphaData',alphaVal);
 set(ax,'CLim',win);
 colormap(ax, cmap);
 title(ax, ttl, 'Color','w', 'FontWeight','bold');
 hold(ax,'off');
+
 end
+
 
 function cmap = getOverlayCmap(nameIn)
 try
     cmap = feval(nameIn, 256);
 catch
-    cmap = hot(256);
+    cmap = gray(256);
 end
 end
 
-function win = estimateDisplayRange(V)
+
+function win = estimateDisplayRange01(V)
 v = double(V(:));
 v = v(isfinite(v));
 if isempty(v)
@@ -1435,17 +1643,36 @@ if isempty(v)
     return;
 end
 
+v = rescaleSafe(v);
 lo = prctile(v, 2);
 hi = prctile(v, 98);
+
 if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
     lo = min(v);
     hi = max(v);
 end
 if hi <= lo
-    hi = lo + 1;
+    hi = lo + 0.01;
 end
+
 win = [lo hi];
 end
+
+
+function x = rescaleSafe(x)
+x = double(x);
+mn = min(x(:));
+mx = max(x(:));
+if ~isfinite(mn), mn = 0; end
+if ~isfinite(mx), mx = 1; end
+if mx <= mn
+    x = zeros(size(x));
+else
+    x = (x - mn) ./ (mx - mn);
+end
+x = min(max(x,0),1);
+end
+
 
 function tf = endsWithLowerLocal(str, suffix)
 str = lower(str);
@@ -1456,6 +1683,7 @@ if numel(str) < numel(suffix)
 end
 tf = strcmp(str(end-numel(suffix)+1:end), suffix);
 end
+
 
 function [D, vox] = loadNiftiMaybeGzLocal(f)
 
@@ -1486,6 +1714,7 @@ if isGz
         rmdir(tmpDir,'s');
     catch
     end
+
 else
     info = niftiinfo(f);
     D = niftiread(info);
@@ -1496,7 +1725,9 @@ else
     catch
     end
 end
+
 end
+
 
 function s = joinDimsLocal(sz)
 if isempty(sz)
@@ -1508,6 +1739,7 @@ for k = 2:numel(sz)
     s = [s 'x' num2str(sz(k))]; %#ok<AGROW>
 end
 end
+
 
 function stem = safeFileStem(s)
 if isempty(s)
@@ -1525,6 +1757,7 @@ if numel(stem) > 60
     stem = stem(1:60);
 end
 end
+
 
 function out = stripNiiGzExt(f)
 out = f;
