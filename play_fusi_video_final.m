@@ -122,25 +122,15 @@ maskIsInclude = true;
 statusLine = '';
 
 if exist('loadedMask','var') && ~isempty(loadedMask)
-    loadedMask = logical(loadedMask);
-    switch ndims(loadedMask)
-        case 2
-            mask(:,:,sliceIdx,:) = repmat(loadedMask,[1 1 1 nVols]);
-            statusLine = '2D mask expanded to all volumes (current slice).';
-        case 3
-            for zz = 1:min(nZ,size(loadedMask,3))
-                mask(:,:,zz,:) = repmat(loadedMask(:,:,zz),[1 1 1 nVols]);
-            end
-            statusLine = '3D mask expanded to all volumes.';
-        case 4
-            if isequal(size(loadedMask), size(mask))
-                mask = loadedMask;
-                statusLine = '4D mask restored.';
-            else
-                statusLine = '4D mask size mismatch - ignored.';
-            end
+    try
+        [mask, maskIsInclude, bgDefaultFull, statusLine] = normalizeMaskInputForVideo( ...
+            loadedMask, loadedMaskIsInclude, bgDefaultFull, ...
+            ny, nx, nZ, nVols, sliceIdx);
+    catch ME
+        mask = false(ny, nx, nZ, nVols);
+        maskIsInclude = true;
+        statusLine = ['Initial mask load failed: ' ME.message];
     end
-    maskIsInclude = loadedMaskIsInclude;
 end
 
 % Playback + view state
@@ -392,7 +382,7 @@ btnFill  = mkBtn(pVideo,'Fill (F)',@fillRegion,[0.20 0.20 0.20],12);
 btnClear = mkBtn(pVideo,'Clear mask',@clearMaskAll,[0.35 0.20 0.20],12);
 
 btnApplyAllMask = mkBtn(pVideo,'Apply mask to all volumes (this slice)',@applyMaskToAllFrames,[0.20 0.45 0.25],12);
-
+btnLoadMask = mkBtn(pVideo,'Load mask / bundle',@loadMaskBundleCB,[0.45 0.28 0.70],12);
 btnSaveMask = mkBtn(pVideo,'Save mask (.mat)',@saveMaskMat,[0.10 0.35 0.95],12);
 btnSaveInterp = mkBtn(pVideo,'Save interpolated data (.mat)',@saveInterpolatedMat,[0.15 0.65 0.55],12);
 
@@ -461,7 +451,11 @@ edModMax  = mkEdit(pOverlay,sprintf('%.3g',modMaxAbs),@overlayModMaxEdit);
 
 updateOverlayEnable();
 updateUnderlayEnable();
-
+if maskIsInclude
+    set(popIncExc,'Value',1);
+else
+    set(popIncExc,'Value',2);
+end
 % ---------------------------------------------------------
 % Bottom buttons (UNCHANGED conceptually)
 % ---------------------------------------------------------
@@ -667,7 +661,7 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
         fixed = fixed + 2*rowHc;          % Brush, Mask alpha
         fixed = fixed + rowHc;            % Color/Fill/Clear
         fixed = fixed + 34;               % Apply mask all volumes
-        fixed = fixed + 2*32;             % Save buttons
+        fixed = fixed + 3*32;             % Save buttons
         nGaps = 10;
         gapc = adaptiveGap(h, fixed, nGaps, 8, 10);
         gapBig = gapc + 6;
@@ -724,13 +718,17 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
         y0 = y0 - (rowHc + gapc);
 
         % Apply mask all volumes
-        set(btnApplyAllMask,'Position',[xLabel y0 (w-2*pad) 34]);
-        y0 = y0 - (34 + gapc);
+set(btnApplyAllMask,'Position',[xLabel y0 (w-2*pad) 34]);
+y0 = y0 - (34 + gapc);
 
-        % Save buttons
-        set(btnSaveMask,'Position',[xLabel y0 (w-2*pad) 32]);
-        y0 = y0 - (32 + gapc);
-        set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 32]);
+% Load / save buttons
+set(btnLoadMask,'Position',[xLabel y0 (w-2*pad) 32]);
+y0 = y0 - (32 + gapc);
+
+set(btnSaveMask,'Position',[xLabel y0 (w-2*pad) 32]);
+y0 = y0 - (32 + gapc);
+
+set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 32]);
     end
 
     function layoutUnderTab(w, h)
@@ -1611,25 +1609,56 @@ end
 % SAVE MASK
 % =========================================================
     function saveMaskMat(~,~)
-        [f,p] = uiputfile('*.mat','Save mask');
-        if isequal(f,0), return; end
+    [f,p] = uiputfile('*.mat','Save mask / bundle');
+    if isequal(f,0), return; end
 
-        out = struct();
-        out.mask = mask;
-        out.maskIsInclude = maskIsInclude;
+    out = struct();
 
-        out.metadata = struct();
-        out.metadata.TR = TR;
-        out.metadata.nVols = nVols;
-        out.metadata.nZ = nZ;
-        out.metadata.created = datestr(now);
-        out.metadata.script = mfilename;
-        out.metadata.note = 'Mask saved from fUSI video GUI';
+    % Main overlay restriction mask
+    out.loadedMask = mask;
+    out.loadedMaskIsInclude = maskIsInclude;
 
-        save(fullfile(p,f),'-struct','out','-v7.3');
-        statusLine = 'Mask saved.';
-        render();
-    end
+    out.overlayMask = mask;
+    out.overlayMaskIsInclude = maskIsInclude;
+
+    % Legacy compatibility
+    out.mask = mask;
+    out.maskIsInclude = maskIsInclude;
+
+    % Save underlay too so SCM / Video can reuse it directly
+    out.brainImage = bgDefaultFull;
+
+    % Optional derived brain mask from underlay
+    out.brainMask = deriveBrainMaskFromUnderlayVideo(bgDefaultFull, ny, nx, nZ);
+    out.brainMaskIsInclude = true;
+
+    out.metadata = struct();
+    out.metadata.TR = TR;
+    out.metadata.nVols = nVols;
+    out.metadata.nZ = nZ;
+    out.metadata.created = datestr(now);
+    out.metadata.script = mfilename;
+    out.metadata.note = 'Mask bundle saved from fUSI Video GUI';
+
+    % Nested bundle for robust cross-tool loading
+    maskBundle = struct();
+    maskBundle.loadedMask = out.loadedMask;
+    maskBundle.loadedMaskIsInclude = out.loadedMaskIsInclude;
+    maskBundle.overlayMask = out.overlayMask;
+    maskBundle.overlayMaskIsInclude = out.overlayMaskIsInclude;
+    maskBundle.mask = out.mask;
+    maskBundle.maskIsInclude = out.maskIsInclude;
+    maskBundle.brainImage = out.brainImage;
+    maskBundle.brainMask = out.brainMask;
+    maskBundle.brainMaskIsInclude = out.brainMaskIsInclude;
+    maskBundle.metadata = out.metadata;
+
+    out.maskBundle = maskBundle;
+
+    save(fullfile(p,f),'-struct','out','-v7.3');
+    statusLine = 'Mask bundle saved.';
+    render();
+end
 
 % =========================================================
 % SAVE INTERPOLATED DATA
@@ -2301,7 +2330,452 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
             q = v(k1) + (k-k1)*(v(k2)-v(k1));
         end
     end
+function loadMaskBundleCB(~,~)
+    startPath = getStartPath();
 
+    [f,p] = uigetfile( ...
+        {'*.mat;*.nii;*.nii.gz', 'Mask / bundle files (*.mat,*.nii,*.nii.gz)'}, ...
+        'Select mask / bundle', startPath);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fullf = fullfile(p,f);
+
+    try
+        [~,~,ext] = fileparts(fullf);
+        ext = lower(ext);
+
+        if strcmp(ext,'.mat')
+            S = load(fullf);
+            [maskNew, includeNew, bgNew, note] = normalizeMaskInputForVideo( ...
+                S, true, bgDefaultFull, ny, nx, nZ, nVols, sliceIdx);
+        else
+            M = readMaskFileForVideo(fullf);
+            [maskNew, includeNew, bgNew, note] = normalizeMaskInputForVideo( ...
+                M, true, bgDefaultFull, ny, nx, nZ, nVols, sliceIdx);
+        end
+
+        mask = maskNew;
+        maskIsInclude = includeNew;
+        bgDefaultFull = bgNew;
+
+        underSrc = 1;
+        underSrcLabel = 'Default(bg)';
+        if ishandle(popUSrc)
+            set(popUSrc,'Value',1);
+        end
+
+        if ishandle(popIncExc)
+            if maskIsInclude
+                set(popIncExc,'Value',1);
+            else
+                set(popIncExc,'Value',2);
+            end
+        end
+
+        statusLine = note;
+        render();
+
+    catch ME
+        errordlg(ME.message,'Load mask / bundle failed');
+    end
+end
+
+function [maskOut, maskIsIncludeOut, bgOut, note] = normalizeMaskInputForVideo( ...
+    maskIn, maskInInclude, bgIn, ny0, nx0, nZ0, nVols0, slice0)
+
+    maskOut = false(ny0, nx0, nZ0, nVols0);
+    maskIsIncludeOut = true;
+    bgOut = bgIn;
+    note = '';
+
+    if nargin >= 2 && ~isempty(maskInInclude)
+        try
+            maskIsIncludeOut = logical(maskInInclude);
+        catch
+            maskIsIncludeOut = true;
+        end
+    end
+
+    if isempty(maskIn)
+        return;
+    end
+
+    % -----------------------------------------------------
+    % Case 1: bundle / loaded MAT struct
+    % -----------------------------------------------------
+    if isstruct(maskIn)
+        S = maskIn;
+        if isfield(S,'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle)
+            S = S.maskBundle;
+        end
+
+        pickedField = '';
+        M = [];
+
+        overlayFields = {'loadedMask','overlayMask','signalMask','mask','activeMask'};
+        for k = 1:numel(overlayFields)
+            fn = overlayFields{k};
+            if isfield(S,fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
+                M = S.(fn);
+                pickedField = fn;
+                break;
+            end
+        end
+
+        if isempty(M)
+            brainFields = {'brainMask','underlayMask'};
+            for k = 1:numel(brainFields)
+                fn = brainFields{k};
+                if isfield(S,fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
+                    M = S.(fn);
+                    pickedField = fn;
+                    break;
+                end
+            end
+        end
+
+        if isempty(M)
+            error('No usable overlay / brain mask field found in bundle.');
+        end
+
+        % Include / exclude flag
+        if any(strcmpi(pickedField, {'loadedMask','overlayMask','signalMask'}))
+            if isfield(S,'overlayMaskIsInclude') && ~isempty(S.overlayMaskIsInclude)
+                maskIsIncludeOut = logical(S.overlayMaskIsInclude);
+            elseif isfield(S,'loadedMaskIsInclude') && ~isempty(S.loadedMaskIsInclude)
+                maskIsIncludeOut = logical(S.loadedMaskIsInclude);
+            elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude)
+                maskIsIncludeOut = logical(S.maskIsInclude);
+            else
+                maskIsIncludeOut = true;
+            end
+        else
+            if isfield(S,'brainMaskIsInclude') && ~isempty(S.brainMaskIsInclude)
+                maskIsIncludeOut = logical(S.brainMaskIsInclude);
+            elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude)
+                maskIsIncludeOut = logical(S.maskIsInclude);
+            else
+                maskIsIncludeOut = true;
+            end
+        end
+
+        maskOut = expandMaskToVideoSize(M, ny0, nx0, nZ0, nVols0, slice0);
+
+        % Optional bundled underlay
+        if isfield(S,'brainImage') && ~isempty(S.brainImage) && isnumeric(S.brainImage)
+            bgOut = fitBundleUnderlayToVideo(S.brainImage, bgIn, ny0, nx0, nZ0);
+        elseif isfield(S,'underlay') && ~isempty(S.underlay) && isnumeric(S.underlay)
+            bgOut = fitBundleUnderlayToVideo(S.underlay, bgIn, ny0, nx0, nZ0);
+        elseif isfield(S,'bg') && ~isempty(S.bg) && isnumeric(S.bg)
+            bgOut = fitBundleUnderlayToVideo(S.bg, bgIn, ny0, nx0, nZ0);
+        end
+
+        note = ['Loaded bundle mask: ' pickedField];
+        return;
+    end
+
+    % -----------------------------------------------------
+    % Case 2: direct numeric / logical mask
+    % -----------------------------------------------------
+    if ~(isnumeric(maskIn) || islogical(maskIn))
+        error('Mask input must be numeric, logical, or a bundle struct.');
+    end
+
+    maskOut = expandMaskToVideoSize(maskIn, ny0, nx0, nZ0, nVols0, slice0);
+
+    if ndims(maskIn) == 2
+        note = '2D mask expanded to all volumes (current slice).';
+    elseif ndims(maskIn) == 3
+        note = '3D mask expanded for video display.';
+    elseif ndims(maskIn) == 4
+        note = '4D mask restored.';
+    else
+        note = 'Mask restored.';
+    end
+end
+
+
+function M4 = expandMaskToVideoSize(Min, ny0, nx0, nZ0, nVols0, slice0)
+    Min = logical(Min);
+
+    if ndims(Min) == 2
+        M2 = resizeLogical2D(Min, ny0, nx0);
+        M4 = false(ny0, nx0, nZ0, nVols0);
+        M4(:,:,slice0,:) = repmat(M2, [1 1 1 nVols0]);
+        return;
+    end
+
+    if ndims(Min) == 3
+        n3 = size(Min,3);
+
+        if size(Min,1) ~= ny0 || size(Min,2) ~= nx0
+            tmp = false(ny0, nx0, n3);
+            for kk = 1:n3
+                tmp(:,:,kk) = resizeLogical2D(Min(:,:,kk), ny0, nx0);
+            end
+            Min = tmp;
+        end
+
+        if n3 == nZ0
+            M4 = false(ny0, nx0, nZ0, nVols0);
+            for zz = 1:nZ0
+                M4(:,:,zz,:) = repmat(Min(:,:,zz), [1 1 1 nVols0]);
+            end
+            return;
+        end
+
+        if nZ0 == 1 && n3 == nVols0
+            M4 = false(ny0, nx0, 1, nVols0);
+            M4(:,:,1,:) = reshape(Min, [ny0 nx0 1 nVols0]);
+            return;
+        end
+
+        M2 = any(Min, 3);
+        M4 = false(ny0, nx0, nZ0, nVols0);
+        M4(:,:,slice0,:) = repmat(M2, [1 1 1 nVols0]);
+        return;
+    end
+
+    while ndims(Min) > 4
+        Min = any(Min, ndims(Min));
+    end
+
+    if ndims(Min) == 4
+        if isequal(size(Min), [ny0 nx0 nZ0 nVols0])
+            M4 = logical(Min);
+            return;
+        end
+
+        if size(Min,3) == nZ0 && size(Min,4) == nVols0
+            M4 = false(ny0, nx0, nZ0, nVols0);
+            for zz = 1:nZ0
+                for tt = 1:nVols0
+                    M4(:,:,zz,tt) = resizeLogical2D(Min(:,:,zz,tt), ny0, nx0);
+                end
+            end
+            return;
+        end
+
+        tmp = any(Min, 4);
+        M4 = expandMaskToVideoSize(tmp, ny0, nx0, nZ0, nVols0, slice0);
+        return;
+    end
+
+    error('Unsupported mask dimensionality.');
+end
+
+
+function M2 = resizeLogical2D(M0, ny0, nx0)
+    if size(M0,1) == ny0 && size(M0,2) == nx0
+        M2 = logical(M0);
+        return;
+    end
+
+    try
+        M2 = imresize(double(M0), [ny0 nx0], 'nearest') > 0.5;
+    catch
+        M2 = false(ny0, nx0);
+        yUse = min(ny0, size(M0,1));
+        xUse = min(nx0, size(M0,2));
+        M2(1:yUse,1:xUse) = logical(M0(1:yUse,1:xUse));
+    end
+end
+
+
+function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
+    bgOut = bgFallback;
+
+    if isempty(Uin) || ~isnumeric(Uin)
+        return;
+    end
+
+    U = double(Uin);
+
+    % RGB -> gray for this GUI
+    if ndims(U) == 3 && size(U,3) == 3
+        U = toGray(U);
+    end
+
+    if ndims(U) == 2
+        if size(U,1) == ny0 && size(U,2) == nx0
+            bgOut = U;
+        else
+            try
+                bgOut = imresize(U, [ny0 nx0], 'bilinear');
+            catch
+                bgOut = bgFallback;
+            end
+        end
+        return;
+    end
+
+    if ndims(U) == 3
+        n3 = size(U,3);
+        tmp = zeros(ny0, nx0, n3);
+
+        for kk = 1:n3
+            if size(U,1) == ny0 && size(U,2) == nx0
+                tmp(:,:,kk) = U(:,:,kk);
+            else
+                try
+                    tmp(:,:,kk) = imresize(U(:,:,kk), [ny0 nx0], 'bilinear');
+                catch
+                    tmp(:,:,kk) = 0;
+                end
+            end
+        end
+
+        if nZ0 > 1 && n3 == nZ0
+            bgOut = tmp;
+        elseif nZ0 == 1
+            bgOut = mean(tmp, 3);
+        else
+            idx = round(linspace(1, n3, nZ0));
+            idx = max(1, min(n3, idx));
+            bgOut = tmp(:,:,idx);
+        end
+        return;
+    end
+end
+
+
+function M = readMaskFileForVideo(f)
+    if ~exist(f,'file')
+        error('Mask file not found: %s', f);
+    end
+
+    isNiiGz = numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz');
+
+    if isNiiGz
+        tmpDir = tempname;
+        mkdir(tmpDir);
+        gunzip(f, tmpDir);
+        d = dir(fullfile(tmpDir, '*.nii'));
+        if isempty(d)
+            error('gunzip failed for: %s', f);
+        end
+        niiFile = fullfile(tmpDir, d(1).name);
+        M = logical(niftiread(niiFile));
+        try, rmdir(tmpDir,'s'); catch, end
+        return;
+    end
+
+    [~,~,ext] = fileparts(f);
+    ext = lower(ext);
+
+    if strcmp(ext,'.nii')
+        M = logical(niftiread(f));
+        return;
+    end
+
+    if strcmp(ext,'.mat')
+        S = load(f);
+        [M,~,~,~] = normalizeMaskInputForVideo(S, true, [], 1, 1, 1, 1, 1); %#ok<ASGLU>
+        error('Internal MAT load path should not call readMaskFileForVideo directly.');
+    end
+
+    error('Unsupported mask file type: %s', ext);
+end
+
+
+function BM = deriveBrainMaskFromUnderlayVideo(bgIn, ny0, nx0, nZ0)
+    BM = [];
+
+    if isempty(bgIn) || ~(isnumeric(bgIn) || islogical(bgIn))
+        return;
+    end
+
+    U = double(bgIn);
+
+    if ndims(U) == 3 && size(U,3) == 3
+        U = toGray(U);
+    end
+
+    if ndims(U) == 2
+        BM = U ~= 0;
+        if size(BM,1) ~= ny0 || size(BM,2) ~= nx0
+            BM = resizeLogical2D(BM, ny0, nx0);
+        end
+        if nZ0 > 1
+            BM = repmat(BM, [1 1 nZ0]);
+        end
+        return;
+    end
+
+    if ndims(U) == 3
+        n3 = size(U,3);
+        tmp = false(ny0, nx0, n3);
+        for kk = 1:n3
+            tmp(:,:,kk) = resizeLogical2D(U(:,:,kk) ~= 0, ny0, nx0);
+        end
+
+        if nZ0 > 1 && n3 == nZ0
+            BM = tmp;
+        else
+            BM = any(tmp, 3);
+            if nZ0 > 1
+                BM = repmat(BM, [1 1 nZ0]);
+            end
+        end
+        return;
+    end
+
+    while ndims(U) > 3
+        U = mean(U, ndims(U));
+    end
+
+    if ndims(U) == 3
+        BM = deriveBrainMaskFromUnderlayVideo(U, ny0, nx0, nZ0);
+    else
+        BM = [];
+    end
+end
+
+
+function startPath = getStartPath()
+    startPath = '';
+
+    candDirs = {};
+
+    try
+        if isstruct(par)
+            if isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
+                candDirs{end+1} = char(par.exportPath); %#ok<AGROW>
+            end
+            if isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath,'dir') == 7
+                candDirs{end+1} = char(par.loadedPath); %#ok<AGROW>
+            end
+            if isfield(par,'rawPath') && ~isempty(par.rawPath) && exist(par.rawPath,'dir') == 7
+                candDirs{end+1} = char(par.rawPath); %#ok<AGROW>
+            end
+            if isfield(par,'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf,'file') == 2
+                    candDirs{end+1} = fileparts(lf); %#ok<AGROW>
+                end
+            end
+        end
+    catch
+    end
+
+    candDirs{end+1} = pwd; %#ok<AGROW>
+
+    for ii = 1:numel(candDirs)
+        d = candDirs{ii};
+        try
+            if ~isempty(d) && exist(d,'dir') == 7
+                startPath = d;
+                return;
+            end
+        catch
+        end
+    end
+
+    startPath = pwd;
+end
     function s = safeStr(x)
         s = '';
         try

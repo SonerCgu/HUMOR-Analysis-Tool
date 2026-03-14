@@ -133,7 +133,7 @@ buttons = { ...
     {'Frame Rejection','Subsampling','Scrubbing','Motor'}, ...
     {'Temporal smoothing','Filtering', 'PCA', 'Despike'}, ...
     {'Time-Course Viewer','SCM','Video & SCM Mask', 'Mask Editor'}, ...
-    {'Registration to Atlas'}, ...
+    {'Registration to Atlas','Segmentation'}, ...
     {'Functional connectivity','Group analysis'}};
 
 %% =========================================================
@@ -344,6 +344,7 @@ function drawButtons(parent, btns, sectionIndex)
             case 'video & scm mask',        callback = @videoGUICallback;
             case 'mask editor',             callback = @maskEditorCallback;
             case 'registration to atlas',   callback = @coregCallback;
+                case 'segmentation',            callback = @segmentationCallback;
             case 'functional connectivity', callback = @functionalConnectivityCallback;
             case 'group analysis',          callback = @groupAnalysisCallback;
         end
@@ -1412,6 +1413,52 @@ function coregCallback(~,~)
     catch ME
         addLog(['COREG ERROR: ' ME.message]);
         errordlg(ME.message,'Coregistration Failed');
+    end
+
+    setProgramStatus(true);
+end
+
+
+%% =========================================================
+%  SEGMENTATION
+%% =========================================================
+function segmentationCallback(~,~)
+
+    studio = guidata(fig);
+    addLog('--- Segmentation ---');
+
+    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
+        errordlg('Load data first.');
+        return;
+    end
+
+    % Optional safety check: require atlas registration first
+    if isempty(studio.atlasTransform)
+        warndlg('Run Registration to Atlas first.');
+        addLog('Segmentation cancelled: no atlas transform found.');
+        return;
+    end
+
+    setProgramStatus(false);
+    drawnow;
+
+    try
+        % =====================================================
+        % PLACEHOLDER:
+        % later you will call your segmentation .mat function here
+        % Example:
+        % out = segmentation_main(studio);
+        % or
+        % out = segmentation_ccf_main(studio);
+        % =====================================================
+
+        addLog('Segmentation callback opened successfully.');
+        msgbox('Segmentation callback placeholder. Insert your segmentation .mat workflow here.', ...
+               'Segmentation');
+
+    catch ME
+        addLog(['SEGMENTATION ERROR: ' ME.message]);
+        errordlg(ME.message,'Segmentation Failed');
     end
 
     setProgramStatus(true);

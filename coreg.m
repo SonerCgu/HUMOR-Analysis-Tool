@@ -9,6 +9,10 @@ function Transf = coreg(studio, mode)
 
 Transf = [];
 
+if nargin < 1 || isempty(studio) || ~isstruct(studio)
+    error('A valid studio struct is required.');
+end
+
 if nargin < 2 || isempty(mode)
     choice = questdlg( ...
         ['Choose atlas registration mode:' char(10) char(10) ...
