@@ -165,7 +165,7 @@ set(ax, 'YDir', 'reverse');
 hold(ax, 'on');
 
 bg2 = getBg2DForSlice(state.z);
-hBG = image(ax, toRGB(processUnderlay(bg2)));
+hBG = image(ax, renderUnderlayRGB(bg2));
 
 hOV = imagesc(ax, zeros(nY, nX));
 set(hOV, 'AlphaData', 0);
@@ -245,25 +245,26 @@ hLiveRect = rectangle(ax, 'Position', [1 1 1 1], ...
     'Visible', 'off');
 
 %% ---------------- SLICE SLIDER ----------------
-slZ = [];
-txtZ = [];
-if nZ > 1
-    slZ = uicontrol(fig, 'Style', 'slider', ...
-        'Units', 'pixels', ...
-        'Min', 1, ...
-        'Max', nZ, ...
-        'Value', state.z, ...
-        'SliderStep', [1/max(1, nZ-1) 5/max(1, nZ-1)], ...
-        'Callback', @sliceChanged);
+slZ = uicontrol(fig, 'Style', 'slider', ...
+    'Units', 'pixels', ...
+    'Min', 1, ...
+    'Max', max(1, nZ), ...
+    'Value', min(max(1, state.z), max(1, nZ)), ...
+    'SliderStep', [1/max(1, nZ-1) 5/max(1, nZ-1)], ...
+    'Callback', @sliceChanged);
 
-    txtZ = uicontrol(fig, 'Style', 'text', ...
-        'Units', 'pixels', ...
-        'String', sprintf('Slice: %d / %d', state.z, nZ), ...
-        'ForegroundColor', [0.85 0.9 1], ...
-        'BackgroundColor', get(fig, 'Color'), ...
-        'HorizontalAlignment', 'left', ...
-        'FontWeight', 'bold', ...
-        'FontSize', 13);
+txtZ = uicontrol(fig, 'Style', 'text', ...
+    'Units', 'pixels', ...
+    'String', sprintf('Slice: %d / %d', state.z, nZ), ...
+    'ForegroundColor', [0.85 0.9 1], ...
+    'BackgroundColor', get(fig, 'Color'), ...
+    'HorizontalAlignment', 'left', ...
+    'FontWeight', 'bold', ...
+    'FontSize', 13);
+
+if nZ <= 1
+    set(slZ, 'Visible', 'off', 'Enable', 'off');
+    set(txtZ, 'Visible', 'off');
 end
 
 %% ---------------- MASK INIT ----------------
@@ -280,91 +281,124 @@ if ~passedMaskIsInclude && ~isempty(passedMask)
     mask2D = ~mask2D;
 end
 
+%% ---------------- ORIGINAL DATA SNAPSHOT ----------------
+origPSC = PSC;
+origBG  = bg;
+origPassedMask = passedMask;
+
+state.isAtlasWarped          = false;
+state.atlasTransformFile     = '';
+state.lastAtlasTransformFile = '';
+
+% underlay display state
+state.isColorUnderlay   = false;
+state.regionLabelUnderlay = [];
+state.regionColorLUT    = [];
+state.regionInfo        = struct();
+
 %% ---------------- RIGHT PANEL ----------------
+bgPanel   = [0.10 0.10 0.11];
+bgTabOn   = [0.24 0.24 0.25];
+bgTabOff  = [0.14 0.14 0.15];
+bgEdit    = [0.18 0.18 0.19];
+bgEditDis = [0.22 0.22 0.23];
+fgMain    = [0.97 0.97 0.98];
+fgSub     = [0.82 0.90 1.00];
+fgImp     = [1.00 0.60 0.60];
+
 controlsPanel = uipanel('Parent', fig, 'Title', 'SCM Controls', ...
     'Units', 'pixels', ...
-    'BackgroundColor', [0.10 0.10 0.10], ...
-    'ForegroundColor', 'w', ...
-    'FontSize', 16, ...
+    'BackgroundColor', bgPanel, ...
+    'ForegroundColor', fgMain, ...
+    'FontSize', 17, ...
     'FontWeight', 'bold');
 
 tabBar = uipanel('Parent', controlsPanel, ...
     'Units', 'pixels', ...
     'BorderType', 'none', ...
-    'BackgroundColor', [0.10 0.10 0.10]);
+    'BackgroundColor', bgPanel);
 
 btnTabOverlay  = uicontrol(tabBar, 'Style', 'togglebutton', 'String', 'Overlay', ...
     'Units', 'pixels', ...
     'Callback', @(~,~)switchTab('overlay'), ...
-    'BackgroundColor', [0.22 0.22 0.22], ...
-    'ForegroundColor', 'w', ...
-    'FontSize', 12, ...
+    'BackgroundColor', bgTabOn, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
     'FontWeight', 'bold', ...
     'Value', 1);
 
 btnTabUnderlay = uicontrol(tabBar, 'Style', 'togglebutton', 'String', 'Underlay', ...
     'Units', 'pixels', ...
     'Callback', @(~,~)switchTab('underlay'), ...
-    'BackgroundColor', [0.12 0.12 0.12], ...
-    'ForegroundColor', 'w', ...
-    'FontSize', 12, ...
+    'BackgroundColor', bgTabOff, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
     'FontWeight', 'bold', ...
     'Value', 0);
 
 pOverlay  = uipanel('Parent', controlsPanel, ...
     'Units', 'pixels', ...
     'BorderType', 'none', ...
-    'BackgroundColor', [0.10 0.10 0.10]);
+    'BackgroundColor', bgPanel);
 
 pUnderlay = uipanel('Parent', controlsPanel, ...
     'Units', 'pixels', ...
     'BorderType', 'none', ...
-    'BackgroundColor', [0.10 0.10 0.10], ...
+    'BackgroundColor', bgPanel, ...
     'Visible', 'off');
 
 info1 = uicontrol(controlsPanel, 'Style', 'text', 'String', '', ...
     'Units', 'pixels', ...
-    'ForegroundColor', [0.80 0.90 1.00], ...
-    'BackgroundColor', [0.10 0.10 0.10], ...
+    'ForegroundColor', fgSub, ...
+    'BackgroundColor', bgPanel, ...
     'HorizontalAlignment', 'left', ...
+    'FontName', 'Arial', ...
     'FontSize', 12, ...
     'FontWeight', 'bold');
 
-pad = 14;
-rowH = 26;
-gap = 5;
-sliderH = 14;
+pad     = 18;
+rowH    = 30;
+gap     = 7;
+sliderH = 16;
+groupGap = 12;
 
 mkLbl = @(pp,s) uicontrol(pp, 'Style', 'text', 'String', s, ...
     'Units', 'pixels', ...
-    'ForegroundColor', 'w', ...
-    'BackgroundColor', [0.10 0.10 0.10], ...
+    'ForegroundColor', fgMain, ...
+    'BackgroundColor', bgPanel, ...
     'HorizontalAlignment', 'left', ...
-    'FontSize', 12, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
     'FontWeight', 'bold');
 
 mkLblImp = @(pp,s) uicontrol(pp, 'Style', 'text', 'String', s, ...
     'Units', 'pixels', ...
-    'ForegroundColor', [1.00 0.55 0.55], ...
-    'BackgroundColor', [0.10 0.10 0.10], ...
+    'ForegroundColor', fgImp, ...
+    'BackgroundColor', bgPanel, ...
     'HorizontalAlignment', 'left', ...
-    'FontSize', 12, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
     'FontWeight', 'bold');
 
 mkValBox = @(pp,s) uicontrol(pp, 'Style', 'edit', 'String', s, ...
     'Units', 'pixels', ...
-    'BackgroundColor', [0.18 0.18 0.18], ...
-    'ForegroundColor', 'w', ...
+    'BackgroundColor', bgEditDis, ...
+    'ForegroundColor', fgMain, ...
     'HorizontalAlignment', 'center', ...
-    'FontSize', 12, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
     'FontWeight', 'bold', ...
     'Enable', 'inactive');
 
 mkEdit = @(pp,s,cbk) uicontrol(pp, 'Style', 'edit', 'String', s, ...
     'Units', 'pixels', ...
-    'BackgroundColor', [0.20 0.20 0.20], ...
-    'ForegroundColor', 'w', ...
-    'FontSize', 12, ...
+    'BackgroundColor', bgEdit, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
+    'FontWeight', 'bold', ...
     'Callback', cbk);
 
 mkSlider = @(pp,minv,maxv,val,cbk) uicontrol(pp, 'Style', 'slider', ...
@@ -379,27 +413,30 @@ mkPopup = @(pp,choices,val,cbk) uicontrol(pp, 'Style', 'popupmenu', ...
     'Value', val, ...
     'Units', 'pixels', ...
     'Callback', cbk, ...
-    'BackgroundColor', [0.20 0.20 0.20], ...
-    'ForegroundColor', 'w', ...
-    'FontSize', 12);
+    'BackgroundColor', bgEdit, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
+    'FontWeight', 'bold');
 
 mkChk = @(pp,s,val,cbk) uicontrol(pp, 'Style', 'checkbox', 'String', s, ...
     'Units', 'pixels', ...
     'Value', val, ...
     'Callback', cbk, ...
-    'BackgroundColor', [0.10 0.10 0.10], ...
-    'ForegroundColor', 'w', ...
-    'FontSize', 12, ...
+    'BackgroundColor', bgPanel, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 13, ...
     'FontWeight', 'bold');
 
 mkBtn = @(pp,lbl,cbk,bgcol,fs) uicontrol(pp, 'Style', 'pushbutton', 'String', lbl, ...
     'Units', 'pixels', ...
     'Callback', cbk, ...
     'BackgroundColor', bgcol, ...
-    'ForegroundColor', 'w', ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
     'FontSize', fs, ...
     'FontWeight', 'bold');
-
 %% ---------------- Overlay controls ----------------
 lblROIsz  = mkLbl(pOverlay, 'ROI size (px)');
 slROI     = mkSlider(pOverlay, 1, 220, roi.size, @(~,~)setROIsize());
@@ -453,7 +490,8 @@ set(ebSigma, 'ForegroundColor', [1.00 0.35 0.35]);
 lblMask = mkLbl(pOverlay, 'Mask');
 btnMaskLoad = mkBtn(pOverlay, 'Load mask', @loadMaskCB, [0.20 0.20 0.20], 12);
 btnMaskClr  = mkBtn(pOverlay, 'Clear mask', @clearMaskCB, [0.20 0.20 0.20], 12);
-
+btnWarpAtlas  = mkBtn(pOverlay, 'WARP FUNCTIONAL TO ATLAS', @warpFunctionalToAtlasCB, [0.65 0.35 0.10], 12);
+btnResetWarp  = mkBtn(pOverlay, 'RESET TO NATIVE', @resetWarpToNativeCB, [0.28 0.28 0.28], 12);
 btnRoiExport = mkBtn(pOverlay, 'EXPORT ROIs (TXT)', @exportROIsCB, [0.10 0.35 0.95], 14);
 btnScmExport = mkBtn(pOverlay, 'EXPORT SCM IMAGE', @exportSCMImageCB, [0.25 0.55 0.25], 14);
 btnScmSeries = mkBtn(pOverlay, 'EXPORT SCM TIME SERIES', @exportScmSeries1minCB, [0.55 0.15 0.65], 12);
@@ -488,7 +526,7 @@ lblVlv = mkLbl(pUnderlay, sprintf('Vessel conectLev (0..%d)', MAX_CONLEV));
 slVlv  = mkSlider(pUnderlay, 0, MAX_CONLEV, uState.conectLev, @underlaySliderChanged);
 set(slVlv, 'SliderStep', [1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnderlay, sprintf('%d', uState.conectLev));
-
+btnLoadUnder = mkBtn(pUnderlay, 'LOAD NEW UNDERLAY', @loadNewUnderlayCB, [0.22 0.22 0.22], 12);
 %% ---------------- Bottom buttons ----------------
 btnCompute = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Compute SCM', ...
     'Units', 'pixels', ...
@@ -541,18 +579,34 @@ redrawROIsForCurrentSlice();
 %% ==========================================================
 % UI
 %% ==========================================================
-function switchTab(which)
+ function switchTab(which)
     which = lower(char(which));
     if strcmp(which, 'overlay')
         set(pOverlay, 'Visible', 'on');
         set(pUnderlay, 'Visible', 'off');
-        set(btnTabOverlay, 'Value', 1, 'BackgroundColor', [0.22 0.22 0.22]);
-        set(btnTabUnderlay, 'Value', 0, 'BackgroundColor', [0.12 0.12 0.12]);
+
+        set(btnTabOverlay, ...
+            'Value', 1, ...
+            'BackgroundColor', bgTabOn, ...
+            'ForegroundColor', fgMain);
+
+        set(btnTabUnderlay, ...
+            'Value', 0, ...
+            'BackgroundColor', bgTabOff, ...
+            'ForegroundColor', [0.88 0.88 0.90]);
     else
         set(pOverlay, 'Visible', 'off');
         set(pUnderlay, 'Visible', 'on');
-        set(btnTabOverlay, 'Value', 0, 'BackgroundColor', [0.12 0.12 0.12]);
-        set(btnTabUnderlay, 'Value', 1, 'BackgroundColor', [0.22 0.22 0.22]);
+
+        set(btnTabOverlay, ...
+            'Value', 0, ...
+            'BackgroundColor', bgTabOff, ...
+            'ForegroundColor', [0.88 0.88 0.90]);
+
+        set(btnTabUnderlay, ...
+            'Value', 1, ...
+            'BackgroundColor', bgTabOn, ...
+            'ForegroundColor', fgMain);
     end
 end
 
@@ -562,34 +616,34 @@ function layoutUI()
     Hh = pos(4);
 
     leftM   = 60;
-    rightM  = 40;
+    rightM  = 36;
     topM    = 58;
     botM    = 60;
-    gapX    = 40;
-    gapY    = 25;
+    gapX    = 36;
+    gapY    = 24;
 
-    panelW  = min(680, max(520, round(0.34*W)));
-    btnH    = 56;
-    btnGap  = 10;
+    panelW  = min(740, max(580, round(0.36 * W)));
+    btnH    = 54;
+    btnGap  = 12;
 
-    yClose  = 32;
+    yClose  = 28;
     yHelp   = yClose;
     yOpen   = yClose + btnH + btnGap;
     yComp   = yOpen  + btnH + btnGap;
     buttonsTop = yComp + btnH;
 
     panelX = W - rightM - panelW;
-    panelY = buttonsTop + 12;
-    panelH = max(300, Hh - panelY - topM);
+    panelY = buttonsTop + 14;
+    panelH = max(320, Hh - panelY - topM);
 
     set(controlsPanel, 'Position', [panelX panelY panelW panelH]);
 
     set(btnCompute, 'Position', [panelX yComp panelW btnH]);
     set(btnOpenVid, 'Position', [panelX yOpen panelW btnH]);
 
-    halfW = floor(panelW/2) - 6;
-    set(btnHelp , 'Position', [panelX yHelp halfW btnH]);
-    set(btnClose, 'Position', [panelX+halfW+12 yClose halfW btnH]);
+    halfW = floor((panelW - 14) / 2);
+    set(btnHelp,  'Position', [panelX yHelp halfW btnH]);
+    set(btnClose, 'Position', [panelX + halfW + 14 yClose halfW btnH]);
 
     leftW = max(740, panelX - leftM - gapX);
 
@@ -598,34 +652,34 @@ function layoutUI()
 
     axX = leftM;
     axY = botM + tcH + gapY;
-    set(ax, 'Position', [axX axY leftW axH]);
+    set(ax,   'Position', [axX axY leftW axH]);
     set(axTC, 'Position', [axX botM leftW tcH]);
 
-    set(txtTitle, 'Position', [axX axY+axH+10 leftW 26]);
+    set(txtTitle, 'Position', [axX axY + axH + 10 leftW 28]);
 
     if ~isempty(slZ) && isgraphics(slZ)
-        set(slZ, 'Position', [axX-32 axY 22 axH]);
+        set(slZ, 'Position', [axX - 32 axY 22 axH]);
     end
     if ~isempty(txtZ) && isgraphics(txtZ)
-        set(txtZ, 'Position', [axX-60 axY+axH+40 300 28]);
+        set(txtZ, 'Position', [axX - 60 axY + axH + 40 300 28]);
     end
 
-    tabH = 34;
-    statusH = 36;
-    titlePad = 28;
+    tabH     = 40;
+    statusH  = 58;
+    titlePad = 30;
 
-    set(tabBar, 'Position', [10 panelH-tabH-titlePad panelW-20 tabH]);
+    set(tabBar, 'Position', [12 panelH - tabH - titlePad panelW - 24 tabH]);
 
-    btnW = floor((panelW-20-8)/2);
-    set(btnTabOverlay , 'Position', [0 0 btnW tabH]);
-    set(btnTabUnderlay, 'Position', [btnW+8 0 btnW tabH]);
+    btnW = floor((panelW - 24 - 10) / 2);
+    set(btnTabOverlay,  'Position', [0 0 btnW tabH]);
+    set(btnTabUnderlay, 'Position', [btnW + 10 0 btnW tabH]);
 
-    contentX = 10;
-    contentY = 10 + statusH;
-    contentW = panelW - 20;
-    contentH = panelH - tabH - (titlePad+8) - statusH;
+    contentX = 12;
+    contentY = 14 + statusH;
+    contentW = panelW - 24;
+    contentH = panelH - tabH - titlePad - statusH - 20;
 
-    set(pOverlay , 'Position', [contentX contentY contentW contentH]);
+    set(pOverlay,  'Position', [contentX contentY contentW contentH]);
     set(pUnderlay, 'Position', [contentX contentY contentW contentH]);
 
     set(info1, 'Position', [contentX 8 contentW statusH]);
@@ -635,89 +689,94 @@ function layoutUI()
 end
 
 function layoutOverlay(w, h)
-    xLabel  = pad;
-    wLabel  = 270;
-    xCtrl   = xLabel + wLabel + 8;
-    xVal    = w - pad - 120;
-    wVal    = 120;
-    wCtrl   = max(110, xVal - xCtrl - 8);
+    xLabel = pad;
+    wLabel = 255;
+    xVal   = w - pad - 122;
+    wVal   = 122;
+    xCtrl  = xLabel + wLabel + 14;
+    wCtrl  = max(110, xVal - xCtrl - 12);
 
-    y = h - 34;
+    y = h - 40;
 
     setRowSlider(lblROIsz, slROI, txtROIsz);
 
-    set(lblRoiXY, 'Position', [xLabel y wLabel rowH]);
-    set(ebRoiXY , 'Position', [xCtrl  y wCtrl  rowH]);
-    set(btnRoiAddXY, 'Position', [xVal y wVal rowH]);
-    y = y - (rowH + gap);
+    set(lblRoiXY,    'Position', [xLabel y wLabel rowH]);
+    set(ebRoiXY,     'Position', [xCtrl  y wCtrl  rowH]);
+    set(btnRoiAddXY, 'Position', [xVal   y wVal   rowH]);
+    y = y - (rowH + groupGap);
 
     setRowEdit(lblBase, ebBase);
     setRowEdit(lblSig,  ebSig);
+    y = y + (gap - groupGap);
 
     setRowSlider(lblAlpha, slAlpha, txtAlpha);
     setRowEdit(lblThr, ebThr);
     setRowEdit(lblCax, ebCax);
 
     set(lblAlphaMod, 'Position', [xLabel y wLabel rowH]);
-    set(cbAlphaMod , 'Position', [xCtrl y (wCtrl+wVal+8) rowH]);
+    set(cbAlphaMod,  'Position', [xCtrl y (w - xCtrl - pad) rowH]);
     y = y - (rowH + gap);
 
     setRowEdit(lblModMin, ebModMin);
     setRowEdit(lblModMax, ebModMax);
 
     set(lblMap, 'Position', [xLabel y wLabel rowH]);
-    set(popMap, 'Position', [xCtrl y (wCtrl+wVal+8) rowH]);
-    y = y - (rowH + gap);
+    set(popMap, 'Position', [xCtrl y (w - xCtrl - pad) rowH]);
+    y = y - (rowH + groupGap);
 
     setRowEdit(lblSigma, ebSigma);
 
     set(lblMask, 'Position', [xLabel y wLabel rowH]);
     btnGap2 = 10;
-    btnW2 = floor((wCtrl+wVal+8 - btnGap2)/2);
+    btnW2 = floor(((w - xCtrl - pad) - btnGap2) / 2);
     set(btnMaskLoad, 'Position', [xCtrl y btnW2 rowH]);
-    set(btnMaskClr , 'Position', [xCtrl+btnW2+btnGap2 y btnW2 rowH]);
-    y = y - (rowH + gap);
+    set(btnMaskClr,  'Position', [xCtrl + btnW2 + btnGap2 y btnW2 rowH]);
+    y = y - (rowH + groupGap);
 
-    y = y - 4;
-
-    set(btnRoiExport, 'Position', [xLabel y (w-2*pad) 36]);
+    set(btnWarpAtlas, 'Position', [xLabel y (w - 2 * pad) 36]);
     y = y - (36 + gap);
 
-    set(btnScmExport, 'Position', [xLabel y (w-2*pad) 34]);
-    y = y - (34 + gap);
+    set(btnResetWarp, 'Position', [xLabel y (w - 2 * pad) 32]);
+    y = y - (32 + groupGap);
 
-    set(btnScmSeries, 'Position', [xLabel y (w-2*pad) 32]);
-    y = y - (32 + gap);
+    set(btnRoiExport, 'Position', [xLabel y (w - 2 * pad) 38]);
+    y = y - (38 + gap);
 
-    set(btnUnfreeze, 'Position', [xLabel y (w-2*pad) rowH]);
+    set(btnScmExport, 'Position', [xLabel y (w - 2 * pad) 36]);
+    y = y - (36 + gap);
+
+    set(btnScmSeries, 'Position', [xLabel y (w - 2 * pad) 34]);
+    y = y - (34 + groupGap);
+
+    set(btnUnfreeze, 'Position', [xLabel y (w - 2 * pad) 30]);
 
     function setRowSlider(lbl, sl, valbox)
         set(lbl,    'Position', [xLabel y wLabel rowH]);
-        set(sl,     'Position', [xCtrl y+round((rowH-sliderH)/2) wCtrl sliderH]);
+        set(sl,     'Position', [xCtrl y + round((rowH - sliderH) / 2) wCtrl sliderH]);
         set(valbox, 'Position', [xVal y wVal rowH]);
         y = y - (rowH + gap);
     end
 
     function setRowEdit(lbl, ed)
         set(lbl, 'Position', [xLabel y wLabel rowH]);
-        set(ed , 'Position', [xVal y wVal rowH]);
+        set(ed,  'Position', [xVal y wVal rowH]);
         y = y - (rowH + gap);
     end
 end
 
-function layoutUnder(w, h)
-    xLabel  = pad;
-    wLabel  = 280;
-    xCtrl   = xLabel + wLabel + 10;
-    xVal    = w - pad - 120;
-    wVal    = 120;
-    wCtrl   = max(120, xVal - xCtrl - 10);
+    function layoutUnder(w, h)
+    xLabel = pad;
+    wLabel = 265;
+    xVal   = w - pad - 122;
+    wVal   = 122;
+    xCtrl  = xLabel + wLabel + 14;
+    wCtrl  = max(110, xVal - xCtrl - 12);
 
-    y = h - 46;
+    y = h - 40;
 
     set(lblUnderMode, 'Position', [xLabel y wLabel rowH]);
-    set(popUnder, 'Position', [xCtrl y (wCtrl+wVal+10) rowH]);
-    y = y - (rowH + gap);
+    set(popUnder,     'Position', [xCtrl y (w - xCtrl - pad) rowH]);
+    y = y - (rowH + groupGap);
 
     setRowSlider(lblBri, slBri, txtBri);
     setRowSlider(lblCon, slCon, txtCon);
@@ -725,9 +784,12 @@ function layoutUnder(w, h)
     setRowSlider(lblVsz, slVsz, txtVsz);
     setRowSlider(lblVlv, slVlv, txtVlv);
 
+    y = y - groupGap;
+    set(btnLoadUnder, 'Position', [xLabel y (w - 2*pad) 34]);
+
     function setRowSlider(lbl, sl, valbox)
         set(lbl,    'Position', [xLabel y wLabel rowH]);
-        set(sl,     'Position', [xCtrl y+round((rowH-sliderH)/2) wCtrl sliderH]);
+        set(sl,     'Position', [xCtrl y + round((rowH - sliderH)/2) wCtrl sliderH]);
         set(valbox, 'Position', [xVal y wVal rowH]);
         y = y - (rowH + gap);
     end
@@ -760,7 +822,7 @@ function sliceChanged(~,~)
     end
 
     bg2 = getBg2DForSlice(state.z);
-    set(hBG, 'CData', toRGB(processUnderlay(bg2)));
+    set(hBG, 'CData', renderUnderlayRGB(bg2));
 
     roi.isFrozen = false;
     set(hLiveRect, 'Visible', 'off');
@@ -989,7 +1051,7 @@ function mouseScroll(~,evt)
     end
 
     bg2 = getBg2DForSlice(state.z);
-    set(hBG, 'CData', toRGB(processUnderlay(bg2)));
+    set(hBG, 'CData', renderUnderlayRGB(bg2));
 
     roi.isFrozen = false;
     set(hRoiCoordTxt, 'Visible', 'off', 'String', '');
@@ -2392,70 +2454,170 @@ end
 %% ==========================================================
 % Mask
 %% ==========================================================
-function loadMaskCB(~,~)
+   function loadMaskCB(~,~)
     startPath = getStartPath();
-    [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz', 'Mask files (*.mat,*.nii,*.nii.gz)'}, ...
-        'Select mask', startPath);
-    if isequal(f, 0), return; end
+
+    [f,p] = uigetfile( ...
+        {'*.mat;*.nii;*.nii.gz', 'Mask / bundle files (*.mat,*.nii,*.nii.gz)'}, ...
+        'Select overlay mask / bundle', startPath);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fullf = fullfile(p,f);
 
     try
-        passedMask = readMask(fullfile(p, f));
-        mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
-        if ~passedMaskIsInclude
-            mask2D = ~mask2D;
+        [~,~,ext] = fileparts(fullf);
+        ext = lower(ext);
+
+        if strcmp(ext, '.mat')
+            B = readScmBundleFile(fullf);
+
+            % Prefer explicit overlay / signal restriction mask
+            if ~isempty(B.overlayMask)
+                passedMask = fitBundleMaskToCurrentScm(B.overlayMask);
+                passedMaskIsInclude = B.overlayMaskIsInclude;
+            elseif ~isempty(B.brainMask)
+                % fallback only if no overlay mask exists
+                passedMask = fitBundleMaskToCurrentScm(B.brainMask);
+                passedMaskIsInclude = B.brainMaskIsInclude;
+            else
+                error('No usable overlay or brain mask found in MAT bundle.');
+            end
+
+            % Optional: auto-load bundled underlay / brain image too
+            if ~isempty(B.brainImage)
+                U = squeeze(B.brainImage);
+
+                if ndims(U) == 2
+                    if size(U,1) == nY && size(U,2) == nX
+                        bg = double(U);
+                        state.isColorUnderlay = false;
+                    end
+
+                elseif ndims(U) == 3
+                    if size(U,1) == nY && size(U,2) == nX
+                        if size(U,3) == 3
+                            bg = double(U);
+                            state.isColorUnderlay = true;
+                        else
+                            bg = double(U);
+                            state.isColorUnderlay = false;
+                        end
+                    end
+                end
+            end
+
+        else
+            % NIfTI mask fallback
+            [passedMask, passedMaskIsInclude] = readMask(fullf, 'overlayPreferred');
+            passedMask = fitBundleMaskToCurrentScm(passedMask);
         end
-        updateView();
+
+        % Rebuild active 2D mask for current slice
+        if isempty(passedMask)
+            mask2D = true(nY, nX);
+        else
+            mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
+            if ~passedMaskIsInclude
+                mask2D = ~mask2D;
+            end
+        end
+
+        % Redraw underlay if bundle also contained brainImage
+        bg2 = getBg2DForSlice(state.z);
+        set(hBG, 'CData', renderUnderlayRGB(bg2));
+
+        try
+            if exist('B','var') && isstruct(B)
+                set(info1, 'String', sprintf('Loaded mask bundle: %s | field: %s', shortenPath(fullf,65), B.loadedField));
+            else
+                set(info1, 'String', sprintf('Loaded mask: %s', shortenPath(fullf,65)));
+            end
+            set(info1, 'TooltipString', fullf);
+        catch
+        end
+
+        computeSCM();
+
     catch ME
-        errordlg(ME.message, 'Mask load failed');
+        errordlg(ME.message, 'Mask / bundle load failed');
     end
-end
+   end
 
 function clearMaskCB(~,~)
     passedMask = [];
+    passedMaskIsInclude = true;
     mask2D = true(nY, nX);
-    if ~passedMaskIsInclude
-        mask2D = ~mask2D; %#ok<NASGU>
+
+    try
+        set(info1, 'String', 'Overlay mask cleared.');
+        set(info1, 'TooltipString', '');
+    catch
     end
-    updateView();
+
+    computeSCM();
 end
 
 function startPath = getStartPath()
-    startPath = pwd;
+    startPath = '';
+
+    candDirs = {};
+
     try
         if isstruct(par)
-            if isfield(par, 'startPath') && ~isempty(par.startPath) && exist(par.startPath, 'dir')
-                startPath = par.startPath;
-                return;
+            if isfield(par, 'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath, 'dir') == 7
+                candDirs{end+1} = char(par.exportPath); %#ok<AGROW>
             end
-            if isfield(par, 'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath, 'dir')
-                startPath = par.loadedPath;
-                return;
+            if isfield(par, 'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath, 'dir') == 7
+                candDirs{end+1} = char(par.loadedPath); %#ok<AGROW>
             end
-            if isfield(par, 'rawPath') && ~isempty(par.rawPath) && exist(par.rawPath, 'dir')
-                startPath = par.rawPath;
-                return;
+            if isfield(par, 'rawPath') && ~isempty(par.rawPath) && exist(par.rawPath, 'dir') == 7
+                candDirs{end+1} = char(par.rawPath); %#ok<AGROW>
+            end
+            if isfield(par, 'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf, 'file') == 2
+                    candDirs{end+1} = fileparts(lf); %#ok<AGROW>
+                end
             end
         end
     catch
     end
-end
 
+    candDirs{end+1} = pwd; %#ok<AGROW>
+
+    for ii = 1:numel(candDirs)
+        d = candDirs{ii};
+        try
+            if ~isempty(d) && exist(d, 'dir') == 7
+                startPath = d;
+                return;
+            end
+        catch
+        end
+    end
+
+    startPath = pwd;
+end
 %% ==========================================================
 % Video GUI
 %% ==========================================================
-function openVideo(~,~)
+   function openVideo(~,~)
     try
         play_fusi_video_final( ...
             PSC, PSC, PSC, bg, ...
             par, 10, 240, ...
             TR, (nT-1)*TR, baseline, ...
-            [], true, ...
+            passedMask, passedMaskIsInclude, ...
             nT, false, struct(), ...
             fileLabel, state.z);
     catch ME
         errordlg(ME.message, 'Video GUI failed');
     end
-end
+   end
+
 
 function showHelp(~,~)
     bgFig   = [0.06 0.06 0.07];
@@ -2500,6 +2662,1201 @@ function showHelp(~,~)
         'FontName', 'Arial', 'FontSize', 13, 'HorizontalAlignment', 'left');
 end
 
+function warpFunctionalToAtlasCB(~,~)
+    startDir = '';
+    candDirs = {};
+
+    % ------------------------------------------------------
+    % 1) Best case: Studio export path already points to the
+    %    current animal AnalysedData folder
+    % ------------------------------------------------------
+    try
+        if isstruct(par)
+            if isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
+                candDirs{end+1} = fullfile(char(par.exportPath), 'Registration2D'); %#ok<AGROW>
+                candDirs{end+1} = fullfile(char(par.exportPath), 'Registration');   %#ok<AGROW>
+                candDirs{end+1} = char(par.exportPath);                             %#ok<AGROW>
+            end
+        end
+    catch
+    end
+
+    % ------------------------------------------------------
+    % 2) Derive AnalysedData path from loadedPath
+    % ------------------------------------------------------
+    try
+        if isstruct(par)
+            if isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath,'dir') == 7
+                lp = char(par.loadedPath);
+
+                if contains(lp, [filesep 'RawData' filesep])
+                    ap = strrep(lp, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                    candDirs{end+1} = fullfile(ap, 'Registration2D'); %#ok<AGROW>
+                    candDirs{end+1} = fullfile(ap, 'Registration');   %#ok<AGROW>
+                    candDirs{end+1} = ap;                             %#ok<AGROW>
+                end
+
+                candDirs{end+1} = fullfile(lp, 'Registration2D'); %#ok<AGROW>
+                candDirs{end+1} = fullfile(lp, 'Registration');   %#ok<AGROW>
+                candDirs{end+1} = lp;                             %#ok<AGROW>
+            end
+        end
+    catch
+    end
+
+    % ------------------------------------------------------
+    % 3) Derive from loadedFile if needed
+    % ------------------------------------------------------
+    try
+        if isstruct(par)
+            if isfield(par,'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf, 'file') == 2
+                    ldir = fileparts(lf);
+
+                    if contains(ldir, [filesep 'RawData' filesep])
+                        ap = strrep(ldir, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                        candDirs{end+1} = fullfile(ap, 'Registration2D'); %#ok<AGROW>
+                        candDirs{end+1} = fullfile(ap, 'Registration');   %#ok<AGROW>
+                        candDirs{end+1} = ap;                             %#ok<AGROW>
+                    end
+
+                    candDirs{end+1} = fullfile(ldir, 'Registration2D'); %#ok<AGROW>
+                    candDirs{end+1} = fullfile(ldir, 'Registration');   %#ok<AGROW>
+                    candDirs{end+1} = ldir;                             %#ok<AGROW>
+                end
+            end
+        end
+    catch
+    end
+
+    % ------------------------------------------------------
+    % 4) Fallback to generic GUI start path
+    % ------------------------------------------------------
+    try
+        candDirs{end+1} = getStartPath(); %#ok<AGROW>
+    catch
+        candDirs{end+1} = pwd; %#ok<AGROW>
+    end
+
+    % ------------------------------------------------------
+    % 5) Clean candidate list
+    % ------------------------------------------------------
+    candDirs = candDirs(~cellfun('isempty', candDirs));
+
+    % unique stable
+    if ~isempty(candDirs)
+        keep = true(size(candDirs));
+        for ii = 2:numel(candDirs)
+            for jj = 1:ii-1
+                if strcmpi(candDirs{ii}, candDirs{jj})
+                    keep(ii) = false;
+                    break;
+                end
+            end
+        end
+        candDirs = candDirs(keep);
+    end
+
+    % ------------------------------------------------------
+    % 6) Prefer a folder that already contains CoronalRegistration2D.mat
+    % ------------------------------------------------------
+    for ii = 1:numel(candDirs)
+        d0 = candDirs{ii};
+        if exist(d0, 'dir') == 7
+            f0 = fullfile(d0, 'CoronalRegistration2D.mat');
+            if exist(f0, 'file') == 2
+                startDir = d0;
+                break;
+            end
+        end
+    end
+
+    % ------------------------------------------------------
+    % 7) Otherwise prefer Registration2D / Registration dir
+    % ------------------------------------------------------
+    if isempty(startDir)
+        for ii = 1:numel(candDirs)
+            d0 = candDirs{ii};
+            if exist(d0, 'dir') == 7
+                [~,nm] = fileparts(d0);
+                if strcmpi(nm, 'Registration2D') || strcmpi(nm, 'Registration')
+                    startDir = d0;
+                    break;
+                end
+            end
+        end
+    end
+
+    % ------------------------------------------------------
+    % 8) Last valid fallback
+    % ------------------------------------------------------
+    if isempty(startDir)
+        for ii = 1:numel(candDirs)
+            d0 = candDirs{ii};
+            if exist(d0, 'dir') == 7
+                startDir = d0;
+                break;
+            end
+        end
+    end
+
+    if isempty(startDir) || exist(startDir,'dir') ~= 7
+        startDir = pwd;
+    end
+
+    % ------------------------------------------------------
+    % 9) Ask user for transform file
+    % ------------------------------------------------------
+    [f,p] = uigetfile( ...
+        {'*.mat','Transform files (*.mat)'}, ...
+        'Select atlas Transformation / CoronalRegistration2D', ...
+        startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+    try
+        S = load(fullfile(p,f));
+        T = extractAtlasWarpStruct(S);
+
+        % Always warp from ORIGINAL native data
+        PSC = warpFunctionalSeriesToAtlas(origPSC, T);
+
+        % Native mask is not valid anymore after atlas warp
+        passedMask = [];
+        passedMaskIsInclude = true;
+
+        state.isAtlasWarped = true;
+        state.atlasTransformFile = fullfile(p,f);
+state.lastAtlasTransformFile = state.atlasTransformFile;
+
+        try
+            if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d') ...
+                    && isfield(T,'atlasSliceIndex') && isfinite(T.atlasSliceIndex)
+                set(txtTitle, 'String', sprintf('%s | warped to atlas coronal slice %d', ...
+                    fileLabel, round(T.atlasSliceIndex)));
+            else
+                set(txtTitle, 'String', sprintf('%s | warped to atlas', fileLabel));
+            end
+        catch
+            set(txtTitle, 'String', sprintf('%s | warped to atlas', fileLabel));
+        end
+
+        resetRoisAndRefreshAfterDataChange();
+
+        try
+            msg = 'Functional data warped to atlas.';
+            if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d')
+                msg = 'Functional data warped with 2D coronal registration.';
+            end
+            set(info1, 'String', msg);
+            set(info1, 'TooltipString', state.atlasTransformFile);
+        catch
+        end
+
+    catch ME
+        errordlg(ME.message, 'Atlas warp failed');
+    end
+end
+
+function resetWarpToNativeCB(~,~)
+    try
+        PSC = origPSC;
+        bg  = origBG;
+        passedMask = origPassedMask;
+
+        state.isAtlasWarped = false;
+state.atlasTransformFile = '';
+% keep state.lastAtlasTransformFile on purpose
+
+        set(txtTitle, 'String', fileLabel);
+
+        resetRoisAndRefreshAfterDataChange();
+
+        try
+            set(info1, 'String', 'Returned to native functional space.');
+            set(info1, 'TooltipString', '');
+        catch
+        end
+    catch ME
+        errordlg(ME.message, 'Reset to native failed');
+    end
+end
+
+function resetRoisAndRefreshAfterDataChange()
+    % Recompute geometry from current PSC
+    dNow = ndims(PSC);
+    if dNow == 3
+        [nY, nX, nT] = size(PSC);
+        nZ = 1;
+    elseif dNow == 4
+        [nY, nX, nZ, nT] = size(PSC);
+    else
+        error('PSC must remain [Y X T] or [Y X Z T] after warping.');
+    end
+
+    tsec = (0:nT-1) * TR;
+    tmin = tsec / 60;
+
+    state.hoverStride = max(1, ceil(nT / state.hoverMaxPts));
+    state.hoverIdx    = 1:state.hoverStride:nT;
+    state.tminHover   = tmin(state.hoverIdx);
+
+    state.z = max(1, min(state.z, nZ));
+
+    ROI_byZ = cell(1, nZ);
+    for zz = 1:nZ
+        ROI_byZ{zz} = struct('id', {}, 'x1', {}, 'x2', {}, 'y1', {}, 'y2', {}, 'color', {});
+    end
+    roi.nextId = 1;
+    roi.isFrozen = false;
+
+    deleteIfValid(roiHandles);
+    roiHandles = gobjects(0);
+
+    deleteIfValid(roiPlotPSC);
+    roiPlotPSC = gobjects(0);
+
+    deleteIfValid(roiTextHandles);
+    roiTextHandles = gobjects(0);
+
+    if isempty(passedMask)
+        mask2D = true(nY, nX);
+    else
+        mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
+        if ~passedMaskIsInclude
+            mask2D = ~mask2D;
+        end
+    end
+
+    if isgraphics(slZ)
+        if nZ > 1
+            set(slZ, ...
+                'Min', 1, ...
+                'Max', nZ, ...
+                'Value', state.z, ...
+                'SliderStep', [1/max(1,nZ-1) 5/max(1,nZ-1)], ...
+                'Visible', 'on', ...
+                'Enable', 'on');
+            set(txtZ, 'String', sprintf('Slice: %d / %d', state.z, nZ), 'Visible', 'on');
+        else
+            set(slZ, ...
+                'Min', 1, ...
+                'Max', 1, ...
+                'Value', 1, ...
+                'SliderStep', [1 1], ...
+                'Visible', 'off', ...
+                'Enable', 'off');
+            set(txtZ, 'String', '', 'Visible', 'off');
+        end
+    end
+
+    set(hLiveRect, 'Visible', 'off');
+    set(hLivePSC , 'XData', state.tminHover, 'YData', nan(1, numel(state.tminHover)), 'Visible', 'off');
+    set(hRoiCoordTxt, 'Visible', 'off', 'String', '');
+
+    bg2 = getBg2DForSlice(state.z);
+    set(hBG, 'CData', renderUnderlayRGB(bg2));
+    set(hOV, 'CData', zeros(nY, nX), 'AlphaData', zeros(nY, nX));
+
+    updateInfoLines();
+    computeSCM();
+    redrawROIsForCurrentSlice();
+    drawnow;
+end
+
+function T = extractAtlasWarpStruct(S)
+    % Accept either:
+    %   - Transf / Reg2D wrapper structs
+    %   - direct saved struct
+    %
+    % Supported matrix fields:
+    %   A, M, T, tform.T
+    %
+    % Supported output-size fields:
+    %   outputSize, size, atlasSize, outSize
+
+    if isfield(S, 'Transf') && isstruct(S.Transf)
+        T = S.Transf;
+    elseif isfield(S, 'Reg2D') && isstruct(S.Reg2D)
+        T = S.Reg2D;
+    else
+        T = S;
+    end
+
+    % -------- matrix --------
+    if isfield(T, 'A') && ~isempty(T.A)
+        T.warpA = T.A;
+    elseif isfield(T, 'M') && ~isempty(T.M)
+        T.warpA = T.M;
+    elseif isfield(T, 'T') && ~isempty(T.T)
+        T.warpA = T.T;
+    elseif isfield(T, 'tform') && ~isempty(T.tform)
+        try
+            T.warpA = T.tform.T;
+        catch
+            error('Found tform field, but could not extract numeric matrix from it.');
+        end
+    else
+        error('Transform file has no usable matrix field. Expected A, M, T, or tform.T.');
+    end
+
+    % -------- output size --------
+    if isfield(T, 'outputSize') && ~isempty(T.outputSize)
+        T.outSize = double(T.outputSize);
+    elseif isfield(T, 'size') && ~isempty(T.size)
+        T.outSize = double(T.size);
+    elseif isfield(T, 'atlasSize') && ~isempty(T.atlasSize)
+        T.outSize = double(T.atlasSize);
+    elseif isfield(T, 'outSize') && ~isempty(T.outSize)
+        T.outSize = double(T.outSize);
+    else
+        T.outSize = [];
+    end
+
+    % -------- optional metadata --------
+    if ~isfield(T, 'type') || isempty(T.type)
+        T.type = 'unknown';
+    end
+    if ~isfield(T, 'atlasSliceIndex') || isempty(T.atlasSliceIndex)
+        T.atlasSliceIndex = NaN;
+    end
+    if ~isfield(T, 'atlasMode') || isempty(T.atlasMode)
+        T.atlasMode = '';
+    end
+end
+
+function Y = warpFunctionalSeriesToAtlas(X, T)
+    A = double(T.warpA);
+
+    % ------------------------------------------------------
+    % CASE A: full 3D affine transform for [Y X Z T]
+    % ------------------------------------------------------
+    if ndims(X) == 4 && isequal(size(A), [4 4])
+        if isempty(T.outSize) || numel(T.outSize) < 3
+            error('3D atlas warp requires output size in outputSize / size / atlasSize / outSize.');
+        end
+
+        outSize3 = round(T.outSize(1:3));
+        if any(outSize3 < 1)
+            error('Invalid 3D output size in transform file.');
+        end
+
+        tform3 = affine3d(A);
+        Rout3  = imref3d(outSize3);
+
+        nTT = size(X,4);
+        Y = zeros([outSize3 nTT], 'single');
+
+        for tt = 1:nTT
+            vol = single(X(:,:,:,tt));
+            Y(:,:,:,tt) = imwarp(vol, tform3, 'linear', 'OutputView', Rout3);
+        end
+        return;
+    end
+
+    % ------------------------------------------------------
+    % CASE B: simple 2D coronal registration
+    % A is 3x3 and outputSize is [Y X]
+    %
+    % Supported inputs:
+    %   [Y X T]    -> warp each time frame
+    %   [Y X Z T]  -> warp CURRENT selected slice only, output becomes [Y X T]
+    % ------------------------------------------------------
+    if isequal(size(A), [3 3])
+        if isempty(T.outSize) || numel(T.outSize) < 2
+            error('2D atlas warp requires output size in outputSize / size / atlasSize / outSize.');
+        end
+
+        outSize2 = round(T.outSize(1:2));
+        if any(outSize2 < 1)
+            error('Invalid 2D output size in transform file.');
+        end
+
+        tform2 = affine2d(A);
+        Rout2  = imref2d(outSize2);
+
+        if ndims(X) == 3
+            % X is [Y X T]
+            nTT = size(X,3);
+            Y = zeros([outSize2 nTT], 'single');
+
+            for tt = 1:nTT
+                frm = single(X(:,:,tt));
+                Y(:,:,tt) = imwarp(frm, tform2, 'linear', 'OutputView', Rout2);
+            end
+            return;
+
+        elseif ndims(X) == 4
+            % X is [Y X Z T]
+            % For simple_coronal_2d, only warp the CURRENT slice.
+            zSel = max(1, min(size(X,3), state.z));
+            X2   = squeeze(X(:,:,zSel,:));   % [Y X T]
+
+            nTT = size(X2,3);
+            Y = zeros([outSize2 nTT], 'single');
+
+            for tt = 1:nTT
+                frm = single(X2(:,:,tt));
+                Y(:,:,tt) = imwarp(frm, tform2, 'linear', 'OutputView', Rout2);
+            end
+
+            % Helpful status text
+            try
+                set(info1, 'String', sprintf(['Applied simple 2D coronal atlas warp to current slice %d only. ' ...
+                    'SCM now displays one atlas slice.'], zSel));
+            catch
+            end
+            return;
+        else
+            error('For 2D atlas warp, PSC must be [Y X T] or [Y X Z T].');
+        end
+    end
+
+    error('Unsupported transform matrix size: %dx%d', size(A,1), size(A,2));
+end
+
+
+
+%%%%% Load New Underlay %%%%
+
+function loadNewUnderlayCB(~,~)
+    ensureUnderlayStateFields();
+    startPath = getUnderlayStartPath();
+
+    [f,p] = uigetfile( ...
+        {'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp', ...
+         'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.bmp)'}, ...
+        'Select new underlay', startPath);
+
+    if isequal(f, 0)
+        return;
+    end
+
+    fullf = fullfile(p, f);
+
+    try
+        [Uraw, meta] = readUnderlayFile(fullf);
+        Uraw = squeeze(Uraw);
+
+        if isempty(Uraw) || ~(isnumeric(Uraw) || islogical(Uraw))
+            error('Selected underlay is empty or not numeric/RGB: %s', fullf);
+        end
+
+        % --------------------------------------------------
+        % CASE 1: current SCM already atlas-warped
+        % --------------------------------------------------
+        if state.isAtlasWarped
+            U = [];
+
+            if doesUnderlayMatchCurrentDisplay(Uraw)
+                U = validateAndPrepareUnderlay(Uraw, fullf);
+                applyUnderlayMeta(meta, U);
+
+            elseif doesUnderlayMatchOriginalDisplay(Uraw)
+                tfFile = getBestTransformForUnderlay(fullf);
+                if isempty(tfFile) || exist(tfFile, 'file') ~= 2
+                    error(['Current SCM is atlas-warped, but no transform file could be found ' ...
+                           'to auto-warp the newly selected native underlay.']);
+                end
+
+                S = load(tfFile);
+                T = extractAtlasWarpStruct(S);
+
+                U = warpUnderlayForCurrentDisplay(Uraw, T);
+                U = validateAndPrepareUnderlay(U, fullf);
+
+                % Only keep region metadata if this underlay is already atlas-space.
+                % Native underlays generally do not carry atlas region labels.
+                applyUnderlayMeta(meta, U);
+
+            else
+                error(['Selected underlay does not match either current atlas display ' ...
+                       'or original native space.']);
+            end
+
+            bg = U;
+            bg2 = getBg2DForSlice(state.z);
+            set(hBG, 'CData', renderUnderlayRGB(bg2));
+
+            try
+                set(info1, 'String', ['Loaded atlas-space underlay: ' shortenPath(fullf,85)]);
+                set(info1, 'TooltipString', fullf);
+            catch
+            end
+            drawnow;
+            return;
+        end
+
+        % --------------------------------------------------
+        % CASE 2: current SCM still native
+        % --------------------------------------------------
+
+        % 2A) selected underlay matches native/current display
+        if doesUnderlayMatchCurrentDisplay(Uraw)
+            U = validateAndPrepareUnderlay(Uraw, fullf);
+            applyUnderlayMeta(meta, U);
+
+            bg = U;
+            origBG = bg;
+
+            bg2 = getBg2DForSlice(state.z);
+            set(hBG, 'CData', renderUnderlayRGB(bg2));
+
+            try
+                set(info1, 'String', ['Loaded underlay: ' shortenPath(fullf,85)]);
+                set(info1, 'TooltipString', fullf);
+            catch
+            end
+            drawnow;
+            return;
+        end
+
+        % 2B) selected underlay looks atlas-sized -> auto-find transform
+        tfFile = getBestTransformForUnderlay(fullf);
+
+        if isempty(tfFile) || exist(tfFile, 'file') ~= 2
+            [ft,pt] = uigetfile({'*.mat','Transform files (*.mat)'}, ...
+                'Selected underlay looks atlas-sized. Select transform file', getUnderlayStartPath());
+            if isequal(ft,0)
+                return;
+            end
+            tfFile = fullfile(pt, ft);
+        end
+
+        S = load(tfFile);
+        T = extractAtlasWarpStruct(S);
+
+        if ~doesUnderlayMatchTransformOutput(Uraw, T)
+            error(['Selected underlay size [%d %d] does not match current native SCM size [%d %d] ' ...
+                   'and also does not match transform output size.'], ...
+                   size(Uraw,1), size(Uraw,2), nY, nX);
+        end
+
+        % Warp functional from native -> atlas
+        PSC = warpFunctionalSeriesToAtlas(origPSC, T);
+
+        passedMask = [];
+        passedMaskIsInclude = true;
+
+        state.isAtlasWarped = true;
+        state.atlasTransformFile = tfFile;
+        state.lastAtlasTransformFile = tfFile;
+
+        resetRoisAndRefreshAfterDataChange();
+
+        U = validateAndPrepareUnderlay(Uraw, fullf);
+        applyUnderlayMeta(meta, U);
+
+        bg = U;
+
+        bg2 = getBg2DForSlice(state.z);
+        set(hBG, 'CData', renderUnderlayRGB(bg2));
+
+        try
+            if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d') ...
+                    && isfield(T,'atlasSliceIndex') && isfinite(T.atlasSliceIndex)
+                set(txtTitle, 'String', sprintf('%s | warped to atlas coronal slice %d', ...
+                    fileLabel, round(T.atlasSliceIndex)));
+            else
+                set(txtTitle, 'String', sprintf('%s | warped to atlas', fileLabel));
+            end
+        catch
+            set(txtTitle, 'String', sprintf('%s | warped to atlas', fileLabel));
+        end
+
+        try
+            set(info1, 'String', ['Loaded atlas underlay and warped functional: ' shortenPath(fullf,70)]);
+            set(info1, 'TooltipString', fullf);
+        catch
+        end
+
+        drawnow;
+
+    catch ME
+        errordlg(ME.message, 'Load underlay failed');
+    end
+end
+  
+
+function applyUnderlayMeta(meta, U)
+    ensureUnderlayStateFields();
+
+    state.isColorUnderlay    = false;
+    state.regionLabelUnderlay = [];
+    state.regionColorLUT     = [];
+    state.regionInfo         = struct();
+
+    if nargin >= 1 && isstruct(meta)
+        if isfield(meta, 'isColor') && ~isempty(meta.isColor)
+            state.isColorUnderlay = logical(meta.isColor);
+        end
+        if isfield(meta, 'regionLabels') && ~isempty(meta.regionLabels)
+            state.regionLabelUnderlay = double(meta.regionLabels);
+            state.isColorUnderlay = true;
+        end
+        if isfield(meta, 'regionInfo') && ~isempty(meta.regionInfo)
+            state.regionInfo = meta.regionInfo;
+        end
+    end
+
+    if nargin >= 2 && ~state.isColorUnderlay
+        if ndims(U) == 3 && size(U,3) == 3
+            state.isColorUnderlay = true;
+        end
+    end
+end
+
+function tf = doesUnderlayMatchTransformOutput(U, T)
+    tf = false;
+    try
+        U = squeeze(U);
+        if isempty(T) || ~isfield(T,'outSize') || isempty(T.outSize)
+            return;
+        end
+
+        outSize = round(double(T.outSize));
+        if numel(outSize) < 2
+            return;
+        end
+
+        tf = (size(U,1) == outSize(1) && size(U,2) == outSize(2));
+    catch
+        tf = false;
+    end
+end
+
+function tfFile = getBestTransformForUnderlay(underlayFile)
+    tfFile = '';
+
+    cand = {};
+
+    % 1) Active atlas transform
+    try
+        if isfield(state, 'atlasTransformFile') && ~isempty(state.atlasTransformFile) ...
+                && exist(state.atlasTransformFile, 'file') == 2
+            cand{end+1} = char(state.atlasTransformFile); %#ok<AGROW>
+        end
+    catch
+    end
+
+    % 2) Last used atlas transform
+    try
+        if isfield(state, 'lastAtlasTransformFile') && ~isempty(state.lastAtlasTransformFile) ...
+                && exist(state.lastAtlasTransformFile, 'file') == 2
+            cand{end+1} = char(state.lastAtlasTransformFile); %#ok<AGROW>
+        end
+    catch
+    end
+
+    % 3) Near selected underlay
+    try
+        udir = fileparts(char(underlayFile));
+        cand{end+1} = fullfile(udir, 'CoronalRegistration2D.mat'); %#ok<AGROW>
+        cand{end+1} = fullfile(udir, 'Transformation.mat'); %#ok<AGROW>
+
+        p1 = fileparts(udir);
+        cand{end+1} = fullfile(p1, 'Registration2D', 'CoronalRegistration2D.mat'); %#ok<AGROW>
+        cand{end+1} = fullfile(p1, 'Registration',   'Transformation.mat');        %#ok<AGROW>
+        cand{end+1} = fullfile(p1, 'CoronalRegistration2D.mat');                   %#ok<AGROW>
+        cand{end+1} = fullfile(p1, 'Transformation.mat');                          %#ok<AGROW>
+
+        p2 = fileparts(p1);
+        cand{end+1} = fullfile(p2, 'Registration2D', 'CoronalRegistration2D.mat'); %#ok<AGROW>
+        cand{end+1} = fullfile(p2, 'Registration',   'Transformation.mat');        %#ok<AGROW>
+    catch
+    end
+
+    % 4) From Studio exportPath
+    try
+        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
+            ep = char(par.exportPath);
+            cand{end+1} = fullfile(ep, 'Registration2D', 'CoronalRegistration2D.mat'); %#ok<AGROW>
+            cand{end+1} = fullfile(ep, 'Registration',   'Transformation.mat');        %#ok<AGROW>
+            cand{end+1} = fullfile(ep, 'CoronalRegistration2D.mat');                   %#ok<AGROW>
+            cand{end+1} = fullfile(ep, 'Transformation.mat');                          %#ok<AGROW>
+        end
+    catch
+    end
+
+    % 5) First existing one wins
+    for ii = 1:numel(cand)
+        try
+            if ~isempty(cand{ii}) && exist(cand{ii}, 'file') == 2
+                tfFile = cand{ii};
+                return;
+            end
+        catch
+        end
+    end
+end
+
+function startPath = getUnderlayStartPath()
+    startPath = '';
+
+    candDirs = {};
+
+    % If atlas-warped, prefer transform folder first
+    try
+        if state.isAtlasWarped && isfield(state, 'atlasTransformFile') && ~isempty(state.atlasTransformFile)
+            tfDir = fileparts(char(state.atlasTransformFile));
+            candDirs{end+1} = tfDir; %#ok<AGROW>
+            candDirs{end+1} = fullfile(tfDir, '..'); %#ok<AGROW>
+        end
+    catch
+    end
+
+    % Prefer current animal analysed/export folder
+    try
+        if isstruct(par)
+            if isfield(par, 'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath, 'dir') == 7
+                ep = char(par.exportPath);
+                candDirs{end+1} = fullfile(ep, 'Registration2D'); %#ok<AGROW>
+                candDirs{end+1} = fullfile(ep, 'Registration');   %#ok<AGROW>
+                candDirs{end+1} = fullfile(ep, 'Visualization');  %#ok<AGROW>
+                candDirs{end+1} = ep;                             %#ok<AGROW>
+            end
+        end
+    catch
+    end
+
+    % Derive analysed path from loadedPath
+    try
+        if isstruct(par)
+            if isfield(par, 'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath, 'dir') == 7
+                lp = char(par.loadedPath);
+
+                if contains(lp, [filesep 'RawData' filesep])
+                    ap = strrep(lp, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                    candDirs{end+1} = fullfile(ap, 'Registration2D'); %#ok<AGROW>
+                    candDirs{end+1} = fullfile(ap, 'Registration');   %#ok<AGROW>
+                    candDirs{end+1} = fullfile(ap, 'Visualization');  %#ok<AGROW>
+                    candDirs{end+1} = ap;                             %#ok<AGROW>
+                end
+
+                candDirs{end+1} = fullfile(lp, 'Registration2D'); %#ok<AGROW>
+                candDirs{end+1} = fullfile(lp, 'Registration');   %#ok<AGROW>
+                candDirs{end+1} = fullfile(lp, 'Visualization');  %#ok<AGROW>
+                candDirs{end+1} = lp;                             %#ok<AGROW>
+            end
+        end
+    catch
+    end
+
+    % Derive from loadedFile
+    try
+        if isstruct(par)
+            if isfield(par, 'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf, 'file') == 2
+                    ldir = fileparts(lf);
+
+                    if contains(ldir, [filesep 'RawData' filesep])
+                        ap = strrep(ldir, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                        candDirs{end+1} = fullfile(ap, 'Registration2D'); %#ok<AGROW>
+                        candDirs{end+1} = fullfile(ap, 'Registration');   %#ok<AGROW>
+                        candDirs{end+1} = fullfile(ap, 'Visualization');  %#ok<AGROW>
+                        candDirs{end+1} = ap;                             %#ok<AGROW>
+                    end
+
+                    candDirs{end+1} = fullfile(ldir, 'Registration2D'); %#ok<AGROW>
+                    candDirs{end+1} = fullfile(ldir, 'Registration');   %#ok<AGROW>
+                    candDirs{end+1} = fullfile(ldir, 'Visualization');  %#ok<AGROW>
+                    candDirs{end+1} = ldir;                             %#ok<AGROW>
+                end
+            end
+        end
+    catch
+    end
+
+    % Generic fallback
+    try
+        candDirs{end+1} = getStartPath(); %#ok<AGROW>
+    catch
+    end
+    candDirs{end+1} = pwd;
+
+    % First existing dir wins
+    for ii = 1:numel(candDirs)
+        d = candDirs{ii};
+        try
+            if ~isempty(d) && exist(d, 'dir') == 7
+                startPath = d;
+                return;
+            end
+        catch
+        end
+    end
+
+    startPath = pwd;
+end
+
+
+
+
+function [U, meta] = readUnderlayFile(f)
+    if ~exist(f, 'file')
+        error('Underlay file not found: %s', f);
+    end
+
+    meta = defaultUnderlayMeta();
+
+    isNiiGz = (numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz'));
+    if isNiiGz
+        tmpDir = tempname;
+        mkdir(tmpDir);
+        gunzip(f, tmpDir);
+        ddd = dir(fullfile(tmpDir, '*.nii'));
+        if isempty(ddd)
+            error('Failed to gunzip .nii.gz underlay.');
+        end
+        niiFile = fullfile(tmpDir, ddd(1).name);
+        U = double(niftiread(niiFile));
+        try
+            rmdir(tmpDir, 's');
+        catch
+        end
+        return;
+    end
+
+    [~,~,e] = fileparts(f);
+    e = lower(e);
+
+    switch e
+        case '.mat'
+            S = load(f);
+            [U, meta] = extractUnderlayFromMatStruct(S);
+
+        case '.nii'
+            U = double(niftiread(f));
+
+        case {'.png','.jpg','.jpeg','.tif','.tiff','.bmp'}
+            U = imread(f);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+                U = double(U);
+            else
+                U = double(U);
+            end
+
+        otherwise
+            error('Unsupported underlay file type: %s', e);
+    end
+end
+
+function meta = defaultUnderlayMeta()
+    meta = struct();
+    meta.isColor = false;
+    meta.regionLabels = [];
+    meta.regionInfo = struct();
+    meta.atlasMode = '';
+end
+
+
+function [U, meta] = extractUnderlayFromMatStruct(S)
+    meta = defaultUnderlayMeta();
+
+    if isfield(S, 'atlasMode') && ~isempty(S.atlasMode)
+        try
+            meta.atlasMode = char(S.atlasMode);
+        catch
+            meta.atlasMode = '';
+        end
+    end
+
+    % ------------------------------------------------------
+    % Special handling for exported atlas regions MAT
+    % ------------------------------------------------------
+    if strcmpi(meta.atlasMode, 'regions')
+        if isfield(S, 'atlasUnderlayRGB') && ~isempty(S.atlasUnderlayRGB)
+            U = double(S.atlasUnderlayRGB);
+            meta.isColor = true;
+        elseif isfield(S, 'brainImage') && ~isempty(S.brainImage)
+            U = double(S.brainImage);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+        else
+            error('Regions MAT file has no atlasUnderlayRGB / brainImage.');
+        end
+
+        if isfield(S, 'atlasRegionLabels2D') && ~isempty(S.atlasRegionLabels2D)
+            meta.regionLabels = double(S.atlasRegionLabels2D);
+        elseif isfield(S, 'atlasUnderlay') && ~isempty(S.atlasUnderlay)
+            meta.regionLabels = double(S.atlasUnderlay);
+        end
+
+        if isfield(S, 'atlasInfoRegions') && ~isempty(S.atlasInfoRegions)
+            meta.regionInfo = S.atlasInfoRegions;
+        elseif isfield(S, 'infoRegions') && ~isempty(S.infoRegions)
+            meta.regionInfo = S.infoRegions;
+        end
+        return;
+    end
+
+    % ------------------------------------------------------
+    % Generic MAT loading
+    % ------------------------------------------------------
+    pref = {'atlasUnderlayRGB','underlay','bg','brainImage','img','I','atlasUnderlay','vascular','histology','regions','Data'};
+
+    for ii = 1:numel(pref)
+        if isfield(S, pref{ii})
+            v = S.(pref{ii});
+
+            if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data)
+                U = double(v.Data);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                return;
+
+            elseif isnumeric(v) || islogical(v)
+                U = double(v);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                return;
+            end
+        end
+    end
+
+    fn = fieldnames(S);
+    for ii = 1:numel(fn)
+        v = S.(fn{ii});
+
+        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data)
+            U = double(v.Data);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            return;
+
+        elseif isnumeric(v) || islogical(v)
+            U = double(v);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            return;
+        end
+    end
+
+    error('MAT underlay file has no usable numeric variable.');
+end
+
+
+
+function U = convertRgbToGrayIfNeeded(U)
+    if ndims(U) == 3 && size(U,3) == 3
+        U = mean(double(U), 3);
+    else
+        U = double(U);
+    end
+end
+
+
+function Uout = warpUnderlayForCurrentDisplay(Uin, T)
+    A = double(T.warpA);
+
+    % 2D transform
+    if isequal(size(A), [3 3])
+        if isempty(T.outSize) || numel(T.outSize) < 2
+            error('2D underlay warp requires output size in transform file.');
+        end
+
+        outSize2 = round(T.outSize(1:2));
+        if any(outSize2 < 1)
+            error('Invalid 2D output size in transform file.');
+        end
+
+        tform2 = affine2d(A);
+        Rout2  = imref2d(outSize2);
+
+        if ndims(Uin) == 2
+            Uout = imwarp(single(Uin), tform2, 'linear', 'OutputView', Rout2);
+
+        elseif ndims(Uin) == 3
+            % Allow [Y X T] or [Y X Z] in practice only if current display is single-slice
+            if size(Uin,3) == 1
+                Uout = imwarp(single(Uin(:,:,1)), tform2, 'linear', 'OutputView', Rout2);
+            elseif size(Uin,1) == size(origPSC,1) && size(Uin,2) == size(origPSC,2)
+                % Warp each frame if [Y X T]
+                n3 = size(Uin,3);
+                Uout = zeros([outSize2 n3], 'single');
+                for kk = 1:n3
+                    Uout(:,:,kk) = imwarp(single(Uin(:,:,kk)), tform2, 'linear', 'OutputView', Rout2);
+                end
+            else
+                error('Unsupported 3D underlay layout for 2D warp.');
+            end
+        else
+            error('Unsupported underlay dimensionality for 2D warp.');
+        end
+        return;
+    end
+
+    % 3D transform
+    if isequal(size(A), [4 4])
+        if isempty(T.outSize) || numel(T.outSize) < 3
+            error('3D underlay warp requires output size in transform file.');
+        end
+
+        outSize3 = round(T.outSize(1:3));
+        if any(outSize3 < 1)
+            error('Invalid 3D output size in transform file.');
+        end
+
+        tform3 = affine3d(A);
+        Rout3  = imref3d(outSize3);
+
+        if ndims(Uin) == 3
+            Uout = imwarp(single(Uin), tform3, 'linear', 'OutputView', Rout3);
+
+        elseif ndims(Uin) == 4
+            n4 = size(Uin,4);
+            Uout = zeros([outSize3 n4], 'single');
+            for kk = 1:n4
+                Uout(:,:,:,kk) = imwarp(single(Uin(:,:,:,kk)), tform3, 'linear', 'OutputView', Rout3);
+            end
+        else
+            error('Unsupported underlay dimensionality for 3D warp.');
+        end
+        return;
+    end
+
+    error('Unsupported transform matrix size for underlay warp: %dx%d', size(A,1), size(A,2));
+end
+
+function tf = doesUnderlayMatchCurrentDisplay(U)
+    tf = false;
+    try
+        U = squeeze(U);
+        if ndims(U) == 2
+            tf = (size(U,1) == nY && size(U,2) == nX);
+        elseif ndims(U) >= 3
+            tf = (size(U,1) == nY && size(U,2) == nX);
+        end
+    catch
+        tf = false;
+    end
+end
+
+function tf = doesUnderlayMatchOriginalDisplay(U)
+    tf = false;
+    try
+        U = squeeze(U);
+
+        if ndims(origPSC) == 3
+            oY = size(origPSC,1);
+            oX = size(origPSC,2);
+        else
+            oY = size(origPSC,1);
+            oX = size(origPSC,2);
+        end
+
+        tf = (size(U,1) == oY && size(U,2) == oX);
+    catch
+        tf = false;
+    end
+end
+
+
+    function rgb = renderUnderlayRGB(Uin)
+    ensureUnderlayStateFields();
+
+    if state.isColorUnderlay
+        rgb = convertUnderlayToColorRGB(Uin);
+    else
+        rgb = toRGB(processUnderlay(Uin));
+    end
+end
+
+function rgb = convertUnderlayToColorRGB(U)
+    U = squeeze(U);
+
+    % Already RGB
+    if ndims(U) == 3 && size(U,3) == 3
+        rgb = double(U);
+        if max(rgb(:)) > 1
+            rgb = rgb / 255;
+        end
+        rgb = min(max(rgb,0),1);
+        return;
+    end
+
+    % Numeric region label map
+    if isnumeric(U) || islogical(U)
+        L = double(U);
+        L(~isfinite(L)) = 0;
+
+        maxLab = max(L(:));
+        if isempty(state.regionColorLUT) || size(state.regionColorLUT,1) < max(1,maxLab)
+            state.regionColorLUT = makeRegionColorLUT(max(1, maxLab));
+        end
+
+        rgb = zeros([size(L,1) size(L,2) 3], 'double');
+
+        % Background / zero label in light gray
+        zmask = (L == 0);
+        rgb(:,:,1) = 0.85 * zmask;
+        rgb(:,:,2) = 0.85 * zmask;
+        rgb(:,:,3) = 0.85 * zmask;
+
+        pos = find(L > 0);
+        if ~isempty(pos)
+            labs = round(L(pos));
+            labs(labs < 1) = 1;
+            labs(labs > size(state.regionColorLUT,1)) = size(state.regionColorLUT,1);
+
+            c = state.regionColorLUT(labs, :);
+            tmp = reshape(rgb, [], 3);
+            tmp(pos, :) = c;
+            rgb = reshape(tmp, size(rgb));
+        end
+
+        rgb = min(max(rgb,0),1);
+        return;
+    end
+
+    rgb = toRGB(processUnderlay(U));
+end
+
+
+function lut = makeRegionColorLUT(n)
+    if n <= 0
+        lut = zeros(1,3);
+        return;
+    end
+
+    base = lines(max(n, 12));
+    lut = base(1:n, :);
+
+    if n > size(base,1)
+        x  = linspace(0,1,size(base,1));
+        xi = linspace(0,1,n);
+        tmp = zeros(n,3);
+        for k = 1:3
+            tmp(:,k) = interp1(x, base(:,k), xi, 'linear');
+        end
+        lut = min(max(tmp,0),1);
+    end
+end
+
+function ensureUnderlayStateFields()
+    if ~isfield(state, 'isColorUnderlay') || isempty(state.isColorUnderlay)
+        state.isColorUnderlay = false;
+    end
+    if ~isfield(state, 'regionLabelUnderlay') || isempty(state.regionLabelUnderlay)
+        state.regionLabelUnderlay = [];
+    end
+    if ~isfield(state, 'regionColorLUT') || isempty(state.regionColorLUT)
+        state.regionColorLUT = [];
+    end
+    if ~isfield(state, 'regionInfo') || isempty(state.regionInfo)
+        state.regionInfo = struct();
+    end
+end
 %% ==========================================================
 % Pointer hit test
 %% ==========================================================
@@ -2814,10 +4171,17 @@ function PSCz = getPSCForSlice(z)
 end
 
 function bg2 = getBg2DForSlice(z)
+    % RGB single-slice atlas underlay
+    if ndims(bg) == 3 && size(bg,3) == 3
+        bg2 = bg;
+        return;
+    end
+
     if ndims(bg) == 2
         bg2 = bg;
         return;
     end
+
     if ndims(bg) == 3
         if size(bg,3) == nT && nZ == 1
             bg2 = mean(bg, 3);
@@ -2827,13 +4191,190 @@ function bg2 = getBg2DForSlice(z)
         end
         return;
     end
+
     if ndims(bg) == 4
+        % Optional support for RGB-by-slice stored as [Y X 3 Z]
+        if size(bg,3) == 3 && size(bg,4) >= 1
+            z = max(1, min(size(bg,4), z));
+            bg2 = squeeze(bg(:,:,:,z));
+            return;
+        end
+
         tmp = mean(bg, 4);
         z = max(1, min(size(tmp,3), z));
         bg2 = tmp(:,:,z);
         return;
     end
+
     bg2 = bg(:,:,1);
+end
+
+    function B = readScmBundleFile(fullf)
+    if ~exist(fullf, 'file')
+        error('File not found: %s', fullf);
+    end
+
+    S = load(fullf);
+
+    if isfield(S, 'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle)
+        R = S.maskBundle;
+    else
+        R = S;
+    end
+
+    B = struct();
+    B.brainImage = [];
+    B.overlayMask = [];
+    B.brainMask = [];
+    B.overlayMaskIsInclude = true;
+    B.brainMaskIsInclude = true;
+    B.loadedField = '';
+    B.source = fullf;
+
+    % Prefer explicit overlay / signal restriction masks
+    overlayFields = { ...
+        'loadedMask', ...
+        'overlayMask', ...
+        'signalMask', ...
+        'overlay', ...
+        'overlay_mask', ...
+        'signal_mask', ...
+        'mask', ...
+        'activeMask'};
+
+    for k = 1:numel(overlayFields)
+        fn = overlayFields{k};
+        if isfield(R, fn) && ~isempty(R.(fn)) && (isnumeric(R.(fn)) || islogical(R.(fn)))
+            B.overlayMask = logical(R.(fn));
+            B.loadedField = fn;
+            break;
+        elseif isfield(S, fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
+            B.overlayMask = logical(S.(fn));
+            B.loadedField = fn;
+            break;
+        end
+    end
+
+    % Brain mask fallback
+    brainFields = {'brainMask','underlayMask','brain_mask','underlay_mask'};
+    for k = 1:numel(brainFields)
+        fn = brainFields{k};
+        if isfield(R, fn) && ~isempty(R.(fn)) && (isnumeric(R.(fn)) || islogical(R.(fn)))
+            B.brainMask = logical(R.(fn));
+            break;
+        elseif isfield(S, fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
+            B.brainMask = logical(S.(fn));
+            break;
+        end
+    end
+
+    % Underlay / brain image
+    underlayFields = { ...
+        'brainImage', ...
+        'underlay', ...
+        'bg', ...
+        'anatomical_reference', ...
+        'anatomical_reference_raw', ...
+        'brain_image'};
+
+    for k = 1:numel(underlayFields)
+        fn = underlayFields{k};
+        if isfield(R, fn) && ~isempty(R.(fn)) && isnumeric(R.(fn))
+            B.brainImage = double(R.(fn));
+            break;
+        elseif isfield(S, fn) && ~isempty(S.(fn)) && isnumeric(S.(fn))
+            B.brainImage = double(S.(fn));
+            break;
+        end
+    end
+
+    % Include / exclude flags for overlay mask
+    if isfield(R, 'overlayMaskIsInclude') && ~isempty(R.overlayMaskIsInclude)
+        B.overlayMaskIsInclude = logical(R.overlayMaskIsInclude);
+    elseif isfield(S, 'overlayMaskIsInclude') && ~isempty(S.overlayMaskIsInclude)
+        B.overlayMaskIsInclude = logical(S.overlayMaskIsInclude);
+    elseif isfield(R, 'loadedMaskIsInclude') && ~isempty(R.loadedMaskIsInclude)
+        B.overlayMaskIsInclude = logical(R.loadedMaskIsInclude);
+    elseif isfield(S, 'loadedMaskIsInclude') && ~isempty(S.loadedMaskIsInclude)
+        B.overlayMaskIsInclude = logical(S.loadedMaskIsInclude);
+    elseif isfield(R, 'maskIsInclude') && ~isempty(R.maskIsInclude)
+        B.overlayMaskIsInclude = logical(R.maskIsInclude);
+    elseif isfield(S, 'maskIsInclude') && ~isempty(S.maskIsInclude)
+        B.overlayMaskIsInclude = logical(S.maskIsInclude);
+    else
+        B.overlayMaskIsInclude = true;
+    end
+
+    % Brain mask include / exclude
+    if isfield(R, 'brainMaskIsInclude') && ~isempty(R.brainMaskIsInclude)
+        B.brainMaskIsInclude = logical(R.brainMaskIsInclude);
+    elseif isfield(S, 'brainMaskIsInclude') && ~isempty(S.brainMaskIsInclude)
+        B.brainMaskIsInclude = logical(S.brainMaskIsInclude);
+    elseif isfield(R, 'maskIsInclude') && ~isempty(R.maskIsInclude)
+        B.brainMaskIsInclude = logical(R.maskIsInclude);
+    elseif isfield(S, 'maskIsInclude') && ~isempty(S.maskIsInclude)
+        B.brainMaskIsInclude = logical(S.maskIsInclude);
+    else
+        B.brainMaskIsInclude = true;
+    end
+end
+
+    function M = fitBundleMaskToCurrentScm(M0)
+    M = [];
+
+    if isempty(M0)
+        return;
+    end
+
+    M0 = logical(M0);
+
+    if ismatrix(M0)
+        if size(M0,1) == nY && size(M0,2) == nX
+            M = M0;
+        else
+            try
+                M = imresize(double(M0), [nY nX], 'nearest') > 0.5;
+            catch
+                M = false(nY, nX);
+            end
+        end
+        return;
+    end
+
+    if ndims(M0) == 3
+        if size(M0,1) ~= nY || size(M0,2) ~= nX
+            try
+                tmp = false(nY, nX, size(M0,3));
+                for zz = 1:size(M0,3)
+                    tmp(:,:,zz) = imresize(double(M0(:,:,zz)), [nY nX], 'nearest') > 0.5;
+                end
+                M0 = tmp;
+            catch
+                M0 = false(nY, nX, size(M0,3));
+            end
+        end
+
+        if nZ > 1 && size(M0,3) == nZ
+            M = M0;
+        elseif nZ == 1
+            M = any(M0, 3);
+        else
+            zIdx = round(linspace(1, size(M0,3), nZ));
+            zIdx = max(1, min(size(M0,3), zIdx));
+            M = M0(:,:,zIdx);
+        end
+        return;
+    end
+
+    while ndims(M0) > 3
+        M0 = any(M0, ndims(M0));
+    end
+
+    if ismatrix(M0)
+        M = fitBundleMaskToCurrentScm(M0);
+    else
+        M = fitBundleMaskToCurrentScm(M0);
+    end
 end
 
 function [a,b] = parseRangeSafe(s, da, db)
@@ -2942,10 +4483,18 @@ function M2 = collapseMaskForSlice(M0, ny, nx, z, nZ_)
     if size(M2,2) < nx, M2(:,end+1:nx) = false; end
 end
 
-function M = readMask(f)
+function [M, maskIsInclude, pickedField] = readMask(f, mode)
+    if nargin < 2 || isempty(mode)
+        mode = 'overlayPreferred';
+    end
+
     if ~exist(f, 'file')
         error('Mask file not found: %s', f);
     end
+
+    maskIsInclude = true;
+    pickedField = '';
+
     isNiiGz = (numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz'));
 
     if isNiiGz
@@ -2963,6 +4512,7 @@ function M = readMask(f)
         catch
         end
         M = logical(M);
+        pickedField = 'nifti';
         return;
     end
 
@@ -2971,35 +4521,122 @@ function M = readMask(f)
     if strcmpi(e, '.mat')
         S = load(f);
 
-        if isfield(S, 'brainMask')
-            M = S.brainMask;
-        elseif isfield(S, 'mask')
-            M = S.mask;
-        elseif isfield(S, 'M')
-            M = S.M;
-        elseif isfield(S, 'brainImage')
-            M = (S.brainImage > 0);
+        % If everything is nested inside maskBundle, prefer that namespace
+        if isfield(S, 'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle)
+            B = S.maskBundle;
         else
-            fn = fieldnames(S);
-            M = [];
-            for k = 1:numel(fn)
-                v = S.(fn{k});
-                if islogical(v) || isnumeric(v)
-                    M = v;
+            B = S;
+        end
+
+        switch lower(mode)
+            case 'overlaypreferred'
+                searchFields = { ...
+                    'loadedMask', ...
+                    'overlayMask', ...
+                    'signalMask', ...
+                    'mask', ...
+                    'activeMask', ...
+                    'brainMask', ...
+                    'underlayMask', ...
+                    'M'};
+            case 'brainpreferred'
+                searchFields = { ...
+                    'brainMask', ...
+                    'underlayMask', ...
+                    'mask', ...
+                    'activeMask', ...
+                    'overlayMask', ...
+                    'signalMask', ...
+                    'loadedMask', ...
+                    'M'};
+            otherwise
+                searchFields = { ...
+                    'loadedMask', ...
+                    'overlayMask', ...
+                    'signalMask', ...
+                    'mask', ...
+                    'activeMask', ...
+                    'brainMask', ...
+                    'underlayMask', ...
+                    'M'};
+        end
+
+        M = [];
+        pickedField = '';
+
+        for k = 1:numel(searchFields)
+            fn = searchFields{k};
+            if isfield(B, fn) && ~isempty(B.(fn))
+                v = B.(fn);
+                if isnumeric(v) || islogical(v)
+                    M = logical(v);
+                    pickedField = fn;
                     break;
                 end
             end
-            if isempty(M)
-                error('MAT mask file has no usable variable (brainMask/mask/brainImage).');
+        end
+
+        if isempty(M)
+            if isfield(B, 'brainImage') && ~isempty(B.brainImage)
+                M = logical(B.brainImage > 0);
+                pickedField = 'brainImage>0';
+            else
+                fn = fieldnames(B);
+                for k = 1:numel(fn)
+                    v = B.(fn{k});
+                    if isnumeric(v) || islogical(v)
+                        M = logical(v);
+                        pickedField = fn{k};
+                        break;
+                    end
+                end
             end
         end
 
-        M = logical(M);
+        if isempty(M)
+            error('MAT mask file has no usable mask variable.');
+        end
+
+        % Include / exclude flag
+        switch lower(pickedField)
+            case 'loadedmask'
+                if isfield(B, 'loadedMaskIsInclude') && ~isempty(B.loadedMaskIsInclude)
+                    maskIsInclude = logical(B.loadedMaskIsInclude);
+                elseif isfield(B, 'maskIsInclude') && ~isempty(B.maskIsInclude)
+                    maskIsInclude = logical(B.maskIsInclude);
+                else
+                    maskIsInclude = true;
+                end
+
+            case {'overlaymask','signalmask'}
+                if isfield(B, 'overlayMaskIsInclude') && ~isempty(B.overlayMaskIsInclude)
+                    maskIsInclude = logical(B.overlayMaskIsInclude);
+                elseif isfield(B, 'loadedMaskIsInclude') && ~isempty(B.loadedMaskIsInclude)
+                    maskIsInclude = logical(B.loadedMaskIsInclude);
+                elseif isfield(B, 'maskIsInclude') && ~isempty(B.maskIsInclude)
+                    maskIsInclude = logical(B.maskIsInclude);
+                else
+                    maskIsInclude = true;
+                end
+
+            otherwise
+                if isfield(B, 'maskIsInclude') && ~isempty(B.maskIsInclude)
+                    maskIsInclude = logical(B.maskIsInclude);
+                elseif isfield(B, 'loadedMaskIsInclude') && ~isempty(B.loadedMaskIsInclude)
+                    maskIsInclude = logical(B.loadedMaskIsInclude);
+                else
+                    maskIsInclude = true;
+                end
+        end
+
         return;
     end
 
+    % Plain .nii
     M = niftiread(f);
     M = logical(M);
+    maskIsInclude = true;
+    pickedField = 'nifti';
 end
 
 function rgb = toRGB(im01)
@@ -3084,7 +4721,7 @@ function q = prctile_fallback(v, p)
     end
 end
 
-function s = getStr(h)
+    function s = getStr(h)
     try
         s = get(h, 'String');
     catch
@@ -3100,7 +4737,9 @@ function s = getStr(h)
         end
     end
     if isstring(s)
-        if numel(s) > 1, s = s(1); end
+        if numel(s) > 1
+            s = s(1);
+        end
         s = char(s);
     end
     if isnumeric(s)

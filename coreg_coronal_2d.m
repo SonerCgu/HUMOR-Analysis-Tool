@@ -86,6 +86,8 @@ fprintf('Registration2D dir : %s\n', registrationDir);
 % 3) SOURCE IMAGE CANDIDATES
 %% ---------------------------------------------------------
 searchFolders = { ...
+    rawFolder, ...
+    analysedFolder, ...
     fullfile(rawFolder,'Visualization'), ...
     fullfile(rawFolder,'visualization'), ...
     fullfile(rawFolder,'Visualisation'), ...
@@ -103,10 +105,17 @@ searchFolders = searchFolders(~cellfun(@isempty, searchFolders));
 searchFolders = searchFolders(cellfun(@(p) exist(p,'dir')==7, searchFolders));
 searchFolders = unique(searchFolders,'stable');
 
-[sourceFiles, sourceLabels] = collectSourceFiles(searchFolders, rawFolder, analysedFolder, registrationDir);
+directFiles = {};
+if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile) && exist(studio.loadedFile,'file') == 2
+    directFiles{end+1} = studio.loadedFile; %#ok<AGROW>
+end
+
+[sourceFiles, sourceLabels] = collectSourceFiles(searchFolders, rawFolder, analysedFolder, registrationDir, directFiles);
 
 if isempty(sourceFiles)
-    error('No suitable source files found.');
+    error(['No suitable source files found.' char(10) ...
+           'Checked loaded file, RAW root, ANALYSED root, Visualization/Mask folders, and Registration2D.' char(10) ...
+           'Expected source-like files such as brainImage / anatomical reference / mask / atlas underlay MAT-NIfTI-image files.']);
 end
 
 [idx, tf] = listdlg( ...
@@ -294,12 +303,28 @@ end
 %% =======================================================================
 % Source file collection
 %% =======================================================================
-function [fileList, displayList] = collectSourceFiles(searchFolders, rawRoot, analysedRoot, registrationRoot)
+function [fileList, displayList] = collectSourceFiles(searchFolders, rawRoot, analysedRoot, registrationRoot, directFiles)
 
 fileList = {};
 displayList = {};
 
-patterns = {'*.mat','*.nii','*.nii.gz','*.png','*.jpg','*.jpeg','*.tif','*.tiff','*.bmp'};
+% 1) Explicit direct files first (e.g. currently loaded MAT)
+if nargin >= 5 && ~isempty(directFiles)
+    for i = 1:numel(directFiles)
+        fp = directFiles{i};
+        if exist(fp,'file') ~= 2
+            continue;
+        end
+        if ~isAllowedSourceFile(fp)
+            continue;
+        end
+        fileList{end+1} = fp; %#ok<AGROW>
+        displayList{end+1} = ['LOADED: ' makeDisplayName(fp, rawRoot, analysedRoot, registrationRoot)]; %#ok<AGROW>
+    end
+end
+
+% 2) Search folders recursively but prune irrelevant directories
+skipTerms = getSourceSkipFolderTerms();
 
 for i = 1:numel(searchFolders)
     f = searchFolders{i};
@@ -307,23 +332,87 @@ for i = 1:numel(searchFolders)
         continue;
     end
 
-    for p = 1:numel(patterns)
-        d = dir(fullfile(f, patterns{p}));
-        for k = 1:numel(d)
-            fp = fullfile(f, d(k).name);
+    filesHere = collectFilesRecursiveFiltered(f, skipTerms);
 
-            if ~isAllowedSourceFile(fp)
-                continue;
-            end
+    for k = 1:numel(filesHere)
+        fp = filesHere{k};
 
-            fileList{end+1} = fp; %#ok<AGROW>
-            displayList{end+1} = makeDisplayName(fp, rawRoot, analysedRoot, registrationRoot); %#ok<AGROW>
+        if ~isAllowedSourceFile(fp)
+            continue;
+        end
+
+        fileList{end+1} = fp; %#ok<AGROW>
+        displayList{end+1} = makeDisplayName(fp, rawRoot, analysedRoot, registrationRoot); %#ok<AGROW>
+    end
+end
+
+if isempty(fileList)
+    return;
+end
+
+[fileList, ia] = unique(fileList,'stable');
+displayList = displayList(ia);
+
+end
+
+
+function files = collectFilesRecursiveFiltered(rootDir, skipTerms)
+
+files = {};
+
+if isempty(rootDir) || ~exist(rootDir,'dir')
+    return;
+end
+
+d = dir(rootDir);
+
+for i = 1:numel(d)
+    nm = d(i).name;
+    fp = fullfile(rootDir, nm);
+
+    if d(i).isdir
+        if strcmp(nm,'.') || strcmp(nm,'..')
+            continue;
+        end
+
+        if folderShouldBeSkipped(fp, skipTerms)
+            continue;
+        end
+
+        subFiles = collectFilesRecursiveFiltered(fp, skipTerms);
+        if ~isempty(subFiles)
+            files = [files subFiles]; %#ok<AGROW>
+        end
+    else
+        if isRecognizedSourceExtension(fp)
+            files{end+1} = fp; %#ok<AGROW>
         end
     end
 end
 
-[displayList, ia] = unique(displayList,'stable');
-fileList = fileList(ia);
+end
+
+
+function tf = folderShouldBeSkipped(folderPath, skipTerms)
+
+folderL = lower(folderPath);
+tf = pathHasAnyTerm(folderL, skipTerms);
+
+end
+
+
+function tf = isRecognizedSourceExtension(fp)
+
+tf = false;
+if isImageFile(fp) || isNiftiFile(fp)
+    tf = true;
+    return;
+end
+
+[~,~,ext] = fileparts(fp);
+if strcmpi(ext,'.mat')
+    tf = true;
+end
 
 end
 
@@ -335,76 +424,38 @@ tf = false;
 [folder, nm, ext] = fileparts(fp);
 folderL = lower(folder);
 nameL   = lower(nm);
-fullName = [nm ext];
+fullL   = lower([nm ext]);
 
-% Only allow source-like folders
-okFolder = false;
-if ~isempty(strfind(folderL, [filesep 'visualization'])) %#ok<STREMP>
-    okFolder = true;
-end
-if ~isempty(strfind(folderL, [filesep 'visualisation'])) %#ok<STREMP>
-    okFolder = true;
-end
-if ~isempty(strfind(folderL, [filesep 'mask'])) %#ok<STREMP>
-    okFolder = true;
-end
-if ~isempty(strfind(folderL, [filesep 'masks'])) %#ok<STREMP>
-    okFolder = true;
-end
-if ~isempty(strfind(folderL, [filesep 'registration2d'])) %#ok<STREMP>
-    okFolder = true;
-end
-
-if ~okFolder
+% Reject by folder first
+if folderShouldBeSkipped(folder, getSourceSkipFolderTerms())
     return;
 end
 
 % Reject specific files
-if strcmpi(fullName,'Transformation.mat') || ...
-   strcmpi(fullName,'CoronalRegistration2D.mat') || ...
-   strcmpi(fullName,'allen_brain_atlas.mat')
+if strcmpi(fullL,'transformation.mat') || ...
+   strcmpi(fullL,'coronalregistration2d.mat') || ...
+   strcmpi(fullL,'allen_brain_atlas.mat')
     return;
 end
 
 % Reject obvious QC / preprocessing / plot names
-badNameTerms = { ...
-    'framerate','frame_rate','frame', ...
-    'rotation','translation','spike','dvars','motion', ...
-    'pca','despike','scrub','qc','rejected', ...
-    'timeseries','trace','plot','powerpoint', ...
-    'warpeddata','coronalregistration2d','transformation', ...
-    'globalmean','burst','cnr','commonmode', ...
-    'intensity','interpolated','original'};
-
-for i = 1:numel(badNameTerms)
-    if ~isempty(strfind(nameL, badNameTerms{i})) %#ok<STREMP>
-        return;
-    end
+if nameHasAnyTerm(nameL, getSourceBadNameTerms())
+    return;
 end
 
-% Allow image files only if they look source-like
-goodNameTerms = { ...
-    'brainonly','brainimage','brainmask', ...
-    'anatom','underlay','histology','vascular','regions','mask','atlasunderlay'};
-
-isClearlyGood = false;
-for i = 1:numel(goodNameTerms)
-    if ~isempty(strfind(nameL, goodNameTerms{i})) %#ok<STREMP>
-        isClearlyGood = true;
-        break;
-    end
-end
-
+% Images: require clearly source-like names
 if isImageFile(fp)
-    tf = isClearlyGood;
+    tf = nameHasAnyTerm(nameL, getSourceGoodNameTerms());
     return;
 end
 
-if strcmpi(ext,'.nii') || strcmpi(ext,'.gz')
-    tf = true;
+% NIfTI: accept only if name looks source-like or if it lives in a source-like folder
+if isNiftiFile(fp)
+    tf = nameHasAnyTerm(nameL, getSourceGoodNameTerms()) || folderLooksSourceLike(folderL);
     return;
 end
 
+% MAT: use content-based check
 if strcmpi(ext,'.mat')
     tf = hasLikelySourceContent(fp);
     return;
@@ -429,15 +480,44 @@ try
         'anatomical_reference_raw', ...
         'brainMask', ...
         'mask', ...
+        'Mask', ...
+        'atlasUnderlay', ...
+        'atlasUnderlayRGB', ...
         'Data', ...
         'I'};
 
+    badTerms = getSourceBadNameTerms();
+    sourceTerms = getSourceGoodNameTerms();
+
+    % Strong positive matches
     for i = 1:numel(info)
         nm = info(i).name;
+        nmL = lower(nm);
         sz = info(i).size;
         cl = info(i).class;
 
+        if nameHasAnyTerm(nmL, badTerms)
+            continue;
+        end
+
         if any(strcmp(nm, preferredNames))
+            if strcmp(cl,'struct')
+                tf = true;
+                return;
+            end
+            if (strcmp(cl,'double') || strcmp(cl,'single') || strcmp(cl,'uint16') || ...
+                strcmp(cl,'uint8') || strcmp(cl,'logical')) && ...
+                numel(sz) >= 2 && numel(sz) <= 3 && prod(double(sz)) > 100
+                tf = true;
+                return;
+            end
+        end
+
+        if nameHasAnyTerm(nmL, sourceTerms)
+            if strcmp(cl,'struct')
+                tf = true;
+                return;
+            end
             if (strcmp(cl,'double') || strcmp(cl,'single') || strcmp(cl,'uint16') || ...
                 strcmp(cl,'uint8') || strcmp(cl,'logical')) && ...
                 numel(sz) >= 2 && numel(sz) <= 3 && prod(double(sz)) > 100
@@ -447,22 +527,20 @@ try
         end
     end
 
-    % Allow structs because loadSourceAs2D can inspect them safely
-    for i = 1:numel(info)
-        if strcmp(info(i).class,'struct')
-            tf = true;
-            return;
-        end
-    end
+    % Fallback: single-variable MAT with 2D/3D image-like content
+    if numel(info) == 1
+        nmL = lower(info(1).name);
+        sz = info(1).size;
+        cl = info(1).class;
 
-    % Fallback: numeric 2D or 3D image-like array only
-    for i = 1:numel(info)
-        cl = info(i).class;
-        sz = info(i).size;
-
-        if strcmp(cl,'double') || strcmp(cl,'single') || strcmp(cl,'uint16') || ...
-           strcmp(cl,'uint8') || strcmp(cl,'logical')
-            if numel(sz) >= 2 && numel(sz) <= 3 && prod(double(sz)) > 100
+        if ~nameHasAnyTerm(nmL, badTerms)
+            if strcmp(cl,'struct')
+                tf = true;
+                return;
+            end
+            if (strcmp(cl,'double') || strcmp(cl,'single') || strcmp(cl,'uint16') || ...
+                strcmp(cl,'uint8') || strcmp(cl,'logical')) && ...
+                numel(sz) >= 2 && numel(sz) <= 3 && prod(double(sz)) > 100
                 tf = true;
                 return;
             end
@@ -474,6 +552,7 @@ catch
 end
 
 end
+
 
 %% =======================================================================
 % Functional file collection
@@ -503,8 +582,12 @@ for i = 1:numel(rootFolders)
     end
 end
 
-[displayList, ia] = unique(displayList,'stable');
-fileList = fileList(ia);
+if isempty(fileList)
+    return;
+end
+
+[fileList, ia] = unique(fileList,'stable');
+displayList = displayList(ia);
 
 end
 
@@ -581,7 +664,7 @@ if ~isempty(strfind(nameLower,'transformation')) %#ok<STREMP>
     return;
 end
 
-if strcmpi(ext,'.nii') || strcmpi(ext,'.gz')
+if isNiftiFile(fp)
     tf = true;
     return;
 end
@@ -750,7 +833,7 @@ if endsWithLower(sourceFile,'.mat')
     % Try to auto-attach corresponding mask from same MAT
     info.mask2D = chooseBestMaskForSource(S, tmp, info.label);
 
-elseif endsWithLower(sourceFile,'.nii') || endsWithLower(sourceFile,'.nii.gz')
+elseif isNiftiFile(sourceFile)
     [D, ~] = loadNiftiMaybeGz(sourceFile);
     img2D = choose2DSlice(double(D), sourceFile);
     info.label = sourceFile;
@@ -779,10 +862,12 @@ preferred = { ...
     'brainImage', ...
     'anatomical_reference', ...
     'anatomical_reference_raw', ...
-    'I', ...
-    'Data', ...
+    'atlasUnderlay', ...
     'brainMask', ...
-    'mask' ...
+    'mask', ...
+    'Mask', ...
+    'I', ...
+    'Data' ...
     };
 
 ordered = {};
@@ -800,22 +885,82 @@ end
 for i = 1:numel(ordered)
     nm = ordered{i};
     v = S.(nm);
+    [candNames, candData] = appendSourceCandidatesFromValue(candNames, candData, nm, v);
+end
 
-    if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
-        D = double(v.Data);
-        if ndims(D) == 2 || ndims(D) == 3
-            candNames{end+1} = nm; %#ok<AGROW>
-            candData{end+1} = D; %#ok<AGROW>
+if isempty(candNames)
+    return;
+end
+
+[candNames, ia] = unique(candNames,'stable');
+candData = candData(ia);
+
+end
+
+
+function [candNames, candData] = appendSourceCandidatesFromValue(candNames, candData, baseName, v)
+
+if isstruct(v)
+    nestedPreferred = { ...
+        'brainImage', ...
+        'anatomical_reference', ...
+        'anatomical_reference_raw', ...
+        'atlasUnderlay', ...
+        'brainMask', ...
+        'mask', ...
+        'Mask', ...
+        'Data', ...
+        'I' ...
+        };
+
+    for i = 1:numel(nestedPreferred)
+        f = nestedPreferred{i};
+        if isfield(v, f)
+            vv = v.(f);
+            [candNames, candData] = addCandidateIfImageLike(candNames, candData, [baseName '.' f], vv);
         end
-        continue;
     end
 
-    if (isnumeric(v) || islogical(v)) && ~isempty(v)
-        D = double(v);
-        if ndims(D) == 2 || ndims(D) == 3
-            candNames{end+1} = nm; %#ok<AGROW>
-            candData{end+1} = D; %#ok<AGROW>
+    if isscalar(v)
+        fns = fieldnames(v);
+        for i = 1:numel(fns)
+            fn = fns{i};
+            fnL = lower(fn);
+            if nameHasAnyTerm(fnL, getSourceBadNameTerms())
+                continue;
+            end
+            if nameHasAnyTerm(fnL, getSourceGoodNameTerms()) || strcmpi(fn,'Data') || strcmpi(fn,'I')
+                vv = v.(fn);
+                [candNames, candData] = addCandidateIfImageLike(candNames, candData, [baseName '.' fn], vv);
+            end
         end
+    end
+else
+    [candNames, candData] = addCandidateIfImageLike(candNames, candData, baseName, v);
+end
+
+end
+
+
+function [candNames, candData] = addCandidateIfImageLike(candNames, candData, candName, v)
+
+if isempty(v)
+    return;
+end
+
+if isstruct(v) && isfield(v,'Data') && ~isempty(v.Data)
+    v = v.Data;
+end
+
+if ~(isnumeric(v) || islogical(v))
+    return;
+end
+
+D = double(v);
+if ndims(D) == 2 || ndims(D) == 3
+    if prod(double(size(D))) > 100
+        candNames{end+1} = candName; %#ok<AGROW>
+        candData{end+1} = D; %#ok<AGROW>
     end
 end
 
@@ -1076,6 +1221,14 @@ tf = endsWithLower(f,'.png') || endsWithLower(f,'.jpg') || endsWithLower(f,'.jpe
 end
 
 
+function tf = isNiftiFile(f)
+
+f = lower(f);
+tf = endsWithLower(f,'.nii') || endsWithLower(f,'.nii.gz');
+
+end
+
+
 function I = load2DImage(f)
 
 I = imread(f);
@@ -1125,5 +1278,103 @@ for i = 1:numel(terms)
         return;
     end
 end
+
+end
+
+
+function tf = folderLooksSourceLike(folderL)
+
+terms = { ...
+    [filesep 'visualization'], ...
+    [filesep 'visualisation'], ...
+    [filesep 'mask'], ...
+    [filesep 'masks'], ...
+    [filesep 'registration2d'] ...
+    };
+
+tf = pathHasAnyTerm(folderL, terms);
+
+end
+
+
+function terms = getSourceGoodNameTerms()
+
+terms = { ...
+    'brainonly', ...
+    'brainimage', ...
+    'brainmask', ...
+    'brain_mask', ...
+    'mask', ...
+    'anatom', ...
+    'anatomical', ...
+    'reference', ...
+    'underlay', ...
+    'histology', ...
+    'vascular', ...
+    'regions', ...
+    'atlasunderlay' ...
+    };
+
+end
+
+
+function terms = getSourceBadNameTerms()
+
+terms = { ...
+    'framerate', ...
+    'frame_rate', ...
+    'framerejection', ...
+    'frame_rejection', ...
+    'rotation', ...
+    'translation', ...
+    'spike', ...
+    'dvars', ...
+    'motion', ...
+    'pca', ...
+    'despike', ...
+    'scrub', ...
+    'qc', ...
+    'rejected', ...
+    'rejection', ...
+    'timeseries', ...
+    'trace', ...
+    'plot', ...
+    'powerpoint', ...
+    'warpeddata', ...
+    'coronalregistration2d', ...
+    'transformation', ...
+    'globalmean', ...
+    'burst', ...
+    'cnr', ...
+    'snr', ...
+    'tsnr', ...
+    'intensity', ...
+    'spectrum', ...
+    'histogram', ...
+    'heatmap', ...
+    'translation', ...
+    'rotation', ...
+    'video' ...
+    };
+
+end
+
+
+function terms = getSourceSkipFolderTerms()
+
+terms = { ...
+    [filesep 'qc' filesep], ...
+    [filesep 'scm' filesep], ...
+    [filesep 'roi' filesep], ...
+    [filesep 'video' filesep], ...
+    [filesep 'videos' filesep], ...
+    [filesep 'ppt' filesep], ...
+    [filesep 'powerpoint' filesep], ...
+    [filesep 'presentation' filesep], ...
+    [filesep 'presentations' filesep], ...
+    [filesep 'temp' filesep], ...
+    [filesep 'tmp' filesep], ...
+    [filesep 'logs' filesep] ...
+    };
 
 end
