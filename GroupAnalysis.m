@@ -170,99 +170,111 @@ pRight = uipanel(hFig,'Units','normalized','Position',[0.02+leftW+0.02 0.05 0.96
     'FontSize',F.big,'FontWeight','bold');
 
 % -------------------- Table ------------------------------
-colNames = {'Use','Subject','Group','Condition','PairID','DataFile','ROIFile','Status'};
-colEdit  = [true true true true true false false false];
-colFmt   = {'logical','char',S.groupList,S.condList,'char','char','char','char'};
+colNames = {'Use','Animal ID','Session','Scan ID','Group','Condition','ROI File','ROI Status'};
+colEdit  = [true true false false true true false false];
+colFmt   = {'logical','char','char','char',S.groupList,S.condList,'char','char'};
 
 S.hTable = uitable(pLeft, ...
     'Units','normalized','Position',[0.03 0.33 0.70 0.64], ...
-    'Data',S.subj, ...
+    'Data',subjToUITable(S.subj), ...
     'ColumnName',colNames, ...
     'ColumnEditable',colEdit, ...
     'ColumnFormat',colFmt, ...
     'RowName','numbered', ...
-    'BackgroundColor',[0 0 0], ...
-    'ForegroundColor',C.txt, ...
+    'BackgroundColor',[1 1 1], ...
+    'ForegroundColor',[0 0 0], ...
     'FontName','Consolas', ...
     'FontSize',F.table, ...
     'CellSelectionCallback',@onCellSelect, ...
     'CellEditCallback',@onCellEdit);
-
 % -------------------- Quick Assign -----------------------
 pQuick = uipanel(pLeft,'Units','normalized','Position',[0.75 0.33 0.22 0.64], ...
     'Title','Quick Assign', 'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontSize',F.base,'FontWeight','bold');
 
 S.hSelInfo = uicontrol(pQuick,'Style','text','String','Selected: none', ...
-    'Units','normalized','Position',[0.05 0.93 0.90 0.06], ...
+    'Units','normalized','Position',[0.05 0.93 0.90 0.05], ...
     'BackgroundColor',C.panel2,'ForegroundColor',C.muted,'HorizontalAlignment','left', ...
     'FontWeight','bold');
 
 S.hApplyAllIfNone = uicontrol(pQuick,'Style','checkbox', ...
-    'String','If none selected: apply to ALL active (Use=true)', ...
-    'Units','normalized','Position',[0.05 0.87 0.90 0.06], ...
+    'String','If none selected -> active USE rows', ...
+    'Units','normalized','Position',[0.05 0.87 0.90 0.05], ...
     'Value', double(S.applyAllIfNoneSelected), ...
     'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'Callback',@onApplyAllToggle);
 
-uicontrol(pQuick,'Style','text','String','Group:', ...
-    'Units','normalized','Position',[0.05 0.79 0.90 0.05], ...
+uicontrol(pQuick,'Style','text','String','Group', ...
+    'Units','normalized','Position',[0.05 0.79 0.90 0.045], ...
     'BackgroundColor',C.panel2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
 S.hQuickGroup = uicontrol(pQuick,'Style','popupmenu','String',S.groupList, ...
-    'Units','normalized','Position',[0.05 0.74 0.90 0.06], ...
+    'Units','normalized','Position',[0.05 0.735 0.90 0.055], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w');
 
-uicontrol(pQuick,'Style','text','String','Condition:', ...
-    'Units','normalized','Position',[0.05 0.65 0.90 0.05], ...
+uicontrol(pQuick,'Style','text','String','Condition', ...
+    'Units','normalized','Position',[0.05 0.655 0.90 0.045], ...
     'BackgroundColor',C.panel2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
 S.hQuickCond = uicontrol(pQuick,'Style','popupmenu','String',S.condList, ...
-    'Units','normalized','Position',[0.05 0.60 0.90 0.06], ...
+    'Units','normalized','Position',[0.05 0.60 0.90 0.055], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w');
 
-S.hApplyGroup = mkBtn(pQuick,'Apply GROUP',[0.05 0.51 0.44 0.07],C.btnAction,@onApplyGroup);
-S.hApplyCond  = mkBtn(pQuick,'Apply COND',[0.51 0.51 0.44 0.07],C.btnAction,@onApplyCond);
-S.hApplyBoth  = mkBtn(pQuick,'Apply BOTH',[0.05 0.43 0.90 0.07],C.btnPrimary,@onApplyBoth);
+S.hApplyGroup = mkBtn(pQuick,'Apply Group',[0.05 0.50 0.43 0.075],C.btnAction,@onApplyGroup);
+S.hApplyCond  = mkBtn(pQuick,'Apply Cond',[0.52 0.50 0.43 0.075],C.btnAction,@onApplyCond);
+S.hApplyBoth  = mkBtn(pQuick,'Apply Both',[0.05 0.405 0.90 0.075],C.btnPrimary,@onApplyBoth);
 
-S.hAddGroup = mkBtn(pQuick,'Add group...',[0.05 0.34 0.44 0.07],C.btnSecondary,@onAddGroup);
-S.hAddCond  = mkBtn(pQuick,'Add cond...',[0.51 0.34 0.44 0.07],C.btnSecondary,@onAddCond);
+S.hAddGroup = mkBtn(pQuick,'Add Group',[0.05 0.305 0.43 0.070],C.btnSecondary,@onAddGroup);
+S.hAddCond  = mkBtn(pQuick,'Add Cond',[0.52 0.305 0.43 0.070],C.btnSecondary,@onAddCond);
 
+S.hRevertExcluded = mkBtn(pQuick,'Revert Excluded',[0.05 0.205 0.90 0.070],C.btnSecondary,@onRevertExcluded);
+S.hHelp = mkBtn(pQuick,'Help',[0.05 0.105 0.90 0.070],C.btnHelp,@onHelp);
+
+% Hidden compatibility handles (kept so old logic still works safely)
 S.hAutoPair = uicontrol(pQuick,'Style','checkbox','String','Auto PairID = Subject', ...
-    'Units','normalized','Position',[0.05 0.27 0.90 0.05], ...
-    'BackgroundColor',C.panel2,'ForegroundColor','w','Value',1);
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
+    'BackgroundColor',C.panel2,'ForegroundColor','w','Value',1,'Visible','off');
 
-S.hFillFromROI = mkBtn(pQuick,'Fill DATA from ROI folder',[0.05 0.20 0.90 0.06],C.btnSecondary,@onFillFromROISelected);
-S.hRevertExcluded = mkBtn(pQuick,'Revert EXCLUDED rows',[0.05 0.13 0.90 0.06],C.btnSecondary,@onRevertExcluded);
-S.hHelp = mkBtn(pQuick,'HELP',[0.05 0.05 0.90 0.06],C.btnHelp,@onHelp);
+S.hFillFromROI = uicontrol(pQuick,'Style','pushbutton','String','Fill DATA from ROI folder', ...
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
+    'BackgroundColor',C.btnSecondary,'ForegroundColor','w', ...
+    'Visible','off','Callback',@onFillFromROISelected);
+
 
 % -------------------- Left buttons -----------------------
-S.hAddFiles  = mkBtn(pLeft,'Add Files',[0.03 0.26 0.22 0.06],C.btnSecondary,@onAddFiles);
-S.hAddFolder = mkBtn(pLeft,'Add Folder (scan)',[0.26 0.26 0.22 0.06],C.btnSecondary,@onAddFolder);
-S.hRemove    = mkBtn(pLeft,'Remove selected',[0.49 0.26 0.24 0.06],C.btnDanger,@onRemoveSelected);
+S.hAddFiles  = mkBtn(pLeft,'Add Files',[0.03 0.24 0.22 0.065],C.btnSecondary,@onAddFiles);
+S.hAddFolder = mkBtn(pLeft,'Add Folder (scan)',[0.26 0.24 0.22 0.065],C.btnSecondary,@onAddFolder);
+S.hRemove    = mkBtn(pLeft,'Remove Selected',[0.49 0.24 0.24 0.065],C.btnDanger,@onRemoveSelected);
 
-S.hSetData = mkBtn(pLeft,'Set DATA for selected',[0.03 0.20 0.34 0.055],C.btnAction,@onSetDataSelected);
-S.hSetROI  = mkBtn(pLeft,'Set ROI for selected',[0.39 0.20 0.34 0.055],C.btnAction,@onSetROISelected);
+S.hSaveList = mkBtn(pLeft,'Save List',[0.03 0.155 0.34 0.060],C.btnSecondary,@onSaveList);
+S.hLoadList = mkBtn(pLeft,'Load List',[0.39 0.155 0.34 0.060],C.btnSecondary,@onLoadList);
 
-S.hSaveList = mkBtn(pLeft,'Save list',[0.03 0.135 0.34 0.055],C.btnSecondary,@onSaveList);
-S.hLoadList = mkBtn(pLeft,'Load list',[0.39 0.135 0.34 0.055],C.btnSecondary,@onLoadList);
+% Hidden legacy controls so callbacks remain harmless
+S.hSetData = uicontrol(pLeft,'Style','pushbutton','String','Set DATA for selected', ...
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
+    'BackgroundColor',C.btnAction,'ForegroundColor','w','Visible','off', ...
+    'Callback',@onSetDataSelected);
 
-uicontrol(pLeft,'Style','text','String','Output folder:', ...
-    'Units','normalized','Position',[0.03 0.085 0.20 0.04], ...
-    'BackgroundColor',C.panel,'ForegroundColor','w','HorizontalAlignment','left', ...
-    'FontWeight','bold','FontSize',F.base);
+S.hSetROI = uicontrol(pLeft,'Style','pushbutton','String','Set ROI for selected', ...
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
+    'BackgroundColor',C.btnAction,'ForegroundColor','w','Visible','off', ...
+    'Callback',@onSetROISelected);
 
 S.hOutEdit = uicontrol(pLeft,'Style','edit','String',S.outDir, ...
-    'Units','normalized','Position',[0.23 0.085 0.40 0.045], ...
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'HorizontalAlignment','left','FontSize',F.base, ...
-    'Callback',@onOutEdit);
+    'Visible','off','Callback',@onOutEdit);
 
-S.hOutBrowse = mkBtn(pLeft,'Browse',[0.64 0.085 0.09 0.045],C.btnSecondary,@onBrowseOut);
+S.hOutBrowse = uicontrol(pLeft,'Style','pushbutton','String','Browse', ...
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
+    'BackgroundColor',C.btnSecondary,'ForegroundColor','w', ...
+    'Visible','off','Callback',@onBrowseOut);
 
 S.hHint = uicontrol(pLeft,'Style','text', ...
-    'String','Tip: preview is fully redrawn to avoid overlap/stale plots. CSV exports are UTF-8.', ...
-    'Units','normalized','Position',[0.03 0.02 0.70 0.055], ...
+    'String','', ...
+    'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
     'BackgroundColor',C.panel,'ForegroundColor',C.muted, ...
-    'HorizontalAlignment','left','FontSize',F.small);
+    'HorizontalAlignment','left','FontSize',F.small, ...
+    'Visible','off');
 
 % -------------------- Tabs -------------------------------
 S.tabGroup = uitabgroup(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.96]);
@@ -270,7 +282,7 @@ try, set(S.tabGroup,'FontSize',F.tab); catch, end
 
 S.tabROI   = uitab(S.tabGroup,'Title','ROI Timecourse');
 S.tabMAP   = uitab(S.tabGroup,'Title','PSC Maps');
-S.tabSTATS = uitab(S.tabGroup,'Title','Stats');
+S.tabSTATS = uitab(S.tabGroup,'Title','Statistics / Export');
 S.tabPREV  = uitab(S.tabGroup,'Title','Preview');
 
 pROIBG   = uipanel(S.tabROI,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
@@ -396,7 +408,7 @@ S.hManColorB = uicontrol(pStyle,'Style','popupmenu','String',pNames, ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onStyleChanged);
 
 pY = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.02 0.96 0.32], ...
-    'Title','Y-axis scaling (uncheck Auto to use Ymin/Ymax)', ...
+    'Title','Y-Axis Scaling', ...
     'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
 [S.hTopAuto,S.hTopZero,S.hTopStep,S.hTopYmin,S.hTopYmax, ...
@@ -506,13 +518,15 @@ S.hOutInfo = uicontrol(pOut,'Style','listbox', ...
 pRun = uipanel(pSTATSBG,'Units','normalized','Position',[0.02 0.02 0.96 0.48], ...
     'Title','Run / Export', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
-S.hRun    = mkBtn(pRun,'RUN ANALYSIS',[0.02 0.62 0.30 0.30],C.btnPrimary,@onRun);
-S.hExport = mkBtn(pRun,'EXPORT RESULTS',[0.34 0.62 0.30 0.30],C.btnAction,@onExport);
+S.hRun         = mkBtn(pRun,'Run Analysis',[0.08 0.62 0.24 0.24],C.btnPrimary,@onRun);
+S.hExport      = mkBtn(pRun,'Export Results',[0.38 0.62 0.24 0.24],C.btnSecondary,@onExport);
+S.hExportExcel = mkBtn(pRun,'Export Excel',[0.68 0.62 0.24 0.24],C.btnAction,@onExportExcel);
 
 S.hStatus = uicontrol(pRun,'Style','text','String','Ready.', ...
-    'Units','normalized','Position',[0.02 0.10 0.96 0.42], ...
+    'Units','normalized','Position',[0.04 0.10 0.92 0.36], ...
     'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','left', ...
     'FontSize',F.small);
+
 
 % -------------------- PREVIEW TAB ------------------------
 S.hPrevBG = uipanel(S.tabPREV,'Units','normalized','Position',[0 0 1 1], ...
@@ -521,39 +535,36 @@ S.hPrevBG = uipanel(S.tabPREV,'Units','normalized','Position',[0 0 1 1], ...
 S.hPrevTop = uipanel(S.hPrevBG,'Units','normalized','Position',[0.02 0.94 0.96 0.05], ...
     'Title','', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
-mkBtn(S.hPrevTop,'Export TOP PNG',   [0.02 0.10 0.16 0.80],C.btnAction,@(~,~) onExportPreviewPNG(1));
-mkBtn(S.hPrevTop,'Export BOTTOM PNG',[0.19 0.10 0.18 0.80],C.btnAction,@(~,~) onExportPreviewPNG(2));
-mkBtn(S.hPrevTop,'Export BOTH PNGs', [0.38 0.10 0.16 0.80],C.btnAction,@(~,~) onExportPreviewPNG(3));
+S.hPrevExportTop = mkBtn(S.hPrevTop,'Export Top PNG',   [0.02 0.10 0.15 0.80],C.btnSecondary,@(~,~) onExportPreviewPNG(1));
+S.hPrevExportBot = mkBtn(S.hPrevTop,'Export Bottom PNG',[0.18 0.10 0.15 0.80],C.btnSecondary,@(~,~) onExportPreviewPNG(2));
+S.hPrevExportBoth = mkBtn(S.hPrevTop,'Export Both PNGs',[0.34 0.10 0.15 0.80],C.btnSecondary,@(~,~) onExportPreviewPNG(3));
 
-uicontrol(S.hPrevTop,'Style','text','String','View:', ...
-    'Units','normalized','Position',[0.57 0.15 0.05 0.70], ...
+S.hPrevLblView = uicontrol(S.hPrevTop,'Style','text','String','View:', ...
+    'Units','normalized','Position',[0.52 0.15 0.05 0.70], ...
     'BackgroundColor',bg2,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
 
 S.hPrevStyle = uicontrol(S.hPrevTop,'Style','popupmenu','String',{'Dark','Light'}, ...
-    'Units','normalized','Position',[0.62 0.18 0.10 0.64], ...
+    'Units','normalized','Position',[0.57 0.18 0.09 0.64], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onPreviewStyleChanged);
 
 S.hPrevGrid = uicontrol(S.hPrevTop,'Style','checkbox','String','Grid', ...
-    'Units','normalized','Position',[0.74 0.15 0.08 0.70], ...
+    'Units','normalized','Position',[0.67 0.15 0.07 0.70], ...
     'Value', double(S.previewShowGrid), ...
     'BackgroundColor',bg2,'ForegroundColor','w','Callback',@onPreviewStyleChanged);
 
-% Smooth checkbox
-S.hSmoothEnable = uicontrol(S.hPrevTop,'Style','checkbox','String','Smooth', ...
-    'Units','normalized','Position',[0.82 0.15 0.08 0.70], ...
+S.hSmoothEnable = uicontrol(S.hPrevTop,'Style','checkbox','String','Smoothing', ...
+    'Units','normalized','Position',[0.75 0.15 0.14 0.70], ...
     'Value', double(S.tc_previewSmooth), ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'Callback',@onSmoothChanged);
 
-% Win label
-uicontrol(S.hPrevTop,'Style','text','String','Win (s):', ...
-    'Units','normalized','Position',[0.90 0.15 0.05 0.70], ...
+S.hPrevLblWin = uicontrol(S.hPrevTop,'Style','text','String','Win. (s):', ...
+    'Units','normalized','Position',[0.89 0.15 0.08 0.70], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'HorizontalAlignment','left','FontWeight','bold');
 
-% Win edit
 S.hSmoothWin = uicontrol(S.hPrevTop,'Style','edit','String',num2str(S.tc_previewSmoothWinSec), ...
-    'Units','normalized','Position',[0.95 0.18 0.04 0.64], ...
+    'Units','normalized','Position',[0.965 0.18 0.03 0.64], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onSmoothChanged);
 
@@ -690,14 +701,58 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
         setStatusText(['Added condition: ' nm]);
     end
 
-    function onHelp(~,~)
-        msg = [ ...
-            'ROI txt PSC files are plotted directly.' newline ...
-            'No baseline subtraction is applied unless compute %SC is enabled for raw input.' newline newline ...
-            'Preview is now always fully redrawn from the stored last result to prevent overlap or missing SEM.' newline ...
-            'Repeated analyses reuse cached ROI timecourses and PSC maps when possible.' ];
-        msgbox(msg,'GroupAnalysis Help','help');
-    end
+  function onHelp(~,~)
+    txt = sprintf([ ...
+        'GROUP ANALYSIS GUIDE\n\n' ...
+        'What this GUI is for:\n' ...
+        'This window lets you organize animals into groups and conditions, run ROI timecourse or PSC map analysis, inspect group-level trends, detect outliers, and export a clean Excel overview for record keeping and publication decisions.\n\n' ...
+        'Typical workflow:\n' ...
+        '1. Add Files or Add Folder.\n' ...
+        '2. Check that Animal ID, Group, Condition, ROI File, and ROI Status look correct.\n' ...
+        '3. Use Quick Assign to batch-set Group and Condition.\n' ...
+        '4. In ROI Timecourse, define baseline, peak-search, plateau, and metric settings.\n' ...
+        '5. In Stats, choose your statistical test and optional outlier detection.\n' ...
+        '6. Click Run Analysis.\n' ...
+        '7. Inspect Preview plots and outlier markings.\n' ...
+        '8. Export results or Excel summary.\n\n' ...
+        'Key notes:\n' ...
+        '- Subject is treated as Animal ID and is extracted from the folder/path when possible.\n' ...
+        '- Green rows indicate usable rows with a valid ROI file.\n' ...
+        '- Red rows indicate excluded or inactive rows.\n' ...
+        '- ROI txt PSC exports are plotted directly.\n' ...
+        '- If raw ROI data are used, percent signal change can be computed from the chosen baseline.\n' ...
+        '- Temporal smoothing in Preview affects only display, not the stored analysis result.\n\n' ...
+        'Outliers:\n' ...
+        '- MAD robust z-score flags values far from the median using MAD-based scaling.\n' ...
+        '- IQR rule flags values outside the [Q1-k*IQR, Q3+k*IQR] range.\n' ...
+        '- Excluding outliers disables those rows for the next analysis run.\n\n' ...
+        'Exports:\n' ...
+        '- Export Results saves the current result structure and metrics table.\n' ...
+        '- Export Excel writes a workbook with metadata, per-condition sheets, and outlier audit information.\n' ...
+        ]);
+
+    d = dialog('Name','Group Analysis Help', ...
+        'Position',[300 150 760 560], ...
+        'Color',[0.08 0.08 0.08], ...
+        'WindowStyle','normal');
+
+    uicontrol(d,'Style','edit', ...
+        'Units','normalized','Position',[0.04 0.12 0.92 0.83], ...
+        'Max',2,'Min',0, ...
+        'Enable','inactive', ...
+        'HorizontalAlignment','left', ...
+        'FontName','Consolas','FontSize',11, ...
+        'BackgroundColor',[0.12 0.12 0.12], ...
+        'ForegroundColor',[1 1 1], ...
+        'String',txt);
+
+    uicontrol(d,'Style','pushbutton','String','Close', ...
+        'Units','normalized','Position',[0.40 0.03 0.20 0.06], ...
+        'BackgroundColor',[0.20 0.20 0.20], ...
+        'ForegroundColor',[1 1 1], ...
+        'FontWeight','bold', ...
+        'Callback',@(src,evt) delete(d));
+end
 
     function onAddFiles(~,~)
         syncSubjFromTable();
@@ -1128,7 +1183,7 @@ end
             hit = find(strcmp(keysAll, S0.outlierKeys{i}), 1, 'first');
             if ~isempty(hit)
                 S0.subj{hit,1} = false;
-                S0.subj{hit,8} = htmlRed('EXCLUDED (outlier)');
+                S0.subj{hit,8} = 'EXCLUDED (outlier)';
             end
         end
         guidata(hFig,S0);
@@ -1234,6 +1289,42 @@ clearPreview();
         setStatusText(['Exported: ' outFolder]);
     end
 
+
+    function onExportExcel(~,~)
+        syncSubjFromTable();
+        S0 = guidata(hFig);
+
+        if isempty(S0.subj)
+            errordlg('No rows available to export.','Export Excel');
+            return;
+        end
+
+        startDir = getExcelExportStartDir(S0);
+
+        defFile = fullfile(startDir, ['GroupAnalysisExport_' datestr(now,'yyyymmdd_HHMMSS') '.xlsx']);
+        [f,p] = uiputfile({'*.xlsx','Excel workbook (*.xlsx)'}, ...
+            'Save Group Analysis Excel', defFile);
+
+        if isequal(f,0)
+            return;
+        end
+
+        outFile = fullfile(p,f);
+
+        setStatus(false);
+        setStatusText('Exporting Excel workbook...');
+        drawnow;
+
+        try
+            exportGroupAnalysisExcelWorkbook(outFile, S0);
+            setStatusText(['Excel exported: ' outFile]);
+        catch ME
+            setStatusText(['Excel export failed: ' ME.message]);
+            errordlg(ME.message,'Export Excel');
+        end
+
+        setStatus(true);
+    end
     function onExportPreviewPNG(which)
         S0 = guidata(hFig);
         if ~isfield(S0,'last') || isempty(fieldnames(S0.last))
@@ -1518,38 +1609,44 @@ end
     end
 
     function syncSubjFromTable()
-        S0 = guidata(hFig);
-        try
-            dt = get(S0.hTable,'Data');
-            if iscell(dt), S0.subj = dt; end
-        catch
+    S0 = guidata(hFig);
+    try
+        dt = get(S0.hTable,'Data');
+        if iscell(dt)
+            S0.subj = applyUITableToSubj(S0.subj, dt);
         end
-        S0 = sanitizeTableStruct(S0);
-        guidata(hFig,S0);
+    catch
+    end
+    S0 = sanitizeTableStruct(S0);
+    guidata(hFig,S0);
+end
+
+  function refreshTable()
+    S0 = guidata(hFig);
+    S0 = sanitizeTableStruct(S0);
+
+    S0.groupList = mergeUniqueStable(S0.groupList, uniqueStable(colAsStr(S0.subj,3)));
+    S0.condList  = mergeUniqueStable(S0.condList,  uniqueStable(colAsStr(S0.subj,4)));
+
+    colFmt = {'logical','char','char','char',S0.groupList,S0.condList,'char','char'};
+    try, set(S0.hTable,'ColumnFormat',colFmt); catch, end
+    set(S0.hTable,'Data',subjToUITable(S0.subj));
+    set(S0.hTable,'RowName','numbered');
+
+    try
+        set(S0.hTable,'BackgroundColor',buildTableRowColors(S0.subj));
+    catch
     end
 
-    function refreshTable()
-        S0 = guidata(hFig);
-        S0 = sanitizeTableStruct(S0);
+    set(S0.hQuickGroup,'String',S0.groupList);
+    set(S0.hQuickCond,'String',S0.condList);
+    set(S0.hManGroupA,'String',S0.groupList);
+    set(S0.hManGroupB,'String',S0.groupList);
 
-        S0.groupList = mergeUniqueStable(S0.groupList, uniqueStable(colAsStr(S0.subj,3)));
-        S0.condList  = mergeUniqueStable(S0.condList,  uniqueStable(colAsStr(S0.subj,4)));
-
-        colFmt = {'logical','char',S0.groupList,S0.condList,'char','char','char','char'};
-        try, set(S0.hTable,'ColumnFormat',colFmt); catch, end
-        set(S0.hTable,'Data',S0.subj);
-        set(S0.hTable,'RowName','numbered');
-
-        set(S0.hQuickGroup,'String',S0.groupList);
-        set(S0.hQuickCond,'String',S0.condList);
-
-        set(S0.hManGroupA,'String',S0.groupList);
-        set(S0.hManGroupB,'String',S0.groupList);
-
-        guidata(hFig,S0);
-        drawnow limitrate;
-        updateSelLabel();
-    end
+    guidata(hFig,S0);
+    drawnow limitrate;
+    updateSelLabel();
+end
 
     function addFileSmart(fp)
         S0 = guidata(hFig);
@@ -1735,6 +1832,26 @@ v = str2double(str);
 if isnan(v) || ~isfinite(v), v = fallback; end
 end
 
+
+
+function v = logicalCellValue(x)
+try
+    if islogical(x)
+        v = x;
+    elseif isnumeric(x)
+        v = (x ~= 0);
+    elseif ischar(x) || isstring(x)
+        s = lower(strtrim(char(x)));
+        v = any(strcmp(s, {'1','true','yes','y','on'}));
+    else
+        v = logical(x);
+    end
+catch
+    v = false;
+end
+end
+
+
 function sel = clampSelRows(sel, nRows)
 if isempty(sel), sel=[]; return; end
 sel = unique(sel(:)');
@@ -1753,21 +1870,6 @@ use = logicalCol(subjTable,1);
 rows = subjTable(use,:);
 end
 
-function S = sanitizeTableStruct(S)
-if isempty(S.subj), return; end
-if size(S.subj,2) < 8, S.subj(:,end+1:8) = {''}; end
-if size(S.subj,2) > 8, S.subj = S.subj(:,1:8); end
-for r=1:size(S.subj,1)
-    if isempty(S.subj{r,1}) || ~(islogical(S.subj{r,1}) || isnumeric(S.subj{r,1}))
-        S.subj{r,1} = true;
-    else
-        S.subj{r,1} = logical(S.subj{r,1});
-    end
-    if isempty(strtrimSafe(S.subj{r,2})), S.subj{r,2} = ['S' num2str(r)]; end
-    if isempty(strtrimSafe(S.subj{r,3})), S.subj{r,3} = S.defaultGroup; end
-    if isempty(strtrimSafe(S.subj{r,4})), S.subj{r,4} = S.defaultCond; end
-end
-end
 
 function col = colAsStr(C, j)
 col = cell(size(C,1),1);
@@ -1785,6 +1887,41 @@ for i=1:numel(C)
 end
 end
 
+
+function S = sanitizeTableStruct(S)
+if isempty(S.subj), return; end
+if size(S.subj,2) < 8, S.subj(:,end+1:8) = {''}; end
+if size(S.subj,2) > 8, S.subj = S.subj(:,1:8); end
+
+for r = 1:size(S.subj,1)
+    if isempty(S.subj{r,1}) || ...
+       ~(islogical(S.subj{r,1}) || isnumeric(S.subj{r,1}) || ischar(S.subj{r,1}) || isstring(S.subj{r,1}))
+        S.subj{r,1} = true;
+    else
+        S.subj{r,1} = logicalCellValue(S.subj{r,1});
+    end
+
+    meta = extractMetaFromSources(S.subj{r,2}, S.subj{r,6}, S.subj{r,7});
+
+    if strcmpi(meta.animalID,'N/A') || isempty(meta.animalID)
+        if isempty(strtrimSafe(S.subj{r,2}))
+            S.subj{r,2} = ['S' num2str(r)];
+        else
+            S.subj{r,2} = strtrimSafe(S.subj{r,2});
+        end
+    else
+        S.subj{r,2} = meta.animalID;  % internal Subject column stores Animal ID only
+    end
+
+    if isempty(strtrimSafe(S.subj{r,3})), S.subj{r,3} = S.defaultGroup; end
+    if isempty(strtrimSafe(S.subj{r,4})), S.subj{r,4} = S.defaultCond;  end
+
+    if isempty(strtrimSafe(S.subj{r,8})) && ~logicalCellValue(S.subj{r,1})
+        S.subj{r,8} = 'Not used';
+    end
+end
+end
+
 function out = mergeUniqueStable(a,b)
 if isempty(a), a={}; end
 if isempty(b), b={}; end
@@ -1794,6 +1931,77 @@ for i=1:numel(b)
     if ~any(strcmpi(out,b{i})), out{end+1}=b{i}; end %#ok<AGROW>
 end
 end
+
+function V = subjToUITable(subj)
+n = size(subj,1);
+V = cell(n,8);
+
+for i = 1:n
+    meta = extractMetaFromSources(subj{i,2}, subj{i,6}, subj{i,7});
+
+    V{i,1} = logicalCellValue(subj{i,1});   % Use
+    V{i,2} = meta.animalID;                 % Animal ID
+    V{i,3} = meta.session;                  % Session
+    V{i,4} = meta.scanID;                   % Scan ID
+    V{i,5} = strtrimSafe(subj{i,3});        % Group
+    V{i,6} = strtrimSafe(subj{i,4});        % Condition
+    V{i,7} = strtrimSafe(subj{i,7});        % ROI File
+    V{i,8} = deriveROIStatus(subj(i,:));    % ROI Status
+end
+end
+
+function subj = applyUITableToSubj(subj, V)
+n = size(V,1);
+
+if isempty(subj)
+    subj = cell(n,8);
+end
+
+if size(subj,1) < n
+    subj(end+1:n,1:8) = {''};
+end
+
+if size(subj,1) > n
+    subj = subj(1:n,:);
+end
+
+for i = 1:n
+    subj{i,1} = logicalCellValue(V{i,1});  % Use
+    subj{i,2} = strtrimSafe(V{i,2});       % Animal ID
+    subj{i,3} = strtrimSafe(V{i,5});       % Group
+    subj{i,4} = strtrimSafe(V{i,6});       % Condition
+    % Session + Scan ID are display-only in the table
+    % ROI File + ROI Status are read-only in the table
+
+    if isempty(subj{i,5}), subj{i,5} = ''; end
+    if isempty(subj{i,6}), subj{i,6} = ''; end
+    if isempty(subj{i,7}), subj{i,7} = ''; end
+    if isempty(subj{i,8}), subj{i,8} = ''; end
+end
+end
+
+function s = deriveROIStatus(row)
+roi = '';
+st  = '';
+use = true;
+
+try, roi = strtrimSafe(row{7}); catch, end
+try, st  = lower(strtrimSafe(row{8})); catch, end
+try, use = logicalCellValue(row{1}); catch, end
+
+if contains(st,'excluded')
+    s = 'Excluded';
+elseif ~use
+    s = 'Not used';
+elseif isempty(roi)
+    s = 'ROI not set';
+elseif exist(roi,'file') == 2
+    s = 'OK';
+else
+    s = 'Missing';
+end
+end
+
 function y2 = smooth1D_edgeCentered(y, dtSec, winSec)
 % Centered moving-average smoothing with endpoint replication (edge pad)
 % y: row or column vector
@@ -1849,45 +2057,36 @@ s = ['<html><font color="red"><b>' txt '</b></font></html>'];
 end
 
 function stylePreviewPanels(S)
-if strcmpi(S.previewStyle,'Light')
-    set(S.hPrevBG,  'BackgroundColor',[1 1 1]);
-    set(S.hPrevTop, 'BackgroundColor',[0.96 0.96 0.96], 'ForegroundColor','k');
+isLight = strcmpi(S.previewStyle,'Light');
 
-    % also recolor smoothing controls (if they exist)
-if isfield(S,'hSmoothEnable') && ishghandle(S.hSmoothEnable)
-    if strcmpi(S.previewStyle,'Light')
-        set(S.hSmoothEnable,'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor','k');
-        try, set(S.hSmoothWin,'BackgroundColor',[1 1 1],'ForegroundColor','k'); catch, end
-    else
-        set(S.hSmoothEnable,'BackgroundColor',S.C.panel2,'ForegroundColor','w');
-        try, set(S.hSmoothWin,'BackgroundColor',S.C.editBg,'ForegroundColor','w'); catch, end
-    end
-end
-
-    try, set(S.hPrevStyle,'BackgroundColor',[1 1 1],'ForegroundColor','k'); catch, end
-    try, set(S.hPrevGrid, 'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor','k'); catch, end
-    try, set(S.hPrevMsg,  'BackgroundColor',[0.96 0.96 0.96],'ForegroundColor',[0.2 0.2 0.2]); catch, end
+if isLight
+    bgMain = [1 1 1];
+    bgTop  = [0.96 0.96 0.96];
+    fg     = [0 0 0];
+    editBg = [1 1 1];
+    btnBg  = [0.86 0.86 0.86];
 else
-    set(S.hPrevBG,  'BackgroundColor',S.C.bg);
-    set(S.hPrevTop, 'BackgroundColor',S.C.panel2, 'ForegroundColor','w');
-
-    try, set(S.hPrevStyle,'BackgroundColor',S.C.editBg,'ForegroundColor','w'); catch, end
-    try, set(S.hPrevGrid, 'BackgroundColor',S.C.panel2,'ForegroundColor','w'); catch, end
-    try, set(S.hPrevMsg,  'BackgroundColor',S.C.panel2,'ForegroundColor',S.C.muted); catch, end
-end
+    bgMain = S.C.bg;
+    bgTop  = S.C.panel2;
+    fg     = [1 1 1];
+    editBg = S.C.editBg;
+    btnBg  = [0.14 0.14 0.14];
 end
 
-function [h0,h1] = addPairEditsDark(parent, y, label, v0, v1, C, cb)
-bg = get(parent,'BackgroundColor');
-uicontrol(parent,'Style','text','String',label, ...
-    'Units','normalized','Position',[0.02 y 0.35 0.12], ...
-    'BackgroundColor',bg,'ForegroundColor','w','HorizontalAlignment','left','FontWeight','bold');
-h0 = uicontrol(parent,'Style','edit','String',num2str(v0), ...
-    'Units','normalized','Position',[0.38 y 0.12 0.12], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',cb);
-h1 = uicontrol(parent,'Style','edit','String',num2str(v1), ...
-    'Units','normalized','Position',[0.52 y 0.12 0.12], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',cb);
+set(S.hPrevBG,  'BackgroundColor',bgMain);
+set(S.hPrevTop, 'BackgroundColor',bgTop, 'ForegroundColor',fg);
+
+setIfHandle(S,'hPrevExportTop','BackgroundColor',btnBg,'ForegroundColor',fg,'FontWeight','bold');
+setIfHandle(S,'hPrevExportBot','BackgroundColor',btnBg,'ForegroundColor',fg,'FontWeight','bold');
+setIfHandle(S,'hPrevExportBoth','BackgroundColor',btnBg,'ForegroundColor',fg,'FontWeight','bold');
+
+setIfHandle(S,'hPrevLblView','BackgroundColor',bgTop,'ForegroundColor',fg);
+setIfHandle(S,'hPrevLblWin','BackgroundColor',bgTop,'ForegroundColor',fg);
+
+setIfHandle(S,'hPrevStyle','BackgroundColor',editBg,'ForegroundColor',fg);
+setIfHandle(S,'hPrevGrid','BackgroundColor',bgTop,'ForegroundColor',fg);
+setIfHandle(S,'hSmoothEnable','BackgroundColor',bgTop,'ForegroundColor',fg);
+setIfHandle(S,'hSmoothWin','BackgroundColor',editBg,'ForegroundColor',fg);
 end
 
 function [hAuto,hZero,hStep,hYmin,hYmax,hYminM,hYminP,hYmaxM,hYmaxP] = mkYControlsStepCompact(parent, y0, label, cfg, C, cbEdit, cbYminM, cbYminP, cbYmaxM, cbYmaxP)
@@ -2161,16 +2360,21 @@ end
 end
 
 function subj = guessSubjectID(fp)
-[~,name,~] = fileparts(fp);
-subj = name;
-subj = regexprep(subj,'(?i)_roi\d+$','');
-subj = regexprep(subj,'(?i)roi\d+$','');
-subj = regexprep(subj,'(?i)_roi$','');
-subj = regexprep(subj,'\s+','_');
-subj = regexprep(subj,'[^A-Za-z0-9_]+','_');
-subj = regexprep(subj,'_+','_');
-subj = regexprep(subj,'^_','');
-subj = regexprep(subj,'_$','');
+subj = extractAnimalIDFromText(fp);
+
+if isempty(subj)
+    [parent,name,~] = fileparts(fp);
+    [~,folderName] = fileparts(parent);
+
+    subj = extractAnimalIDFromText(folderName);
+    if isempty(subj)
+        subj = extractAnimalIDFromText(name);
+    end
+end
+
+if isempty(subj)
+    subj = '';
+end
 end
 
 function fpData = findDataMatNearROI(roiFile)
@@ -2424,6 +2628,964 @@ for r=1:nr
     fprintf(fid,'%s\n', strjoin(row,','));
 end
 end
+
+%%%%%%% -------------%%%%%%
+%%%%%%% EXCEL Export %%%%%%
+%%%%%%% -------------%%%%%%
+function startDir = getExcelExportStartDir(S)
+root1 = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData\GroupAnalysis';
+root2 = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData';
+
+if exist(root1,'dir') == 7
+    startDir = root1;
+elseif exist(root2,'dir') == 7
+    startDir = root2;
+elseif isfield(S,'outDir') && ~isempty(S.outDir) && exist(S.outDir,'dir') == 7
+    startDir = S.outDir;
+elseif isfield(S,'opt') && isfield(S.opt,'startDir') && ~isempty(S.opt.startDir) && exist(S.opt.startDir,'dir') == 7
+    startDir = S.opt.startDir;
+else
+    startDir = pwd;
+end
+end
+
+function exportGroupAnalysisExcelWorkbook(outFile, S)
+metaSheet = buildMetadataSheetForExcel(S.subj);
+
+condNames = uniqueStable(colAsStr(S.subj,4));
+condASheet = {'Info','No condition found'};
+condBSheet = {'Info','No second condition found'};
+
+if numel(condNames) >= 1
+    condASheet = buildConditionWideSheetForExcel(S.subj, condNames{1});
+end
+if numel(condNames) >= 2
+    condBSheet = buildConditionWideSheetForExcel(S.subj, condNames{2});
+end
+
+auditSheet = buildOutlierAuditSheetForExcel(S);
+
+if exist(outFile,'file') == 2
+    try
+        delete(outFile);
+    catch
+        error('Could not overwrite existing Excel file: %s', outFile);
+    end
+end
+
+writeExcelSheetCompat(outFile, 'Metadata', metaSheet);
+writeExcelSheetCompat(outFile, 'Condition_A', condASheet);
+writeExcelSheetCompat(outFile, 'Condition_B', condBSheet);
+writeExcelSheetCompat(outFile, 'Outlier_Audit', auditSheet);
+
+try
+    styleGroupAnalysisWorkbook(outFile);
+catch
+end
+end
+
+function writeExcelSheetCompat(outFile, sheetName, C)
+if exist('writecell','file') == 2
+    writecell(C, outFile, 'Sheet', sheetName);
+else
+    [ok,msg] = xlswrite(outFile, C, sheetName);
+    if ~ok
+        if ischar(msg)
+            error('Excel write failed on sheet %s: %s', sheetName, msg);
+        else
+            error('Excel write failed on sheet %s.', sheetName);
+        end
+    end
+end
+end
+
+function C = buildMetadataSheetForExcel(subj)
+hdr = { ...
+    'Use (TRUE/FALSE)','Animal ID','Session ID','Scan ID','Group','Condition', ...
+    'Notes','Excluded','Publication Ready', ...
+    'Baseline Window','Signal Window','ROI Index','Slice','x1','x2','y1','y2', ...
+    'Animal Status','TR (s)','N Volumes','ROI File'};
+
+rows = cell(size(subj,1), numel(hdr));
+
+for i = 1:size(subj,1)
+    info = extractRowMetaForExcel(subj(i,:));
+    roiH = readROITxtHeaderMeta(info.roiFile);
+
+    rows{i,1}  = logicalToText(subj{i,1});
+    rows{i,2}  = info.animalID;
+    rows{i,3}  = info.session;
+    rows{i,4}  = info.scanID;
+    rows{i,5}  = info.group;
+    rows{i,6}  = info.condition;
+    rows{i,7}  = info.notes;
+    rows{i,8}  = info.exclusion;
+    rows{i,9}  = info.useForPublication;
+
+    rows{i,10} = roiH.baselineText;
+    rows{i,11} = roiH.signalText;
+    rows{i,12} = roiH.roiNo;
+    rows{i,13} = roiH.slice;
+    rows{i,14} = roiH.x1;
+    rows{i,15} = roiH.x2;
+    rows{i,16} = roiH.y1;
+    rows{i,17} = roiH.y2;
+
+    rows{i,18} = info.animalStatus;
+    rows{i,19} = info.TR_sec;
+    rows{i,20} = info.NVols;
+    rows{i,21} = info.roiFile;
+end
+
+rows = sortMetadataRows(rows);
+
+C = hdr;
+C = appendGroupedRows(C, rows, 5);
+end
+function C = buildOutlierAuditSheetForExcel(S)
+fullTbl = S.subj;
+
+hdr = { ...
+    'Use','AnimalID','Session','ScanID','Group','Condition', ...
+    'Analyzed','RowState', ...
+    'MetricValue','MetricName','MetricSource', ...
+    'MetricRobustZ','OutlierMethod','Threshold','IsOutlierByMethod', ...
+    'RawMedianPSC','RawMADPSC','RawQ1PSC','RawQ3PSC','RawIQRPSC', ...
+    'ROIFile','Status'};
+
+rows = cell(size(fullTbl,1), numel(hdr));
+
+metricVals = nan(size(fullTbl,1),1);
+analyzed   = false(size(fullTbl,1),1);
+metricNameNow = '';
+metricSourceNow = '';
+
+if isfield(S,'last') && ~isempty(fieldnames(S.last)) && ...
+   isfield(S.last,'mode') && strcmpi(S.last.mode,'ROI Timecourse') && ...
+   isfield(S.last,'metricVals') && isfield(S.last,'subjTable')
+
+    anaTbl = S.last.subjTable;
+    anaMet = double(S.last.metricVals(:));
+
+    if isfield(S.last,'metricName')
+        metricNameNow = strtrimSafe(S.last.metricName);
+    end
+    if isempty(metricNameNow)
+        metricNameNow = 'Bottom plot metric';
+    end
+    metricSourceNow = 'Per-animal value used for the bottom plot / outlier detection';
+
+    anaKeys = cell(size(anaTbl,1),1);
+    for i = 1:size(anaTbl,1)
+        anaKeys{i} = makeAuditMatchKey(anaTbl(i,:));
+    end
+
+    for i = 1:size(fullTbl,1)
+        k = makeAuditMatchKey(fullTbl(i,:));
+        hit = find(strcmp(anaKeys, k), 1, 'first');
+        if ~isempty(hit)
+            metricVals(i) = anaMet(hit);
+            analyzed(i) = true;
+        end
+    end
+end
+
+xAnal = metricVals(isfinite(metricVals));
+gMed = NaN;
+gMad = NaN;
+rz = nan(size(metricVals));
+
+if ~isempty(xAnal)
+    gMed = median(xAnal);
+    gMad = median(abs(xAnal - gMed));
+    if isfinite(gMad) && gMad > 0
+        rz(isfinite(metricVals)) = 0.6745 * (metricVals(isfinite(metricVals)) - gMed) / gMad;
+    end
+end
+
+for i = 1:size(fullTbl,1)
+    info = extractRowMetaForExcel(fullTbl(i,:));
+    rowState = deriveAuditRowState(fullTbl(i,:));
+
+    rawMed = NaN; rawMad = NaN; rawQ1 = NaN; rawQ3 = NaN; rawIQR = NaN;
+    [ok,~,psc] = tryReadSCMroiExportTxt(info.roiFile);
+    if ok
+        psc = double(psc(:));
+        psc = psc(isfinite(psc));
+        if ~isempty(psc)
+            rawMed = median(psc);
+            rawMad = median(abs(psc - rawMed));
+            rawQ1  = prctile(psc,25);
+            rawQ3  = prctile(psc,75);
+            rawIQR = rawQ3 - rawQ1;
+        end
+    end
+
+    thrTxt = '';
+    isOut = false;
+
+    if strcmpi(S.outlierMethod,'MAD robust z-score')
+        thrTxt = num2str(S.outMADthr);
+        isOut = isfinite(rz(i)) && abs(rz(i)) > S.outMADthr;
+    elseif strcmpi(S.outlierMethod,'IQR rule')
+        thrTxt = num2str(S.outIQRk);
+        if ~isempty(xAnal)
+            q1 = prctile(xAnal,25);
+            q3 = prctile(xAnal,75);
+            iqrV = q3 - q1;
+            lo = q1 - S.outIQRk * iqrV;
+            hi = q3 + S.outIQRk * iqrV;
+            isOut = isfinite(metricVals(i)) && (metricVals(i) < lo || metricVals(i) > hi);
+        end
+    end
+
+    rows{i,1}  = logicalToText(fullTbl{i,1});
+    rows{i,2}  = info.animalID;
+    rows{i,3}  = info.session;
+    rows{i,4}  = info.scanID;
+    rows{i,5}  = info.group;
+    rows{i,6}  = info.condition;
+    rows{i,7}  = yesNoText(analyzed(i));
+    rows{i,8}  = rowState;
+    rows{i,9}  = metricVals(i);
+    rows{i,10} = metricNameNow;
+    rows{i,11} = metricSourceNow;
+    rows{i,12} = rz(i);
+    rows{i,13} = S.outlierMethod;
+    rows{i,14} = thrTxt;
+    rows{i,15} = yesNoText(isOut);
+    rows{i,16} = rawMed;
+    rows{i,17} = rawMad;
+    rows{i,18} = rawQ1;
+    rows{i,19} = rawQ3;
+    rows{i,20} = rawIQR;
+    rows{i,21} = info.roiFile;
+    rows{i,22} = info.status;
+end
+
+rows = sortMetadataRows(rows);
+
+C = hdr;
+C = appendGroupedRows(C, rows, 5);
+end
+
+function info = extractRowMetaForExcel(row)
+info = struct();
+
+info.subject   = strtrimSafe(row{2});
+info.group     = strtrimSafe(row{3});
+info.condition = strtrimSafe(row{4});
+info.pairID    = strtrimSafe(row{5});
+info.dataFile  = strtrimSafe(row{6});
+info.roiFile   = strtrimSafe(row{7});
+info.status    = strtrimSafe(row{8});
+
+meta = extractMetaFromSources(info.subject, info.dataFile, info.roiFile);
+
+info.animalID = meta.animalID;
+info.session  = meta.session;
+info.scanID   = meta.scanID;
+
+info.notes             = '';
+info.useForPublication = '';
+info.animalStatus      = '';
+
+if logicalCellValue(row{1}) && ~contains(lower(info.status),'excluded')
+    info.exclusion = '';
+else
+    info.exclusion = 'Yes';
+end
+
+[info.TR_sec, info.NVols, ~] = extractDataSummaryQuick(info.dataFile);
+end
+
+function sh = makeSafeExcelSheetName(s)
+sh = strtrimSafe(s);
+if isempty(sh), sh = 'Sheet'; end
+sh = regexprep(sh,'[:\\/\?\*\[\]]','_');
+if numel(sh) > 31
+    sh = sh(1:31);
+end
+end
+
+
+function key = makeAuditMatchKey(row)
+info = extractRowMetaForExcel(row);
+key = lower([ ...
+    info.animalID '|' ...
+    info.session  '|' ...
+    info.scanID   '|' ...
+    info.group    '|' ...
+    info.condition ]);
+end
+
+function state = deriveAuditRowState(row)
+use = logicalCellValue(row{1});
+roi = strtrimSafe(row{7});
+st  = lower(strtrimSafe(row{8}));
+
+if contains(st,'excluded') || ~use
+    state = 'Excluded';
+elseif isempty(roi)
+    state = 'ROI not set';
+elseif exist(roi,'file') == 2
+    state = 'OK';
+else
+    state = 'Missing ROI';
+end
+end
+
+
+function C = buildConditionWideSheetForExcel(subj, condFilter)
+idxKeep = find(strcmpi(colAsStr(subj,4), condFilter));
+idxKeep = sortSubjectIdxForMetadata(subj, idxKeep);
+
+if isempty(idxKeep)
+    C = {'Info', ['No rows for condition: ' condFilter]};
+    return;
+end
+
+nScan = numel(idxKeep);
+infos   = cell(nScan,1);
+tSecAll = cell(nScan,1);
+tMinAll = cell(nScan,1);
+pAll    = cell(nScan,1);
+maxPts  = 0;
+
+for j = 1:nScan
+    row = subj(idxKeep(j),:);
+    info = extractRowMetaForExcel(row);
+    infos{j} = info;
+
+    [ok, tMin, psc] = tryReadSCMroiExportTxt(info.roiFile);
+    if ok
+        tMin = double(tMin(:));
+        psc  = double(psc(:));
+
+        tSecAll{j} = 60 .* tMin;
+        tMinAll{j} = tMin;
+        pAll{j}    = psc;
+
+        maxPts = max(maxPts, numel(tMin));
+    else
+        tSecAll{j} = [];
+        tMinAll{j} = [];
+        pAll{j}    = [];
+    end
+end
+
+% Layout
+rowAnimal  = 1;
+rowSession = 2;
+rowScan    = 3;
+rowGroup   = 4;
+rowCond    = 5;
+rowGap1    = 6;
+rowGap2    = 7;
+rowInfo    = 8;
+rowHeader  = 9;
+rowData0   = 10;
+
+nRows = max(rowData0 + maxPts - 1, rowHeader);
+nCols = 2 + 2*nScan;   % A=time_sec, B=time_min, then [animalCol spacerCol]
+
+C = cell(nRows, nCols);
+
+% Left-side labels
+C{rowAnimal,1}  = 'Animal ID';
+C{rowSession,1} = 'Session ID';
+C{rowScan,1}    = 'Scan ID';
+C{rowGroup,1}   = 'Group';
+C{rowCond,1}    = 'Condition';
+
+C{rowInfo,1}    = '% signal change (%SC)';
+C{rowInfo,2}    = 'Values come from ROI txt and use the respective baseline window of each ROI export';
+
+C{rowHeader,1}  = 'time_sec';
+C{rowHeader,2}  = 'time_min';
+
+% Reference time columns
+refSec = nan(maxPts,1);
+refMin = nan(maxPts,1);
+for k = 1:maxPts
+    for j = 1:nScan
+        if numel(tSecAll{j}) >= k
+            refSec(k) = tSecAll{j}(k);
+            refMin(k) = tMinAll{j}(k);
+            break;
+        end
+    end
+end
+
+for k = 1:maxPts
+    r = rowData0 + k - 1;
+    if isfinite(refSec(k)), C{r,1} = refSec(k); end
+    if isfinite(refMin(k)), C{r,2} = refMin(k); end
+end
+
+for j = 1:nScan
+    dataCol = 3 + 2*(j-1);
+    info = infos{j};
+
+    C{rowAnimal,dataCol}  = info.animalID;
+    C{rowSession,dataCol} = info.session;
+    C{rowScan,dataCol}    = info.scanID;
+    C{rowGroup,dataCol}   = info.group;
+    C{rowCond,dataCol}    = info.condition;
+
+    C{rowHeader,dataCol}  = sprintf('%s | %s | %s', info.animalID, info.session, info.scanID);
+
+    for k = 1:maxPts
+        r = rowData0 + k - 1;
+        if numel(pAll{j}) >= k
+            C{r,dataCol} = pAll{j}(k);
+        end
+    end
+end
+
+% spacer columns intentionally left empty
+end
+
+function rows = appendGroupedRows(rows0, rows, groupCol)
+C = rows0;
+nCol = size(rows0,2);
+
+if isempty(rows)
+    blank = repmat({''},1,nCol);
+    blank{1} = 'No rows found.';
+    rows = blank;
+    rows = rows(:).';
+    rows = reshape(rows,1,[]);
+    rows = rows(:,1:nCol);
+    C = [C; rows];
+    rows = C;
+    return;
+end
+
+groups = uniqueStable(rows(:,groupCol));
+
+for g = 1:numel(groups)
+    titleRow = repmat({''},1,nCol);
+    titleRow{1} = ['GROUP: ' groups{g}];
+    C(end+1,:) = titleRow;
+
+    idx = strcmpi(rows(:,groupCol), groups{g});
+    C = [C; rows(idx,:)]; %#ok<AGROW>
+
+    if g < numel(groups)
+        C(end+1,:) = repmat({''},1,nCol);
+    end
+end
+
+rows = C;
+end
+
+function rows = sortMetadataRows(rows)
+if isempty(rows), return; end
+
+keys = cell(size(rows,1),1);
+for i = 1:size(rows,1)
+    condRank = conditionRankForExport(rows{i,6});
+    keys{i} = sprintf('%s|%03d|%s|%s', ...
+        lower(safeKeyStr(rows{i,5})), ...
+        condRank, ...
+        lower(safeKeyStr(rows{i,6})), ...
+        lower(safeKeyStr(rows{i,2})));
+end
+
+[~,ord] = sort(keys);
+rows = rows(ord,:);
+end
+
+function idxOut = sortSubjectIdxForMetadata(subj, idxIn)
+idxOut = idxIn(:)';
+if isempty(idxOut), return; end
+
+keys = cell(numel(idxOut),1);
+for k = 1:numel(idxOut)
+    info = extractRowMetaForExcel(subj(idxOut(k),:));
+    condRank = conditionRankForExport(info.condition);
+    keys{k} = sprintf('%s|%03d|%s|%s', ...
+        lower(safeKeyStr(info.group)), ...
+        condRank, ...
+        lower(safeKeyStr(info.condition)), ...
+        lower(safeKeyStr(info.animalID)));
+end
+
+[~,ord] = sort(keys);
+idxOut = idxOut(ord);
+end
+
+
+function roiH = readROITxtHeaderMeta(fname)
+roiH = struct( ...
+    'baselineText','', ...
+    'signalText','', ...
+    'roiNo','', ...
+    'slice','', ...
+    'x1',NaN, ...
+    'x2',NaN, ...
+    'y1',NaN, ...
+    'y2',NaN);
+
+if nargin < 1 || isempty(fname) || exist(fname,'file') ~= 2
+    return;
+end
+
+% fallback ROI number from filename, e.g. roi5.txt
+try
+    [~,bn,~] = fileparts(fname);
+    tok = regexpi(bn,'roi\s*([0-9]+)','tokens','once');
+    if ~isempty(tok)
+        roiH.roiNo = tok{1};
+    end
+catch
+end
+
+fid = fopen(fname,'r');
+if fid < 0
+    return;
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+maxLines = 120;
+expectXYLine = false;
+
+for k = 1:maxLines
+    ln = fgetl(fid);
+    if ~ischar(ln), break; end
+
+    lnRaw = strtrim(ln);
+    if isempty(lnRaw)
+        continue;
+    end
+
+    % If previous line was '# x1 x2 y1 y2', read this numeric row
+    if expectXYLine
+        vals = sscanf(lnRaw,'%f');
+        if numel(vals) >= 4
+            roiH.x1 = vals(1);
+            roiH.x2 = vals(2);
+            roiH.y1 = vals(3);
+            roiH.y2 = vals(4);
+        end
+        expectXYLine = false;
+        continue;
+    end
+
+    % Stop once data table starts
+    if lnRaw(1) ~= '#' && lnRaw(1) ~= '%' && lnRaw(1) ~= ';'
+        break;
+    end
+
+    txt = regexprep(lnRaw,'^[#%;\s]+','');
+    txtL = lower(txt);
+
+    % Baseline window
+    if isempty(roiH.baselineText) && ~isempty(strfind(txtL,'baselinewindow'))
+        parts = regexp(txt,'[:]','split');
+        if numel(parts) >= 2
+            roiH.baselineText = strtrim(parts{2});
+        else
+            roiH.baselineText = strtrim(txt);
+        end
+    end
+
+    % Signal window
+    if isempty(roiH.signalText) && ~isempty(strfind(txtL,'signalwindow'))
+        parts = regexp(txt,'[:]','split');
+        if numel(parts) >= 2
+            roiH.signalText = strtrim(parts{2});
+        else
+            roiH.signalText = strtrim(txt);
+        end
+    end
+
+    % ROI index
+    if isempty(roiH.roiNo) && ~isempty(strfind(txtL,'roi_index'))
+        tok = regexp(txt,'ROI_INDEX\s*:\s*([0-9]+)','tokens','once','ignorecase');
+        if ~isempty(tok)
+            roiH.roiNo = tok{1};
+        end
+    end
+
+    % Slice
+    if isempty(roiH.slice) && ~isempty(strfind(txtL,'slice'))
+        tok = regexp(txt,'SLICE\s*:\s*([0-9]+)','tokens','once','ignorecase');
+        if ~isempty(tok)
+            roiH.slice = tok{1};
+        end
+    end
+
+    % x1 x2 y1 y2 header
+    if ~isempty(regexp(txtL,'^x1\s+x2\s+y1\s+y2$', 'once'))
+        expectXYLine = true;
+        continue;
+    end
+
+    % fallback inline style if ever present
+    tok = regexp(txt,'x1\s*[:=]\s*([-+]?\d*\.?\d+)\s+.*x2\s*[:=]\s*([-+]?\d*\.?\d+)\s+.*y1\s*[:=]\s*([-+]?\d*\.?\d+)\s+.*y2\s*[:=]\s*([-+]?\d*\.?\d+)','tokens','once','ignorecase');
+    if ~isempty(tok)
+        roiH.x1 = str2double(tok{1});
+        roiH.x2 = str2double(tok{2});
+        roiH.y1 = str2double(tok{3});
+        roiH.y2 = str2double(tok{4});
+    end
+end
+end
+
+function rows = sortConditionRows(rows)
+if isempty(rows), return; end
+
+keys = cell(size(rows,1),1);
+for i = 1:size(rows,1)
+    keys{i} = sprintf('%s|%s', ...
+        lower(safeKeyStr(rows{i,5})), ...
+        lower(safeKeyStr(rows{i,2})));
+end
+
+[~,ord] = sort(keys);
+rows = rows(ord,:);
+end
+
+function r = conditionRankForExport(x)
+s = lower(strtrimSafe(x));
+if contains(s,'conda') || strcmp(s,'a')
+    r = 1;
+elseif contains(s,'condb') || strcmp(s,'b')
+    r = 2;
+else
+    r = 50;
+end
+end
+
+function s = safeKeyStr(x)
+if isnumeric(x)
+    if isempty(x) || ~isfinite(x)
+        s = '';
+    else
+        s = num2str(x);
+    end
+else
+    s = strtrimSafe(x);
+end
+end
+
+function s = logicalToText(v)
+try
+    if logical(v)
+        s = 'TRUE';
+    else
+        s = 'FALSE';
+    end
+catch
+    s = 'FALSE';
+end
+end
+
+function s = yesNoText(v)
+if logicalCellValue(v)
+    s = 'Yes';
+else
+    s = 'No';
+end
+end
+
+ function styleGroupAnalysisWorkbook(outFile)
+if ~ispc
+    return;
+end
+if exist('actxserver','file') ~= 2
+    return;
+end
+
+excel = [];
+wb = [];
+
+try
+    excel = actxserver('Excel.Application');
+    excel.Visible = false;
+    excel.DisplayAlerts = false;
+
+    wb = excel.Workbooks.Open(outFile, 0, false);
+    nSheets = wb.Worksheets.Count;
+
+    for s = 1:nSheets
+        ws = wb.Worksheets.Item(s);
+        nCols = ws.UsedRange.Columns.Count;
+        nRows = ws.UsedRange.Rows.Count;
+        lastCol = excelColLetter(nCols);
+        sheetName = char(ws.Name);
+
+        % Global header
+        hdrRg = ws.Range(sprintf('A1:%s1', lastCol));
+        hdrRg.Font.Bold = true;
+        hdrRg.Font.Size = 12;
+        hdrRg.Interior.Color = excelRGB(217,217,217);
+        hdrRg.HorizontalAlignment = -4108;
+        hdrRg.VerticalAlignment   = -4108;
+        hdrRg.WrapText = true;
+
+        % ============================================================
+        % Metadata
+        % ============================================================
+        if strcmpi(sheetName,'Metadata')
+            for r = 2:nRows
+                aVal = excelCellChar(ws.Range(sprintf('A%d',r)).Value);
+                grp  = excelCellChar(ws.Range(sprintf('E%d',r)).Value);
+                excl = excelCellChar(ws.Range(sprintf('H%d',r)).Value);
+                usev = excelCellChar(ws.Range(sprintf('A%d',r)).Value);
+
+                rowRg = ws.Range(sprintf('A%d:%s%d', r, lastCol, r));
+
+                if strncmpi(strtrim(aVal), 'GROUP:', 6)
+                    grpName = strtrim(strrep(aVal,'GROUP:',''));
+                    rowRg.Font.Bold = true;
+                    rowRg.Font.Size = 14;
+                    try
+                        rowRg.Font.Underline = 2;
+                    catch
+                    end
+                    rowRg.HorizontalAlignment = -4108;
+                    rowRg.VerticalAlignment   = -4108;
+
+                    if isGroupAName(grpName)
+                        rowRg.Interior.Color = excelRGB(221,235,247);
+                    elseif isGroupBName(grpName)
+                        rowRg.Interior.Color = excelRGB(252,228,214);
+                    else
+                        rowRg.Interior.Color = excelRGB(230,230,230);
+                    end
+                    continue;
+                end
+
+                if strcmpi(excl,'Yes') || strcmpi(usev,'FALSE')
+                    rowRg.Interior.Color = excelRGB(255,210,210);
+                elseif isGroupAName(grp)
+                    rowRg.Interior.Color = excelRGB(221,235,247);
+                elseif isGroupBName(grp)
+                    rowRg.Interior.Color = excelRGB(252,228,214);
+                end
+
+                try
+                    ws.Range(sprintf('E%d',r)).Font.Bold = true;
+                    ws.Range(sprintf('E%d',r)).Font.Size = 11;
+                catch
+                end
+            end
+        end
+
+        % ============================================================
+        % Condition_A / Condition_B
+        % ============================================================
+        if strncmpi(sheetName,'Condition_',10)
+            % Layout used:
+            % rows 1..5 top labels/values
+            % rows 6..7 blank
+            % row 8 info
+            % row 9 time/animal header
+            % row 10+ raw values
+
+            % Left labels
+            ws.Range('A1:B5').Font.Bold = true;
+            ws.Range('A1:B5').Font.Size = 13;
+            ws.Range('A1:B5').Interior.Color = excelRGB(217,217,217);
+            ws.Range('A1:B5').HorizontalAlignment = -4108;
+            ws.Range('A1:B5').VerticalAlignment   = -4108;
+            try
+                ws.Range('A1:B5').Font.Underline = 2;
+            catch
+            end
+
+            % blank rows stay white
+            if nRows >= 6
+                ws.Range(sprintf('A6:%s7', lastCol)).Interior.Color = excelRGB(255,255,255);
+            end
+
+            % PSC info row
+            if nRows >= 8
+                ws.Range(sprintf('A8:%s8', lastCol)).Font.Bold = true;
+                ws.Range(sprintf('A8:%s8', lastCol)).Font.Size = 11;
+                ws.Range(sprintf('A8:%s8', lastCol)).Interior.Color = excelRGB(242,242,242);
+            end
+
+            % time header row
+            if nRows >= 9
+                ws.Range(sprintf('A9:%s9', lastCol)).Font.Bold = true;
+                ws.Range(sprintf('A9:%s9', lastCol)).Font.Size = 12;
+                ws.Range(sprintf('A9:%s9', lastCol)).Interior.Color = excelRGB(217,217,217);
+                ws.Range(sprintf('A9:%s9', lastCol)).HorizontalAlignment = -4108;
+                ws.Range(sprintf('A9:%s9', lastCol)).VerticalAlignment   = -4108;
+            end
+
+            animalIdx = 0;
+            c = 3;
+            while c <= nCols
+                animalIdx = animalIdx + 1;
+                dataCol = excelColLetter(c);
+
+                % whole animal column
+                blockRg = ws.Range(sprintf('%s1:%s%d', dataCol, dataCol, nRows));
+                blockRg.Interior.Color = excelPastelColor(animalIdx);
+                blockRg.HorizontalAlignment = -4108;
+                blockRg.VerticalAlignment   = -4108;
+
+                % top responses larger than raw values
+                topRg = ws.Range(sprintf('%s1:%s5', dataCol, dataCol));
+                topRg.Font.Bold = true;
+                topRg.Font.Size = 12;
+                topRg.WrapText = true;
+
+                % header row with animal label
+                if nRows >= 9
+                    hdr2Rg = ws.Range(sprintf('%s9:%s9', dataCol, dataCol));
+                    hdr2Rg.Font.Bold = true;
+                    hdr2Rg.Font.Size = 12;
+                    hdr2Rg.WrapText = true;
+                end
+
+                % raw values smaller
+                if nRows >= 10
+                    dataRg = ws.Range(sprintf('%s10:%s%d', dataCol, dataCol, nRows));
+                    dataRg.Font.Size = 10;
+                    dataRg.HorizontalAlignment = -4108;
+                    dataRg.VerticalAlignment   = -4108;
+                end
+
+                applyExcelBoxBorder(blockRg);
+
+                % spacer column white
+                if c+1 <= nCols
+                    spCol = excelColLetter(c+1);
+                    spRg = ws.Range(sprintf('%s1:%s%d', spCol, spCol, nRows));
+                    spRg.Interior.Color = excelRGB(255,255,255);
+                end
+
+                c = c + 2;
+            end
+
+            % time columns formatting
+            if nRows >= 10
+                ws.Range(sprintf('A10:B%d', nRows)).Font.Size = 10;
+                ws.Range(sprintf('A10:B%d', nRows)).HorizontalAlignment = -4108;
+                ws.Range(sprintf('A10:B%d', nRows)).VerticalAlignment   = -4108;
+            end
+        end
+
+        % ============================================================
+        % Outlier_Audit
+        % ============================================================
+        if strcmpi(sheetName,'Outlier_Audit')
+            for r = 2:nRows
+                aVal = excelCellChar(ws.Range(sprintf('A%d',r)).Value);
+                stateVal = excelCellChar(ws.Range(sprintf('H%d', r)).Value);
+                grpVal   = excelCellChar(ws.Range(sprintf('E%d', r)).Value);
+                rowRg = ws.Range(sprintf('A%d:%s%d', r, lastCol, r));
+
+                if strncmpi(strtrim(aVal), 'GROUP:', 6)
+                    grpName = strtrim(strrep(aVal,'GROUP:',''));
+                    rowRg.Font.Bold = true;
+                    rowRg.Font.Size = 13;
+                    try
+                        rowRg.Font.Underline = 2;
+                    catch
+                    end
+                    rowRg.HorizontalAlignment = -4108;
+                    rowRg.VerticalAlignment   = -4108;
+
+                    if isGroupAName(grpName)
+                        rowRg.Interior.Color = excelRGB(221,235,247);
+                    elseif isGroupBName(grpName)
+                        rowRg.Interior.Color = excelRGB(252,228,214);
+                    else
+                        rowRg.Interior.Color = excelRGB(230,230,230);
+                    end
+                    continue;
+                end
+
+                if strcmpi(strtrim(stateVal), 'Excluded')
+                    rowRg.Interior.Color = excelRGB(255,210,210);
+                elseif strcmpi(strtrim(stateVal), 'OK')
+                    rowRg.Interior.Color = excelRGB(210,255,210);
+                else
+                    if isGroupAName(grpVal)
+                        try
+                            ws.Range(sprintf('E%d',r)).Interior.Color = excelRGB(221,235,247);
+                        catch
+                        end
+                    elseif isGroupBName(grpVal)
+                        try
+                            ws.Range(sprintf('E%d',r)).Interior.Color = excelRGB(252,228,214);
+                        catch
+                        end
+                    end
+                end
+            end
+        end
+
+        ws.Columns.AutoFit;
+    end
+
+    wb.Save;
+    wb.Close(false);
+    excel.Quit;
+
+catch ME
+    try
+        if ~isempty(wb), wb.Close(false); end
+    catch
+    end
+    try
+        if ~isempty(excel), excel.Quit; end
+    catch
+    end
+    try
+        if ~isempty(excel), delete(excel); end
+    catch
+    end
+    rethrow(ME);
+end
+
+try
+    if ~isempty(excel), delete(excel); end
+catch
+end
+end
+
+function c = excelRGB(r,g,b)
+c = double(r) + 256*double(g) + 65536*double(b);
+end
+
+function s = excelColLetter(n)
+s = '';
+while n > 0
+    r = rem(n-1,26);
+    s = [char(65+r) s]; %#ok<AGROW>
+    n = floor((n-1)/26);
+end
+end
+
+function closeExcelSafe(excel, wb)
+try
+    if ~isempty(wb)
+        wb.Close(false);
+    end
+catch
+end
+try
+    if ~isempty(excel)
+        excel.Quit;
+    end
+catch
+end
+try
+    if ~isempty(excel)
+        delete(excel);
+    end
+catch
+end
+end
+
 
 function [names, rgb] = palette20()
 names = {'Blue','Red','Green','Purple','Orange','Cyan','Magenta','Yellow','Gray','White', ...
@@ -2887,6 +4049,80 @@ for i=1:numel(gNames)
 end
 end
 
+function clr = excelPastelColor(idx)
+pal = [ ...
+    221 235 247;
+    252 228 214;
+    226 239 218;
+    242 220 219;
+    217 225 242;
+    255 242 204;
+    234 209 220;
+    208 224 227];
+i = 1 + mod(idx-1, size(pal,1));
+clr = excelRGB(pal(i,1), pal(i,2), pal(i,3));
+end
+
+function applyExcelBoxBorder(rg)
+try
+    rg.Borders.LineStyle = 1;
+    rg.Borders.Weight = 2;
+catch
+end
+end
+
+function s = excelCellChar(v)
+if ischar(v)
+    s = strtrim(v);
+elseif isstring(v)
+    s = strtrim(char(v));
+elseif isnumeric(v)
+    if isempty(v) || ~isfinite(v)
+        s = '';
+    else
+        s = strtrim(num2str(v));
+    end
+else
+    s = '';
+end
+end
+
+function tf = isGroupAName(g)
+g = upper(strtrimSafe(g));
+tf = contains(g,'PACAP') || contains(g,'GROUPA') || strcmp(g,'A');
+end
+
+function tf = isGroupBName(g)
+g = upper(strtrimSafe(g));
+tf = contains(g,'VEH') || contains(g,'VEHICLE') || contains(g,'CONTROL') || contains(g,'GROUPB') || strcmp(g,'B');
+end
+
+function [TR_sec, NVols, durationMin] = extractDataSummaryQuick(dataFile)
+TR_sec = NaN;
+NVols = NaN;
+durationMin = NaN;
+
+if nargin < 1 || isempty(dataFile) || exist(dataFile,'file') ~= 2
+    return;
+end
+
+try
+    D = loadPipelineStruct(dataFile);
+
+    if isfield(D,'TR') && ~isempty(D.TR)
+        TR_sec = double(D.TR);
+    end
+
+    if isfield(D,'I') && ~isempty(D.I)
+        NVols = size(D.I, ndims(D.I));
+    end
+
+    if isfinite(TR_sec) && isfinite(NVols)
+        durationMin = ((NVols - 1) * TR_sec) / 60;
+    end
+catch
+end
+end
 function stats = computeStats(metricVals, grpCol, S)
 stats = struct('type',S.testType,'alpha',S.alpha,'p',NaN,'t',NaN,'F',NaN,'df',NaN,'desc','');
 testType = strtrimSafe(S.testType);
@@ -3282,6 +4518,98 @@ catch
 end
 end
 
+    function meta = extractMetaFromSources(subjectTxt, dataFile, roiFile)
+meta = struct('animalID','N/A','session','N/A','scanID','N/A');
+
+cands = {roiFile, dataFile, subjectTxt};
+
+for i = 1:numel(cands)
+    txt = strtrimSafe(cands{i});
+    if isempty(txt), continue; end
+
+    m = parseMetaSingleText(txt);
+
+    if strcmpi(meta.animalID,'N/A') && ~strcmpi(m.animalID,'N/A')
+        meta.animalID = m.animalID;
+    end
+    if strcmpi(meta.session,'N/A') && ~strcmpi(m.session,'N/A')
+        meta.session = m.session;
+    end
+    if strcmpi(meta.scanID,'N/A') && ~strcmpi(m.scanID,'N/A')
+        meta.scanID = m.scanID;
+    end
+
+    if ~strcmpi(meta.animalID,'N/A') && ~strcmpi(meta.session,'N/A') && ~strcmpi(meta.scanID,'N/A')
+        return;
+    end
+end
+end
+
+function meta = parseMetaSingleText(txt)
+meta = struct('animalID','N/A','session','N/A','scanID','N/A');
+
+if nargin < 1 || isempty(txt), return; end
+try
+    txt = char(txt);
+catch
+    return;
+end
+
+txt = strrep(txt,'\','/');
+txtU = upper(txt);
+
+% Best case:
+% WT250409_S2_FUS_105305
+tok = regexpi(txtU,'([A-Z]{1,8}\d{6}[A-Z]?)_(S\d+)_(FUS_\d+)','tokens','once');
+if ~isempty(tok)
+    meta.animalID = upper(strtrim(tok{1}));
+    meta.session  = upper(strtrim(tok{2}));
+    meta.scanID   = upper(strtrim(tok{3}));
+    return;
+end
+
+% Animal + session
+tok = regexpi(txtU,'([A-Z]{1,8}\d{6}[A-Z]?)_(S\d+)','tokens','once');
+if ~isempty(tok)
+    meta.animalID = upper(strtrim(tok{1}));
+    meta.session  = upper(strtrim(tok{2}));
+end
+
+% Scan ID
+tok = regexpi(txtU,'(FUS_\d+)','tokens','once');
+if ~isempty(tok)
+    meta.scanID = upper(strtrim(tok{1}));
+end
+
+% Animal only fallback
+if strcmpi(meta.animalID,'N/A')
+    tok = regexpi(txtU,'\b([A-Z]{1,8}\d{6}[A-Z]?)\b','tokens','once');
+    if ~isempty(tok)
+        meta.animalID = upper(strtrim(tok{1}));
+    end
+end
+end
+
+function animalID = extractAnimalIDFromText(txt)
+m = parseMetaSingleText(txt);
+animalID = m.animalID;
+if strcmpi(animalID,'N/A'), animalID = ''; end
+end
+
+function sess = extractSessionFromText(txt)
+m = parseMetaSingleText(txt);
+sess = m.session;
+if strcmpi(sess,'N/A'), sess = ''; end
+end
+
+function scanID = extractScanIDFromText(txt)
+m = parseMetaSingleText(txt);
+scanID = m.scanID;
+if strcmpi(scanID,'N/A'), scanID = ''; end
+end
+
+
+
 function idx = secToIdx(s0,s1,TR,T)
 i0 = floor(s0/TR) + 1;
 i1 = floor(s1/TR);
@@ -3369,6 +4697,70 @@ R.groupDisplayNames = resolveDisplayGroupNames(gNames, S);
 R.stats = struct('p',NaN,'alpha',S.alpha,'type','None');
 end
 
+
+
+function colors = buildTableRowColors(subj)
+n = size(subj,1);
+if n <= 0
+    colors = [1 1 1];
+    return;
+end
+
+colors = repmat([1.00 1.00 1.00], n, 1);
+
+for i = 1:n
+    use = logicalCellValue(subj{i,1});
+    roi = strtrimSafe(subj{i,7});
+    st  = lower(strtrimSafe(subj{i,8}));
+
+    if contains(st,'excluded') || ~use
+        colors(i,:) = [1.00 0.80 0.80];   % light red
+    elseif ~isempty(roi) && exist(roi,'file') == 2
+        colors(i,:) = [0.80 1.00 0.80];   % light green
+    elseif isempty(roi)
+        colors(i,:) = [0.97 0.97 0.97];
+    else
+        colors(i,:) = [1.00 0.93 0.82];   % light orange
+    end
+end
+end
+
+function setIfHandle(S, fieldName, varargin)
+if isfield(S,fieldName)
+    h = S.(fieldName);
+    if ishghandle(h)
+        try
+            set(h, varargin{:});
+        catch
+        end
+    end
+end
+end
+
+
+function [h0,h1] = addPairEditsDark(parent, y, label, v0, v1, C, cb)
+bg = get(parent,'BackgroundColor');
+
+uicontrol(parent,'Style','text','String',label, ...
+    'Units','normalized','Position',[0.02 y 0.35 0.12], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor','w', ...
+    'HorizontalAlignment','left', ...
+    'FontWeight','bold');
+
+h0 = uicontrol(parent,'Style','edit','String',num2str(v0), ...
+    'Units','normalized','Position',[0.38 y 0.12 0.12], ...
+    'BackgroundColor',C.editBg, ...
+    'ForegroundColor','w', ...
+    'Callback',cb);
+
+h1 = uicontrol(parent,'Style','edit','String',num2str(v1), ...
+    'Units','normalized','Position',[0.52 y 0.12 0.12], ...
+    'BackgroundColor',C.editBg, ...
+    'ForegroundColor','w', ...
+    'Callback',cb);
+end
+
 function exportOnePreview(ax, which, S, style)
 R = S.last;
 cla(ax);
@@ -3378,7 +4770,8 @@ recolorAxesText(ax, style);
 
 if strcmpi(R.mode,'PSC Map')
     displayNames = getDisplayNamesFromR(R);
-    if which==1
+
+    if which == 1
         imagesc_mode(ax, squeeze2D(R.group(1).map), style);
         cb = colorbar(ax);
         styleColorbarMode(cb, style);
@@ -3386,7 +4779,7 @@ if strcmpi(R.mode,'PSC Map')
         moveTitleUp(ax, titleYForStyle(style));
         recolorAxesText(ax, style);
     else
-        if numel(R.group)>=2
+        if numel(R.group) >= 2
             imagesc_mode(ax, squeeze2D(R.group(2).map), style);
             cb = colorbar(ax);
             styleColorbarMode(cb, style);
@@ -3405,43 +4798,42 @@ end
 t = R.tMin(:)';
 displayNames = getDisplayNamesFromR(R);
 
-if which==1
+if which == 1
     hold(ax,'on');
     allTop = [];
     leg = {};
     lineHs = [];
 
-  for g=1:numel(R.group)
+    for g = 1:numel(R.group)
+        mu = R.group(g).mean(:)';
+        se = R.group(g).sem(:)';
 
-    mu = R.group(g).mean(:)';
-    se = R.group(g).sem(:)';
+        if S.tc_previewSmooth
+            dtSec = median(diff(t)) * 60;
+            mu = smooth1D_edgeCentered(mu, dtSec, S.tc_previewSmoothWinSec);
+            se = smooth1D_edgeCentered(se, dtSec, S.tc_previewSmoothWinSec);
+            se(se < 0) = 0;
+        end
 
-    if S.tc_previewSmooth
-        dtSec = median(diff(t))*60;
-        mu = smooth1D_edgeCentered(mu, dtSec, S.tc_previewSmoothWinSec);
-        se = smooth1D_edgeCentered(se, dtSec, S.tc_previewSmoothWinSec);
-        se(se<0) = 0;
+        col = R.groupColors.(makeField(R.group(g).name));
+
+        lineCol = col;
+        fillCol = col;
+        if strcmpi(S.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
+            lineCol = [0 0 0];
+            fillCol = [0.65 0.65 0.65];
+        end
+
+        if R.showSEM
+            [hLine,~] = shadedLineColored(ax, t, mu, se, lineCol, fillCol, S.exportSemAlpha);
+        else
+            hLine = plot(ax, t, mu, 'LineWidth', 2.4, 'Color', lineCol);
+        end
+
+        lineHs = [lineHs hLine]; %#ok<AGROW>
+        leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
+        allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
     end
-
-    col = R.groupColors.(makeField(R.group(g).name));
-
-    lineCol = col;
-    fillCol = col;
-    if strcmpi(S.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
-        lineCol = [0 0 0];
-        fillCol = [0.65 0.65 0.65];
-    end
-
-    if R.showSEM
-        [hLine,~] = shadedLineColored(ax, t, mu, se, lineCol, fillCol, S.exportSemAlpha);
-    else
-        hLine = plot(ax, t, mu, 'LineWidth', 2.4, 'Color', lineCol);
-    end
-
-    lineHs = [lineHs hLine]; %#ok<AGROW>
-    leg{end+1} = sprintf('%s (n=%d)', displayNames{g}, R.group(g).n); %#ok<AGROW>
-    allTop = [allTop, mu, mu+se, mu-se]; %#ok<AGROW>
-end
 
     xlabel(ax,'Time (min)','Color',fg);
     ylabel(ax, tern(R.unitsPercent,'Signal change (%)','ROI signal'), 'Color',fg);
@@ -3449,7 +4841,7 @@ end
     moveTitleUp(ax, titleYForStyle(style));
 
     if ~isempty(lineHs)
-        lg = legend(ax, lineHs, leg, 'Location','northwest','Box','off');
+        lg = legend(ax, lineHs, leg, 'Location','northwest', 'Box','off');
         styleLegendMode(lg, style);
     end
 
@@ -3465,15 +4857,15 @@ end
 else
     gNames = R.groupNames;
     metricVals = R.metricVals(:);
-    grpCol = cellfun(@(x) strtrim(char(x)), R.subjTable(:,3), 'UniformOutput',false);
+    grpCol = cellfun(@(x) strtrim(char(x)), R.subjTable(:,3), 'UniformOutput', false);
     xTicks = 1:numel(gNames);
 
     hold(ax,'on');
     allBot = [];
     rowX = nan(size(metricVals));
 
-    for g=1:numel(gNames)
-        idx = strcmpi(grpCol,gNames{g});
+    for g = 1:numel(gNames)
+        idx = strcmpi(grpCol, gNames{g});
         idxRows = find(idx & isfinite(metricVals));
         y = metricVals(idxRows);
         if isempty(y), continue; end
@@ -3481,20 +4873,21 @@ else
         col = R.groupColors.(makeField(gNames{g}));
         rowKeys = makeRowKeys(R.subjTable(idxRows,:));
         jitter = zeros(size(y));
-        for ii=1:numel(rowKeys)
+        for ii = 1:numel(rowKeys)
             jitter(ii) = deterministicJitter(rowKeys{ii}, 0.18);
         end
-        rowX(idxRows) = xTicks(g)+jitter;
+        rowX(idxRows) = xTicks(g) + jitter;
 
-        scatter(ax,rowX(idxRows),y,60,col,'filled');
-        plot(ax,[xTicks(g)-0.25 xTicks(g)+0.25],[mean(y) mean(y)],'LineWidth',2.5,'Color',col);
+        scatter(ax, rowX(idxRows), y, 60, col, 'filled');
+        plot(ax, [xTicks(g)-0.25 xTicks(g)+0.25], [mean(y) mean(y)], ...
+            'LineWidth', 2.5, 'Color', col);
 
         allBot = [allBot; y(:)]; %#ok<AGROW>
     end
 
-    set(ax,'XLim',[0.5 numel(gNames)+0.5],'XTick',xTicks,'XTickLabel',displayNames);
+    set(ax,'XLim',[0.5 numel(gNames)+0.5], 'XTick',xTicks, 'XTickLabel',displayNames);
     ylabel(ax, tern(R.unitsPercent,'Signal change (%)','Metric (a.u.)'), 'Color',fg);
-    title(ax,['Metric: ' R.metricName],'Color',fg);
+    title(ax, ['Metric: ' R.metricName], 'Color', fg);
     moveTitleUp(ax, titleYForStyle(style));
 
     applyYLim(ax, allBot, S.plotBot);
