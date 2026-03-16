@@ -4,14 +4,8 @@ function fig = play_fusi_video_final( ...
 
 % =========================================================
 % fUSI Video GUI (MATLAB 2023b)
-% - Right panel with 3 tabs: Video/Mask, Underlay, Overlay
-% - Alpha modulation + Threshold moved to Overlay tab
-% - Underlay selection + processing moved to Underlay tab
-% - Bottom buttons remain (HELP/CLOSE/Open SCM/Play/Replay/Save MP4)
-% - Restored colorbar
-% - Mask now affects overlay like SCM_gui (prevents outside lighting up)
-% - Adaptive vertical spacing so tabs are not cramped or empty
-% - ASCII only (Windows-1252 safe)
+% GUI-cleaned version
+% ASCII only
 % =========================================================
 
 disp('fps ='); disp(fps);
@@ -26,9 +20,10 @@ if isempty(I_interp)
     I_interp = I;
 end
 
-% Ensure previewCaxis exists (robust PSC scaling)
+% Keep robust fallback if missing
 if ~isfield(par,'previewCaxis') || isempty(par.previewCaxis)
-    tmp = PSC(:); tmp = tmp(isfinite(tmp));
+    tmp = PSC(:);
+    tmp = tmp(isfinite(tmp));
     if isempty(tmp)
         par.previewCaxis = [-5 5];
     else
@@ -42,17 +37,20 @@ if ~isfield(par,'previewCaxis') || isempty(par.previewCaxis)
     end
 end
 
+% Requested overlay start range
+par.previewCaxis = [0 100];
+
 % ---------------- DIMENSIONS (PSC) ----------------
-bgDefaultFull = bg;   % default underlay passed in
+bgDefaultFull = bg;
 ndPSC = ndims(PSC);
 
 switch ndPSC
-    case 4  % [Y X Z T]
+    case 4
         [ny, nx, nZ, nFrames] = size(PSC);
-    case 3  % [Y X T]
+    case 3
         [ny, nx, nFrames] = size(PSC);
         nZ = 1;
-    case 2  % [Y X]
+    case 2
         [ny, nx] = size(PSC);
         nZ = 1;
         nFrames = 1;
@@ -60,23 +58,24 @@ switch ndPSC
         error('PSC must be 2D, 3D or 4D.');
 end
 
-% ---- Ensure slice index ----
 if nargin < 17 || isempty(sliceIdx) || ~isfinite(sliceIdx)
-    if nZ > 1, sliceIdx = round(nZ/2); else, sliceIdx = 1; end
+    if nZ > 1
+        sliceIdx = round(nZ/2);
+    else
+        sliceIdx = 1;
+    end
 end
 sliceIdx = max(1, min(nZ, round(sliceIdx)));
 
 % =========================================================
-% UNDERLAY STATE (Underlay tab)
+% UNDERLAY STATE
 % =========================================================
-% underSrc: 1 Default(bg), 2 Mean(I), 3 Median(I), 4 Load file
 underSrc = 1;
 underSrcLabel = 'Default(bg)';
 bgMeanFull   = [];
 bgMedianFull = [];
 bgFileFull   = [];
 
-% Underlay processing state (SCM-like defaults)
 uState.mode       = 3;
 uState.brightness = -0.04;
 uState.contrast   = 1.10;
@@ -88,7 +87,7 @@ uState.conectSize = 18;
 uState.conectLev  = 35;
 
 % =========================================================
-% OVERLAY STATE (Overlay tab)
+% OVERLAY STATE
 % =========================================================
 Nc = 256;
 cmapNames = { ...
@@ -99,23 +98,22 @@ cmapNames = { ...
 overlayCmapName = 'blackbdy_iso';
 mapA = getCmap(overlayCmapName, Nc);
 
-% Threshold slider range defaults from PSC
 [tmpThrMin, tmpThrMax] = getSuggestedThresholdRange(PSC, par.previewCaxis);
-tmpThrMin = 0;   % abs threshold should always allow 0
+tmpThrMin = 0;
+tmpThrMax = 100;
 
-% Alpha modulation (SCM identical) - moved to Overlay tab
 alphaModEnable = true;
 alphaPct  = 100;
-modMinAbs = 50;
-modMaxAbs = 100;
+modMinAbs = 20;
+modMaxAbs = 30;      % <- change from 100 to 30
 
-maskThreshold = 0; % abs PSC threshold - moved to Overlay tab
-% Spatial smoothing of overlay only (display-only, like SCM overlay control)
-overlaySmoothSigma = 0;   % 0 = OFF
-overlaySmoothMax   = 5;   % slider max
+maskThreshold = 0;
+
+overlaySmoothSigma = 1.0;   % <- change from 0 to 1.0
+overlaySmoothMax   = 5;
 
 % =========================================================
-% MASK STATE (Video/Mask tab)
+% MASK STATE
 % =========================================================
 mask = false(ny, nx, nZ, nVols);
 maskIsInclude = true;
@@ -133,7 +131,6 @@ if exist('loadedMask','var') && ~isempty(loadedMask)
     end
 end
 
-% Playback + view state
 volume  = 1;
 frame   = 1;
 playing = false;
@@ -155,11 +152,11 @@ paintMode   = '';
 lastMouseXY = [NaN NaN];
 
 % =========================================================
-% FIGURE (bigger opening window to avoid overlap)
+% FIGURE
 % =========================================================
 scr = get(0,'ScreenSize');
-figW = min(max(1650, round(scr(3)*0.92)), scr(3)-40);
-figH = min(max(950,  round(scr(4)*0.88)), scr(4)-80);
+figW = min(max(1720, round(scr(3)*0.93)), scr(3)-40);
+figH = min(max(980,  round(scr(4)*0.90)), scr(4)-80);
 x0 = max(20, round((scr(3)-figW)/2));
 y0 = max(40, round((scr(4)-figH)/2));
 
@@ -171,64 +168,74 @@ fig = figure('Color','k', ...
     'ToolBar','none');
 
 set(fig,'DefaultUicontrolFontName','Arial');
-set(fig,'DefaultUicontrolFontSize',12);
+set(fig,'DefaultUicontrolFontSize',13);
 set(fig,'CloseRequestFcn',@onCloseVideo);
 
-% Remove accidental colorbars BEFORE creating ours
-try, delete(findall(fig,'Type','ColorBar')); catch, end
+try
+    delete(findall(fig,'Type','ColorBar'));
+catch
+end
 
 % =========================================================
-% MAIN AXES + COLORBAR (pixel layout, no overlap)
+% MAIN AXES + COLORBAR
 % =========================================================
 ax = axes('Parent',fig,'Units','pixels');
 axis(ax,'off','image');
 img = image(ax, zeros(ny, nx, 3, 'single'));
-set(ax,'HitTest','on'); set(img,'HitTest','off');
+set(ax,'HitTest','on');
+set(img,'HitTest','off');
 
 txtSliceAx = text(ax, 0.99, 0.02, '', ...
-    'Units','normalized', 'Color',[0.80 0.90 1.00], ...
-    'FontSize',12, 'FontWeight','bold', ...
-    'HorizontalAlignment','right', 'VerticalAlignment','bottom', ...
+    'Units','normalized', ...
+    'Color',[0.80 0.90 1.00], ...
+    'FontSize',13, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','right', ...
+    'VerticalAlignment','bottom', ...
     'Interpreter','none');
 
-% Top slice label
 txtSliceTop = uicontrol(fig,'Style','text','Units','pixels', ...
     'String', sliceString(sliceIdx,nZ), ...
     'ForegroundColor',[0.85 0.90 1.00], ...
     'BackgroundColor','k', ...
-    'FontSize',12,'FontWeight','bold', ...
+    'FontSize',13,'FontWeight','bold', ...
     'HorizontalAlignment','left');
 
-% File label (center above axes)
 txtTitle = uicontrol(fig,'Style','text','Units','pixels', ...
     'String', safeStr(fileLabel), ...
     'ForegroundColor',[0.95 0.95 0.95], ...
     'BackgroundColor','k', ...
-    'FontSize',14,'FontWeight','bold', ...
+    'FontSize',15,'FontWeight','bold', ...
     'HorizontalAlignment','center');
 
-% Info line (top, two lines)
 info = uicontrol(fig,'Style','text','Units','pixels', ...
-    'ForegroundColor','w', 'BackgroundColor','k', ...
-    'FontName','Courier New', 'FontSize',13, ...
+    'ForegroundColor','w', ...
+    'BackgroundColor','k', ...
+    'FontName','Courier New', ...
+    'FontSize',13, ...
     'HorizontalAlignment','left');
 
-% Colorbar (PSC only) - restored
-try, colormap(ax, mapA); catch, end
+try
+    colormap(ax, mapA);
+catch
+end
 caxis(ax, par.previewCaxis);
 cbar = colorbar(ax);
-set(cbar,'Color','w','FontSize',13);
-cbar.Label.String = 'Signal Change (%)';
-cbar.Label.FontSize = 14;
-cbar.Label.Color = 'w';
+set(cbar,'Color','w','FontSize',12);
+cbar.Label.String = '';   % remove vertical label
 set(cbar,'Limits',par.previewCaxis);
+
+title(cbar,'Change (%)', ...
+    'Color','w', ...
+    'FontSize',11, ...
+    'FontWeight','bold');
 
 btnColorbarRange = uicontrol(fig,'Style','pushbutton','Units','pixels', ...
     'String','Color Bar Range', ...
     'FontWeight','bold', ...
+    'FontSize',12, ...
     'Callback',@setColorbarRange);
 
-% Footer
 footer = uicontrol(fig,'Style','text','Units','pixels', ...
     'String','fUSI Video Analysis - HUMoR Analysis Tool - MPI Biological Cybernetics', ...
     'ForegroundColor',[0.7 0.7 0.7], ...
@@ -237,23 +244,21 @@ footer = uicontrol(fig,'Style','text','Units','pixels', ...
     'FontName','Arial','FontSize',11);
 
 % =========================================================
-% RIGHT PANEL WITH TABS (pixel layout)
+% RIGHT PANEL WITH TABS
 % =========================================================
 uiFontName = 'Arial';
-uiFontSize = 12;
+uiFontSize = 13;
 
-% Layout constants (pixels)
-rightM = 30;
-panelW = 520;
+rightM = 28;
+panelW = 570;
 
-btnW  = 120;
-btnH  = 42;
-gapX  = 18;
-gapY  = 18;
+btnW  = 150;
+btnH  = 48;
+gapX  = 14;
+gapY  = 14;
 
-row1Y = 18;
+row1Y = 20;
 row2Y = row1Y + btnH + gapY;
-bottomButtonsTop = row2Y + btnH;
 
 topM = 20;
 
@@ -261,61 +266,78 @@ controlsPanel = uipanel('Parent',fig,'Title','Controls', ...
     'Units','pixels', ...
     'BackgroundColor',[0.10 0.10 0.10], ...
     'ForegroundColor','w', ...
-    'FontSize',14,'FontWeight','bold', ...
+    'FontSize',15,'FontWeight','bold', ...
     'BorderType','line', ...
-    'HighlightColor',[1 1 1], ...
-    'ShadowColor',[1 1 1]);
+    'HighlightColor',[0.65 0.65 0.65], ...
+    'ShadowColor',[0.65 0.65 0.65]);
 
-% Tab bar (make it look clean)
-tabBarH = 36;
+tabBarH = 34;
+
 tabBar = uipanel('Parent',controlsPanel,'Units','pixels', ...
     'BackgroundColor',[0.10 0.10 0.10], ...
+    'BorderType','none');
+
+contentFrame = uipanel('Parent',controlsPanel,'Units','pixels', ...
+    'BackgroundColor',[0.08 0.08 0.08], ...
     'BorderType','line', ...
-    'HighlightColor',[1 1 1], ...
-    'ShadowColor',[1 1 1]);
+    'HighlightColor',[0.70 0.70 0.70], ...
+    'ShadowColor',[0.70 0.70 0.70]);
 
-btnTabVideo  = uicontrol(tabBar,'Style','togglebutton','String','Video/Mask', ...
-    'Units','pixels', 'Callback',@(~,~)switchTab('video'), ...
-    'BackgroundColor',[0.24 0.24 0.24],'ForegroundColor','w', ...
-    'FontSize',12,'FontWeight','bold','Value',1);
+btnTabVideo = uicontrol(tabBar,'Style','togglebutton','String','Video / Mask', ...
+    'Units','pixels', ...
+    'Callback',@(~,~)switchTab('video'), ...
+    'BackgroundColor',[0.18 0.18 0.18], ...
+    'ForegroundColor','w', ...
+    'FontSize',13,'FontWeight','bold', ...
+    'Value',1);
 
-btnTabUnder  = uicontrol(tabBar,'Style','togglebutton','String','Underlay', ...
-    'Units','pixels', 'Callback',@(~,~)switchTab('underlay'), ...
-    'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor','w', ...
-    'FontSize',12,'FontWeight','bold','Value',0);
+btnTabUnder = uicontrol(tabBar,'Style','togglebutton','String','Underlay', ...
+    'Units','pixels', ...
+    'Callback',@(~,~)switchTab('underlay'), ...
+    'BackgroundColor',[0.10 0.10 0.10], ...
+    'ForegroundColor','w', ...
+    'FontSize',13,'FontWeight','bold', ...
+    'Value',0);
 
 btnTabOverlay = uicontrol(tabBar,'Style','togglebutton','String','Overlay', ...
-    'Units','pixels', 'Callback',@(~,~)switchTab('overlay'), ...
-    'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor','w', ...
-    'FontSize',12,'FontWeight','bold','Value',0);
+    'Units','pixels', ...
+    'Callback',@(~,~)switchTab('overlay'), ...
+    'BackgroundColor',[0.10 0.10 0.10], ...
+    'ForegroundColor','w', ...
+    'FontSize',13,'FontWeight','bold', ...
+    'Value',0);
 
-% Content panels
-pVideo   = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none', ...
-    'BackgroundColor',[0.10 0.10 0.10], 'Visible','on');
-pUnder   = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none', ...
-    'BackgroundColor',[0.10 0.10 0.10], 'Visible','off');
-pOverlay = uipanel('Parent',controlsPanel,'Units','pixels','BorderType','none', ...
-    'BackgroundColor',[0.10 0.10 0.10], 'Visible','off');
+pVideo = uipanel('Parent',contentFrame,'Units','pixels','BorderType','none', ...
+    'BackgroundColor',[0.08 0.08 0.08], 'Visible','on');
+pUnder = uipanel('Parent',contentFrame,'Units','pixels','BorderType','none', ...
+    'BackgroundColor',[0.08 0.08 0.08], 'Visible','off');
+pOverlay = uipanel('Parent',contentFrame,'Units','pixels','BorderType','none', ...
+    'BackgroundColor',[0.08 0.08 0.08], 'Visible','off');
 
-% Helpers for consistent UI
-pad = 14; rowHc = 32; sliderH = 16;
+pad = 16;
+rowHc = 38;
+sliderH = 22;
 
 mkLbl = @(pp,s) uicontrol(pp,'Style','text','String',s,'Units','pixels', ...
-    'ForegroundColor','w','BackgroundColor',[0.10 0.10 0.10], ...
-    'HorizontalAlignment','left','FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold');
+    'ForegroundColor','w','BackgroundColor',[0.08 0.08 0.08], ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold');
 
 mkLblImp = @(pp,s) uicontrol(pp,'Style','text','String',s,'Units','pixels', ...
-    'ForegroundColor',[1.00 0.55 0.55],'BackgroundColor',[0.10 0.10 0.10], ...
-    'HorizontalAlignment','left','FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold');
+    'ForegroundColor',[1.00 0.60 0.60],'BackgroundColor',[0.08 0.08 0.08], ...
+    'HorizontalAlignment','left', ...
+    'FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold');
 
 mkValBox = @(pp,s) uicontrol(pp,'Style','edit','String',s,'Units','pixels', ...
     'BackgroundColor',[0.18 0.18 0.18],'ForegroundColor','w', ...
-    'HorizontalAlignment','center','FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold', ...
+    'HorizontalAlignment','center', ...
+    'FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold', ...
     'Enable','inactive');
 
 mkEdit = @(pp,s,cbk) uicontrol(pp,'Style','edit','String',s,'Units','pixels', ...
     'BackgroundColor',[0.20 0.20 0.20],'ForegroundColor','w', ...
-    'HorizontalAlignment','center','FontName',uiFontName,'FontSize',uiFontSize, ...
+    'HorizontalAlignment','center', ...
+    'FontName',uiFontName,'FontSize',uiFontSize, ...
     'Callback',cbk);
 
 mkSlider = @(pp,minv,maxv,val,cbk) uicontrol(pp,'Style','slider','Units','pixels', ...
@@ -328,7 +350,7 @@ mkPopup = @(pp,choices,val,cbk) uicontrol(pp,'Style','popupmenu','String',choice
 
 mkChk = @(pp,s,val,cbk) uicontrol(pp,'Style','checkbox','String',s,'Value',val, ...
     'Units','pixels','Callback',cbk, ...
-    'BackgroundColor',[0.10 0.10 0.10],'ForegroundColor','w', ...
+    'BackgroundColor',[0.08 0.08 0.08],'ForegroundColor','w', ...
     'FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold');
 
 mkBtn = @(pp,lbl,cbk,bgcol,fs) uicontrol(pp,'Style','pushbutton','String',lbl, ...
@@ -337,7 +359,7 @@ mkBtn = @(pp,lbl,cbk,bgcol,fs) uicontrol(pp,'Style','pushbutton','String',lbl, .
     'FontName',uiFontName,'FontSize',fs,'FontWeight','bold');
 
 % -----------------------------
-% VIDEO/MASK TAB CONTROLS
+% VIDEO / MASK TAB
 % -----------------------------
 lblFPS   = mkLbl(pVideo,'FPS');
 slFPS    = mkSlider(pVideo,1,maxFPS,fps,@fpsSliderChanged);
@@ -361,13 +383,11 @@ tglView = uicontrol(pVideo,'Style','togglebutton','String','VIEW: FULL', ...
 
 popIncExc = mkPopup(pVideo,{'Include','Exclude'},1,@setIncludeExclude);
 
-lblAuto = mkLbl(pVideo,'Auto apply');
-tglApplyAll = uicontrol(pVideo,'Style','togglebutton','String','AUTO: ALL', ...
+lblAuto = mkLbl(pVideo,'Frames');
+tglApplyAll = uicontrol(pVideo,'Style','togglebutton','String','ALL FRAMES', ...
     'Units','pixels','Callback',@toggleApplyAll, ...
     'BackgroundColor',[0.20 0.20 0.20],'ForegroundColor','w', ...
     'FontName',uiFontName,'FontSize',uiFontSize,'FontWeight','bold','Value',1);
-
-btnAutoMask = mkBtn(pVideo,'AUTO MASK (M)',@autoMaskButton,[0.25 0.55 0.25],12);
 
 lblBrush = mkLbl(pVideo,'Brush radius (px)');
 slBrush  = mkSlider(pVideo,1,60,brushRadius,@brushSliderChanged);
@@ -377,17 +397,17 @@ lblMaskA = mkLbl(pVideo,'Mask overlay alpha');
 slMaskA  = mkSlider(pVideo,0,1,maskAlpha,@maskAlphaSliderChanged);
 txtMaskA = mkValBox(pVideo,sprintf('%.2f',maskAlpha));
 
-btnColor = mkBtn(pVideo,'Color...',@pickColor,[0.20 0.20 0.20],12);
-btnFill  = mkBtn(pVideo,'Fill (F)',@fillRegion,[0.20 0.20 0.20],12);
-btnClear = mkBtn(pVideo,'Clear mask',@clearMaskAll,[0.35 0.20 0.20],12);
+btnColor = mkBtn(pVideo,'Color...',@pickColor,[0.20 0.20 0.20],13);
+btnFill  = mkBtn(pVideo,'Fill (F)',@fillRegion,[0.20 0.20 0.20],13);
+btnClear = mkBtn(pVideo,'Clear mask',@clearMaskAll,[0.35 0.20 0.20],13);
 
-btnApplyAllMask = mkBtn(pVideo,'Apply mask to all volumes (this slice)',@applyMaskToAllFrames,[0.20 0.45 0.25],12);
-btnLoadMask = mkBtn(pVideo,'Load mask / bundle',@loadMaskBundleCB,[0.45 0.28 0.70],12);
-btnSaveMask = mkBtn(pVideo,'Save mask (.mat)',@saveMaskMat,[0.10 0.35 0.95],12);
-btnSaveInterp = mkBtn(pVideo,'Save interpolated data (.mat)',@saveInterpolatedMat,[0.15 0.65 0.55],12);
+btnApplyAllMask = mkBtn(pVideo,'Apply mask to all volumes (this slice)',@applyMaskToAllFrames,[0.20 0.45 0.25],13);
+btnLoadMask = mkBtn(pVideo,'Load mask / bundle',@loadMaskBundleCB,[0.45 0.28 0.70],13);
+btnSaveMask = mkBtn(pVideo,'Save mask (.mat)',@saveMaskMat,[0.10 0.35 0.95],13);
+btnSaveInterp = mkBtn(pVideo,'Save interpolated data (.mat)',@saveInterpolatedMat,[0.15 0.65 0.55],13);
 
 % -----------------------------
-% UNDERLAY TAB CONTROLS
+% UNDERLAY TAB
 % -----------------------------
 lblUSrc = mkLbl(pUnder,'Underlay source');
 popUSrc = mkPopup(pUnder,{'1) Default(bg)','2) Mean(I)','3) Median(I) robust','4) Load file...'},underSrc,@underSrcChanged);
@@ -418,18 +438,19 @@ set(slVlv,'SliderStep',[1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnder,sprintf('%d',uState.conectLev));
 
 % -----------------------------
-% OVERLAY TAB CONTROLS
+% OVERLAY TAB
 % -----------------------------
 lblMap = mkLbl(pOverlay,'Colormap');
-idxMap = find(strcmp(cmapNames,overlayCmapName),1,'first'); if isempty(idxMap), idxMap=1; end
+idxMap = find(strcmp(cmapNames,overlayCmapName),1,'first');
+if isempty(idxMap), idxMap = 1; end
 popMap = mkPopup(pOverlay,cmapNames,idxMap,@overlayMapChanged);
 
 lblRange = mkLblImp(pOverlay,'Display range (min max)');
 edRange  = mkEdit(pOverlay,sprintf('%.6g %.6g',par.previewCaxis(1),par.previewCaxis(2)),@overlayRangeApply);
-btnRange = mkBtn(pOverlay,'Apply range',@overlayRangeApply,[0.25 0.40 0.65],12);
+btnRange = mkBtn(pOverlay,'Apply range',@overlayRangeApply,[0.25 0.40 0.65],13);
 
 lblThr = mkLblImp(pOverlay,'Threshold abs (%)');
-slThr  = mkSlider(pOverlay,tmpThrMin,tmpThrMax,maskThreshold,@overlayThrSliderChanged);
+slThr  = mkSlider(pOverlay,0,100,maskThreshold,@overlayThrSliderChanged);
 edThr  = mkEdit(pOverlay,sprintf('%.3g',maskThreshold),@overlayThrEditChanged);
 
 lblAlpha = mkLbl(pOverlay,'Overlay alpha (%)');
@@ -451,51 +472,52 @@ edModMax  = mkEdit(pOverlay,sprintf('%.3g',modMaxAbs),@overlayModMaxEdit);
 
 updateOverlayEnable();
 updateUnderlayEnable();
+
 if maskIsInclude
     set(popIncExc,'Value',1);
 else
     set(popIncExc,'Value',2);
 end
+
 % ---------------------------------------------------------
-% Bottom buttons (UNCHANGED conceptually)
+% Bottom buttons
 % ---------------------------------------------------------
 helpBtn = uicontrol(fig,'Style','pushbutton','String','HELP', ...
     'Units','pixels', ...
     'BackgroundColor',[0.25 0.40 0.65],'ForegroundColor','w', ...
-    'FontName',uiFontName,'FontSize',12,'FontWeight','bold', ...
+    'FontName',uiFontName,'FontSize',13,'FontWeight','bold', ...
     'Callback',@showHelpDialog);
 
 closeBtn = uicontrol(fig,'Style','pushbutton','String','CLOSE', ...
     'Units','pixels', ...
     'BackgroundColor',[0.65 0.25 0.25],'ForegroundColor','w', ...
-    'FontName',uiFontName,'FontSize',12,'FontWeight','bold', ...
+    'FontName',uiFontName,'FontSize',13,'FontWeight','bold', ...
     'Callback',@(s,e) close(fig));
 
 scmBtn = uicontrol(fig,'Style','pushbutton','String','Open SCM', ...
     'Units','pixels', ...
     'BackgroundColor',[0.25 0.55 0.35],'ForegroundColor','w', ...
-    'FontName',uiFontName,'FontSize',12,'FontWeight','bold', ...
+    'FontName',uiFontName,'FontSize',13,'FontWeight','bold', ...
     'Callback',@openSCM);
 
 playBtn = uicontrol(fig,'Style','togglebutton','String','Play', ...
     'Units','pixels', ...
     'BackgroundColor',[0.20 0.45 0.20],'ForegroundColor','w', ...
-    'FontName',uiFontName,'FontSize',12,'FontWeight','bold', ...
+    'FontName',uiFontName,'FontSize',13,'FontWeight','bold', ...
     'Callback',@playPause);
 
 replayBtn = uicontrol(fig,'Style','pushbutton','String','Replay', ...
     'Units','pixels', ...
     'BackgroundColor',[0.35 0.35 0.35],'ForegroundColor','w', ...
-    'FontName',uiFontName,'FontSize',12,'FontWeight','bold', ...
+    'FontName',uiFontName,'FontSize',13,'FontWeight','bold', ...
     'Callback',@replayVid);
 
 saveMP4Btn = uicontrol(fig,'Style','pushbutton','String','Save MP4', ...
     'Units','pixels', ...
     'BackgroundColor',[0.25 0.40 0.65],'ForegroundColor','w', ...
-    'FontName',uiFontName,'FontSize',12,'FontWeight','bold', ...
+    'FontName',uiFontName,'FontSize',13,'FontWeight','bold', ...
     'Callback',@saveVideo);
 
-% Figure callbacks
 set(fig,'WindowButtonDownFcn',@mouseDown);
 set(fig,'WindowButtonUpFcn',@mouseUp);
 set(fig,'WindowButtonMotionFcn',@mouseMoveVideo);
@@ -503,7 +525,6 @@ set(fig,'KeyPressFcn',@keyPressHandler);
 set(fig,'WindowScrollWheelFcn',@mouseScrollSlice);
 set(fig,'ResizeFcn',@(~,~)layoutUI());
 
-% Initial layout and render
 layoutUI();
 render();
 
@@ -514,7 +535,9 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
     'Period',1/max(fps,0.1), 'TimerFcn',@timerTick);
 
     function timerTick(~,~)
-        if ~ishandle(fig) || ~playing, return; end
+        if ~ishandle(fig) || ~playing
+            return;
+        end
 
         volume = volume + 1;
         if volume > nVols
@@ -538,28 +561,35 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
 % =========================================================
     function switchTab(which)
         which = lower(char(which));
+
         if strcmp(which,'video')
             set(pVideo,'Visible','on');
             set(pUnder,'Visible','off');
             set(pOverlay,'Visible','off');
-            set(btnTabVideo,'Value',1,'BackgroundColor',[0.24 0.24 0.24]);
-            set(btnTabUnder,'Value',0,'BackgroundColor',[0.12 0.12 0.12]);
-            set(btnTabOverlay,'Value',0,'BackgroundColor',[0.12 0.12 0.12]);
+
+            set(btnTabVideo,'Value',1,'BackgroundColor',[0.18 0.18 0.18]);
+            set(btnTabUnder,'Value',0,'BackgroundColor',[0.10 0.10 0.10]);
+            set(btnTabOverlay,'Value',0,'BackgroundColor',[0.10 0.10 0.10]);
+
         elseif strcmp(which,'underlay')
             set(pVideo,'Visible','off');
             set(pUnder,'Visible','on');
             set(pOverlay,'Visible','off');
-            set(btnTabVideo,'Value',0,'BackgroundColor',[0.12 0.12 0.12]);
-            set(btnTabUnder,'Value',1,'BackgroundColor',[0.24 0.24 0.24]);
-            set(btnTabOverlay,'Value',0,'BackgroundColor',[0.12 0.12 0.12]);
+
+            set(btnTabVideo,'Value',0,'BackgroundColor',[0.10 0.10 0.10]);
+            set(btnTabUnder,'Value',1,'BackgroundColor',[0.18 0.18 0.18]);
+            set(btnTabOverlay,'Value',0,'BackgroundColor',[0.10 0.10 0.10]);
+
         else
             set(pVideo,'Visible','off');
             set(pUnder,'Visible','off');
             set(pOverlay,'Visible','on');
-            set(btnTabVideo,'Value',0,'BackgroundColor',[0.12 0.12 0.12]);
-            set(btnTabUnder,'Value',0,'BackgroundColor',[0.12 0.12 0.12]);
-            set(btnTabOverlay,'Value',1,'BackgroundColor',[0.24 0.24 0.24]);
+
+            set(btnTabVideo,'Value',0,'BackgroundColor',[0.10 0.10 0.10]);
+            set(btnTabUnder,'Value',0,'BackgroundColor',[0.10 0.10 0.10]);
+            set(btnTabOverlay,'Value',1,'BackgroundColor',[0.18 0.18 0.18]);
         end
+
         layoutUI();
     end
 
@@ -568,70 +598,70 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
 % =========================================================
     function layoutUI()
         pos = get(fig,'Position');
-        W = pos(3); H = pos(4);
+        W = pos(3);
+        H = pos(4);
 
         panelX = W - rightM - panelW;
 
-        panelY = (row2Y + btnH) + 20;
-        panelH = max(360, H - panelY - topM);
+        buttonsBlockH = 2*btnH + gapY;
+        panelY = buttonsBlockH + 26;
+        panelH = max(430, H - panelY - topM);
 
-        % Controls panel
         set(controlsPanel,'Position',[panelX panelY panelW panelH]);
 
-        % Bottom buttons
-        set(helpBtn,'Position',[panelX row2Y btnW btnH]);
-        set(closeBtn,'Position',[panelX+btnW+gapX row2Y btnW btnH]);
-        set(scmBtn,'Position',[panelX+2*(btnW+gapX) row2Y btnW btnH]);
+        totalBtnW = 3*btnW + 2*gapX;
+        btnX0 = panelX + round((panelW - totalBtnW)/2);
 
-        set(playBtn,'Position',[panelX row1Y btnW btnH]);
-        set(replayBtn,'Position',[panelX+btnW+gapX row1Y btnW btnH]);
-        set(saveMP4Btn,'Position',[panelX+2*(btnW+gapX) row1Y btnW btnH]);
+        set(helpBtn,  'Position',[btnX0 row2Y btnW btnH]);
+        set(closeBtn, 'Position',[btnX0 + (btnW+gapX) row2Y btnW btnH]);
+        set(scmBtn,   'Position',[btnX0 + 2*(btnW+gapX) row2Y btnW btnH]);
 
-        % Tab bar
-        set(tabBar,'Position',[10 panelH-tabBarH-18 panelW-20 tabBarH]);
-        btnWTab = floor((panelW-20-16)/3);
-        set(btnTabVideo,'Position',[2 2 btnWTab-2 tabBarH-4]);
-        set(btnTabUnder,'Position',[2+btnWTab+8 2 btnWTab-2 tabBarH-4]);
-        set(btnTabOverlay,'Position',[2+2*(btnWTab+8) 2 btnWTab-2 tabBarH-4]);
+        set(playBtn,   'Position',[btnX0 row1Y btnW btnH]);
+        set(replayBtn, 'Position',[btnX0 + (btnW+gapX) row1Y btnW btnH]);
+        set(saveMP4Btn,'Position',[btnX0 + 2*(btnW+gapX) row1Y btnW btnH]);
 
-        % Content region
-        contentX = 10;
-        contentY = 10;
-        contentW = panelW - 20;
-        contentH = panelH - tabBarH - 30;
+       set(tabBar,'Position',[12 panelH-tabBarH-26 panelW-24 tabBarH+8]);
 
-        set(pVideo,'Position',[contentX contentY contentW contentH]);
-        set(pUnder,'Position',[contentX contentY contentW contentH]);
-        set(pOverlay,'Position',[contentX contentY contentW contentH]);
+contentFrameY = 10;
+contentFrameH = panelH - tabBarH - 32;
+set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
 
-        % Adaptive gaps so controls fill the tab (no huge empty space)
+        btnWTab = floor((panelW-24-16)/3);
+        set(btnTabVideo,  'Position',[2 6 btnWTab-2 tabBarH]);
+        set(btnTabUnder,  'Position',[2+btnWTab+8 6 btnWTab-2 tabBarH]);
+        set(btnTabOverlay,'Position',[2+2*(btnWTab+8) 6 btnWTab-2 tabBarH]);
+
+        contentW = panelW - 36;
+        contentH = contentFrameH - 16;
+
+        set(pVideo,  'Position',[8 8 contentW contentH]);
+        set(pUnder,  'Position',[8 8 contentW contentH]);
+        set(pOverlay,'Position',[8 8 contentW contentH]);
+
         layoutVideoTab(contentW, contentH);
         layoutUnderTab(contentW, contentH);
         layoutOverlayTab(contentW, contentH);
 
-        % LEFT SIDE LAYOUT (axes + colorbar + title + info)
         leftM = 120;
-        gapToPanel = 40;
-        axW = max(520, panelX - gapToPanel - leftM);
-        axH = max(420, H - 220);
-        axY = 90;
+        gapToPanel = 42;
+        axW = max(540, panelX - gapToPanel - leftM);
+        axH = max(450, H - 230);
+        axY = 92;
         axX = leftM;
 
         set(ax,'Position',[axX axY axW axH]);
-        set(txtTitle,'Position',[axX axY+axH+10 axW 26]);
+        set(txtTitle,'Position',[axX axY+axH+10 axW 28]);
 
-        set(info,'Position',[20 H-90 panelX-40 70]);
-        set(txtSliceTop,'Position',[20 H-118 300 22]);
+        set(info,'Position',[20 H-92 panelX-40 70]);
+        set(txtSliceTop,'Position',[20 H-120 320 24]);
 
-        % Colorbar left of axes
         cbarW = 18;
-        cbarX = max(20, axX-70);
+       cbarX = max(36, axX-58);
         cbarY = axY + 40;
-        cbarH = max(220, axH - 80);
+        cbarH = max(240, axH - 80);
         set(cbar,'Units','pixels','Position',[cbarX cbarY cbarW cbarH]);
 
-        set(btnColorbarRange,'Position',[cbarX-12 axY-42 140 32]);
-
+        set(btnColorbarRange,'Position',[cbarX-14 axY-44 146 34]);
         set(footer,'Position',[10 8 min(1200,W-20) 22]);
     end
 
@@ -648,113 +678,103 @@ playTimer = timer('ExecutionMode','fixedSpacing', ...
 
     function layoutVideoTab(w, h)
         xLabel = pad;
-        wLabel = 200;
-        xCtrl  = xLabel + wLabel + 10;
-        xVal   = w - pad - 110;
-        wVal   = 110;
-        wCtrl  = max(120, xVal - xCtrl - 10);
+        wLabel = 210;
+        xCtrl  = xLabel + wLabel + 14;
+        xVal   = w - pad - 116;
+        wVal   = 116;
+        wCtrl  = max(140, xVal - xCtrl - 12);
 
-        % Estimate fixed heights to spread vertically
         fixed = 0;
-        fixed = fixed + 2*rowHc;          % FPS, Vol
-        fixed = fixed + 3*rowHc;          % Editor, View, Auto
-        fixed = fixed + 2*rowHc;          % Brush, Mask alpha
-        fixed = fixed + rowHc;            % Color/Fill/Clear
-        fixed = fixed + 34;               % Apply mask all volumes
-        fixed = fixed + 3*32;             % Save buttons
+        fixed = fixed + 2*rowHc;
+        fixed = fixed + 3*rowHc;
+        fixed = fixed + 2*rowHc;
+        fixed = fixed + rowHc;
+        fixed = fixed + 36;
+        fixed = fixed + 3*36;
+
         nGaps = 10;
-        gapc = adaptiveGap(h, fixed, nGaps, 8, 10);
-        gapBig = gapc + 6;
+        gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
+        gapBig = gapc + 8;
 
-        y0 = h - 46;
+        y0 = h - 52;
 
-        % FPS
         set(lblFPS,'Position',[xLabel y0 wLabel rowHc]);
         set(slFPS,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
         set(txtFPS,'Position',[xVal y0 wVal rowHc]);
         y0 = y0 - (rowHc + gapc);
 
-        % Volume
         set(lblVol,'Position',[xLabel y0 wLabel rowHc]);
         set(slVol,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
         set(txtVol,'Position',[xVal y0 wVal rowHc]);
         y0 = y0 - (rowHc + gapBig);
 
-        % Editor
         set(lblEditor,'Position',[xLabel y0 wLabel rowHc]);
-        set(tglEditor,'Position',[xCtrl y0 wCtrl+wVal+10 rowHc]);
+        set(tglEditor,'Position',[xCtrl y0 wCtrl+wVal+12 rowHc]);
         y0 = y0 - (rowHc + gapc);
 
-        % View
         set(lblView,'Position',[xLabel y0 wLabel rowHc]);
-        halfW = floor((wCtrl+wVal+10)/2)-6;
+        halfW = floor((wCtrl+wVal+12)/2)-6;
         set(tglView,'Position',[xCtrl y0 halfW rowHc]);
         set(popIncExc,'Position',[xCtrl+halfW+12 y0 halfW rowHc]);
         y0 = y0 - (rowHc + gapc);
 
-        % Auto
         set(lblAuto,'Position',[xLabel y0 wLabel rowHc]);
-        set(tglApplyAll,'Position',[xCtrl y0 halfW rowHc]);
-        set(btnAutoMask,'Position',[xCtrl+halfW+12 y0 halfW rowHc]);
-        y0 = y0 - (rowHc + gapc);
+        set(tglApplyAll,'Position',[xCtrl y0 wCtrl+wVal+12 rowHc]);
+        y0 = y0 - (rowHc + gapBig);
 
-        % Brush
         set(lblBrush,'Position',[xLabel y0 wLabel rowHc]);
         set(slBrush,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
         set(txtBrush,'Position',[xVal y0 wVal rowHc]);
         y0 = y0 - (rowHc + gapc);
 
-        % Mask alpha
         set(lblMaskA,'Position',[xLabel y0 wLabel rowHc]);
         set(slMaskA,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
         set(txtMaskA,'Position',[xVal y0 wVal rowHc]);
         y0 = y0 - (rowHc + gapBig);
 
-        % Color/Fill/Clear
         bw = floor((w-2*pad-20)/3);
-        set(btnColor,'Position',[xLabel y0 bw rowHc]);
-        set(btnFill,'Position',[xLabel+bw+10 y0 bw rowHc]);
-        set(btnClear,'Position',[xLabel+2*(bw+10) y0 bw rowHc]);
-        y0 = y0 - (rowHc + gapc);
+        set(btnColor,'Position',[xLabel y0 bw 36]);
+        set(btnFill,'Position',[xLabel+bw+10 y0 bw 36]);
+        set(btnClear,'Position',[xLabel+2*(bw+10) y0 bw 36]);
+        y0 = y0 - (36 + gapc);
 
-        % Apply mask all volumes
-set(btnApplyAllMask,'Position',[xLabel y0 (w-2*pad) 34]);
-y0 = y0 - (34 + gapc);
+        set(btnApplyAllMask,'Position',[xLabel y0 (w-2*pad) 36]);
+        y0 = y0 - (36 + gapc);
 
-% Load / save buttons
-set(btnLoadMask,'Position',[xLabel y0 (w-2*pad) 32]);
-y0 = y0 - (32 + gapc);
+        set(btnLoadMask,'Position',[xLabel y0 (w-2*pad) 36]);
+        y0 = y0 - (36 + gapc);
 
-set(btnSaveMask,'Position',[xLabel y0 (w-2*pad) 32]);
-y0 = y0 - (32 + gapc);
+        set(btnSaveMask,'Position',[xLabel y0 (w-2*pad) 36]);
+        y0 = y0 - (36 + gapc);
 
-set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 32]);
+        set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 36]);
     end
 
     function layoutUnderTab(w, h)
         xLabel = pad;
-        wLabel = 220;
-        xCtrl  = xLabel + wLabel + 10;
-        xVal   = w - pad - 110;
-        wVal   = 110;
-        wCtrl  = max(120, xVal - xCtrl - 10);
+        wLabel = 230;
+        xCtrl  = xLabel + wLabel + 14;
+        xVal   = w - pad - 116;
+        wVal   = 116;
+        wCtrl  = max(140, xVal - xCtrl - 12);
 
         fixed = 0;
-        fixed = fixed + 2*rowHc;          % source + mode
-        fixed = fixed + 3*rowHc;          % bri/con/gam
-        fixed = fixed + 2*rowHc;          % vsz/vlv
-        nGaps = 7;
-        gapc = adaptiveGap(h, fixed, nGaps, 8, 10);
-        gapBig = gapc + 6;
+        fixed = fixed + 2*rowHc;
+        fixed = fixed + 3*rowHc;
+        fixed = fixed + 2*rowHc;
 
-        y0 = h - 46;
+        nGaps = 7;
+        gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
+        gapBig = gapc + 8;
+
+        y0 = h - 52;
 
         set(lblUSrc,'Position',[xLabel y0 wLabel rowHc]);
-        set(popUSrc,'Position',[xCtrl y0 (wCtrl+wVal+10) rowHc]);
+        set(popUSrc,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
         y0 = y0 - (rowHc + gapc);
 
         set(lblUMode,'Position',[xLabel y0 wLabel rowHc]);
-        set(popUMode,'Position',[xCtrl y0 (wCtrl+wVal+10) rowHc]);
+        set(popUMode,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
         y0 = y0 - (rowHc + gapBig);
 
         set(lblBri,'Position',[xLabel y0 wLabel rowHc]);
@@ -770,7 +790,7 @@ set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 32]);
         set(lblGam,'Position',[xLabel y0 wLabel rowHc]);
         set(slGam,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
         set(txtGam,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+        y0 = y0 - (rowHc + gapBig);
 
         set(lblVsz,'Position',[xLabel y0 wLabel rowHc]);
         set(slVsz,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
@@ -786,33 +806,34 @@ set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 32]);
 
     function layoutOverlayTab(w, h)
         xLabel = pad;
-        wLabel = 220;
-        xCtrl  = xLabel + wLabel + 10;
-        xVal   = w - pad - 110;
-        wVal   = 110;
-        wCtrl  = max(120, xVal - xCtrl - 10);
+        wLabel = 230;
+        xCtrl  = xLabel + wLabel + 14;
+        xVal   = w - pad - 116;
+        wVal   = 116;
+        wCtrl  = max(140, xVal - xCtrl - 12);
 
-      fixed = 0;
-fixed = fixed + rowHc;            % cmap
-fixed = fixed + rowHc;            % range row (plus button)
-fixed = fixed + rowHc;            % thr slider row
-fixed = fixed + rowHc;            % alpha slider row
-fixed = fixed + rowHc;            % smoothing row
-fixed = fixed + rowHc;            % alpha mod checkbox row
-fixed = fixed + 2*rowHc;          % mod min/max
-nGaps = 8;
-        gapc = adaptiveGap(h, fixed, nGaps, 8, 10);
-        gapBig = gapc + 6;
+        fixed = 0;
+        fixed = fixed + rowHc;
+        fixed = fixed + rowHc;
+        fixed = fixed + rowHc;
+        fixed = fixed + rowHc;
+        fixed = fixed + rowHc;
+        fixed = fixed + rowHc;
+        fixed = fixed + 2*rowHc;
 
-        y0 = h - 46;
+        nGaps = 8;
+        gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
+        gapBig = gapc + 8;
+
+        y0 = h - 52;
 
         set(lblMap,'Position',[xLabel y0 wLabel rowHc]);
-        set(popMap,'Position',[xCtrl y0 (wCtrl+wVal+10) rowHc]);
+        set(popMap,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
         y0 = y0 - (rowHc + gapc);
 
         set(lblRange,'Position',[xLabel y0 wLabel rowHc]);
-        set(edRange,'Position',[xCtrl y0 floor((wCtrl+wVal+10)*0.62) rowHc]);
-        set(btnRange,'Position',[xCtrl+floor((wCtrl+wVal+10)*0.62)+10 y0 floor((wCtrl+wVal+10)*0.38)-10 rowHc]);
+        set(edRange,'Position',[xCtrl y0 floor((wCtrl+wVal+12)*0.62) rowHc]);
+        set(btnRange,'Position',[xCtrl+floor((wCtrl+wVal+12)*0.62)+10 y0 floor((wCtrl+wVal+12)*0.38)-10 rowHc]);
         y0 = y0 - (rowHc + gapBig);
 
         set(lblThr,'Position',[xLabel y0 wLabel rowHc]);
@@ -825,14 +846,13 @@ nGaps = 8;
         set(txtAlpha,'Position',[xVal y0 wVal rowHc]);
         y0 = y0 - (rowHc + gapc);
 
-
         set(lblSmooth,'Position',[xLabel y0 wLabel rowHc]);
-set(slSmooth,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-set(edSmooth,'Position',[xVal y0 wVal rowHc]);
-y0 = y0 - (rowHc + gapc);
+        set(slSmooth,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+        set(edSmooth,'Position',[xVal y0 wVal rowHc]);
+        y0 = y0 - (rowHc + gapBig);
 
         set(lblAlphaMod,'Position',[xLabel y0 wLabel rowHc]);
-        set(chkAlphaMod,'Position',[xCtrl y0 (wCtrl+wVal+10) rowHc]);
+        set(chkAlphaMod,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
         y0 = y0 - (rowHc + gapc);
 
         set(lblModMin,'Position',[xLabel y0 wLabel rowHc]);
@@ -852,7 +872,6 @@ y0 = y0 - (rowHc + gapc);
         sliceIdx = max(1, min(nZ, sliceIdx));
         set(txtSliceTop,'String',sliceString(sliceIdx,nZ));
 
-        % Underlay
         bgFullActive = getUnderlayFull();
         bg2 = getBg2DForSlice(bgFullActive, sliceIdx);
         bg2(~isfinite(bg2)) = 0;
@@ -865,39 +884,34 @@ y0 = y0 - (rowHc + gapc);
             return;
         end
 
-        % PSC slice/frame
-     if ndPSC == 4
-    A = squeeze(PSC(:,:,sliceIdx, frame));
-elseif ndPSC == 3
-    A = PSC(:,:,frame);
-else
-    A = PSC;
-end
-A = double(A);
-A(~isfinite(A)) = 0;
-
-% Display-only spatial smoothing of overlay
-if overlaySmoothSigma > 0
-    filtSize = max(3, 2*ceil(2*overlaySmoothSigma)+1);
-
-    try
-        if exist('imgaussfilt','file')
-            A = imgaussfilt(A, overlaySmoothSigma, ...
-                'FilterSize', filtSize, ...
-                'Padding', 'replicate');
+        if ndPSC == 4
+            A = squeeze(PSC(:,:,sliceIdx, frame));
+        elseif ndPSC == 3
+            A = PSC(:,:,frame);
         else
-            h = fspecial('gaussian', [filtSize filtSize], overlaySmoothSigma);
-            A = imfilter(A, h, 'replicate');
+            A = PSC;
         end
-    catch
-        % fallback: leave A unchanged if smoothing fails
-    end
-end
+        A = double(A);
+        A(~isfinite(A)) = 0;
 
-        % Keep caxis valid
+        if overlaySmoothSigma > 0
+            filtSize = max(3, 2*ceil(2*overlaySmoothSigma)+1);
+            try
+                if exist('imgaussfilt','file')
+                    A = imgaussfilt(A, overlaySmoothSigma, ...
+                        'FilterSize', filtSize, ...
+                        'Padding', 'replicate');
+                else
+                    h = fspecial('gaussian', [filtSize filtSize], overlaySmoothSigma);
+                    A = imfilter(A, h, 'replicate');
+                end
+            catch
+            end
+        end
+
         cax = par.previewCaxis;
         if numel(cax) ~= 2 || ~isfinite(cax(1)) || ~isfinite(cax(2)) || diff(cax) <= 0
-            cax = [-10 10];
+            cax = [0 100];
             par.previewCaxis = cax;
         end
         try
@@ -905,23 +919,14 @@ end
         catch
         end
 
-        % PSC -> RGB
         A_scaled = (A - cax(1)) ./ (cax(2) - cax(1) + eps);
         A_scaled = max(0, min(1, A_scaled));
         pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
 
-        % Mask for this slice+volume
         M = squeeze(mask(:,:,sliceIdx, volume));
         M = logical(M);
         M = M(1:size(bg2,1), 1:size(bg2,2));
 
-        % -----------------------------------------------------
-        % IMPORTANT FIX: SCM-like overlay masking
-        % If a mask exists on this slice/volume, ALWAYS apply it to overlay alpha.
-        % Include: show inside mask
-        % Exclude: show outside mask
-        % If mask empty -> do not restrict overlay (baseMaskOverlay = 1)
-        % -----------------------------------------------------
         if any(M(:))
             if maskIsInclude
                 showMask = M;
@@ -930,18 +935,16 @@ end
             end
             baseMaskOverlay = double(showMask);
         else
-            showMask = true(size(M)); % for dimming logic fallback
-            baseMaskOverlay = 1;      % do not restrict if empty mask
+            showMask = true(size(M));
+            baseMaskOverlay = 1;
         end
 
-        % VIEW: MASKED -> dim outside showMask (so it differs from FULL)
         if viewMaskedOnly && any(M(:))
             dimFactor = 0.12;
             show3 = repmat(showMask,[1 1 3]);
             bgRGB = bgRGB .* (show3 + dimFactor*(~show3));
         end
 
-        % Threshold and alpha modulation (SCM identical)
         thr = maskThreshold;
         thrMask = double(abs(A) >= thr);
 
@@ -973,18 +976,21 @@ end
 
         outRGB = baseRGB;
 
-        % Mask overlay tint (editor visual)
         if ~viewMaskedOnly && any(M(:))
-            maskRGB = cat(3, ones(size(bg2))*maskColor(1), ones(size(bg2))*maskColor(2), ones(size(bg2))*maskColor(3));
+            maskRGB = cat(3, ...
+                ones(size(bg2))*maskColor(1), ...
+                ones(size(bg2))*maskColor(2), ...
+                ones(size(bg2))*maskColor(3));
             M3 = repmat(M,[1 1 3]);
             alphaUse = maskAlpha;
-            if editorMode, alphaUse = max(0.6, maskAlpha); end
+            if editorMode
+                alphaUse = max(0.6, maskAlpha);
+            end
             outRGB = outRGB .* (1 - alphaUse .* M3) + maskRGB .* (alphaUse .* M3);
         end
 
         img.CData = outRGB;
 
-        % Info line
         t = (volume - 1) * TR;
 
         em = tern(editorMode,'ON','OFF');
@@ -998,16 +1004,17 @@ end
         end
 
         extra = '';
-        if ~isempty(statusLine), extra = [' | ' statusLine]; end
+        if ~isempty(statusLine)
+            extra = [' | ' statusLine];
+        end
 
         set(info,'String',sprintf([ ...
             't = %.1f / %.1f s | Vol %d / %d | View: %s (%s)\n' ...
-           'Baseline: %g-%g %s | Editor: %s | Underlay: %s | Smooth=%.2f | AlphaMod: %s | alpha=%g%% min=%g max=%g thr=%g%s'], ...
+            'Baseline: %g-%g %s | Editor: %s | Underlay: %s | Smooth=%.2f | AlphaMod: %s | alpha=%g%% min=%g max=%g thr=%g%s'], ...
             t, Tmax, volume, nVols, vm, ms, ...
-           baseline.start, baseline.end, modeStr, ...
-em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAbs, maskThreshold, extra));
+            baseline.start, baseline.end, modeStr, ...
+            em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAbs, maskThreshold, extra));
 
-        % Update value boxes
         set(txtFPS,'String',sprintf('%d',fps));
         set(txtVol,'String',sprintf('%d / %d',volume,nVols));
         set(txtBrush,'String',sprintf('%d',brushRadius));
@@ -1019,7 +1026,7 @@ em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAb
     end
 
 % =========================================================
-% VIDEO TAB CALLBACKS (robust slider handling)
+% VIDEO TAB CALLBACKS
 % =========================================================
     function fpsSliderChanged(src,~)
         setFPS(get(src,'Value'));
@@ -1044,7 +1051,9 @@ em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAb
         if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
             stop(playTimer);
             set(playTimer,'Period',1/max(fps,0.1));
-            if playing, start(playTimer); end
+            if playing
+                start(playTimer);
+            end
         end
         render();
     end
@@ -1083,13 +1092,9 @@ em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAb
 
     function toggleApplyAll(src,~)
         applyToAllFrames = logical(get(src,'Value'));
-        set(src,'String',tern(applyToAllFrames,'AUTO: ALL','AUTO: FRAME'));
+        set(src,'String',tern(applyToAllFrames,'ALL FRAMES','CURRENT FRAME'));
         statusLine = '';
         render();
-    end
-
-    function autoMaskButton(~,~)
-        autoMask();
     end
 
     function setBrush(v)
@@ -1101,7 +1106,9 @@ em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAb
 
     function pickColor(~,~)
         c = uisetcolor(maskColor, 'Pick mask overlay color');
-        if numel(c) == 3, maskColor = c; end
+        if numel(c) == 3
+            maskColor = c;
+        end
         render();
     end
 
@@ -1194,10 +1201,18 @@ em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAb
 % OVERLAY TAB CALLBACKS
 % =========================================================
     function overlayMapChanged(src,~)
-        s = get(src,'String'); idx = get(src,'Value');
-        if iscell(s), overlayCmapName = s{idx}; else, overlayCmapName = strtrim(s(idx,:)); end
+        s = get(src,'String');
+        idx = get(src,'Value');
+        if iscell(s)
+            overlayCmapName = s{idx};
+        else
+            overlayCmapName = strtrim(s(idx,:));
+        end
         mapA = getCmap(overlayCmapName, Nc);
-        try, colormap(ax, mapA); catch, end
+        try
+            colormap(ax, mapA);
+        catch
+        end
         render();
     end
 
@@ -1207,21 +1222,31 @@ em, underSrcLabel, overlaySmoothSigma, alphaState, alphaPct, modMinAbs, modMaxAb
             errordlg('Invalid range. Use: "min max"');
             return;
         end
-        lo = v(1); hi = v(2);
-        if hi < lo, tmp=lo; lo=hi; hi=tmp; end
+
+        lo = v(1);
+        hi = v(2);
+        if hi < lo
+            tmp = lo;
+            lo = hi;
+            hi = tmp;
+        end
+
         par.previewCaxis = [lo hi];
         caxis(ax, par.previewCaxis);
-        try, set(cbar,'Limits',par.previewCaxis); catch, end
+        try
+            set(cbar,'Limits',par.previewCaxis);
+        catch
+        end
 
-      % Update threshold slider range too (ABS threshold must allow 0)
-absMax = max(abs([lo hi]));
-if ~isfinite(absMax) || absMax <= 0, absMax = 1; end
+        absMax = max(abs([lo hi]));
+        if ~isfinite(absMax) || absMax <= 0
+            absMax = 1;
+        end
 
-set(slThr,'Min',0,'Max',absMax);
-
-maskThreshold = min(max(maskThreshold, 0), absMax);
-set(slThr,'Value',maskThreshold);
-set(edThr,'String',sprintf('%.3g',maskThreshold));
+        set(slThr,'Min',0,'Max',absMax);
+        maskThreshold = min(max(maskThreshold, 0), absMax);
+        set(slThr,'Value',maskThreshold);
+        set(edThr,'String',sprintf('%.3g',maskThreshold));
 
         render();
     end
@@ -1234,8 +1259,11 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
 
     function overlayThrEditChanged(src,~)
         v = str2double(get(src,'String'));
-        if ~isfinite(v), v = maskThreshold; end
-        lo = get(slThr,'Min'); hi = get(slThr,'Max');
+        if ~isfinite(v)
+            v = maskThreshold;
+        end
+        lo = get(slThr,'Min');
+        hi = get(slThr,'Max');
         v = min(max(v,lo),hi);
         maskThreshold = v;
         set(slThr,'Value',maskThreshold);
@@ -1257,30 +1285,33 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
         render();
     end
 
-function overlaySmoothSliderChanged(src,~)
-    overlaySmoothSigma = get(src,'Value');
-    overlaySmoothSigma = max(0, min(overlaySmoothMax, overlaySmoothSigma));
-    set(slSmooth,'Value',overlaySmoothSigma);
-    set(edSmooth,'String',sprintf('%.2f',overlaySmoothSigma));
-    render();
-end
-function overlaySmoothEditChanged(src,~)
-    v = str2double(get(src,'String'));
-    if ~isfinite(v)
-        v = overlaySmoothSigma;
+    function overlaySmoothSliderChanged(src,~)
+        overlaySmoothSigma = get(src,'Value');
+        overlaySmoothSigma = max(0, min(overlaySmoothMax, overlaySmoothSigma));
+        set(slSmooth,'Value',overlaySmoothSigma);
+        set(edSmooth,'String',sprintf('%.2f',overlaySmoothSigma));
+        render();
     end
 
-    v = max(0, min(overlaySmoothMax, v));
-    overlaySmoothSigma = v;
+    function overlaySmoothEditChanged(src,~)
+        v = str2double(get(src,'String'));
+        if ~isfinite(v)
+            v = overlaySmoothSigma;
+        end
 
-    set(slSmooth,'Value',overlaySmoothSigma);
-    set(src,'String',sprintf('%.2f',overlaySmoothSigma));
-    render();
-end
+        v = max(0, min(overlaySmoothMax, v));
+        overlaySmoothSigma = v;
+
+        set(slSmooth,'Value',overlaySmoothSigma);
+        set(src,'String',sprintf('%.2f',overlaySmoothSigma));
+        render();
+    end
 
     function overlayModMinEdit(src,~)
         v = str2double(get(src,'String'));
-        if ~isfinite(v), v = modMinAbs; end
+        if ~isfinite(v)
+            v = modMinAbs;
+        end
         modMinAbs = v;
         if modMaxAbs < modMinAbs
             modMaxAbs = modMinAbs;
@@ -1292,7 +1323,9 @@ end
 
     function overlayModMaxEdit(src,~)
         v = str2double(get(src,'String'));
-        if ~isfinite(v), v = modMaxAbs; end
+        if ~isfinite(v)
+            v = modMaxAbs;
+        end
         modMaxAbs = v;
         if modMaxAbs < modMinAbs
             modMinAbs = modMaxAbs;
@@ -1350,25 +1383,35 @@ end
 % SCROLL SLICE
 % =========================================================
     function mouseScrollSlice(~,evt)
-        if nZ <= 1 || playing, return; end
+        if nZ <= 1 || playing
+            return;
+        end
 
         hobj = hittest(fig);
-        if isempty(hobj), return; end
+        if isempty(hobj)
+            return;
+        end
         axHit = ancestor(hobj,'axes');
-        if isempty(axHit) || axHit ~= ax, return; end
+        if isempty(axHit) || axHit ~= ax
+            return;
+        end
 
         dz = -sign(evt.VerticalScrollCount);
-        if dz == 0, return; end
+        if dz == 0
+            return;
+        end
 
         newZ = max(1, min(nZ, sliceIdx + dz));
-        if newZ == sliceIdx, return; end
+        if newZ == sliceIdx
+            return;
+        end
 
         sliceIdx = newZ;
         render();
     end
 
 % =========================================================
-% OPEN SCM (transfer mask collapsed over time)
+% OPEN SCM
 % =========================================================
     function openSCM(~,~)
         try
@@ -1376,7 +1419,7 @@ end
             bg_fast  = getUnderlayFull();
 
             if nZ == 1
-                mask_fast = any(mask(:,:,1,:), 4); % [Y X]
+                mask_fast = any(mask(:,:,1,:), 4);
             else
                 mask_fast = false(ny, nx, nZ);
                 for zz = 1:nZ
@@ -1402,270 +1445,251 @@ end
 % =========================================================
 % SAVE MP4
 % =========================================================
-function saveVideo(~,~)
-    txt = [];
-    vid = [];
-    oldVolume  = volume;
-    oldPlaying = playing;
+    function saveVideo(~,~)
+        txt = [];
+        vid = [];
+        oldVolume  = volume;
+        oldPlaying = playing;
 
-    try
-        % -------------------------------------------------
-        % Resolve analysed root folder robustly
-        % -------------------------------------------------
-        analysedRoot = '';
-
-        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath)
-            analysedRoot = char(par.exportPath);
-        elseif isstruct(par) && isfield(par,'savePath') && ~isempty(par.savePath)
-            analysedRoot = char(par.savePath);
-        elseif isstruct(par) && isfield(par,'outPath') && ~isempty(par.outPath)
-            analysedRoot = char(par.outPath);
-        else
-            analysedRoot = pwd;
-        end
-
-        analysedRoot = strtrim(analysedRoot);
-        analysedRoot = strrep(analysedRoot,'"','');
-
-        if isempty(analysedRoot) || ~exist(analysedRoot,'dir')
-            analysedRoot = pwd;
-        end
-
-        % -------------------------------------------------
-        % Create Videos subfolder
-        % -------------------------------------------------
-        videosDir = fullfile(analysedRoot, 'Videos');
-        if ~exist(videosDir,'dir')
-            [ok,msg] = mkdir(videosDir);
-            if ~ok
-                error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
-            end
-        end
-
-  
-      rawLabel = lower(safeStr(fileLabel));
-if isempty(rawLabel)
-    rawLabel = '';
-end
-
-tags = {};
-
-if contains(rawLabel,'raw'),      tags{end+1} = 'raw'; end
-if contains(rawLabel,'gabriel'),  tags{end+1} = 'gab'; end
-if contains(rawLabel,'median'),   tags{end+1} = 'median'; end
-if contains(rawLabel,'mean'),     tags{end+1} = 'mean'; end
-if contains(rawLabel,'pca'),      tags{end+1} = 'pca'; end
-if contains(rawLabel,'despike') || contains(rawLabel,'despiked')
-    tags{end+1} = 'despike';
-end
-if contains(rawLabel,'smooth') || contains(rawLabel,'smoothed')
-    tags{end+1} = 'smooth';
-end
-if contains(rawLabel,'interp') || contains(rawLabel,'interpol')
-    tags{end+1} = 'interp';
-end
-if contains(rawLabel,'psc'),      tags{end+1} = 'psc'; end
-if contains(rawLabel,'brainonly'), tags{end+1} = 'brain'; end
-
-if isempty(tags)
-    shortLabel = 'video';
-else
-    shortLabel = strjoin(tags,'_');
-end
-
-timeTag = datestr(now,'yyyymmdd_HHMMSS');
-outFile = fullfile(videosDir, ['video_' shortLabel '_' timeTag '.mp4']);  
-
-        disp('--- SAVE VIDEO DEBUG ---');
-        disp(['analysedRoot = ' analysedRoot]);
-        disp(['videosDir    = ' videosDir]);
-        disp(['outFile      = ' outFile]);
-        disp(['path length  = ' num2str(numel(outFile))]);
-
-        % -------------------------------------------------
-        % Prepare video writer
-        % -------------------------------------------------
-        exportFPS = fps;
-        if ~isfinite(exportFPS) || exportFPS <= 0
-            exportFPS = 4;
-        end
-
-        vid = VideoWriter(outFile, 'MPEG-4');
-        vid.FrameRate = exportFPS;
-        vid.Quality   = 95;
-        open(vid);
-
-        % -------------------------------------------------
-        % Export overlay text shown only in MP4
-        % -------------------------------------------------
-        txt = text(ax, 0.02, 0.98, '', ...
-            'Units','normalized', ...
-            'Color','w', ...
-            'FontName','Courier New', ...
-            'FontSize',40, ...
-            'FontWeight','bold', ...
-            'VerticalAlignment','top', ...
-            'HorizontalAlignment','left', ...
-            'BackgroundColor','k', ...
-            'Margin',8, ...
-            'Interpreter','none');
-
-        playing = false;
-        if ishandle(playBtn)
-            set(playBtn,'Value',0,'String','Play');
-        end
         try
-            if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
-                stop(playTimer);
-            end
-        catch
-        end
+            analysedRoot = '';
 
-        % -------------------------------------------------
-        % Write all frames
-        % -------------------------------------------------
-        for v = 1:nVols
-            volume = v;
-            if ishandle(slVol)
-                set(slVol,'Value',v);
+            if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath)
+                analysedRoot = char(par.exportPath);
+            elseif isstruct(par) && isfield(par,'savePath') && ~isempty(par.savePath)
+                analysedRoot = char(par.savePath);
+            elseif isstruct(par) && isfield(par,'outPath') && ~isempty(par.outPath)
+                analysedRoot = char(par.outPath);
+            else
+                analysedRoot = pwd;
             end
 
-            frame = (v - 1) * par.interpol + 1;
-            frame = max(1, min(nFrames, round(frame)));
+            analysedRoot = strtrim(analysedRoot);
+            analysedRoot = strrep(analysedRoot,'"','');
 
-            render();
+            if isempty(analysedRoot) || ~exist(analysedRoot,'dir')
+                analysedRoot = pwd;
+            end
 
-            t = (v - 1) * TR;
-            set(txt,'String',sprintf('t = %.1f / %.1f s | Volume %d / %d', t, Tmax, v, nVols));
+            videosDir = fullfile(analysedRoot, 'Videos');
+            if ~exist(videosDir,'dir')
+                [ok,msg] = mkdir(videosDir);
+                if ~ok
+                    error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
+                end
+            end
 
-            drawnow;
-            fr = getframe(ax);
+            rawLabel = lower(safeStr(fileLabel));
+            if isempty(rawLabel)
+                rawLabel = '';
+            end
 
-repeatEachFrame = 2;   % 2 = slower, 3 = even slower
-for rr = 1:repeatEachFrame
-    writeVideo(vid, fr);
-end
-        end
+            tags = {};
+            if contains(rawLabel,'raw'), tags{end+1} = 'raw'; end
+            if contains(rawLabel,'gabriel'), tags{end+1} = 'gab'; end
+            if contains(rawLabel,'median'), tags{end+1} = 'median'; end
+            if contains(rawLabel,'mean'), tags{end+1} = 'mean'; end
+            if contains(rawLabel,'pca'), tags{end+1} = 'pca'; end
+            if contains(rawLabel,'despike') || contains(rawLabel,'despiked')
+                tags{end+1} = 'despike';
+            end
+            if contains(rawLabel,'smooth') || contains(rawLabel,'smoothed')
+                tags{end+1} = 'smooth';
+            end
+            if contains(rawLabel,'interp') || contains(rawLabel,'interpol')
+                tags{end+1} = 'interp';
+            end
+            if contains(rawLabel,'psc'), tags{end+1} = 'psc'; end
+            if contains(rawLabel,'brainonly'), tags{end+1} = 'brain'; end
 
-        % cleanup
-        if ~isempty(txt) && isgraphics(txt)
-            delete(txt);
-            txt = [];
-        end
+            if isempty(tags)
+                shortLabel = 'video';
+            else
+                shortLabel = strjoin(tags,'_');
+            end
 
-        if ~isempty(vid)
-            close(vid);
-            vid = [];
-        end
+            timeTag = datestr(now,'yyyymmdd_HHMMSS');
+            outFile = fullfile(videosDir, ['video_' shortLabel '_' timeTag '.mp4']);
 
-        volume  = oldVolume;
-        playing = oldPlaying;
+            disp('--- SAVE VIDEO DEBUG ---');
+            disp(['analysedRoot = ' analysedRoot]);
+            disp(['videosDir    = ' videosDir]);
+            disp(['outFile      = ' outFile]);
+            disp(['path length  = ' num2str(numel(outFile))]);
 
-        if ishandle(slVol)
-            set(slVol,'Value',volume);
-        end
+            exportFPS = fps;
+            if ~isfinite(exportFPS) || exportFPS <= 0
+                exportFPS = 4;
+            end
 
-        frame = (volume - 1) * par.interpol + 1;
-        frame = max(1, min(nFrames, round(frame)));
-        render();
+            vid = VideoWriter(outFile, 'MPEG-4');
+            vid.FrameRate = exportFPS;
+            vid.Quality   = 95;
+            open(vid);
 
-        statusLine = ['Video saved: ' outFile];
-        render();
+            txt = text(ax, 0.02, 0.98, '', ...
+                'Units','normalized', ...
+                'Color','w', ...
+                'FontName','Courier New', ...
+                'FontSize',40, ...
+                'FontWeight','bold', ...
+                'VerticalAlignment','top', ...
+                'HorizontalAlignment','left', ...
+                'BackgroundColor','k', ...
+                'Margin',8, ...
+                'Interpreter','none');
 
-    catch ME
-        try
+            playing = false;
+            if ishandle(playBtn)
+                set(playBtn,'Value',0,'String','Play');
+            end
+            try
+                if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
+                    stop(playTimer);
+                end
+            catch
+            end
+
+            for v = 1:nVols
+                volume = v;
+                if ishandle(slVol)
+                    set(slVol,'Value',v);
+                end
+
+                frame = (v - 1) * par.interpol + 1;
+                frame = max(1, min(nFrames, round(frame)));
+
+                render();
+
+                t = (v - 1) * TR;
+                set(txt,'String',sprintf('t = %.1f / %.1f s | Volume %d / %d', t, Tmax, v, nVols));
+
+                drawnow;
+                fr = getframe(ax);
+
+                repeatEachFrame = 2;
+                for rr = 1:repeatEachFrame
+                    writeVideo(vid, fr);
+                end
+            end
+
             if ~isempty(txt) && isgraphics(txt)
                 delete(txt);
+                txt = [];
             end
-        catch
-        end
-        try
+
             if ~isempty(vid)
                 close(vid);
+                vid = [];
             end
-        catch
-        end
 
-        volume  = oldVolume;
-        playing = oldPlaying;
+            volume  = oldVolume;
+            playing = oldPlaying;
 
-        try
             if ishandle(slVol)
                 set(slVol,'Value',volume);
             end
+
             frame = (volume - 1) * par.interpol + 1;
             frame = max(1, min(nFrames, round(frame)));
             render();
-        catch
-        end
 
-        statusLine = ['Video save failed: ' ME.message];
-        render();
-        errordlg(sprintf('MP4 export failed:\n\n%s', ME.message), 'Save MP4 failed');
+            statusLine = ['Video saved: ' outFile];
+            render();
+
+        catch ME
+            try
+                if ~isempty(txt) && isgraphics(txt)
+                    delete(txt);
+                end
+            catch
+            end
+            try
+                if ~isempty(vid)
+                    close(vid);
+                end
+            catch
+            end
+
+            volume  = oldVolume;
+            playing = oldPlaying;
+
+            try
+                if ishandle(slVol)
+                    set(slVol,'Value',volume);
+                end
+                frame = (volume - 1) * par.interpol + 1;
+                frame = max(1, min(nFrames, round(frame)));
+                render();
+            catch
+            end
+
+            statusLine = ['Video save failed: ' ME.message];
+            render();
+            errordlg(sprintf('MP4 export failed:\n\n%s', ME.message), 'Save MP4 failed');
+        end
     end
-end
 
 % =========================================================
 % SAVE MASK
 % =========================================================
     function saveMaskMat(~,~)
-    [f,p] = uiputfile('*.mat','Save mask / bundle');
-    if isequal(f,0), return; end
+        [f,p] = uiputfile('*.mat','Save mask / bundle');
+        if isequal(f,0)
+            return;
+        end
 
-    out = struct();
+        out = struct();
 
-    % Main overlay restriction mask
-    out.loadedMask = mask;
-    out.loadedMaskIsInclude = maskIsInclude;
+        out.loadedMask = mask;
+        out.loadedMaskIsInclude = maskIsInclude;
 
-    out.overlayMask = mask;
-    out.overlayMaskIsInclude = maskIsInclude;
+        out.overlayMask = mask;
+        out.overlayMaskIsInclude = maskIsInclude;
 
-    % Legacy compatibility
-    out.mask = mask;
-    out.maskIsInclude = maskIsInclude;
+        out.mask = mask;
+        out.maskIsInclude = maskIsInclude;
 
-    % Save underlay too so SCM / Video can reuse it directly
-    out.brainImage = bgDefaultFull;
+        out.brainImage = bgDefaultFull;
 
-    % Optional derived brain mask from underlay
-    out.brainMask = deriveBrainMaskFromUnderlayVideo(bgDefaultFull, ny, nx, nZ);
-    out.brainMaskIsInclude = true;
+        out.brainMask = deriveBrainMaskFromUnderlayVideo(bgDefaultFull, ny, nx, nZ);
+        out.brainMaskIsInclude = true;
 
-    out.metadata = struct();
-    out.metadata.TR = TR;
-    out.metadata.nVols = nVols;
-    out.metadata.nZ = nZ;
-    out.metadata.created = datestr(now);
-    out.metadata.script = mfilename;
-    out.metadata.note = 'Mask bundle saved from fUSI Video GUI';
+        out.metadata = struct();
+        out.metadata.TR = TR;
+        out.metadata.nVols = nVols;
+        out.metadata.nZ = nZ;
+        out.metadata.created = datestr(now);
+        out.metadata.script = mfilename;
+        out.metadata.note = 'Mask bundle saved from fUSI Video GUI';
 
-    % Nested bundle for robust cross-tool loading
-    maskBundle = struct();
-    maskBundle.loadedMask = out.loadedMask;
-    maskBundle.loadedMaskIsInclude = out.loadedMaskIsInclude;
-    maskBundle.overlayMask = out.overlayMask;
-    maskBundle.overlayMaskIsInclude = out.overlayMaskIsInclude;
-    maskBundle.mask = out.mask;
-    maskBundle.maskIsInclude = out.maskIsInclude;
-    maskBundle.brainImage = out.brainImage;
-    maskBundle.brainMask = out.brainMask;
-    maskBundle.brainMaskIsInclude = out.brainMaskIsInclude;
-    maskBundle.metadata = out.metadata;
+        maskBundle = struct();
+        maskBundle.loadedMask = out.loadedMask;
+        maskBundle.loadedMaskIsInclude = out.loadedMaskIsInclude;
+        maskBundle.overlayMask = out.overlayMask;
+        maskBundle.overlayMaskIsInclude = out.overlayMaskIsInclude;
+        maskBundle.mask = out.mask;
+        maskBundle.maskIsInclude = out.maskIsInclude;
+        maskBundle.brainImage = out.brainImage;
+        maskBundle.brainMask = out.brainMask;
+        maskBundle.brainMaskIsInclude = out.brainMaskIsInclude;
+        maskBundle.metadata = out.metadata;
 
-    out.maskBundle = maskBundle;
+        out.maskBundle = maskBundle;
 
-    save(fullfile(p,f),'-struct','out','-v7.3');
-    statusLine = 'Mask bundle saved.';
-    render();
-end
+        save(fullfile(p,f),'-struct','out','-v7.3');
+        statusLine = 'Mask bundle saved.';
+        render();
+    end
 
 % =========================================================
 % SAVE INTERPOLATED DATA
 % =========================================================
     function saveInterpolatedMat(~,~)
         [f,p] = uiputfile('*.mat','Save interpolated fUSI data');
-        if isequal(f,0), return; end
+        if isequal(f,0)
+            return;
+        end
 
         out = struct();
         out.I = I_interp;
@@ -1687,9 +1711,12 @@ end
 % =========================================================
     function showHelpDialog(~,~)
         hf = figure('Name','Help - fUSI Video GUI', ...
-            'Color',[0.06 0.06 0.06], 'MenuBar','none','ToolBar','none', ...
-            'NumberTitle','off', 'Position',[250 120 920 740], ...
-            'Resize','on', 'WindowStyle','modal');
+            'Color',[0.06 0.06 0.06], ...
+            'MenuBar','none','ToolBar','none', ...
+            'NumberTitle','off', ...
+            'Position',[250 120 920 740], ...
+            'Resize','on', ...
+            'WindowStyle','modal');
 
         msg = [ ...
             'TABS:\n' ...
@@ -1709,12 +1736,14 @@ end
             ];
 
         uicontrol('Style','edit','Parent',hf, ...
-            'Units','normalized', 'Position',[0.03 0.03 0.94 0.94], ...
+            'Units','normalized','Position',[0.03 0.03 0.94 0.94], ...
             'String',sprintf(msg), ...
             'ForegroundColor',[0.90 0.90 0.90], ...
             'BackgroundColor',[0.12 0.12 0.12], ...
-            'FontName','Arial', 'FontSize',14, ...
-            'HorizontalAlignment','left', 'Max',2, 'Min',0, ...
+            'FontName','Arial', ...
+            'FontSize',14, ...
+            'HorizontalAlignment','left', ...
+            'Max',2,'Min',0, ...
             'Enable','inactive');
     end
 
@@ -1722,7 +1751,9 @@ end
 % MOUSE PAINTING
 % =========================================================
     function mouseDown(~,~)
-        if playing || ~editorMode, return; end
+        if playing || ~editorMode
+            return;
+        end
         mouseIsDown = true;
 
         sel = get(fig,'SelectionType');
@@ -1744,15 +1775,20 @@ end
     end
 
     function mouseMoveVideo(~,~)
-        if ~ishandle(ax), return; end
+        if ~ishandle(ax)
+            return;
+        end
 
         cp = get(ax,'CurrentPoint');
-        x = cp(1,1); yv = cp(1,2);
+        x = cp(1,1);
+        yv = cp(1,2);
         if x>=1 && x<=nx && yv>=1 && yv<=ny
             lastMouseXY = [x yv];
         end
 
-        if ~mouseIsDown || ~editorMode || playing, return; end
+        if ~mouseIsDown || ~editorMode || playing
+            return;
+        end
         applyPaintAtCursor();
     end
 
@@ -1760,7 +1796,9 @@ end
         cp = get(ax,'CurrentPoint');
         x = round(cp(1,1));
         yv = round(cp(1,2));
-        if x<1 || x>nx || yv<1 || yv>ny, return; end
+        if x<1 || x>nx || yv<1 || yv>ny
+            return;
+        end
 
         brush = makeBrushMask(x, yv, brushRadius, ny, nx);
 
@@ -1786,7 +1824,9 @@ end
 % KEYBOARD SHORTCUTS
 % =========================================================
     function keyPressHandler(~,evt)
-        if ~isfield(evt,'Key'), return; end
+        if ~isfield(evt,'Key')
+            return;
+        end
         switch lower(evt.Key)
             case 'f'
                 if any(isnan(lastMouseXY))
@@ -1810,7 +1850,8 @@ end
     end
 
     function fillAtXY(xf,yf)
-        x0 = round(xf); y0 = round(yf);
+        x0 = round(xf);
+        y0 = round(yf);
         if x0<1 || x0>nx || y0<1 || y0>ny
             statusLine = 'Fill aborted: outside image.';
             render();
@@ -1849,7 +1890,10 @@ end
         end
 
         if nnz(autoM) > fillMaxPixels
-            try, autoM = bwareafilt(autoM,1); catch, end
+            try
+                autoM = bwareafilt(autoM,1);
+            catch
+            end
         end
 
         if applyToAllFrames
@@ -1881,12 +1925,16 @@ end
         end
 
         Ww = max(1, round(fillWindowR));
-        y1 = max(1, y0-Ww); y2 = min(ny, y0+Ww);
-        x1 = max(1, x0-Ww); x2 = min(nx, x0+Ww);
+        y1 = max(1, y0-Ww);
+        y2 = min(ny, y0+Ww);
+        x1 = max(1, x0-Ww);
+        x2 = min(nx, x0+Ww);
 
         block = P(y1:y2, x1:x2);
         sigmaLocal = std(block(:));
-        if ~isfinite(sigmaLocal) || sigmaLocal == 0, sigmaLocal = 0.05; end
+        if ~isfinite(sigmaLocal) || sigmaLocal == 0
+            sigmaLocal = 0.05;
+        end
 
         thrDiff = fillSigmaFactor * sigmaLocal;
         region = abs(P - centerVal) <= thrDiff;
@@ -1914,7 +1962,9 @@ end
         answer = inputdlg({'Lower limit (%):','Upper limit (%):'}, ...
             'Set Signal Change Range', 1, ...
             {num2str(par.previewCaxis(1)), num2str(par.previewCaxis(2))});
-        if isempty(answer), return; end
+        if isempty(answer)
+            return;
+        end
 
         low = str2double(answer{1});
         high = str2double(answer{2});
@@ -1925,20 +1975,23 @@ end
 
         par.previewCaxis = [low high];
         caxis(ax, par.previewCaxis);
-        try, set(cbar,'Limits',par.previewCaxis); catch, end
+        try
+            set(cbar,'Limits',par.previewCaxis);
+        catch
+        end
 
-      
-  % Sync overlay tab range and threshold slider (ABS threshold must allow 0)
-set(edRange,'String',sprintf('%.6g %.6g',low,high));
+        set(edRange,'String',sprintf('%.6g %.6g',low,high));
 
-absMax = max(abs([low high]));
-if ~isfinite(absMax) || absMax <= 0, absMax = 1; end
+        absMax = max(abs([low high]));
+        if ~isfinite(absMax) || absMax <= 0
+            absMax = 1;
+        end
 
-set(slThr,'Min',0,'Max',absMax);
+        set(slThr,'Min',0,'Max',absMax);
 
-maskThreshold = min(max(maskThreshold, 0), absMax);
-set(slThr,'Value',maskThreshold);
-set(edThr,'String',sprintf('%.3g',maskThreshold));
+        maskThreshold = min(max(maskThreshold, 0), absMax);
+        set(slThr,'Value',maskThreshold);
+        set(edThr,'String',sprintf('%.3g',maskThreshold));
 
         render();
     end
@@ -1989,13 +2042,13 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
             return;
         end
         sz = size(I);
-        T  = sz(dimT);
+        T0 = sz(dimT);
         maxFrames = 600;
-        if T <= maxFrames
-            idx = 1:T;
+        if T0 <= maxFrames
+            idx = 1:T0;
         else
-            step = ceil(T / maxFrames);
-            idx  = 1:step:T;
+            step = ceil(T0 / maxFrames);
+            idx  = 1:step:T0;
         end
         subs = repmat({':'},1,dimT);
         subs{dimT} = idx;
@@ -2041,12 +2094,17 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
         U = min(max(U,0),1);
 
         g = uState.gamma;
-        if ~isfinite(g) || g<=0, g=1; end
+        if ~isfinite(g) || g<=0
+            g = 1;
+        end
         U01 = min(max(U.^g,0),1);
     end
 
     function U = vesselEnhanceStrong(U01, conectSizePx, conectLev_0_MAX)
-        if conectSizePx <= 0, U = U01; return; end
+        if conectSizePx <= 0
+            U = U01;
+            return;
+        end
 
         lev01 = (conectLev_0_MAX / max(1,MAX_CONLEV));
         lev01 = lev01^0.75;
@@ -2078,7 +2136,9 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
         m = (x.^2 + y.^2) <= r^2;
         h = double(m);
         s = sum(h(:));
-        if s>0, h = h/s; end
+        if s>0
+            h = h/s;
+        end
     end
 
     function rgb = toRGB(im01)
@@ -2093,15 +2153,17 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
         U = [];
         label = '';
 
-
-        
         [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
                            'Underlay files'}, 'Select underlay file');
-        if isequal(f,0), return; end
+        if isequal(f,0)
+            return;
+        end
         fullf = fullfile(p,f);
 
         U = loadUnderlayFile(fullf);
-        if isempty(U), return; end
+        if isempty(U)
+            return;
+        end
 
         [~,nm,ext] = fileparts(f);
         label = ['File: ' nm ext];
@@ -2118,10 +2180,13 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
 
         try
             if isNiiGz
-                tmpDir = tempname; mkdir(tmpDir);
+                tmpDir = tempname;
+                mkdir(tmpDir);
                 gunzip(f, tmpDir);
                 d = dir(fullfile(tmpDir,'*.nii'));
-                if isempty(d), error('gunzip failed.'); end
+                if isempty(d)
+                    error('gunzip failed.');
+                end
                 niiFile = fullfile(tmpDir, d(1).name);
                 V = niftiread(niiFile);
                 try, rmdir(tmpDir,'s'); catch, end
@@ -2158,13 +2223,15 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
             for k = 1:numel(fn)
                 v = S.(fn{k});
                 if isstruct(v) && isfield(v,'I') && isnumeric(v.I)
-                    U = v.I; return;
+                    U = v.I;
+                    return;
                 end
             end
             for k = 1:numel(fn)
                 v = S.(fn{k});
                 if isnumeric(v)
-                    U = v; return;
+                    U = v;
+                    return;
                 end
             end
         end
@@ -2179,7 +2246,9 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
 
     function G = toGray(X)
         if ndims(X) == 3 && size(X,3) == 3
-            R = X(:,:,1); Gc = X(:,:,2); B = X(:,:,3);
+            R = X(:,:,1);
+            Gc = X(:,:,2);
+            B = X(:,:,3);
             G = 0.2989*R + 0.5870*Gc + 0.1140*B;
         else
             G = X;
@@ -2203,16 +2272,27 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
         end
 
         switch name
-            case 'hot',     cm = hot(n);
-            case 'parula',  cm = parula(n);
-            case 'jet',     cm = jet(n);
-            case 'gray',    cm = gray(n);
-            case 'bone',    cm = bone(n);
-            case 'copper',  cm = copper(n);
-            case 'pink',    cm = pink(n);
+            case 'hot'
+                cm = hot(n);
+            case 'parula'
+                cm = parula(n);
+            case 'jet'
+                cm = jet(n);
+            case 'gray'
+                cm = gray(n);
+            case 'bone'
+                cm = bone(n);
+            case 'copper'
+                cm = copper(n);
+            case 'pink'
+                cm = pink(n);
             otherwise
                 if strcmp(name,'turbo')
-                    if exist('turbo','file'), cm = turbo(n); else, cm = jet(n); end
+                    if exist('turbo','file')
+                        cm = turbo(n);
+                    else
+                        cm = jet(n);
+                    end
                 elseif strcmp(name,'viridis')
                     anchors = [0.267 0.005 0.329; 0.283 0.141 0.458; 0.254 0.265 0.530; ...
                                0.207 0.372 0.553; 0.164 0.471 0.558; 0.128 0.567 0.551; ...
@@ -2255,7 +2335,8 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
 % THRESHOLD RANGE HELPER
 % =========================================================
     function [thrMin, thrMax] = getSuggestedThresholdRange(PSC0, cax0)
-        v = PSC0(:); v = v(isfinite(v));
+        v = PSC0(:);
+        v = v(isfinite(v));
         if isempty(v)
             thrMin = cax0(1);
             thrMax = cax0(2);
@@ -2272,10 +2353,20 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
 % =========================================================
 % SMALL HELPERS
 % =========================================================
-    function s = onoff(tf), if tf, s='on'; else, s='off'; end, end
+    function s = onoff(tf)
+        if tf
+            s = 'on';
+        else
+            s = 'off';
+        end
+    end
 
     function out = tern(cond, a, b)
-        if cond, out = a; else, out = b; end
+        if cond
+            out = a;
+        else
+            out = b;
+        end
     end
 
     function s = sliceString(k, nZ0)
@@ -2292,23 +2383,32 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
     end
 
     function U = mat2gray_safe(U)
-        mn = min(U(:)); mx = max(U(:));
+        mn = min(U(:));
+        mx = max(U(:));
         if ~isfinite(mn) || ~isfinite(mx) || mx<=mn
-            U(:)=0; return;
+            U(:)=0;
+            return;
         end
         U = (U - mn) ./ (mx - mn);
         U = min(max(U,0),1);
     end
 
     function U = clip01_percentile(A,pLow,pHigh)
-        v=A(:); v=v(isfinite(v));
-        if isempty(v), U=zeros(size(A)); return; end
-        lo=prctile_fallback(v,pLow);
-        hi=prctile_fallback(v,pHigh);
-        if ~isfinite(lo) || ~isfinite(hi) || hi<=lo
-            U=mat2gray_safe(A); return;
+        v = A(:);
+        v = v(isfinite(v));
+        if isempty(v)
+            U = zeros(size(A));
+            return;
         end
-        U=A; U(U<lo)=lo; U(U>hi)=hi;
+        lo = prctile_fallback(v,pLow);
+        hi = prctile_fallback(v,pHigh);
+        if ~isfinite(lo) || ~isfinite(hi) || hi<=lo
+            U = mat2gray_safe(A);
+            return;
+        end
+        U = A;
+        U(U<lo)=lo;
+        U(U>hi)=hi;
         U=(U-lo)/max(eps,(hi-lo));
         U=min(max(U,0),1);
     end
@@ -2319,463 +2419,455 @@ set(edThr,'String',sprintf('%.3g',maskThreshold));
             return;
         catch
         end
-        v = sort(v(:)); n=numel(v);
-        if n==0, q=0; return; end
+        v = sort(v(:));
+        n = numel(v);
+        if n==0
+            q=0;
+            return;
+        end
         k = 1 + (n-1)*(p/100);
-        k1 = floor(k); k2 = ceil(k);
-        k1 = max(1,min(n,k1)); k2 = max(1,min(n,k2));
+        k1 = floor(k);
+        k2 = ceil(k);
+        k1 = max(1,min(n,k1));
+        k2 = max(1,min(n,k2));
         if k1==k2
             q = v(k1);
         else
             q = v(k1) + (k-k1)*(v(k2)-v(k1));
         end
     end
-function loadMaskBundleCB(~,~)
-    startPath = getStartPath();
 
-    [f,p] = uigetfile( ...
-        {'*.mat;*.nii;*.nii.gz', 'Mask / bundle files (*.mat,*.nii,*.nii.gz)'}, ...
-        'Select mask / bundle', startPath);
+    function loadMaskBundleCB(~,~)
+        startPath = getStartPath();
 
-    if isequal(f,0)
-        return;
-    end
+        [f,p] = uigetfile( ...
+            {'*.mat;*.nii;*.nii.gz', 'Mask / bundle files (*.mat,*.nii,*.nii.gz)'}, ...
+            'Select mask / bundle', startPath);
 
-    fullf = fullfile(p,f);
-
-    try
-        [~,~,ext] = fileparts(fullf);
-        ext = lower(ext);
-
-        if strcmp(ext,'.mat')
-            S = load(fullf);
-            [maskNew, includeNew, bgNew, note] = normalizeMaskInputForVideo( ...
-                S, true, bgDefaultFull, ny, nx, nZ, nVols, sliceIdx);
-        else
-            M = readMaskFileForVideo(fullf);
-            [maskNew, includeNew, bgNew, note] = normalizeMaskInputForVideo( ...
-                M, true, bgDefaultFull, ny, nx, nZ, nVols, sliceIdx);
+        if isequal(f,0)
+            return;
         end
 
-        mask = maskNew;
-        maskIsInclude = includeNew;
-        bgDefaultFull = bgNew;
+        fullf = fullfile(p,f);
 
-        underSrc = 1;
-        underSrcLabel = 'Default(bg)';
-        if ishandle(popUSrc)
-            set(popUSrc,'Value',1);
-        end
-
-        if ishandle(popIncExc)
-            if maskIsInclude
-                set(popIncExc,'Value',1);
-            else
-                set(popIncExc,'Value',2);
-            end
-        end
-
-        statusLine = note;
-        render();
-
-    catch ME
-        errordlg(ME.message,'Load mask / bundle failed');
-    end
-end
-
-function [maskOut, maskIsIncludeOut, bgOut, note] = normalizeMaskInputForVideo( ...
-    maskIn, maskInInclude, bgIn, ny0, nx0, nZ0, nVols0, slice0)
-
-    maskOut = false(ny0, nx0, nZ0, nVols0);
-    maskIsIncludeOut = true;
-    bgOut = bgIn;
-    note = '';
-
-    if nargin >= 2 && ~isempty(maskInInclude)
         try
-            maskIsIncludeOut = logical(maskInInclude);
-        catch
-            maskIsIncludeOut = true;
+            [~,~,ext] = fileparts(fullf);
+            ext = lower(ext);
+
+            if strcmp(ext,'.mat')
+                S = load(fullf);
+                [maskNew, includeNew, bgNew, note] = normalizeMaskInputForVideo( ...
+                    S, true, bgDefaultFull, ny, nx, nZ, nVols, sliceIdx);
+            else
+                M = readMaskFileForVideo(fullf);
+                [maskNew, includeNew, bgNew, note] = normalizeMaskInputForVideo( ...
+                    M, true, bgDefaultFull, ny, nx, nZ, nVols, sliceIdx);
+            end
+
+            mask = maskNew;
+            maskIsInclude = includeNew;
+            bgDefaultFull = bgNew;
+
+            underSrc = 1;
+            underSrcLabel = 'Default(bg)';
+            if ishandle(popUSrc)
+                set(popUSrc,'Value',1);
+            end
+
+            if ishandle(popIncExc)
+                if maskIsInclude
+                    set(popIncExc,'Value',1);
+                else
+                    set(popIncExc,'Value',2);
+                end
+            end
+
+            statusLine = note;
+            render();
+
+        catch ME
+            errordlg(ME.message,'Load mask / bundle failed');
         end
     end
 
-    if isempty(maskIn)
-        return;
-    end
+    function [maskOut, maskIsIncludeOut, bgOut, note] = normalizeMaskInputForVideo( ...
+        maskIn, maskInInclude, bgIn, ny0, nx0, nZ0, nVols0, slice0)
 
-    % -----------------------------------------------------
-    % Case 1: bundle / loaded MAT struct
-    % -----------------------------------------------------
-    if isstruct(maskIn)
-        S = maskIn;
-        if isfield(S,'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle)
-            S = S.maskBundle;
-        end
+        maskOut = false(ny0, nx0, nZ0, nVols0);
+        maskIsIncludeOut = true;
+        bgOut = bgIn;
+        note = '';
 
-        pickedField = '';
-        M = [];
-
-        overlayFields = {'loadedMask','overlayMask','signalMask','mask','activeMask'};
-        for k = 1:numel(overlayFields)
-            fn = overlayFields{k};
-            if isfield(S,fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
-                M = S.(fn);
-                pickedField = fn;
-                break;
+        if nargin >= 2 && ~isempty(maskInInclude)
+            try
+                maskIsIncludeOut = logical(maskInInclude);
+            catch
+                maskIsIncludeOut = true;
             end
         end
 
-        if isempty(M)
-            brainFields = {'brainMask','underlayMask'};
-            for k = 1:numel(brainFields)
-                fn = brainFields{k};
+        if isempty(maskIn)
+            return;
+        end
+
+        if isstruct(maskIn)
+            S = maskIn;
+            if isfield(S,'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle)
+                S = S.maskBundle;
+            end
+
+            pickedField = '';
+            M = [];
+
+            overlayFields = {'loadedMask','overlayMask','signalMask','mask','activeMask'};
+            for k = 1:numel(overlayFields)
+                fn = overlayFields{k};
                 if isfield(S,fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
                     M = S.(fn);
                     pickedField = fn;
                     break;
                 end
             end
-        end
 
-        if isempty(M)
-            error('No usable overlay / brain mask field found in bundle.');
-        end
-
-        % Include / exclude flag
-        if any(strcmpi(pickedField, {'loadedMask','overlayMask','signalMask'}))
-            if isfield(S,'overlayMaskIsInclude') && ~isempty(S.overlayMaskIsInclude)
-                maskIsIncludeOut = logical(S.overlayMaskIsInclude);
-            elseif isfield(S,'loadedMaskIsInclude') && ~isempty(S.loadedMaskIsInclude)
-                maskIsIncludeOut = logical(S.loadedMaskIsInclude);
-            elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude)
-                maskIsIncludeOut = logical(S.maskIsInclude);
-            else
-                maskIsIncludeOut = true;
-            end
-        else
-            if isfield(S,'brainMaskIsInclude') && ~isempty(S.brainMaskIsInclude)
-                maskIsIncludeOut = logical(S.brainMaskIsInclude);
-            elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude)
-                maskIsIncludeOut = logical(S.maskIsInclude);
-            else
-                maskIsIncludeOut = true;
-            end
-        end
-
-        maskOut = expandMaskToVideoSize(M, ny0, nx0, nZ0, nVols0, slice0);
-
-        % Optional bundled underlay
-        if isfield(S,'brainImage') && ~isempty(S.brainImage) && isnumeric(S.brainImage)
-            bgOut = fitBundleUnderlayToVideo(S.brainImage, bgIn, ny0, nx0, nZ0);
-        elseif isfield(S,'underlay') && ~isempty(S.underlay) && isnumeric(S.underlay)
-            bgOut = fitBundleUnderlayToVideo(S.underlay, bgIn, ny0, nx0, nZ0);
-        elseif isfield(S,'bg') && ~isempty(S.bg) && isnumeric(S.bg)
-            bgOut = fitBundleUnderlayToVideo(S.bg, bgIn, ny0, nx0, nZ0);
-        end
-
-        note = ['Loaded bundle mask: ' pickedField];
-        return;
-    end
-
-    % -----------------------------------------------------
-    % Case 2: direct numeric / logical mask
-    % -----------------------------------------------------
-    if ~(isnumeric(maskIn) || islogical(maskIn))
-        error('Mask input must be numeric, logical, or a bundle struct.');
-    end
-
-    maskOut = expandMaskToVideoSize(maskIn, ny0, nx0, nZ0, nVols0, slice0);
-
-    if ndims(maskIn) == 2
-        note = '2D mask expanded to all volumes (current slice).';
-    elseif ndims(maskIn) == 3
-        note = '3D mask expanded for video display.';
-    elseif ndims(maskIn) == 4
-        note = '4D mask restored.';
-    else
-        note = 'Mask restored.';
-    end
-end
-
-
-function M4 = expandMaskToVideoSize(Min, ny0, nx0, nZ0, nVols0, slice0)
-    Min = logical(Min);
-
-    if ndims(Min) == 2
-        M2 = resizeLogical2D(Min, ny0, nx0);
-        M4 = false(ny0, nx0, nZ0, nVols0);
-        M4(:,:,slice0,:) = repmat(M2, [1 1 1 nVols0]);
-        return;
-    end
-
-    if ndims(Min) == 3
-        n3 = size(Min,3);
-
-        if size(Min,1) ~= ny0 || size(Min,2) ~= nx0
-            tmp = false(ny0, nx0, n3);
-            for kk = 1:n3
-                tmp(:,:,kk) = resizeLogical2D(Min(:,:,kk), ny0, nx0);
-            end
-            Min = tmp;
-        end
-
-        if n3 == nZ0
-            M4 = false(ny0, nx0, nZ0, nVols0);
-            for zz = 1:nZ0
-                M4(:,:,zz,:) = repmat(Min(:,:,zz), [1 1 1 nVols0]);
-            end
-            return;
-        end
-
-        if nZ0 == 1 && n3 == nVols0
-            M4 = false(ny0, nx0, 1, nVols0);
-            M4(:,:,1,:) = reshape(Min, [ny0 nx0 1 nVols0]);
-            return;
-        end
-
-        M2 = any(Min, 3);
-        M4 = false(ny0, nx0, nZ0, nVols0);
-        M4(:,:,slice0,:) = repmat(M2, [1 1 1 nVols0]);
-        return;
-    end
-
-    while ndims(Min) > 4
-        Min = any(Min, ndims(Min));
-    end
-
-    if ndims(Min) == 4
-        if isequal(size(Min), [ny0 nx0 nZ0 nVols0])
-            M4 = logical(Min);
-            return;
-        end
-
-        if size(Min,3) == nZ0 && size(Min,4) == nVols0
-            M4 = false(ny0, nx0, nZ0, nVols0);
-            for zz = 1:nZ0
-                for tt = 1:nVols0
-                    M4(:,:,zz,tt) = resizeLogical2D(Min(:,:,zz,tt), ny0, nx0);
+            if isempty(M)
+                brainFields = {'brainMask','underlayMask'};
+                for k = 1:numel(brainFields)
+                    fn = brainFields{k};
+                    if isfield(S,fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
+                        M = S.(fn);
+                        pickedField = fn;
+                        break;
+                    end
                 end
             end
+
+            if isempty(M)
+                error('No usable overlay / brain mask field found in bundle.');
+            end
+
+            if any(strcmpi(pickedField, {'loadedMask','overlayMask','signalMask'}))
+                if isfield(S,'overlayMaskIsInclude') && ~isempty(S.overlayMaskIsInclude)
+                    maskIsIncludeOut = logical(S.overlayMaskIsInclude);
+                elseif isfield(S,'loadedMaskIsInclude') && ~isempty(S.loadedMaskIsInclude)
+                    maskIsIncludeOut = logical(S.loadedMaskIsInclude);
+                elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude)
+                    maskIsIncludeOut = logical(S.maskIsInclude);
+                else
+                    maskIsIncludeOut = true;
+                end
+            else
+                if isfield(S,'brainMaskIsInclude') && ~isempty(S.brainMaskIsInclude)
+                    maskIsIncludeOut = logical(S.brainMaskIsInclude);
+                elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude)
+                    maskIsIncludeOut = logical(S.maskIsInclude);
+                else
+                    maskIsIncludeOut = true;
+                end
+            end
+
+            maskOut = expandMaskToVideoSize(M, ny0, nx0, nZ0, nVols0, slice0);
+
+            if isfield(S,'brainImage') && ~isempty(S.brainImage) && isnumeric(S.brainImage)
+                bgOut = fitBundleUnderlayToVideo(S.brainImage, bgIn, ny0, nx0, nZ0);
+            elseif isfield(S,'underlay') && ~isempty(S.underlay) && isnumeric(S.underlay)
+                bgOut = fitBundleUnderlayToVideo(S.underlay, bgIn, ny0, nx0, nZ0);
+            elseif isfield(S,'bg') && ~isempty(S.bg) && isnumeric(S.bg)
+                bgOut = fitBundleUnderlayToVideo(S.bg, bgIn, ny0, nx0, nZ0);
+            end
+
+            note = ['Loaded bundle mask: ' pickedField];
             return;
         end
 
-        tmp = any(Min, 4);
-        M4 = expandMaskToVideoSize(tmp, ny0, nx0, nZ0, nVols0, slice0);
-        return;
-    end
-
-    error('Unsupported mask dimensionality.');
-end
-
-
-function M2 = resizeLogical2D(M0, ny0, nx0)
-    if size(M0,1) == ny0 && size(M0,2) == nx0
-        M2 = logical(M0);
-        return;
-    end
-
-    try
-        M2 = imresize(double(M0), [ny0 nx0], 'nearest') > 0.5;
-    catch
-        M2 = false(ny0, nx0);
-        yUse = min(ny0, size(M0,1));
-        xUse = min(nx0, size(M0,2));
-        M2(1:yUse,1:xUse) = logical(M0(1:yUse,1:xUse));
-    end
-end
-
-
-function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
-    bgOut = bgFallback;
-
-    if isempty(Uin) || ~isnumeric(Uin)
-        return;
-    end
-
-    U = double(Uin);
-
-    % RGB -> gray for this GUI
-    if ndims(U) == 3 && size(U,3) == 3
-        U = toGray(U);
-    end
-
-    if ndims(U) == 2
-        if size(U,1) == ny0 && size(U,2) == nx0
-            bgOut = U;
-        else
-            try
-                bgOut = imresize(U, [ny0 nx0], 'bilinear');
-            catch
-                bgOut = bgFallback;
-            end
+        if ~(isnumeric(maskIn) || islogical(maskIn))
+            error('Mask input must be numeric, logical, or a bundle struct.');
         end
-        return;
+
+        maskOut = expandMaskToVideoSize(maskIn, ny0, nx0, nZ0, nVols0, slice0);
+
+        if ndims(maskIn) == 2
+            note = '2D mask expanded to all volumes (current slice).';
+        elseif ndims(maskIn) == 3
+            note = '3D mask expanded for video display.';
+        elseif ndims(maskIn) == 4
+            note = '4D mask restored.';
+        else
+            note = 'Mask restored.';
+        end
     end
 
-    if ndims(U) == 3
-        n3 = size(U,3);
-        tmp = zeros(ny0, nx0, n3);
+    function M4 = expandMaskToVideoSize(Min, ny0, nx0, nZ0, nVols0, slice0)
+        Min = logical(Min);
 
-        for kk = 1:n3
+        if ndims(Min) == 2
+            M2 = resizeLogical2D(Min, ny0, nx0);
+            M4 = false(ny0, nx0, nZ0, nVols0);
+            M4(:,:,slice0,:) = repmat(M2, [1 1 1 nVols0]);
+            return;
+        end
+
+        if ndims(Min) == 3
+            n3 = size(Min,3);
+
+            if size(Min,1) ~= ny0 || size(Min,2) ~= nx0
+                tmp = false(ny0, nx0, n3);
+                for kk = 1:n3
+                    tmp(:,:,kk) = resizeLogical2D(Min(:,:,kk), ny0, nx0);
+                end
+                Min = tmp;
+            end
+
+            if n3 == nZ0
+                M4 = false(ny0, nx0, nZ0, nVols0);
+                for zz = 1:nZ0
+                    M4(:,:,zz,:) = repmat(Min(:,:,zz), [1 1 1 nVols0]);
+                end
+                return;
+            end
+
+            if nZ0 == 1 && n3 == nVols0
+                M4 = false(ny0, nx0, 1, nVols0);
+                M4(:,:,1,:) = reshape(Min, [ny0 nx0 1 nVols0]);
+                return;
+            end
+
+            M2 = any(Min, 3);
+            M4 = false(ny0, nx0, nZ0, nVols0);
+            M4(:,:,slice0,:) = repmat(M2, [1 1 1 nVols0]);
+            return;
+        end
+
+        while ndims(Min) > 4
+            Min = any(Min, ndims(Min));
+        end
+
+        if ndims(Min) == 4
+            if isequal(size(Min), [ny0 nx0 nZ0 nVols0])
+                M4 = logical(Min);
+                return;
+            end
+
+            if size(Min,3) == nZ0 && size(Min,4) == nVols0
+                M4 = false(ny0, nx0, nZ0, nVols0);
+                for zz = 1:nZ0
+                    for tt = 1:nVols0
+                        M4(:,:,zz,tt) = resizeLogical2D(Min(:,:,zz,tt), ny0, nx0);
+                    end
+                end
+                return;
+            end
+
+            tmp = any(Min, 4);
+            M4 = expandMaskToVideoSize(tmp, ny0, nx0, nZ0, nVols0, slice0);
+            return;
+        end
+
+        error('Unsupported mask dimensionality.');
+    end
+
+    function M2 = resizeLogical2D(M0, ny0, nx0)
+        if size(M0,1) == ny0 && size(M0,2) == nx0
+            M2 = logical(M0);
+            return;
+        end
+
+        try
+            M2 = imresize(double(M0), [ny0 nx0], 'nearest') > 0.5;
+        catch
+            M2 = false(ny0, nx0);
+            yUse = min(ny0, size(M0,1));
+            xUse = min(nx0, size(M0,2));
+            M2(1:yUse,1:xUse) = logical(M0(1:yUse,1:xUse));
+        end
+    end
+
+    function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
+        bgOut = bgFallback;
+
+        if isempty(Uin) || ~isnumeric(Uin)
+            return;
+        end
+
+        U = double(Uin);
+
+        if ndims(U) == 3 && size(U,3) == 3
+            U = toGray(U);
+        end
+
+        if ndims(U) == 2
             if size(U,1) == ny0 && size(U,2) == nx0
-                tmp(:,:,kk) = U(:,:,kk);
+                bgOut = U;
             else
                 try
-                    tmp(:,:,kk) = imresize(U(:,:,kk), [ny0 nx0], 'bilinear');
+                    bgOut = imresize(U, [ny0 nx0], 'bilinear');
                 catch
-                    tmp(:,:,kk) = 0;
+                    bgOut = bgFallback;
                 end
             end
+            return;
         end
 
-        if nZ0 > 1 && n3 == nZ0
-            bgOut = tmp;
-        elseif nZ0 == 1
-            bgOut = mean(tmp, 3);
-        else
-            idx = round(linspace(1, n3, nZ0));
-            idx = max(1, min(n3, idx));
-            bgOut = tmp(:,:,idx);
+        if ndims(U) == 3
+            n3 = size(U,3);
+            tmp = zeros(ny0, nx0, n3);
+
+            for kk = 1:n3
+                if size(U,1) == ny0 && size(U,2) == nx0
+                    tmp(:,:,kk) = U(:,:,kk);
+                else
+                    try
+                        tmp(:,:,kk) = imresize(U(:,:,kk), [ny0 nx0], 'bilinear');
+                    catch
+                        tmp(:,:,kk) = 0;
+                    end
+                end
+            end
+
+            if nZ0 > 1 && n3 == nZ0
+                bgOut = tmp;
+            elseif nZ0 == 1
+                bgOut = mean(tmp, 3);
+            else
+                idx = round(linspace(1, n3, nZ0));
+                idx = max(1, min(n3, idx));
+                bgOut = tmp(:,:,idx);
+            end
+            return;
         end
-        return;
-    end
-end
-
-
-function M = readMaskFileForVideo(f)
-    if ~exist(f,'file')
-        error('Mask file not found: %s', f);
     end
 
-    isNiiGz = numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz');
-
-    if isNiiGz
-        tmpDir = tempname;
-        mkdir(tmpDir);
-        gunzip(f, tmpDir);
-        d = dir(fullfile(tmpDir, '*.nii'));
-        if isempty(d)
-            error('gunzip failed for: %s', f);
-        end
-        niiFile = fullfile(tmpDir, d(1).name);
-        M = logical(niftiread(niiFile));
-        try, rmdir(tmpDir,'s'); catch, end
-        return;
-    end
-
-    [~,~,ext] = fileparts(f);
-    ext = lower(ext);
-
-    if strcmp(ext,'.nii')
-        M = logical(niftiread(f));
-        return;
-    end
-
-    if strcmp(ext,'.mat')
-        S = load(f);
-        [M,~,~,~] = normalizeMaskInputForVideo(S, true, [], 1, 1, 1, 1, 1); %#ok<ASGLU>
-        error('Internal MAT load path should not call readMaskFileForVideo directly.');
-    end
-
-    error('Unsupported mask file type: %s', ext);
-end
-
-
-function BM = deriveBrainMaskFromUnderlayVideo(bgIn, ny0, nx0, nZ0)
-    BM = [];
-
-    if isempty(bgIn) || ~(isnumeric(bgIn) || islogical(bgIn))
-        return;
-    end
-
-    U = double(bgIn);
-
-    if ndims(U) == 3 && size(U,3) == 3
-        U = toGray(U);
-    end
-
-    if ndims(U) == 2
-        BM = U ~= 0;
-        if size(BM,1) ~= ny0 || size(BM,2) ~= nx0
-            BM = resizeLogical2D(BM, ny0, nx0);
-        end
-        if nZ0 > 1
-            BM = repmat(BM, [1 1 nZ0]);
-        end
-        return;
-    end
-
-    if ndims(U) == 3
-        n3 = size(U,3);
-        tmp = false(ny0, nx0, n3);
-        for kk = 1:n3
-            tmp(:,:,kk) = resizeLogical2D(U(:,:,kk) ~= 0, ny0, nx0);
+    function M = readMaskFileForVideo(f)
+        if ~exist(f,'file')
+            error('Mask file not found: %s', f);
         end
 
-        if nZ0 > 1 && n3 == nZ0
-            BM = tmp;
-        else
-            BM = any(tmp, 3);
+        isNiiGz = numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz');
+
+        if isNiiGz
+            tmpDir = tempname;
+            mkdir(tmpDir);
+            gunzip(f, tmpDir);
+            d = dir(fullfile(tmpDir, '*.nii'));
+            if isempty(d)
+                error('gunzip failed for: %s', f);
+            end
+            niiFile = fullfile(tmpDir, d(1).name);
+            M = logical(niftiread(niiFile));
+            try, rmdir(tmpDir,'s'); catch, end
+            return;
+        end
+
+        [~,~,ext] = fileparts(f);
+        ext = lower(ext);
+
+        if strcmp(ext,'.nii')
+            M = logical(niftiread(f));
+            return;
+        end
+
+        if strcmp(ext,'.mat')
+            S = load(f); %#ok<NASGU>
+            error('Internal MAT load path should not call readMaskFileForVideo directly.');
+        end
+
+        error('Unsupported mask file type: %s', ext);
+    end
+
+    function BM = deriveBrainMaskFromUnderlayVideo(bgIn, ny0, nx0, nZ0)
+        BM = [];
+
+        if isempty(bgIn) || ~(isnumeric(bgIn) || islogical(bgIn))
+            return;
+        end
+
+        U = double(bgIn);
+
+        if ndims(U) == 3 && size(U,3) == 3
+            U = toGray(U);
+        end
+
+        if ndims(U) == 2
+            BM = U ~= 0;
+            if size(BM,1) ~= ny0 || size(BM,2) ~= nx0
+                BM = resizeLogical2D(BM, ny0, nx0);
+            end
             if nZ0 > 1
                 BM = repmat(BM, [1 1 nZ0]);
             end
+            return;
         end
-        return;
-    end
 
-    while ndims(U) > 3
-        U = mean(U, ndims(U));
-    end
-
-    if ndims(U) == 3
-        BM = deriveBrainMaskFromUnderlayVideo(U, ny0, nx0, nZ0);
-    else
-        BM = [];
-    end
-end
-
-
-function startPath = getStartPath()
-    startPath = '';
-
-    candDirs = {};
-
-    try
-        if isstruct(par)
-            if isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
-                candDirs{end+1} = char(par.exportPath); %#ok<AGROW>
+        if ndims(U) == 3
+            n3 = size(U,3);
+            tmp = false(ny0, nx0, n3);
+            for kk = 1:n3
+                tmp(:,:,kk) = resizeLogical2D(U(:,:,kk) ~= 0, ny0, nx0);
             end
-            if isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath,'dir') == 7
-                candDirs{end+1} = char(par.loadedPath); %#ok<AGROW>
-            end
-            if isfield(par,'rawPath') && ~isempty(par.rawPath) && exist(par.rawPath,'dir') == 7
-                candDirs{end+1} = char(par.rawPath); %#ok<AGROW>
-            end
-            if isfield(par,'loadedFile') && ~isempty(par.loadedFile)
-                lf = char(par.loadedFile);
-                if exist(lf,'file') == 2
-                    candDirs{end+1} = fileparts(lf); %#ok<AGROW>
+
+            if nZ0 > 1 && n3 == nZ0
+                BM = tmp;
+            else
+                BM = any(tmp, 3);
+                if nZ0 > 1
+                    BM = repmat(BM, [1 1 nZ0]);
                 end
             end
+            return;
         end
-    catch
+
+        while ndims(U) > 3
+            U = mean(U, ndims(U));
+        end
+
+        if ndims(U) == 3
+            BM = deriveBrainMaskFromUnderlayVideo(U, ny0, nx0, nZ0);
+        else
+            BM = [];
+        end
     end
 
-    candDirs{end+1} = pwd; %#ok<AGROW>
+    function startPath = getStartPath()
+        startPath = '';
 
-    for ii = 1:numel(candDirs)
-        d = candDirs{ii};
+        candDirs = {};
+
         try
-            if ~isempty(d) && exist(d,'dir') == 7
-                startPath = d;
-                return;
+            if isstruct(par)
+                if isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
+                    candDirs{end+1} = char(par.exportPath);
+                end
+                if isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath,'dir') == 7
+                    candDirs{end+1} = char(par.loadedPath);
+                end
+                if isfield(par,'rawPath') && ~isempty(par.rawPath) && exist(par.rawPath,'dir') == 7
+                    candDirs{end+1} = char(par.rawPath);
+                end
+                if isfield(par,'loadedFile') && ~isempty(par.loadedFile)
+                    lf = char(par.loadedFile);
+                    if exist(lf,'file') == 2
+                        candDirs{end+1} = fileparts(lf);
+                    end
+                end
             end
         catch
         end
+
+        candDirs{end+1} = pwd;
+
+        for ii = 1:numel(candDirs)
+            d = candDirs{ii};
+            try
+                if ~isempty(d) && exist(d,'dir') == 7
+                    startPath = d;
+                    return;
+                end
+            catch
+            end
+        end
+
+        startPath = pwd;
     end
 
-    startPath = pwd;
-end
     function s = safeStr(x)
         s = '';
         try
