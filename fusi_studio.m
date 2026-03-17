@@ -2,7 +2,7 @@ function fusi_studio
 clc;
 
 %% =========================================================
-%  SECTION A — INTERNAL STATE & GUI CONSTRUCTION
+%  SECTION A - INTERNAL STATE & GUI CONSTRUCTION
 % =========================================================
 studio = struct();
 studio.datasets = struct();      % raw + preproc + PSC versions
@@ -41,12 +41,18 @@ studio.pipeline = struct( ...
 % =========================================================
 fig = figure('Name','HUMoR Analysis Tool', ...
     'Color',[0.05 0.05 0.05], ...
-    'Position',[100 -200 1900 1080], ...
+    'Units','normalized', ...
+    'Position',[0 0 1 1], ...
     'MenuBar','none', ...
     'ToolBar','none', ...
     'NumberTitle','off', ...
+    'Resize','on', ...
     'CloseRequestFcn',@onCloseStudio);
 
+try
+    set(fig,'WindowState','maximized');
+catch
+end
 studio.figure = fig;
 guidata(fig, studio);
 
@@ -56,8 +62,8 @@ guidata(fig, studio);
 uicontrol(fig,'Style','text', ...
     'String','HUMoR Analysis Tool', ...
     'Units','normalized', ...
-    'Position',[0.52 0.95 0.35 0.04], ...
-    'FontSize',26, ...
+    'Position',[0.61 0.945 0.26 0.045], ...
+    'FontSize',32, ...
     'FontWeight','bold', ...
     'ForegroundColor',[0.95 0.95 0.95], ...
     'BackgroundColor',[0.05 0.05 0.05], ...
@@ -69,7 +75,7 @@ uicontrol(fig,'Style','text', ...
 leftWidth = 0.45;
 leftPanel = uipanel(fig, ...
     'Units','normalized', ...
-    'Position',[0.03 0.10 leftWidth 0.83], ...
+    'Position',[0.03 0.095 leftWidth 0.875], ...
     'BackgroundColor',[0.07 0.07 0.07], ...
     'BorderType','none');
 
@@ -79,7 +85,7 @@ leftPanel = uipanel(fig, ...
 logPanel = uipanel(fig, ...
     'Title','Studio Log', ...
     'Units','normalized', ...
-    'Position',[0.50 0.19 0.47 0.70], ...
+    'Position',[0.50 0.18 0.47 0.71], ...
     'BackgroundColor',[0.07 0.07 0.07], ...
     'ForegroundColor','w', ...
     'FontSize',14, ...
@@ -87,28 +93,39 @@ logPanel = uipanel(fig, ...
 
 activeDatasetText = uicontrol(fig,'Style','text', ...
     'Units','normalized', ...
-    'Position',[0.50 0.91 0.47 0.04], ...
+    'Position',[0.50 0.905 0.39 0.04], ...
     'FontSize',14, ...
     'FontWeight','bold', ...
     'ForegroundColor',[0.3 0.9 0.3], ...
     'BackgroundColor',[0.05 0.05 0.05], ...
     'HorizontalAlignment','left', ...
-    'String','ACTIVE DATASET: none');
+    'String','ACTIVE DATASET: none', ...
+    'TooltipString','ACTIVE DATASET: none');
 
 studio = guidata(fig);
 studio.activeDatasetText = activeDatasetText;
 guidata(fig,studio);
 
-logBox = uicontrol(logPanel,'Style','listbox', ...
-    'Units','normalized', ...
-    'Position',[0.02 0.02 0.96 0.94], ...
-    'BackgroundColor',[0 0 0], ...
-    'ForegroundColor',[0.6 0.85 1], ...
-    'FontName','Courier New', ...
-    'FontSize',11);
+addStudioIcon();
+
+% -------- Java-based log box: selectable, copyable, multi-line --------
+jLog = javaObjectEDT('javax.swing.JTextArea');
+jLog.setEditable(false);
+jLog.setLineWrap(true);
+jLog.setWrapStyleWord(true);
+jLog.setFont(java.awt.Font('Monospaced', java.awt.Font.PLAIN, 16));
+jLog.setBackground(java.awt.Color(0,0,0));
+jLog.setForeground(java.awt.Color(0.60,0.85,1.00));
+jLog.setText('');
+
+jScroll = javaObjectEDT('javax.swing.JScrollPane', jLog);
+
+[jScrollH, hLogContainer] = javacomponent(jScroll, [1 1 1 1], logPanel); %#ok<JAVCM>
+set(hLogContainer, 'Units','normalized', 'Position',[0.02 0.02 0.96 0.94]);
 
 studio = guidata(fig);
-studio.logBox = logBox;
+studio.logBox = hLogContainer;   % container handle
+studio.logBoxJava = jLog;        % actual Java text area
 guidata(fig, studio);
 
 addLog('fUSI Studio initialized.');
@@ -116,7 +133,7 @@ addLog('fUSI Studio initialized.');
 %% =========================================================
 %  SECTION DEFINITIONS
 % =========================================================
-sectionHeights = [0.11 0.11 0.20 0.11 0.12 0.10 0.12];
+sectionHeights = [0.115 0.115 0.205 0.115 0.125 0.105 0.125];
 
 titles = { ...
     '1. Dataset', ...
@@ -130,7 +147,7 @@ titles = { ...
 buttons = { ...
     {'Load fUSI Data'}, ...
     {'Full QC','Specific QC'}, ...
-    {'Frame Rejection','Subsampling','Scrubbing','Motor'}, ...
+    {'Frame Rejection','Imregdemons','Scrubbing','Motor'}, ...
     {'Temporal smoothing','Filtering', 'PCA', 'Despike'}, ...
     {'Time-Course Viewer','SCM','Video & SCM Mask', 'Mask Editor'}, ...
     {'Registration to Atlas','Segmentation'}, ...
@@ -139,8 +156,8 @@ buttons = { ...
 %% =========================================================
 %  SECTION RENDERING LOOP
 % =========================================================
-gapBetweenSections = 0.016;
-y = 0.98;
+gapBetweenSections = 0.010;
+y = 0.996;
 
 for i = 1:length(sectionHeights)
 
@@ -156,8 +173,8 @@ for i = 1:length(sectionHeights)
         'FontSize',16, ...
         'FontWeight','bold', ...
         'BorderType','line', ...
-        'HighlightColor',[1 1 1], ...
-        'ShadowColor',[1 1 1]);
+        'HighlightColor',[0.90 0.90 0.90], ...
+        'ShadowColor',[0.90 0.90 0.90]);
 
     drawButtons(panel, buttons{i}, i);
 
@@ -169,7 +186,7 @@ end
 % =========================================================
 statusPanel = uipanel(fig, ...
     'Units','normalized', ...
-    'Position',[0.03 0.05 leftWidth 0.055], ...
+    'Position',[0.03 0.04 leftWidth 0.055], ...
     'BorderType','line', ...
     'HighlightColor',[0 0 0], ...
     'ShadowColor',[0 0 0]);
@@ -191,7 +208,7 @@ setProgramStatus(false);
 %% =========================================================
 %  BOTTOM HELP/CLOSE/EXPORT SESSION BUTTONS
 % =========================================================
-btnY = 0.05;
+btnY = 0.04;
 btnH = 0.055;
 
 uicontrol(fig,'Style','pushbutton', ...
@@ -241,7 +258,7 @@ studio = guidata(fig);
 
 footerText = uicontrol(fig,'Style','text', ...
     'Units','normalized', ...
-    'Position',[0.50 0.008 0.47 0.028], ...
+    'Position',[0.50 0.006 0.47 0.024], ...
     'BackgroundColor',[0.05 0.05 0.05], ...
     'ForegroundColor',[0.70 0.70 0.70], ...
     'FontName','Arial', ...
@@ -260,70 +277,63 @@ function drawButtons(parent, btns, sectionIndex)
 
     studio = guidata(fig);
 
-    % Normal two-column layout EXCEPT Section 1
     n = length(btns);
-    cols = 2;
-    btnWidth  = 0.40;
-    btnHeight = 0.40;
-    xGap = 0.10;
-    yStart = 0.55;
-    yGap = 0.48;
+
+    if sectionIndex == 1 && n == 1 && strcmp(btns{1},'Load fUSI Data')
+
+        loadBtn = uicontrol(parent, ...
+            'Style','pushbutton', ...
+            'String','Load fUSI Data', ...
+            'Units','normalized', ...
+            'Position',[0.08 0.46 0.40 0.36], ...
+            'FontWeight','bold', ...
+            'FontSize',14, ...
+            'ForegroundColor','w', ...
+            'Enable','on', ...
+            'BackgroundColor',[0.35 0.35 0.35], ...
+            'Callback',@loadDataCallback);
+
+        studio.allButtons{end+1} = loadBtn;
+
+        uicontrol(parent, ...
+            'Style','popupmenu', ...
+            'String',{'<none>'}, ...
+            'Units','normalized', ...
+            'Position',[0.54 0.46 0.38 0.36], ...
+            'BackgroundColor',[0.2 0.2 0.2], ...
+            'ForegroundColor','w', ...
+            'FontSize',13, ...
+            'Callback',@datasetDropdownCallback, ...
+            'Tag','datasetDropdown', ...
+            'UserData',{{}}, ...
+            'TooltipString','Select active dataset');
+
+        guidata(fig, studio);
+        return;
+    end
+
+    if n == 2
+        positions = [ ...
+            0.08 0.29 0.38 0.42; ...
+            0.54 0.29 0.38 0.42];
+    elseif n == 4
+        positions = [ ...
+            0.08 0.57 0.38 0.28; ...
+            0.54 0.57 0.38 0.28; ...
+            0.08 0.17 0.38 0.28; ...
+            0.54 0.17 0.38 0.28];
+    else
+        positions = zeros(n,4);
+        for kk = 1:n
+            positions(kk,:) = [0.14 0.30 0.72 0.40];
+        end
+    end
 
     for k = 1:n
         label = btns{k};
-        
-        % ------------------------------------------------------
-        % -------- SPECIAL: SECTION 1 (Load + Dropdown) --------
-        % ------------------------------------------------------
-        if sectionIndex == 1 && strcmp(label,'Load fUSI Data')
-
-            xpos = 0.08;
-            ypos = yStart;
-
-            loadBtn = uicontrol(parent, ...
-                'Style','pushbutton', ...
-                'String','Load fUSI Data', ...
-                'Units','normalized', ...
-                'Position',[xpos ypos btnWidth btnHeight], ...
-                'FontWeight','bold', ...
-                'FontSize',14, ...
-                'ForegroundColor','w', ...
-                'Enable','on', ...
-                'BackgroundColor',[0.35 0.35 0.35], ...
-                'Callback',@loadDataCallback);
-
-            studio.allButtons{end+1} = loadBtn;
-
-            % -------- DROPDOWN to choose data type--------
-            ddX = xpos + btnWidth + 0.06;
-
-            uicontrol(parent, ...
-                'Style','popupmenu', ...
-                'String',{'<none>'}, ...
-                'Units','normalized', ...
-                'Position',[ddX ypos btnWidth btnHeight], ...
-                'BackgroundColor',[0.2 0.2 0.2], ...
-                'ForegroundColor','w', ...
-                'FontSize',13, ...
-                'Callback',@datasetDropdownCallback, ...
-                'Tag','datasetDropdown', ...
-                'UserData',{{}});
-
-            guidata(fig, studio);
-            return;
-        end
-
-        % -------- ALL OTHER BUTTONS in GUI --------
-        r = floor((k-1)/cols);
-        c = mod(k-1, cols);
-
-        xpos = 0.08 + c*(btnWidth + xGap);
-        ypos = yStart - r*yGap;
 
         callback = @dummyNotImplemented;
 
-        % This connects the drawn buttons with the respective Callbacks for
-        % functionality in the code 
         labelKey = lower(regexprep(strtrim(label),'\s+',' '));
 
         switch labelKey
@@ -331,20 +341,19 @@ function drawButtons(parent, btns, sectionIndex)
             case 'specific qc',             callback = @runSpecificQCCallback;
             case 'frame rejection',         callback = @frameRateCallback;
             case 'subsampling',             callback = @gabrielCallback;
+            case 'imregdemons',             callback = @gabrielCallback;
             case 'scrubbing',               callback = @scrubbingCallback;
             case 'motor',                   callback = @stepMotorCallback;
-          
-            case 'temporal smoothing',        callback = @temporalSmoothingCallback;
+            case 'temporal smoothing',      callback = @temporalSmoothingCallback;
             case 'filtering',               callback = @filteringCallback;
             case 'pca',                     callback = @pcaCallback;
             case 'despike',                 callback = @despikeCallback;
             case 'time-course viewer',      callback = @liveViewerCallback;
             case 'scm',                     callback = @scmCallback;
-            % IMPORTANT FIX: this label must match after lower()
             case 'video & scm mask',        callback = @videoGUICallback;
             case 'mask editor',             callback = @maskEditorCallback;
             case 'registration to atlas',   callback = @coregCallback;
-                case 'segmentation',            callback = @segmentationCallback;
+            case 'segmentation',            callback = @segmentationCallback;
             case 'functional connectivity', callback = @functionalConnectivityCallback;
             case 'group analysis',          callback = @groupAnalysisCallback;
         end
@@ -353,7 +362,7 @@ function drawButtons(parent, btns, sectionIndex)
             'Style','pushbutton', ...
             'String',label, ...
             'Units','normalized', ...
-            'Position',[xpos ypos btnWidth btnHeight], ...
+            'Position',positions(k,:), ...
             'FontWeight','bold', ...
             'FontSize',14, ...
             'ForegroundColor','w', ...
@@ -367,14 +376,14 @@ function drawButtons(parent, btns, sectionIndex)
 end
 
 %% =========================================================
-%  DUMMY PLACEHER: Only use if a button function is not implemented yet!
+%  DUMMY PLACEHOLDER: Only use if a button function is not implemented yet
 % =========================================================
 function dummyNotImplemented(~,~)
     addLog('This module is not implemented yet.');
 end
 
 %% =========================================================
-%  SECTION B — CORE CALLBACKS - MAIN SECTION
+%  SECTION B - CORE CALLBACKS - MAIN SECTION
 % =========================================================
 
 %% =========================================================
@@ -407,8 +416,8 @@ function loadDataCallback(~,~)
     studio.loadedPath = '';
     studio.exportPath = '';
     studio.publicationReady = [];
-studio.publicationReadyNote = '';
-studio.publicationReadyTime = '';
+    studio.publicationReadyNote = '';
+    studio.publicationReadyTime = '';
     studio.atlasTransform = [];
     studio.atlasTransformFile = '';
     studio.pipeline = struct( ...
@@ -420,7 +429,7 @@ studio.publicationReadyTime = '';
 
     guidata(fig,studio);
 
-    fallbackTR = 0.32; %for 2D probe when 16x0.02s
+    fallbackTR = 0.32; % for 2D probe when 16x0.02s
 
     try
         [data, meta] = loadFUSIData(fullfile(path,file), fallbackTR);
@@ -662,12 +671,12 @@ function gabrielCallback(~,~)
     % 1) Ask Mean vs Median FIRST
     % ---------------------------------------------------------
     ch = questdlg( ...
-        'Subsampling: use MEDIAN (robust) or MEAN?', ...
-        'Gabriel Subsampling', ...
+        'Imregdemons: use MEDIAN (robust) or MEAN?', ...
+        'Imregdemons', ...
         'Median','Mean','Cancel','Median');
 
     if isempty(ch) || strcmpi(ch,'Cancel')
-        addLog('Gabriel preprocessing cancelled.');
+        addLog('Imregdemons preprocessing cancelled.');
         return;
     end
 
@@ -677,9 +686,9 @@ function gabrielCallback(~,~)
     % 2) THEN ask nsub
     % ---------------------------------------------------------
     answ = inputdlg({'Enter subsampling factor (nsub >= 2):'}, ...
-        'Gabriel Preprocessing', 1, {'50'});
+        'Imregdemons', 1, {'50'});
     if isempty(answ)
-        addLog('Gabriel preprocessing cancelled.');
+        addLog('Imregdemons preprocessing cancelled.');
         return;
     end
 
@@ -689,14 +698,14 @@ function gabrielCallback(~,~)
     end
 
     setProgramStatus(false);
-    addLog(sprintf('Running Gabriel preprocessing (%s, nsub = %d)...', upper(blockMethod), nsub));
+    addLog(sprintf('Running Imregdemons preprocessing (%s, nsub = %d)...', upper(blockMethod), nsub));
     drawnow;
 
     data = getActiveData();
 
     opts = struct();
     opts.nsub        = nsub;
-    opts.blockMethod = blockMethod;     % <<< NEW: pass choice
+    opts.blockMethod = blockMethod;
     opts.regSmooth   = 1.3;
     opts.saveQC      = true;
     opts.showQC      = false;
@@ -717,7 +726,7 @@ function gabrielCallback(~,~)
         ts = datestr(now,'yyyymmdd_HHMMSS');
         baseName = studio.activeDataset;
 
-        % optional: include method + nsub in saved name
+        % Keep saved names compatible with current pipeline
         fullName = sprintf('%s_gabriel_%s_nsub%d_%s', baseName, blockMethod, nsub, ts);
 
         keyName = makeSafeKey(fullName, studio.datasets);
@@ -730,11 +739,11 @@ function gabrielCallback(~,~)
         guidata(fig, studio);
         refreshDatasetDropdown();
 
-        addLog(['Gabriel preprocessing -> ' fullName]);
+        addLog(['Imregdemons preprocessing -> ' fullName]);
 
     catch ME
-        addLog(['GABRIEL ERROR: ' ME.message]);
-        errordlg(ME.message,'Gabriel Failure');
+        addLog(['IMREGDEMONS ERROR: ' ME.message]);
+        errordlg(ME.message,'Imregdemons Failure');
     end
 
     setProgramStatus(true);
@@ -1028,8 +1037,6 @@ function despikeCallback(~,~)
     setProgramStatus(true);
 end
 
-
-
 %% =========================================================
 %  TEMPORAL SMOOTHING (sliding moving-average)
 % =========================================================
@@ -1111,6 +1118,7 @@ function temporalSmoothingCallback(~,~)
 
     setProgramStatus(true);
 end
+
 %% =========================================================
 %  PCA
 % =========================================================
@@ -1199,7 +1207,7 @@ function pcaCallback(~,~)
             addLog('PCA applied: no components selected. Please wait...');
         else
             sel = unique(sel(:)');
-            addLog(['PCA applied, dropping PCs: ' sprintf('%d ', sel) '— please wait...']);
+            addLog(['PCA applied, dropping PCs: ' sprintf('%d ', sel) ' - please wait...']);
         end
         drawnow;
     end
@@ -1418,10 +1426,9 @@ function coregCallback(~,~)
     setProgramStatus(true);
 end
 
-
 %% =========================================================
 %  SEGMENTATION
-%% =========================================================
+% =========================================================
 function segmentationCallback(~,~)
 
     studio = guidata(fig);
@@ -1564,7 +1571,7 @@ function functionalConnectivityCallback(src,~)
 end
 
 %% =========================================================
-%  SECTION D — VISUALIZATION CALLBACKS
+%  SECTION D - VISUALIZATION CALLBACKS
 % =========================================================
 
 %% ---------------------------------------------------------
@@ -1616,7 +1623,7 @@ function liveViewerCallback(~,~)
 end
 
 %% ---------------------------------------------------------
-%  SCM GUI CALLBACK (UNDERLAY SELECTION) — UPDATED
+%  SCM GUI CALLBACK (UNDERLAY SELECTION) - UPDATED
 % ---------------------------------------------------------
 function scmCallback(src,~)
 
@@ -1719,10 +1726,7 @@ function scmCallback(src,~)
 end
 
 %% ---------------------------------------------------------
-%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)
-% ---------------------------------------------------------
-%% ---------------------------------------------------------
-%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY)  — UPDATED (UNDERLAY CHOOSER)
+%  VIDEO GUI CALLBACK (ACTIVE DATASET ONLY) - UPDATED
 % ---------------------------------------------------------
 function videoGUICallback(~,~)
 
@@ -1854,6 +1858,7 @@ function videoGUICallback(~,~)
         setProgramStatus(true);
     end
 end
+
 %% ---------------------------------------------------------
 %  MASK EDITOR CALLBACK (STANDALONE)
 % ---------------------------------------------------------
@@ -1929,12 +1934,11 @@ function datasetDropdownCallback(src,~)
     guidata(fig, studio);
 
     if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
-        showName = makeDropdownLabel(getDatasetDisplayName(studio, studio.activeDataset));
-        maxLen = 90;
-        if length(showName) > maxLen
-            showName = [showName(1:maxLen) '...'];
-        end
-        set(studio.activeDatasetText,'String',['ACTIVE DATASET: ' showName]);
+        fullName = getDatasetDisplayName(studio, studio.activeDataset);
+        showName = makeDropdownLabel(fullName);
+        set(studio.activeDatasetText, ...
+            'String',['ACTIVE DATASET: ' showName], ...
+            'TooltipString',['ACTIVE DATASET: ' fullName]);
     end
 end
 
@@ -1973,12 +1977,11 @@ function refreshDatasetDropdown()
     set(dd,'Value',idx);
 
     if isfield(studio,'activeDatasetText') && isgraphics(studio.activeDatasetText)
-        showName = getDatasetDisplayName(studio, studio.activeDataset);
-        maxLen = 90;
-        if length(showName) > maxLen
-            showName = [showName(1:maxLen) '...'];
-        end
-        set(studio.activeDatasetText,'String',['ACTIVE DATASET: ' showName]);
+        fullName = getDatasetDisplayName(studio, studio.activeDataset);
+        showName = makeDropdownLabel(fullName);
+        set(studio.activeDatasetText, ...
+            'String',['ACTIVE DATASET: ' showName], ...
+            'TooltipString',['ACTIVE DATASET: ' fullName]);
     end
 
     guidata(fig, studio);
@@ -2066,15 +2069,26 @@ function exportSessionCallback(~,~)
         return;
     end
 
+  if isfield(studio,'logBoxJava') && ~isempty(studio.logBoxJava)
+    rawText = char(studio.logBoxJava.getText());
+    if isempty(strtrim(rawText))
+        errordlg('Studio log is empty.');
+        return;
+    end
+    logContent = regexp(rawText, '\r\n|\n|\r', 'split');
+else
     logContent = get(studio.logBox,'String');
     if isempty(logContent)
         errordlg('Studio log is empty.');
         return;
     end
 
-    if ~iscell(logContent)
+    if ischar(logContent)
+        logContent = cellstr(logContent);
+    elseif ~iscell(logContent)
         logContent = {logContent};
     end
+end
 
     % Optional publication-ready popup
     choice = questdlg( ...
@@ -2222,6 +2236,7 @@ function markPublicationReadyCallback(~,~)
         errordlg(ME.message,'Publication Ready Save Error');
     end
 end
+
 %% =========================================================
 %  HELP BUTTON
 % =========================================================
@@ -2250,71 +2265,262 @@ function helpCallback(~,~)
         'FontName','Arial', ...
         'FontSize',14);
 
-    guide = {
-    '==========================================================================='
-    '                        fUSI STUDIO - COMPLETE GUIDE'
-    '==========================================================================='
-    ''
-    'OVERVIEW'
-    '-------------------------------------------------------------------------'
-    'fUSI Studio is a structured processing and analysis environment for'
-    'functional ultrasound imaging (fUSI).'
-    ''
-    'Supported data formats:'
-    '  - 2D probe  : Y x X x T'
-    '  - 3D matrix : Y x X x Z x T'
-    ''
-    'When loading a dataset, the system automatically:'
-    '  - Extracts TR (temporal resolution)'
-    '  - Computes number of volumes'
-    '  - Computes total acquisition time'
-    '  - Detects probe type (2D or 3D)'
-    '  - Creates a mirrored AnalysedData folder'
-    '  - Creates subfolders: QC / Preprocessing / PSC / Visualization'
-    ''
-    '==========================================================================='
-    'RECOMMENDED WORKFLOW'
-    '==========================================================================='
-    '1) Load Data'
-    '2) Run Full QC'
-    '3) Apply Frame Rejection or Scrubbing'
-    '4) (Optional) Filtering / PCA / Despike'
-    '5) Visualization (Live / SCM / Video)'
-    '6) Atlas registration'
-    '7) Connectivity or Group Analysis'
-    '==========================================================================='
-    };
+ guide = {
+'==========================================================================='
+'                        fUSI STUDIO - COMPLETE GUIDE'
+'==========================================================================='
+''
+'OVERVIEW'
+'-------------------------------------------------------------------------'
+'fUSI Studio is a structured processing and analysis environment for'
+'functional ultrasound imaging (fUSI). It helps you load datasets, inspect'
+'quality, run preprocessing, create masks, register data to atlas space,'
+'visualize signal changes, and perform higher-level analyses.'
+''
+'Supported data formats:'
+'  - 2D probe  : Y x X x T'
+'  - 3D matrix : Y x X x Z x T'
+''
+'When loading a dataset, the system automatically:'
+'  - Extracts TR (temporal resolution)'
+'  - Computes number of volumes'
+'  - Computes total acquisition time'
+'  - Detects probe type (2D or 3D)'
+'  - Creates a mirrored AnalysedData folder'
+'  - Creates subfolders: QC / Preprocessing / PSC / Visualization'
+''
+'==========================================================================='
+'RECOMMENDED WORKFLOW'
+'==========================================================================='
+'1) Load Data'
+'2) QC'
+'3) Run Pre-Processing'
+'4) Mask Editor'
+'5) Registration to Atlas'
+'6) Visualization (SCM / Video / Time-Course Viewer)'
+'7) Further Processing'
+'8) Group Analysis / Functional Connectivity'
+''
+'==========================================================================='
+'STEP-BY-STEP GUIDE'
+'==========================================================================='
+''
+'1) LOAD DATA'
+'-------------------------------------------------------------------------'
+'Use "Load fUSI Data" to open a raw or previously processed dataset.'
+'This is always the first step. Once loaded, Studio prepares the export'
+'folder structure and enables the remaining modules.'
+''
+'Typical purpose:'
+'  - Start a new analysis'
+'  - Reload an already processed dataset'
+'  - Switch between raw and processed data versions via dropdown'
+''
+'What to check after loading:'
+'  - Correct dimensions'
+'  - Correct TR'
+'  - Correct number of volumes'
+'  - Correct dataset path'
+''
+'2) QC'
+'-------------------------------------------------------------------------'
+'Run quality control to inspect whether the dataset is stable and usable'
+'before further analysis. QC helps you detect motion, instability, noise,'
+'bursts, dropped frames, weak signal, or other acquisition issues.'
+''
+'Available options include for example:'
+'  - Frequency QC'
+'  - Spatial QC'
+'  - Temporal QC'
+'  - Motion QC'
+'  - Stability QC'
+'  - Frame-rate QC'
+'  - PCA QC'
+'  - Burst / CNR / Common-mode QC'
+''
+'Recommended use:'
+'  - Run Full QC first for a complete overview'
+'  - Use Specific QC if you only want selected checks'
+''
+'3) RUN PRE-PROCESSING'
+'-------------------------------------------------------------------------'
+'This stage is for major cleanup or restructuring of the raw data before'
+'visual inspection and downstream analysis.'
+''
+'Modules in this stage include for example:'
+'  - Frame Rejection'
+'  - Imregdemons'
+'  - Scrubbing'
+'  - Motor'
+''
+'What they generally do:'
+'  - Frame Rejection: identifies unstable or corrupted time points and can'
+'    interpolate rejected volumes'
+'  - Imregdemons: performs your subsampling/block-based preprocessing step'
+'    with mean or median aggregation'
+'  - Scrubbing: removes or interpolates problematic time points based on'
+'    signal outliers'
+'  - Motor: reconstructs motor-acquired slice sequences for 2D probe data'
+''
+'Recommended use:'
+'  - Do this after QC'
+'  - Choose the preprocessing path depending on dataset quality and'
+'    acquisition type'
+''
+'4) MASK EDITOR'
+'-------------------------------------------------------------------------'
+'Mask Editor is used to define the region of interest for downstream'
+'visualization and analysis. It lets you create or refine a brain mask and'
+'store it inside Studio for later reuse.'
+''
+'Typical purpose:'
+'  - Remove background / non-brain signal'
+'  - Restrict analysis to relevant anatomy'
+'  - Save a consistent mask for SCM, Video GUI, or further analysis'
+''
+'Why this step matters:'
+'  - Cleaner overlays'
+'  - Better interpretability'
+'  - Reduced influence of irrelevant areas'
+''
+'5) REGISTRATION TO ATLAS'
+'-------------------------------------------------------------------------'
+'Use "Registration to Atlas" to align your functional or anatomical data'
+'to atlas space. This is useful when you want anatomical correspondence,'
+'region-based interpretation, or segmentation in atlas coordinates.'
+''
+'Typical purpose:'
+'  - Align brain anatomy to a reference atlas'
+'  - Prepare for atlas-based interpretation'
+'  - Support later segmentation or region labeling'
+''
+'Recommended order:'
+'  - Usually after preprocessing and mask creation'
+'  - Before segmentation or atlas-guided interpretation'
+''
+'6) VISUALIZATION (SCM / VIDEO / TIME-COURSE VIEWER)'
+'-------------------------------------------------------------------------'
+'Visualization helps you inspect the dataset interactively after basic'
+'cleanup and masking.'
+''
+'Main tools:'
+'  - Time-Course Viewer: inspect signal evolution over time'
+'  - SCM: inspect signal change maps and ROI-based responses'
+'  - Video & SCM Mask: explore temporal dynamics with overlays and masks'
+''
+'What this step is useful for:'
+'  - Quick biological sanity checks'
+'  - Inspecting activation patterns'
+'  - Comparing different preprocessing outputs'
+'  - Selecting promising datasets for further analysis'
+''
+'7) FURTHER PROCESSING'
+'-------------------------------------------------------------------------'
+'After initial preprocessing, masking, registration, and visualization, you'
+'may optionally apply additional processing modules to refine the signal.'
+''
+'Typical modules include:'
+'  - Temporal smoothing'
+'  - Filtering'
+'  - PCA'
+'  - Despike'
+''
+'What they generally do:'
+'  - Temporal smoothing: smooths signal over time using a moving window'
+'  - Filtering: applies low-pass, high-pass, or band-pass filtering'
+'  - PCA: removes selected principal components as a denoising step'
+'  - Despike: suppresses strong voxel-wise outliers / spikes'
+''
+'Recommended use:'
+'  - Use these only when justified by QC or visualization'
+'  - Keep track of which processed version is most biologically plausible'
+''
+'8) GROUP ANALYSIS / FUNCTIONAL CONNECTIVITY'
+'-------------------------------------------------------------------------'
+'These are the higher-level analysis modules for downstream interpretation.'
+''
+'Group Analysis is useful for:'
+'  - Comparing animals or conditions'
+'  - Plotting ROI-level responses'
+'  - Summarizing results across datasets'
+''
+'Functional Connectivity is useful for:'
+'  - Exploring correlation structure'
+'  - Investigating network-level relationships'
+'  - Studying connectivity patterns across brain regions'
+''
+'Recommended use:'
+'  - Run these after you are satisfied with preprocessing and masking'
+'  - Use the most appropriate processed dataset from the dropdown'
+''
+'==========================================================================='
+'PRACTICAL ADVICE'
+'==========================================================================='
+'  - Keep the raw dataset untouched and use derived versions for processing'
+'  - Use the dataset dropdown to switch between raw and processed outputs'
+'  - Prefer running QC before deciding on preprocessing'
+'  - Use Mask Editor before final visualization and atlas interpretation'
+'  - Apply advanced processing only when it improves interpretability'
+'  - Export the Studio Log to keep a record of your workflow'
+''
+'==========================================================================='
+'END OF GUIDE'
+'==========================================================================='
+};
 
-    set(txtBox,'String',strjoin(guide,newline));
+ set(txtBox,'String',strjoin(guide,newline));
 end
-
 %% =========================================================
 %  LOGGING UTILITY
 % =========================================================
-function addLog(msg)
+    function addLog(msg)
 
     if isempty(fig) || ~ishandle(fig), return; end
 
     studio = guidata(fig);
 
-    if isfield(studio,'logBox') && ~isempty(studio.logBox) && ishghandle(studio.logBox)
-        lb = studio.logBox;
-    else
-        lb = findobj(fig,'Style','listbox');
-        if isempty(lb), return; end
-        lb = lb(1);
+    timestamp = datestr(now,'HH:MM:SS');
+    newEntry = sprintf('[%s] %s', timestamp, msg);
+    wrappedEntries = wrapLogMessage(newEntry, 115);
+
+    % -------- Java log area (preferred) --------
+    if isfield(studio,'logBoxJava') && ~isempty(studio.logBoxJava)
+        try
+            oldText = char(studio.logBoxJava.getText());
+            if isempty(oldText)
+                combined = strjoin(wrappedEntries, sprintf('\n'));
+            else
+                combined = [oldText sprintf('\n') strjoin(wrappedEntries, sprintf('\n'))];
+            end
+
+            studio.logBoxJava.setText(combined);
+            studio.logBoxJava.setCaretPosition(studio.logBoxJava.getDocument().getLength());
+            drawnow;
+            return;
+        catch
+        end
     end
 
-    current = get(lb,'String');
-    if ~iscell(current), current = {current}; end
+    % -------- Fallback --------
+    if isfield(studio,'logBox') && ~isempty(studio.logBox) && ishghandle(studio.logBox)
+        current = get(studio.logBox,'String');
 
-    timestamp = datestr(now,'HH:MM:SS');
-    newEntry = sprintf('[%s] %s',timestamp,msg);
+        if isempty(current)
+            current = {};
+        elseif ischar(current)
+            current = cellstr(current);
+        elseif ~iscell(current)
+            current = {current};
+        end
 
-    set(lb,'String',[current; {newEntry}]);
-    drawnow;
+        if numel(current) == 1 && isempty(strtrim(current{1}))
+            current = {};
+        end
+
+        set(studio.logBox,'String',[current; wrappedEntries(:)]);
+        drawnow;
+    end
 end
-
 %% =========================================================
 %  FOOTER LABEL
 % =========================================================
@@ -2377,22 +2583,34 @@ function label = makeDropdownLabel(fullName)
     ts = regexp(fullName, '_\d{8}_\d{6}', 'match');
 
     if isempty(ts)
-        label = regexprep(fullName,'_+','_');
-        label = regexprep(label,'^_','');
-        label = regexprep(label,'_$','');
-        return;
+        base = fullName;
+        lastTS = '';
+    else
+        lastTS = ts{end};
+        lastTS = lastTS(2:end);
+        base = regexprep(fullName, '_\d{8}_\d{6}', '');
     end
 
-    lastTS = ts{end};
-    lastTS = lastTS(2:end);
-
-    base = regexprep(fullName, '_\d{8}_\d{6}', '');
-
+    base = strrep(base, '_gabriel_', '_imregdemons_');
+    base = strrep(base, '_frrej_', '_frameRej_');
+    base = strrep(base, '_temporal_', '_temp_');
+    base = strrep(base, '_scrub_', '_scrub_');
+    base = strrep(base, '_despike_', '_despike_');
+    base = strrep(base, '_filt_', '_filt_');
+    base = strrep(base, '_pca_', '_pca_');
+    base = strrep(base, '_motor_', '_motor_');
+    base = regexprep(base,'_nsub','_n');
     base = regexprep(base,'_+','_');
     base = regexprep(base,'^_','');
     base = regexprep(base,'_$','');
 
-    label = sprintf('%s (%s)', base, lastTS);
+    if isempty(lastTS)
+        label = base;
+    else
+        label = sprintf('%s (%s)', base, lastTS);
+    end
+
+    label = shortenMiddle(label, 85);
 end
 
 function name = getDatasetDisplayName(studio, key)
@@ -2404,6 +2622,20 @@ function name = getDatasetDisplayName(studio, key)
         end
     catch
     end
+end
+
+function s = shortenMiddle(s, maxLen)
+    if nargin < 2 || isempty(maxLen)
+        maxLen = 85;
+    end
+
+    if length(s) <= maxLen
+        return;
+    end
+
+    nFront = ceil((maxLen - 3) / 2);
+    nBack  = floor((maxLen - 3) / 2);
+    s = [s(1:nFront) '...' s(end-nBack+1:end)];
 end
 
 %% =========================================================
@@ -2443,23 +2675,21 @@ function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
 
         case 4
             % Prefer AnalysedData/<dataset>/Visualization (or dataset folder) as start
-startPath = pwd;
+            startPath = pwd;
 
-if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
-    % try Visualization subfolder first
-    visFolder = fullfile(studio.exportPath,'Visualization');
-    if exist(visFolder,'dir')
-        startPath = visFolder;
-    else
-        startPath = studio.exportPath; % fallback to dataset analysed folder
-    end
+            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+                % try Visualization subfolder first
+                visFolder = fullfile(studio.exportPath,'Visualization');
+                if exist(visFolder,'dir')
+                    startPath = visFolder;
+                else
+                    startPath = studio.exportPath; % fallback to dataset analysed folder
+                end
 
-elseif isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-    % final fallback: raw folder
-    startPath = studio.loadedPath;
-end
-
-
+            elseif isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
+                % final fallback: raw folder
+                startPath = studio.loadedPath;
+            end
 
             [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
                                'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif)'}, ...
@@ -2589,6 +2819,7 @@ function G = toGray(X)
     end
     G = X;
 end
+
 %% =========================================================
 %  SAVE PUBLICATION READY FILE
 % =========================================================
@@ -2639,6 +2870,7 @@ function savePublicationReadyFile(studio, isReady, note)
 
     fclose(fid);
 end
+
 %% =========================================================
 %  MakeSafeKey (struct field-safe, unique, <= namelengthmax)
 % =========================================================
@@ -2695,6 +2927,134 @@ function h = shortHash(s)
 end
 
 %% =========================================================
+%  WRAP LOG MESSAGE
+% =========================================================
+function lines = wrapLogMessage(msg, maxChars)
+
+    if nargin < 2 || isempty(maxChars)
+        maxChars = 115;
+    end
+
+    if isstring(msg)
+        msg = char(msg);
+    end
+
+    rawLines = regexp(msg, '\r\n|\n|\r', 'split');
+    lines = {};
+
+    for ii = 1:numel(rawLines)
+        remLine = rawLines{ii};
+
+        if isempty(remLine)
+            lines{end+1,1} = ''; %#ok<AGROW>
+            continue;
+        end
+
+        while length(remLine) > maxChars
+            seg = remLine(1:maxChars);
+            cut = regexp(seg, '[\\/\s,_:;=-]', 'once');
+            if isempty(cut)
+                cut = maxChars;
+            else
+                allCuts = regexp(seg, '[\\/\s,_:;=-]');
+                cut = allCuts(end);
+            end
+
+            if cut < 1
+                cut = maxChars;
+            end
+
+            lines{end+1,1} = strtrim(remLine(1:cut)); %#ok<AGROW>
+
+            if cut < length(remLine)
+                remLine = ['    ' strtrim(remLine(cut+1:end))];
+            else
+                remLine = '';
+            end
+        end
+
+        if ~isempty(remLine)
+            lines{end+1,1} = remLine; %#ok<AGROW>
+        end
+    end
+end
+
+%% =========================================================
+%  ICON HELPER
+% =========================================================
+function addStudioIcon()
+
+    iconFile = 'D:\Github\HUMOR-Analysis-Tool\Icon.png';
+
+    if ~exist(iconFile,'file')
+        disp(['Icon file not found: ' iconFile]);
+        return;
+    end
+
+    try
+        [img, ~, alpha] = imread(iconFile);
+
+        % ---------- ensure alpha exists ----------
+        if isempty(alpha)
+            alpha = 255 * ones(size(img,1), size(img,2), 'uint8');
+        end
+
+        % ---------- add transparent padding so icon is not cut off ----------
+       padTop    = 90;
+padBottom = 20;
+padLeft   = 20;
+padRight  = 20;
+
+        if ndims(img) == 2
+            img = repmat(img, [1 1 3]);
+        end
+
+        H = size(img,1);
+        W = size(img,2);
+
+        newH = H + padTop + padBottom;
+        newW = W + padLeft + padRight;
+
+        imgPad = uint8(zeros(newH, newW, 3));
+        alphaPad = uint8(zeros(newH, newW));
+
+        imgPad(padTop+1:padTop+H, padLeft+1:padLeft+W, :) = img;
+        alphaPad(padTop+1:padTop+H, padLeft+1:padLeft+W) = alpha;
+
+        % ---------- panel in true top-right ----------
+        iconPanel = uipanel('Parent', fig, ...
+            'Units','normalized', ...
+            'Position',[0.83 0.89 0.14 0.11], ...
+            'BorderType','none', ...
+            'BackgroundColor',[0.05 0.05 0.05]);
+
+        axIcon = axes('Parent', iconPanel, ...
+            'Units','normalized', ...
+            'Position',[0 0 1 1], ...
+            'Visible','off', ...
+            'Color',[0.05 0.05 0.05], ...
+            'XColor',[0.05 0.05 0.05], ...
+            'YColor',[0.05 0.05 0.05]);
+
+        h = image('Parent', axIcon, 'CData', imgPad);
+        set(axIcon,'YDir','reverse');
+xlim(axIcon,[0.5 size(imgPad,2)+0.5]);
+ylim(axIcon,[0.5 size(imgPad,1)+0.5]);
+
+        alphaPad = double(alphaPad);
+        if max(alphaPad(:)) > 1
+            alphaPad = alphaPad ./ 255;
+        end
+        set(h, 'AlphaData', alphaPad);
+
+        axis(axIcon, 'image');
+        axis(axIcon, 'off');
+
+    catch ME
+        disp(['Icon load failed: ' ME.message]);
+    end
+end
+%% =========================================================
 %  CLOSE HANDLER
 % =========================================================
 function onCloseStudio(~,~)
@@ -2703,5 +3063,4 @@ function onCloseStudio(~,~)
     catch
     end
 end
-
 end
