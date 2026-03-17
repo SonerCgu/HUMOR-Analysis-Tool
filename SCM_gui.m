@@ -1,27 +1,23 @@
 function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
 % SCM_gui - Studio version (MATLAB 2017b + 2023b)
 % ==========================================================
-% FEATURES
-%   1) ROI export:
-%      - safe single export only (debounced + lock)
-%      - naming: ROI<set>_d<idx>.txt
-%      - folder: AnalysedData/ROI/<type>/<datasetTag>/
-%   2) ROI tools:
-%      - hover preview
-%      - left click add ROI
-%      - right click remove nearest ROI
-%      - add ROI by typed center x y
-%      - ROI ids shown on image
-%   3) SCM export:
-%      - image export: png/tif/jpg + one-slide PPT if available
-%      - time-series export: tile PNG/TIF/JPG + slide PNGs + PPT if available
-%   4) Defaults in this copy:
-%      - baseline 30-240
-%      - threshold 0
-%      - caxis 0 100
-%      - sigma 1
-%      - alpha mod min 10
-%      - alpha mod max 20
+% UPDATED GUI/QOL VERSION
+%   1) Overlay tab: unified button/font sizes, larger gaps, cleaner layout
+%   2) Underlay tab: unified button/font sizes, larger gaps, cleaner layout
+%   3) Warp Functional To Atlas / Reset To Native moved to Underlay tab
+%   4) Clear mask button removed from visible UI
+%   5) Highlighted Load Mask button moved into bottom workflow buttons
+%   6) Added Export Time Course PNG button
+%   7) Improved PSC (%) y-label / time-course axis layout and readability
+%   8) UTF-8 safe / ASCII-safe text only
+%
+% Defaults in this copy:
+%   - baseline 30-240
+%   - threshold 0
+%   - caxis 0 100
+%   - sigma 1
+%   - alpha mod min 10
+%   - alpha mod max 20
 % ==========================================================
 
 %% ---------------- SAFETY ----------------
@@ -147,15 +143,15 @@ fig = figure( ...
     'NumberTitle', 'off');
 
 set(fig, 'DefaultUicontrolFontName', 'Arial');
-set(fig, 'DefaultUicontrolFontSize', 14);
+set(fig, 'DefaultUicontrolFontSize', 15);
 
-annotation(fig, 'textbox', [0.62 0.004 0.37 0.03], ...
-    'String', 'SCM GUI - Soner Caner Cagun - MPI Biological Cybernetics', ...
-    'Color', [0.70 0.70 0.70], ...
-    'FontSize', 10, ...
-    'HorizontalAlignment', 'right', ...
-    'EdgeColor', 'none', ...
-    'Interpreter', 'none');
+%annotation(fig, 'textbox', [0.62 0.004 0.37 0.03], ...
+ %   'String', 'SCM GUI - Soner Caner Cagun - MPI Biological Cybernetics', ...
+  %  'Color', [0.70 0.70 0.70], ...
+   %  'FontSize', 10, ...
+   %  'HorizontalAlignment', 'right', ...
+   %  'EdgeColor', 'none', ...
+  %   'Interpreter', 'none');
 
 %% ---------------- MAIN IMAGE AXIS ----------------
 ax = axes('Parent', fig, 'Units', 'pixels');
@@ -181,11 +177,12 @@ caxis(ax, state.cax);
 cb = colorbar(ax);
 cb.Color = 'w';
 cb.Label.String = 'Signal change (%)';
+cb.Label.FontWeight = 'bold';
 cb.FontSize = 12;
 
 hold(ax, 'off');
 
-txtTitle = uicontrol(fig, 'Style', 'text', 'String', fileLabel, ...
+txtTitle = uicontrol(fig, 'Style', 'text', 'String', makeFullTitle(fileLabel), ...
     'Units', 'pixels', ...
     'ForegroundColor', [0.95 0.95 0.95], ...
     'BackgroundColor', [0.05 0.05 0.05], ...
@@ -197,12 +194,29 @@ txtTitle = uicontrol(fig, 'Style', 'text', 'String', fileLabel, ...
 axTC = axes('Parent', fig, 'Units', 'pixels', ...
     'Color', [0.05 0.05 0.05], ...
     'XColor', 'w', ...
-    'YColor', 'w');
+    'YColor', 'w', ...
+    'LineWidth', 1.2, ...
+    'Box', 'on', ...
+    'Layer', 'top');
 hold(axTC, 'on');
 grid(axTC, 'on');
 axTC.FontSize = 12;
+axTC.GridAlpha = 0.18;
+axTC.MinorGridAlpha = 0.10;
+try
+    axTC.XMinorGrid = 'off';
+    axTC.YMinorGrid = 'off';
+catch
+end
+
 xlabel(axTC, 'Time (min)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
-ylabel(axTC, 'PSC (%)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
+ylTC = ylabel(axTC, 'PSC (%)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
+try
+    set(ylTC, 'Units', 'normalized');
+    set(ylTC, 'Position', [-0.022 0.50 0]);
+    set(ylTC, 'Clipping', 'off');
+catch
+end
 
 hBasePatch = patch(axTC, [0 0 0 0], [0 0 0 0], [1 1 1], ...
     'FaceAlpha', 0.10, ...
@@ -224,7 +238,7 @@ hSigTxt  = text(axTC, 0, 0, '', ...
     'FontWeight', 'bold', ...
     'Visible', 'off');
 
-hLivePSC = plot(axTC, state.tminHover, nan(1, numel(state.tminHover)), ':', 'LineWidth', 3.2);
+hLivePSC = plot(axTC, state.tminHover, nan(1, numel(state.tminHover)), ':', 'LineWidth', 3.0);
 hLivePSC.Color = [1.00 0.60 0.10];
 hLivePSC.Visible = 'off';
 
@@ -291,10 +305,10 @@ state.atlasTransformFile     = '';
 state.lastAtlasTransformFile = '';
 
 % underlay display state
-state.isColorUnderlay   = false;
+state.isColorUnderlay     = false;
 state.regionLabelUnderlay = [];
-state.regionColorLUT    = [];
-state.regionInfo        = struct();
+state.regionColorLUT      = [];
+state.regionInfo          = struct();
 
 %% ---------------- RIGHT PANEL ----------------
 bgPanel   = [0.10 0.10 0.11];
@@ -305,6 +319,11 @@ bgEditDis = [0.22 0.22 0.23];
 fgMain    = [0.97 0.97 0.98];
 fgSub     = [0.82 0.90 1.00];
 fgImp     = [1.00 0.60 0.60];
+
+colBtnPrimary = [0.24 0.52 0.30];   % green -> main action
+colBtnExport  = [0.20 0.38 0.62];   % muted blue -> export / transform / info
+colBtnNeutral = [0.28 0.28 0.30];   % dark neutral -> normal utility
+colBtnDanger  = [0.72 0.18 0.18];   % red -> close / destructive
 
 controlsPanel = uipanel('Parent', fig, 'Title', 'SCM Controls', ...
     'Units', 'pixels', ...
@@ -324,7 +343,7 @@ btnTabOverlay  = uicontrol(tabBar, 'Style', 'togglebutton', 'String', 'Overlay',
     'BackgroundColor', bgTabOn, ...
     'ForegroundColor', fgMain, ...
     'FontName', 'Arial', ...
-    'FontSize', 13, ...
+    'FontSize', 14, ...
     'FontWeight', 'bold', ...
     'Value', 1);
 
@@ -334,7 +353,7 @@ btnTabUnderlay = uicontrol(tabBar, 'Style', 'togglebutton', 'String', 'Underlay'
     'BackgroundColor', bgTabOff, ...
     'ForegroundColor', fgMain, ...
     'FontName', 'Arial', ...
-    'FontSize', 13, ...
+    'FontSize', 14, ...
     'FontWeight', 'bold', ...
     'Value', 0);
 
@@ -358,11 +377,13 @@ info1 = uicontrol(controlsPanel, 'Style', 'text', 'String', '', ...
     'FontSize', 12, ...
     'FontWeight', 'bold');
 
-pad     = 18;
-rowH    = 30;
-gap     = 7;
-sliderH = 16;
-groupGap = 12;
+pad       = 18;
+rowH      = 36;
+gap       = 9;
+sliderH   = 20;
+groupGap  = 15;
+wideBtnH  = 38;
+smallBtnH = 34;
 
 mkLbl = @(pp,s) uicontrol(pp, 'Style', 'text', 'String', s, ...
     'Units', 'pixels', ...
@@ -437,6 +458,7 @@ mkBtn = @(pp,lbl,cbk,bgcol,fs) uicontrol(pp, 'Style', 'pushbutton', 'String', lb
     'FontName', 'Arial', ...
     'FontSize', fs, ...
     'FontWeight', 'bold');
+
 %% ---------------- Overlay controls ----------------
 lblROIsz  = mkLbl(pOverlay, 'ROI size (px)');
 slROI     = mkSlider(pOverlay, 1, 220, roi.size, @(~,~)setROIsize());
@@ -447,7 +469,7 @@ lblRoiXY    = mkLbl(pOverlay, 'Add ROI by center (x y)');
 ebRoiXY     = mkEdit(pOverlay, '', @roiXYNoop);
 set(ebRoiXY, 'TooltipString', 'Type x y, for example 120 80 or 120,80, then press Enter.');
 set(ebRoiXY, 'KeyPressFcn', @roiXYKey);
-btnRoiAddXY = mkBtn(pOverlay, 'ADD ROI', @addRoiFromXY, [0.30 0.30 0.30], 12);
+btnRoiAddXY = mkBtn(pOverlay, 'ADD ROI', @addRoiFromXY, colBtnNeutral, 12);
 
 lblBase = mkLblImp(pOverlay, 'Baseline window (s)');
 ebBase  = mkEdit(pOverlay, '30-240', @onWindowEdited);
@@ -487,15 +509,11 @@ lblSigma = mkLblImp(pOverlay, 'SCM smoothing sigma');
 ebSigma  = mkEdit(pOverlay, '1', @computeSCM);
 set(ebSigma, 'ForegroundColor', [1.00 0.35 0.35]);
 
-lblMask = mkLbl(pOverlay, 'Mask');
-btnMaskLoad = mkBtn(pOverlay, 'Load mask', @loadMaskCB, [0.20 0.20 0.20], 12);
-btnMaskClr  = mkBtn(pOverlay, 'Clear mask', @clearMaskCB, [0.20 0.20 0.20], 12);
-btnWarpAtlas  = mkBtn(pOverlay, 'WARP FUNCTIONAL TO ATLAS', @warpFunctionalToAtlasCB, [0.65 0.35 0.10], 12);
-btnResetWarp  = mkBtn(pOverlay, 'RESET TO NATIVE', @resetWarpToNativeCB, [0.28 0.28 0.28], 12);
-btnRoiExport = mkBtn(pOverlay, 'EXPORT ROIs (TXT)', @exportROIsCB, [0.10 0.35 0.95], 14);
-btnScmExport = mkBtn(pOverlay, 'EXPORT SCM IMAGE', @exportSCMImageCB, [0.25 0.55 0.25], 14);
-btnScmSeries = mkBtn(pOverlay, 'EXPORT SCM TIME SERIES', @exportScmSeries1minCB, [0.55 0.15 0.65], 12);
-btnUnfreeze  = mkBtn(pOverlay, 'Unfreeze Hover', @unfreezeHover, [0.20 0.20 0.20], 12);
+btnRoiExport = mkBtn(pOverlay, 'EXPORT ROIs (TXT)', @exportROIsCB, colBtnExport, 13);
+btnScmExport = mkBtn(pOverlay, 'EXPORT SCM IMAGE', @exportSCMImageCB, colBtnExport, 13);
+btnTcPng     = mkBtn(pOverlay, 'EXPORT TIME COURSE PNG', @exportTimecoursePngCB, colBtnExport, 13);
+btnScmSeries = mkBtn(pOverlay, 'EXPORT SCM PPT', @exportScmSeries1minCB, colBtnExport, 12);
+btnUnfreeze  = mkBtn(pOverlay, 'UNFREEZE HOVER', @unfreezeHover, colBtnNeutral, 12);
 
 %% ---------------- Underlay controls ----------------
 lblUnderMode = mkLbl(pUnderlay, 'Underlay view');
@@ -526,12 +544,24 @@ lblVlv = mkLbl(pUnderlay, sprintf('Vessel conectLev (0..%d)', MAX_CONLEV));
 slVlv  = mkSlider(pUnderlay, 0, MAX_CONLEV, uState.conectLev, @underlaySliderChanged);
 set(slVlv, 'SliderStep', [1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnderlay, sprintf('%d', uState.conectLev));
-btnLoadUnder = mkBtn(pUnderlay, 'LOAD NEW UNDERLAY', @loadNewUnderlayCB, [0.22 0.22 0.22], 12);
+
+btnLoadUnder  = mkBtn(pUnderlay, 'LOAD NEW UNDERLAY', @loadNewUnderlayCB, colBtnNeutral, 12);
+btnWarpAtlas  = mkBtn(pUnderlay, 'WARP FUNCTIONAL TO ATLAS', @warpFunctionalToAtlasCB, colBtnExport, 12);
+btnResetWarp  = mkBtn(pUnderlay, 'RESET TO NATIVE', @resetWarpToNativeCB, colBtnNeutral, 12);
+
 %% ---------------- Bottom buttons ----------------
 btnCompute = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Compute SCM', ...
     'Units', 'pixels', ...
     'Callback', @computeSCM, ...
-    'BackgroundColor', [0.30 0.30 0.30], ...
+    'BackgroundColor', colBtnPrimary, ...
+    'ForegroundColor', 'w', ...
+    'FontSize', 15, ...
+    'FontWeight', 'bold');
+
+btnMaskQuick = uicontrol(fig, 'Style', 'pushbutton', 'String', 'LOAD MASK', ...
+    'Units', 'pixels', ...
+    'Callback', @loadMaskCB, ...
+    'BackgroundColor', colBtnNeutral, ...
     'ForegroundColor', 'w', ...
     'FontSize', 15, ...
     'FontWeight', 'bold');
@@ -539,7 +569,7 @@ btnCompute = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Compute SCM', ...
 btnOpenVid = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Open Video GUI', ...
     'Units', 'pixels', ...
     'Callback', @openVideo, ...
-    'BackgroundColor', [0.25 0.55 0.25], ...
+    'BackgroundColor', colBtnNeutral, ...
     'ForegroundColor', 'w', ...
     'FontSize', 15, ...
     'FontWeight', 'bold');
@@ -547,7 +577,7 @@ btnOpenVid = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Open Video GUI', .
 btnHelp = uicontrol(fig, 'Style', 'pushbutton', 'String', 'HELP', ...
     'Units', 'pixels', ...
     'Callback', @showHelp, ...
-    'BackgroundColor', [0.10 0.35 0.95], ...
+    'BackgroundColor', colBtnExport, ...
     'ForegroundColor', 'w', ...
     'FontSize', 15, ...
     'FontWeight', 'bold');
@@ -555,7 +585,7 @@ btnHelp = uicontrol(fig, 'Style', 'pushbutton', 'String', 'HELP', ...
 btnClose = uicontrol(fig, 'Style', 'pushbutton', 'String', 'CLOSE', ...
     'Units', 'pixels', ...
     'Callback', @(~,~) close(fig), ...
-    'BackgroundColor', [0.75 0.15 0.15], ...
+    'BackgroundColor', colBtnDanger, ...
     'ForegroundColor', 'w', ...
     'FontSize', 15, ...
     'FontWeight', 'bold');
@@ -579,7 +609,7 @@ redrawROIsForCurrentSlice();
 %% ==========================================================
 % UI
 %% ==========================================================
- function switchTab(which)
+function switchTab(which)
     which = lower(char(which));
     if strcmp(which, 'overlay')
         set(pOverlay, 'Visible', 'on');
@@ -615,21 +645,22 @@ function layoutUI()
     W = pos(3);
     Hh = pos(4);
 
-    leftM   = 60;
+    leftM   = 64;
     rightM  = 36;
     topM    = 58;
     botM    = 60;
     gapX    = 36;
     gapY    = 24;
 
-    panelW  = min(740, max(580, round(0.36 * W)));
+    panelW  = min(760, max(600, round(0.37 * W)));
     btnH    = 54;
     btnGap  = 12;
 
     yClose  = 28;
     yHelp   = yClose;
     yOpen   = yClose + btnH + btnGap;
-    yComp   = yOpen  + btnH + btnGap;
+    yMask   = yOpen  + btnH + btnGap;
+    yComp   = yMask  + btnH + btnGap;
     buttonsTop = yComp + btnH;
 
     panelX = W - rightM - panelW;
@@ -638,33 +669,38 @@ function layoutUI()
 
     set(controlsPanel, 'Position', [panelX panelY panelW panelH]);
 
-    set(btnCompute, 'Position', [panelX yComp panelW btnH]);
-    set(btnOpenVid, 'Position', [panelX yOpen panelW btnH]);
+    set(btnCompute,   'Position', [panelX yComp panelW btnH]);
+    set(btnMaskQuick, 'Position', [panelX yMask panelW btnH]);
+    set(btnOpenVid,   'Position', [panelX yOpen panelW btnH]);
 
     halfW = floor((panelW - 14) / 2);
     set(btnHelp,  'Position', [panelX yHelp halfW btnH]);
     set(btnClose, 'Position', [panelX + halfW + 14 yClose halfW btnH]);
 
-    leftW = max(740, panelX - leftM - gapX);
+    leftW = max(730, panelX - leftM - gapX);
 
-    tcH = 230;
-    axH = max(520, Hh - botM - tcH - gapY - topM);
+    tcH = 238;
+    axH = max(510, Hh - botM - tcH - gapY - topM);
 
     axX = leftM;
     axY = botM + tcH + gapY;
     set(ax,   'Position', [axX axY leftW axH]);
-    set(axTC, 'Position', [axX botM leftW tcH]);
 
-    set(txtTitle, 'Position', [axX axY + axH + 10 leftW 28]);
+tcLeftPad = 8;
+set(axTC, 'Position', [axX + tcLeftPad botM leftW - tcLeftPad tcH]);
 
-    if ~isempty(slZ) && isgraphics(slZ)
-        set(slZ, 'Position', [axX - 32 axY 22 axH]);
-    end
-    if ~isempty(txtZ) && isgraphics(txtZ)
-        set(txtZ, 'Position', [axX - 60 axY + axH + 40 300 28]);
-    end
+set(txtTitle, ...
+    'Position', [axX axY + axH + 10 leftW 28], ...
+    'String', makeFullTitle(fileLabel), ...
+    'Visible', 'on');
 
-    tabH     = 40;
+try
+    set(ylTC, 'Units', 'normalized');
+    set(ylTC, 'Position', [-0.022 0.50 0]);
+    set(ylTC, 'Clipping', 'off');
+catch
+end
+    tabH     = 42;
     statusH  = 58;
     titlePad = 30;
 
@@ -690,13 +726,13 @@ end
 
 function layoutOverlay(w, h)
     xLabel = pad;
-    wLabel = 255;
-    xVal   = w - pad - 122;
-    wVal   = 122;
-    xCtrl  = xLabel + wLabel + 14;
-    wCtrl  = max(110, xVal - xCtrl - 12);
+    wLabel = 260;
+    xVal   = w - pad - 126;
+    wVal   = 126;
+    xCtrl  = xLabel + wLabel + 16;
+    wCtrl  = max(115, xVal - xCtrl - 12);
 
-    y = h - 40;
+    y = h - 42;
 
     setRowSlider(lblROIsz, slROI, txtROIsz);
 
@@ -725,30 +761,21 @@ function layoutOverlay(w, h)
     y = y - (rowH + groupGap);
 
     setRowEdit(lblSigma, ebSigma);
+    y = y - 2;
 
-    set(lblMask, 'Position', [xLabel y wLabel rowH]);
-    btnGap2 = 10;
-    btnW2 = floor(((w - xCtrl - pad) - btnGap2) / 2);
-    set(btnMaskLoad, 'Position', [xCtrl y btnW2 rowH]);
-    set(btnMaskClr,  'Position', [xCtrl + btnW2 + btnGap2 y btnW2 rowH]);
-    y = y - (rowH + groupGap);
+    set(btnRoiExport, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
+    y = y - (wideBtnH + gap);
 
-    set(btnWarpAtlas, 'Position', [xLabel y (w - 2 * pad) 36]);
-    y = y - (36 + gap);
+    set(btnScmExport, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
+    y = y - (wideBtnH + gap);
 
-    set(btnResetWarp, 'Position', [xLabel y (w - 2 * pad) 32]);
-    y = y - (32 + groupGap);
+    set(btnTcPng, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
+    y = y - (wideBtnH + gap);
 
-    set(btnRoiExport, 'Position', [xLabel y (w - 2 * pad) 38]);
-    y = y - (38 + gap);
+    set(btnScmSeries, 'Position', [xLabel y (w - 2*pad) smallBtnH]);
+    y = y - (smallBtnH + groupGap);
 
-    set(btnScmExport, 'Position', [xLabel y (w - 2 * pad) 36]);
-    y = y - (36 + gap);
-
-    set(btnScmSeries, 'Position', [xLabel y (w - 2 * pad) 34]);
-    y = y - (34 + groupGap);
-
-    set(btnUnfreeze, 'Position', [xLabel y (w - 2 * pad) 30]);
+    set(btnUnfreeze, 'Position', [xLabel y (w - 2*pad) smallBtnH]);
 
     function setRowSlider(lbl, sl, valbox)
         set(lbl,    'Position', [xLabel y wLabel rowH]);
@@ -764,15 +791,15 @@ function layoutOverlay(w, h)
     end
 end
 
-    function layoutUnder(w, h)
+function layoutUnder(w, h)
     xLabel = pad;
-    wLabel = 265;
-    xVal   = w - pad - 122;
-    wVal   = 122;
-    xCtrl  = xLabel + wLabel + 14;
-    wCtrl  = max(110, xVal - xCtrl - 12);
+    wLabel = 270;
+    xVal   = w - pad - 126;
+    wVal   = 126;
+    xCtrl  = xLabel + wLabel + 16;
+    wCtrl  = max(115, xVal - xCtrl - 12);
 
-    y = h - 40;
+    y = h - 42;
 
     set(lblUnderMode, 'Position', [xLabel y wLabel rowH]);
     set(popUnder,     'Position', [xCtrl y (w - xCtrl - pad) rowH]);
@@ -784,8 +811,14 @@ end
     setRowSlider(lblVsz, slVsz, txtVsz);
     setRowSlider(lblVlv, slVlv, txtVlv);
 
-    y = y - groupGap;
-    set(btnLoadUnder, 'Position', [xLabel y (w - 2*pad) 34]);
+    y = y - 2;
+    set(btnLoadUnder, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
+    y = y - (wideBtnH + gap);
+
+    set(btnWarpAtlas, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
+    y = y - (wideBtnH + gap);
+
+    set(btnResetWarp, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
 
     function setRowSlider(lbl, sl, valbox)
         set(lbl,    'Position', [xLabel y wLabel rowH]);
@@ -907,11 +940,10 @@ function mouseMove(~,~)
     mn = min(tc);
     mx = max(tc);
     if isfinite(mn) && isfinite(mx) && mx > mn
-        padY = 0.15 * (mx-mn);
+        padY = max(0.15 * (mx-mn), 0.5);
         set(axTC, 'YLim', [mn-padY mx+padY]);
+        drawTimeWindows();
     end
-
-    drawnow limitrate nocallbacks;
 end
 
 function roiXYNoop(~,~)
@@ -944,12 +976,13 @@ function tc = computeRoiPSC_atSlice(zSel, x1, x2, y1, y2)
         tc = [];
     end
 
-    if ~isempty(tc) && all(isfinite(tc))
+        if ~isempty(tc) && all(isfinite(tc))
         mn = min(tc);
         mx = max(tc);
         if isfinite(mn) && isfinite(mx) && mx > mn
-            padY = 0.15 * (mx-mn);
+            padY = max(0.15 * (mx-mn), 0.5);
             set(axTC, 'YLim', [mn-padY mx+padY]);
+            drawTimeWindows();
         end
     end
 end
@@ -1234,7 +1267,7 @@ end
 function underlayModeChanged(~,~)
     uState.mode = get(popUnder, 'Value');
     updateUnderlayControlsEnable();
-    set(hBG, 'CData', toRGB(processUnderlay(getBg2DForSlice(state.z))));
+    set(hBG, 'CData', renderUnderlayRGB(getBg2DForSlice(state.z)));
     updateInfoLines();
 end
 
@@ -1255,7 +1288,7 @@ function underlaySliderChanged(~,~)
     set(txtVsz, 'String', sprintf('%d', uState.conectSize));
     set(txtVlv, 'String', sprintf('%d', uState.conectLev));
 
-    set(hBG, 'CData', toRGB(processUnderlay(getBg2DForSlice(state.z))));
+    set(hBG, 'CData', renderUnderlayRGB(getBg2DForSlice(state.z)));
     updateInfoLines();
 end
 
@@ -2024,6 +2057,146 @@ function alpha = alphaFromCurrentSettings(ov)
     end
 end
 
+%% ==========================================================
+% Time-course PNG export
+%% ==========================================================
+    function exportTimecoursePngCB(~,~)
+    try
+        outDir = fullfile(getAutoScmDir(), 'TimeCoursePNG');
+        safeMkdirIfNeeded(outDir);
+
+        stamp = datestr(now, 'yyyymmdd_HHMMSS');
+        baseName = sprintf('%s_TimeCourse_%s', sanitizeName(fileLabel), stamp);
+
+        outPngGrid   = fullfile(outDir, [baseName '_grid.png']);
+        outPngNoGrid = fullfile(outDir, [baseName '_nogrid.png']);
+
+        tf = figure('Visible', 'off', ...
+            'Color', [0.05 0.05 0.05], ...
+            'InvertHardcopy', 'off', ...
+            'Units', 'pixels', ...
+            'Position', [150 120 1500 780]);
+
+      ax2 = axes('Parent', tf, ...
+    'Units', 'normalized', ...
+    'Position', [0.11 0.14 0.84 0.76], ...
+    'Color', [0.05 0.05 0.05], ...
+    'XColor', 'w', ...
+    'YColor', 'w', ...
+    'LineWidth', 1.2, ...
+    'Box', 'on', ...
+    'Layer', 'top');
+        hold(ax2, 'on');
+        grid(ax2, 'on');
+
+        xlabel(ax2, 'Time (min)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
+        hY = ylabel(ax2, 'PSC (%)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
+        title(ax2, sprintf('%s | ROI Time Course', fileLabel), ...
+            'Color', 'w', 'FontWeight', 'bold', 'Interpreter', 'none');
+
+   try
+    set(hY, 'Units', 'normalized');
+    set(hY, 'Position', [-0.028 0.50 0]);
+    set(hY, 'Clipping', 'off');
+catch
+end
+
+        ROI = ROI_byZ{state.z};
+        for k = 1:numel(ROI)
+            r = ROI(k);
+            tc = computeRoiPSC_atSlice(state.z, r.x1, r.x2, r.y1, r.y2);
+            if numel(tc) == nT
+                plot(ax2, tmin, tc, ':', 'Color', r.color, 'LineWidth', 2.6);
+            end
+        end
+
+        if strcmp(get(hLivePSC, 'Visible'), 'on')
+            try
+                plot(ax2, get(hLivePSC, 'XData'), get(hLivePSC, 'YData'), ':', ...
+                    'Color', get(hLivePSC, 'Color'), 'LineWidth', 3.0);
+            catch
+            end
+        end
+
+        yl = get(axTC, 'YLim');
+        if any(~isfinite(yl)) || yl(2) <= yl(1)
+            yl = [-5 5];
+        end
+        set(ax2, 'YLim', yl);
+
+        [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
+        [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
+
+        if isVolMode
+            b0s = (clamp(round(b0), 1, nT)-1)*TR;
+            b1s = (clamp(round(b1), 1, nT)-1)*TR;
+            s0s = (clamp(round(s0), 1, nT)-1)*TR;
+            s1s = (clamp(round(s1), 1, nT)-1)*TR;
+        else
+            b0s = b0; b1s = b1;
+            s0s = s0; s1s = s1;
+        end
+        if b1s < b0s, tmp = b0s; b0s = b1s; b1s = tmp; end
+        if s1s < s0s, tmp = s0s; s0s = s1s; s1s = tmp; end
+
+        yr = yl(2) - yl(1);
+        if ~isfinite(yr) || yr <= 0
+            yr = 1;
+        end
+        yTxt = yl(2) - 0.06 * yr;
+
+        patch(ax2, [b0s b1s b1s b0s]/60, [yl(1) yl(1) yl(2) yl(2)], [1.0 0.2 0.2], ...
+            'FaceAlpha', 0.16, 'EdgeColor', 'none');
+
+        patch(ax2, [s0s s1s s1s s0s]/60, [yl(1) yl(1) yl(2) yl(2)], [1.0 0.60 0.15], ...
+            'FaceAlpha', 0.16, 'EdgeColor', 'none');
+
+        text(ax2, mean([b0s b1s])/60, yTxt, 'Bas.', ...
+            'Color', [1.00 0.35 0.35], ...
+            'FontSize', 11, ...
+            'FontWeight', 'bold', ...
+            'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', 'middle', ...
+            'BackgroundColor', [0 0 0], ...
+            'Margin', 1, ...
+            'Clipping', 'on');
+
+        text(ax2, mean([s0s s1s])/60, yTxt, 'Sig.', ...
+            'Color', [1.00 0.80 0.35], ...
+            'FontSize', 11, ...
+            'FontWeight', 'bold', ...
+            'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', 'middle', ...
+            'BackgroundColor', [0 0 0], ...
+            'Margin', 1, ...
+            'Clipping', 'on');
+
+        uistack(findobj(ax2, 'Type', 'line'), 'top');
+
+        print(tf, outPngGrid, '-dpng', '-r300', '-opengl');
+
+        grid(ax2, 'off');
+        print(tf, outPngNoGrid, '-dpng', '-r300', '-opengl');
+
+        if isgraphics(tf), close(tf); end
+
+        try
+            set(info1, 'String', ['Saved time course PNGs to: ' shortenPath(outDir,90)]);
+            set(info1, 'TooltipString', outDir);
+        catch
+        end
+
+    catch ME
+        try
+            if exist('tf', 'var') && ~isempty(tf) && isgraphics(tf)
+                close(tf);
+            end
+        catch
+        end
+        errordlg(ME.message, 'Export time course PNG failed');
+    end
+    end
+
 function renderSingleScmSlidePNG(outFile, imagePng, titleLabel, zSel, nZSel, caxV, cm)
     figS = figure('Visible', 'off', 'Color', [0 0 0], 'InvertHardcopy', 'off');
     set(figS, 'Units', 'inches', 'Position', [0.5 0.5 13.333 7.5]);
@@ -2454,7 +2627,7 @@ end
 %% ==========================================================
 % Mask
 %% ==========================================================
-   function loadMaskCB(~,~)
+function loadMaskCB(~,~)
     startPath = getStartPath();
 
     [f,p] = uigetfile( ...
@@ -2474,19 +2647,16 @@ end
         if strcmp(ext, '.mat')
             B = readScmBundleFile(fullf);
 
-            % Prefer explicit overlay / signal restriction mask
             if ~isempty(B.overlayMask)
                 passedMask = fitBundleMaskToCurrentScm(B.overlayMask);
                 passedMaskIsInclude = B.overlayMaskIsInclude;
             elseif ~isempty(B.brainMask)
-                % fallback only if no overlay mask exists
                 passedMask = fitBundleMaskToCurrentScm(B.brainMask);
                 passedMaskIsInclude = B.brainMaskIsInclude;
             else
                 error('No usable overlay or brain mask found in MAT bundle.');
             end
 
-            % Optional: auto-load bundled underlay / brain image too
             if ~isempty(B.brainImage)
                 U = squeeze(B.brainImage);
 
@@ -2510,12 +2680,10 @@ end
             end
 
         else
-            % NIfTI mask fallback
             [passedMask, passedMaskIsInclude] = readMask(fullf, 'overlayPreferred');
             passedMask = fitBundleMaskToCurrentScm(passedMask);
         end
 
-        % Rebuild active 2D mask for current slice
         if isempty(passedMask)
             mask2D = true(nY, nX);
         else
@@ -2525,7 +2693,6 @@ end
             end
         end
 
-        % Redraw underlay if bundle also contained brainImage
         bg2 = getBg2DForSlice(state.z);
         set(hBG, 'CData', renderUnderlayRGB(bg2));
 
@@ -2544,9 +2711,10 @@ end
     catch ME
         errordlg(ME.message, 'Mask / bundle load failed');
     end
-   end
+end
 
 function clearMaskCB(~,~)
+    % Kept for compatibility, even though Clear Mask is no longer shown in the UI
     passedMask = [];
     passedMaskIsInclude = true;
     mask2D = true(nY, nX);
@@ -2601,10 +2769,11 @@ function startPath = getStartPath()
 
     startPath = pwd;
 end
+
 %% ==========================================================
 % Video GUI
 %% ==========================================================
-   function openVideo(~,~)
+function openVideo(~,~)
     try
         play_fusi_video_final( ...
             PSC, PSC, PSC, bg, ...
@@ -2616,8 +2785,7 @@ end
     catch ME
         errordlg(ME.message, 'Video GUI failed');
     end
-   end
-
+end
 
 function showHelp(~,~)
     bgFig   = [0.06 0.06 0.07];
@@ -2637,10 +2805,12 @@ function showHelp(~,~)
 '  - Alpha modulation:'
 '      OFF = hard threshold alpha'
 '      ON  = alpha ramps between Mod Min and Mod Max'
+'  - Export Time Course PNG saves the current ROI time-course view.'
 ''
 'UNDERLAY'
 '  - Brightness / Contrast / Gamma control background only.'
 '  - Vessel enhance uses conectSize + conectLev.'
+'  - Warp Functional To Atlas and Reset To Native are in the Underlay tab.'
 ''
 'ROI'
 '  - Hover shows live ROI PSC.'
@@ -2649,9 +2819,14 @@ function showHelp(~,~)
 '  - You can also add ROI by typing center x y.'
 '  - Export ROIs saves ROI<set>_d<idx>.txt into AnalysedData/ROI/<type>/<datasetTag>/'
 ''
+'WORKFLOW'
+'  - Compute SCM updates the SCM map.'
+'  - Load Mask is available as a highlighted bottom button.'
+'  - Open Video GUI opens the linked video viewer.'
+''
 'EXPORT'
-'  - Export SCM image saves png/tif/jpg and ppt when available.'
-'  - Export SCM time series saves tile images, slide PNGs, and ppt when available.'
+'  - Export SCM Image saves png/tif/jpg and ppt when available.'
+'  - Export SCM Time Series saves tile images, slide PNGs, and ppt when available.'
 };
 
     uicontrol(hf, 'Style', 'edit', 'Units', 'normalized', ...
@@ -2666,10 +2841,6 @@ function warpFunctionalToAtlasCB(~,~)
     startDir = '';
     candDirs = {};
 
-    % ------------------------------------------------------
-    % 1) Best case: Studio export path already points to the
-    %    current animal AnalysedData folder
-    % ------------------------------------------------------
     try
         if isstruct(par)
             if isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
@@ -2681,9 +2852,6 @@ function warpFunctionalToAtlasCB(~,~)
     catch
     end
 
-    % ------------------------------------------------------
-    % 2) Derive AnalysedData path from loadedPath
-    % ------------------------------------------------------
     try
         if isstruct(par)
             if isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath,'dir') == 7
@@ -2704,9 +2872,6 @@ function warpFunctionalToAtlasCB(~,~)
     catch
     end
 
-    % ------------------------------------------------------
-    % 3) Derive from loadedFile if needed
-    % ------------------------------------------------------
     try
         if isstruct(par)
             if isfield(par,'loadedFile') && ~isempty(par.loadedFile)
@@ -2730,21 +2895,14 @@ function warpFunctionalToAtlasCB(~,~)
     catch
     end
 
-    % ------------------------------------------------------
-    % 4) Fallback to generic GUI start path
-    % ------------------------------------------------------
     try
         candDirs{end+1} = getStartPath(); %#ok<AGROW>
     catch
         candDirs{end+1} = pwd; %#ok<AGROW>
     end
 
-    % ------------------------------------------------------
-    % 5) Clean candidate list
-    % ------------------------------------------------------
     candDirs = candDirs(~cellfun('isempty', candDirs));
 
-    % unique stable
     if ~isempty(candDirs)
         keep = true(size(candDirs));
         for ii = 2:numel(candDirs)
@@ -2758,9 +2916,6 @@ function warpFunctionalToAtlasCB(~,~)
         candDirs = candDirs(keep);
     end
 
-    % ------------------------------------------------------
-    % 6) Prefer a folder that already contains CoronalRegistration2D.mat
-    % ------------------------------------------------------
     for ii = 1:numel(candDirs)
         d0 = candDirs{ii};
         if exist(d0, 'dir') == 7
@@ -2772,9 +2927,6 @@ function warpFunctionalToAtlasCB(~,~)
         end
     end
 
-    % ------------------------------------------------------
-    % 7) Otherwise prefer Registration2D / Registration dir
-    % ------------------------------------------------------
     if isempty(startDir)
         for ii = 1:numel(candDirs)
             d0 = candDirs{ii};
@@ -2788,9 +2940,6 @@ function warpFunctionalToAtlasCB(~,~)
         end
     end
 
-    % ------------------------------------------------------
-    % 8) Last valid fallback
-    % ------------------------------------------------------
     if isempty(startDir)
         for ii = 1:numel(candDirs)
             d0 = candDirs{ii};
@@ -2805,9 +2954,6 @@ function warpFunctionalToAtlasCB(~,~)
         startDir = pwd;
     end
 
-    % ------------------------------------------------------
-    % 9) Ask user for transform file
-    % ------------------------------------------------------
     [f,p] = uigetfile( ...
         {'*.mat','Transform files (*.mat)'}, ...
         'Select atlas Transformation / CoronalRegistration2D', ...
@@ -2821,16 +2967,14 @@ function warpFunctionalToAtlasCB(~,~)
         S = load(fullfile(p,f));
         T = extractAtlasWarpStruct(S);
 
-        % Always warp from ORIGINAL native data
         PSC = warpFunctionalSeriesToAtlas(origPSC, T);
 
-        % Native mask is not valid anymore after atlas warp
         passedMask = [];
         passedMaskIsInclude = true;
 
         state.isAtlasWarped = true;
         state.atlasTransformFile = fullfile(p,f);
-state.lastAtlasTransformFile = state.atlasTransformFile;
+        state.lastAtlasTransformFile = state.atlasTransformFile;
 
         try
             if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d') ...
@@ -2868,8 +3012,7 @@ function resetWarpToNativeCB(~,~)
         passedMask = origPassedMask;
 
         state.isAtlasWarped = false;
-state.atlasTransformFile = '';
-% keep state.lastAtlasTransformFile on purpose
+        state.atlasTransformFile = '';
 
         set(txtTitle, 'String', fileLabel);
 
@@ -2886,7 +3029,6 @@ state.atlasTransformFile = '';
 end
 
 function resetRoisAndRefreshAfterDataChange()
-    % Recompute geometry from current PSC
     dNow = ndims(PSC);
     if dNow == 3
         [nY, nX, nT] = size(PSC);
@@ -2968,16 +3110,6 @@ function resetRoisAndRefreshAfterDataChange()
 end
 
 function T = extractAtlasWarpStruct(S)
-    % Accept either:
-    %   - Transf / Reg2D wrapper structs
-    %   - direct saved struct
-    %
-    % Supported matrix fields:
-    %   A, M, T, tform.T
-    %
-    % Supported output-size fields:
-    %   outputSize, size, atlasSize, outSize
-
     if isfield(S, 'Transf') && isstruct(S.Transf)
         T = S.Transf;
     elseif isfield(S, 'Reg2D') && isstruct(S.Reg2D)
@@ -2986,7 +3118,6 @@ function T = extractAtlasWarpStruct(S)
         T = S;
     end
 
-    % -------- matrix --------
     if isfield(T, 'A') && ~isempty(T.A)
         T.warpA = T.A;
     elseif isfield(T, 'M') && ~isempty(T.M)
@@ -3003,7 +3134,6 @@ function T = extractAtlasWarpStruct(S)
         error('Transform file has no usable matrix field. Expected A, M, T, or tform.T.');
     end
 
-    % -------- output size --------
     if isfield(T, 'outputSize') && ~isempty(T.outputSize)
         T.outSize = double(T.outputSize);
     elseif isfield(T, 'size') && ~isempty(T.size)
@@ -3016,7 +3146,6 @@ function T = extractAtlasWarpStruct(S)
         T.outSize = [];
     end
 
-    % -------- optional metadata --------
     if ~isfield(T, 'type') || isempty(T.type)
         T.type = 'unknown';
     end
@@ -3031,9 +3160,6 @@ end
 function Y = warpFunctionalSeriesToAtlas(X, T)
     A = double(T.warpA);
 
-    % ------------------------------------------------------
-    % CASE A: full 3D affine transform for [Y X Z T]
-    % ------------------------------------------------------
     if ndims(X) == 4 && isequal(size(A), [4 4])
         if isempty(T.outSize) || numel(T.outSize) < 3
             error('3D atlas warp requires output size in outputSize / size / atlasSize / outSize.');
@@ -3057,14 +3183,6 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
         return;
     end
 
-    % ------------------------------------------------------
-    % CASE B: simple 2D coronal registration
-    % A is 3x3 and outputSize is [Y X]
-    %
-    % Supported inputs:
-    %   [Y X T]    -> warp each time frame
-    %   [Y X Z T]  -> warp CURRENT selected slice only, output becomes [Y X T]
-    % ------------------------------------------------------
     if isequal(size(A), [3 3])
         if isempty(T.outSize) || numel(T.outSize) < 2
             error('2D atlas warp requires output size in outputSize / size / atlasSize / outSize.');
@@ -3079,7 +3197,6 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
         Rout2  = imref2d(outSize2);
 
         if ndims(X) == 3
-            % X is [Y X T]
             nTT = size(X,3);
             Y = zeros([outSize2 nTT], 'single');
 
@@ -3090,10 +3207,8 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
             return;
 
         elseif ndims(X) == 4
-            % X is [Y X Z T]
-            % For simple_coronal_2d, only warp the CURRENT slice.
             zSel = max(1, min(size(X,3), state.z));
-            X2   = squeeze(X(:,:,zSel,:));   % [Y X T]
+            X2   = squeeze(X(:,:,zSel,:));
 
             nTT = size(X2,3);
             Y = zeros([outSize2 nTT], 'single');
@@ -3103,7 +3218,6 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
                 Y(:,:,tt) = imwarp(frm, tform2, 'linear', 'OutputView', Rout2);
             end
 
-            % Helpful status text
             try
                 set(info1, 'String', sprintf(['Applied simple 2D coronal atlas warp to current slice %d only. ' ...
                     'SCM now displays one atlas slice.'], zSel));
@@ -3117,8 +3231,6 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
 
     error('Unsupported transform matrix size: %dx%d', size(A,1), size(A,2));
 end
-
-
 
 %%%%% Load New Underlay %%%%
 
@@ -3145,9 +3257,6 @@ function loadNewUnderlayCB(~,~)
             error('Selected underlay is empty or not numeric/RGB: %s', fullf);
         end
 
-        % --------------------------------------------------
-        % CASE 1: current SCM already atlas-warped
-        % --------------------------------------------------
         if state.isAtlasWarped
             U = [];
 
@@ -3167,9 +3276,6 @@ function loadNewUnderlayCB(~,~)
 
                 U = warpUnderlayForCurrentDisplay(Uraw, T);
                 U = validateAndPrepareUnderlay(U, fullf);
-
-                % Only keep region metadata if this underlay is already atlas-space.
-                % Native underlays generally do not carry atlas region labels.
                 applyUnderlayMeta(meta, U);
 
             else
@@ -3190,11 +3296,6 @@ function loadNewUnderlayCB(~,~)
             return;
         end
 
-        % --------------------------------------------------
-        % CASE 2: current SCM still native
-        % --------------------------------------------------
-
-        % 2A) selected underlay matches native/current display
         if doesUnderlayMatchCurrentDisplay(Uraw)
             U = validateAndPrepareUnderlay(Uraw, fullf);
             applyUnderlayMeta(meta, U);
@@ -3214,7 +3315,6 @@ function loadNewUnderlayCB(~,~)
             return;
         end
 
-        % 2B) selected underlay looks atlas-sized -> auto-find transform
         tfFile = getBestTransformForUnderlay(fullf);
 
         if isempty(tfFile) || exist(tfFile, 'file') ~= 2
@@ -3235,7 +3335,6 @@ function loadNewUnderlayCB(~,~)
                    size(Uraw,1), size(Uraw,2), nY, nX);
         end
 
-        % Warp functional from native -> atlas
         PSC = warpFunctionalSeriesToAtlas(origPSC, T);
 
         passedMask = [];
@@ -3279,15 +3378,48 @@ function loadNewUnderlayCB(~,~)
         errordlg(ME.message, 'Load underlay failed');
     end
 end
-  
+
+function U = validateAndPrepareUnderlay(U, fullf)
+    U = squeeze(U);
+
+    if isempty(U) || ~(isnumeric(U) || islogical(U))
+        error('Loaded underlay is not numeric or logical: %s', fullf);
+    end
+
+    if ndims(U) == 2
+        U = double(U);
+        return;
+    end
+
+    if ndims(U) == 3
+        if size(U,3) == 3
+            U = double(U);
+            return;
+        else
+            U = double(U);
+            return;
+        end
+    end
+
+    if ndims(U) == 4
+        if size(U,3) == 3 && size(U,4) >= 1
+            U = double(U);
+            return;
+        end
+        U = double(U);
+        return;
+    end
+
+    error('Unsupported underlay dimensionality in file: %s', fullf);
+end
 
 function applyUnderlayMeta(meta, U)
     ensureUnderlayStateFields();
 
-    state.isColorUnderlay    = false;
+    state.isColorUnderlay     = false;
     state.regionLabelUnderlay = [];
-    state.regionColorLUT     = [];
-    state.regionInfo         = struct();
+    state.regionColorLUT      = [];
+    state.regionInfo          = struct();
 
     if nargin >= 1 && isstruct(meta)
         if isfield(meta, 'isColor') && ~isempty(meta.isColor)
@@ -3333,7 +3465,6 @@ function tfFile = getBestTransformForUnderlay(underlayFile)
 
     cand = {};
 
-    % 1) Active atlas transform
     try
         if isfield(state, 'atlasTransformFile') && ~isempty(state.atlasTransformFile) ...
                 && exist(state.atlasTransformFile, 'file') == 2
@@ -3342,7 +3473,6 @@ function tfFile = getBestTransformForUnderlay(underlayFile)
     catch
     end
 
-    % 2) Last used atlas transform
     try
         if isfield(state, 'lastAtlasTransformFile') && ~isempty(state.lastAtlasTransformFile) ...
                 && exist(state.lastAtlasTransformFile, 'file') == 2
@@ -3351,7 +3481,6 @@ function tfFile = getBestTransformForUnderlay(underlayFile)
     catch
     end
 
-    % 3) Near selected underlay
     try
         udir = fileparts(char(underlayFile));
         cand{end+1} = fullfile(udir, 'CoronalRegistration2D.mat'); %#ok<AGROW>
@@ -3369,7 +3498,6 @@ function tfFile = getBestTransformForUnderlay(underlayFile)
     catch
     end
 
-    % 4) From Studio exportPath
     try
         if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
             ep = char(par.exportPath);
@@ -3381,7 +3509,6 @@ function tfFile = getBestTransformForUnderlay(underlayFile)
     catch
     end
 
-    % 5) First existing one wins
     for ii = 1:numel(cand)
         try
             if ~isempty(cand{ii}) && exist(cand{ii}, 'file') == 2
@@ -3398,7 +3525,6 @@ function startPath = getUnderlayStartPath()
 
     candDirs = {};
 
-    % If atlas-warped, prefer transform folder first
     try
         if state.isAtlasWarped && isfield(state, 'atlasTransformFile') && ~isempty(state.atlasTransformFile)
             tfDir = fileparts(char(state.atlasTransformFile));
@@ -3408,7 +3534,6 @@ function startPath = getUnderlayStartPath()
     catch
     end
 
-    % Prefer current animal analysed/export folder
     try
         if isstruct(par)
             if isfield(par, 'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath, 'dir') == 7
@@ -3422,7 +3547,6 @@ function startPath = getUnderlayStartPath()
     catch
     end
 
-    % Derive analysed path from loadedPath
     try
         if isstruct(par)
             if isfield(par, 'loadedPath') && ~isempty(par.loadedPath) && exist(par.loadedPath, 'dir') == 7
@@ -3445,7 +3569,6 @@ function startPath = getUnderlayStartPath()
     catch
     end
 
-    % Derive from loadedFile
     try
         if isstruct(par)
             if isfield(par, 'loadedFile') && ~isempty(par.loadedFile)
@@ -3471,14 +3594,12 @@ function startPath = getUnderlayStartPath()
     catch
     end
 
-    % Generic fallback
     try
         candDirs{end+1} = getStartPath(); %#ok<AGROW>
     catch
     end
     candDirs{end+1} = pwd;
 
-    % First existing dir wins
     for ii = 1:numel(candDirs)
         d = candDirs{ii};
         try
@@ -3492,9 +3613,6 @@ function startPath = getUnderlayStartPath()
 
     startPath = pwd;
 end
-
-
-
 
 function [U, meta] = readUnderlayFile(f)
     if ~exist(f, 'file')
@@ -3554,7 +3672,6 @@ function meta = defaultUnderlayMeta()
     meta.atlasMode = '';
 end
 
-
 function [U, meta] = extractUnderlayFromMatStruct(S)
     meta = defaultUnderlayMeta();
 
@@ -3566,9 +3683,6 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
         end
     end
 
-    % ------------------------------------------------------
-    % Special handling for exported atlas regions MAT
-    % ------------------------------------------------------
     if strcmpi(meta.atlasMode, 'regions')
         if isfield(S, 'atlasUnderlayRGB') && ~isempty(S.atlasUnderlayRGB)
             U = double(S.atlasUnderlayRGB);
@@ -3596,9 +3710,6 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
         return;
     end
 
-    % ------------------------------------------------------
-    % Generic MAT loading
-    % ------------------------------------------------------
     pref = {'atlasUnderlayRGB','underlay','bg','brainImage','img','I','atlasUnderlay','vascular','histology','regions','Data'};
 
     for ii = 1:numel(pref)
@@ -3645,8 +3756,6 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
     error('MAT underlay file has no usable numeric variable.');
 end
 
-
-
 function U = convertRgbToGrayIfNeeded(U)
     if ndims(U) == 3 && size(U,3) == 3
         U = mean(double(U), 3);
@@ -3655,11 +3764,9 @@ function U = convertRgbToGrayIfNeeded(U)
     end
 end
 
-
 function Uout = warpUnderlayForCurrentDisplay(Uin, T)
     A = double(T.warpA);
 
-    % 2D transform
     if isequal(size(A), [3 3])
         if isempty(T.outSize) || numel(T.outSize) < 2
             error('2D underlay warp requires output size in transform file.');
@@ -3677,11 +3784,9 @@ function Uout = warpUnderlayForCurrentDisplay(Uin, T)
             Uout = imwarp(single(Uin), tform2, 'linear', 'OutputView', Rout2);
 
         elseif ndims(Uin) == 3
-            % Allow [Y X T] or [Y X Z] in practice only if current display is single-slice
             if size(Uin,3) == 1
                 Uout = imwarp(single(Uin(:,:,1)), tform2, 'linear', 'OutputView', Rout2);
             elseif size(Uin,1) == size(origPSC,1) && size(Uin,2) == size(origPSC,2)
-                % Warp each frame if [Y X T]
                 n3 = size(Uin,3);
                 Uout = zeros([outSize2 n3], 'single');
                 for kk = 1:n3
@@ -3696,7 +3801,6 @@ function Uout = warpUnderlayForCurrentDisplay(Uin, T)
         return;
     end
 
-    % 3D transform
     if isequal(size(A), [4 4])
         if isempty(T.outSize) || numel(T.outSize) < 3
             error('3D underlay warp requires output size in transform file.');
@@ -3761,8 +3865,7 @@ function tf = doesUnderlayMatchOriginalDisplay(U)
     end
 end
 
-
-    function rgb = renderUnderlayRGB(Uin)
+function rgb = renderUnderlayRGB(Uin)
     ensureUnderlayStateFields();
 
     if state.isColorUnderlay
@@ -3775,7 +3878,6 @@ end
 function rgb = convertUnderlayToColorRGB(U)
     U = squeeze(U);
 
-    % Already RGB
     if ndims(U) == 3 && size(U,3) == 3
         rgb = double(U);
         if max(rgb(:)) > 1
@@ -3785,7 +3887,6 @@ function rgb = convertUnderlayToColorRGB(U)
         return;
     end
 
-    % Numeric region label map
     if isnumeric(U) || islogical(U)
         L = double(U);
         L(~isfinite(L)) = 0;
@@ -3797,7 +3898,6 @@ function rgb = convertUnderlayToColorRGB(U)
 
         rgb = zeros([size(L,1) size(L,2) 3], 'double');
 
-        % Background / zero label in light gray
         zmask = (L == 0);
         rgb(:,:,1) = 0.85 * zmask;
         rgb(:,:,2) = 0.85 * zmask;
@@ -3821,7 +3921,6 @@ function rgb = convertUnderlayToColorRGB(U)
 
     rgb = toRGB(processUnderlay(U));
 end
-
 
 function lut = makeRegionColorLUT(n)
     if n <= 0
@@ -3857,6 +3956,7 @@ function ensureUnderlayStateFields()
         state.regionInfo = struct();
     end
 end
+
 %% ==========================================================
 % Pointer hit test
 %% ==========================================================
@@ -4070,7 +4170,7 @@ end
 %% ==========================================================
 % Time windows
 %% ==========================================================
-function drawTimeWindows()
+    function drawTimeWindows()
     [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
     [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
 
@@ -4092,18 +4192,50 @@ function drawTimeWindows()
         set(axTC, 'YLim', yl);
     end
 
-    xb = [b0s b1s b1s b0s]/60;
+    yr = yl(2) - yl(1);
+    if ~isfinite(yr) || yr <= 0
+        yr = 1;
+    end
+
+    xb = [b0s b1s b1s b0s] / 60;
     yb = [yl(1) yl(1) yl(2) yl(2)];
-    set(hBasePatch, 'XData', xb, 'YData', yb, 'FaceColor', [1.00 0.20 0.20], 'Visible', 'on');
+    set(hBasePatch, ...
+        'XData', xb, ...
+        'YData', yb, ...
+        'FaceColor', [1.00 0.20 0.20], ...
+        'FaceAlpha', 0.16, ...
+        'Visible', 'on');
 
-    xs = [s0s s1s s1s s0s]/60;
+    xs = [s0s s1s s1s s0s] / 60;
     ys = [yl(1) yl(1) yl(2) yl(2)];
-    set(hSigPatch, 'XData', xs, 'YData', ys, 'FaceColor', [1.00 0.55 0.15], 'Visible', 'on');
+    set(hSigPatch, ...
+        'XData', xs, ...
+        'YData', ys, ...
+        'FaceColor', [1.00 0.60 0.15], ...
+        'FaceAlpha', 0.16, ...
+        'Visible', 'on');
 
-    set(hBaseTxt, 'Position', [mean(xb) yl(2)], 'String', 'Bas.', 'Visible', 'on', ...
-        'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
-    set(hSigTxt, 'Position', [mean(xs) yl(2)], 'String', 'Sig.', 'Visible', 'on', ...
-        'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
+    yTxt = yl(2) - 0.06 * yr;
+
+    set(hBaseTxt, ...
+        'Position', [mean(xb) yTxt 0], ...
+        'String', 'Bas.', ...
+        'Visible', 'on', ...
+        'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'middle', ...
+        'BackgroundColor', [0 0 0], ...
+        'Margin', 1, ...
+        'Clipping', 'on');
+
+    set(hSigTxt, ...
+        'Position', [mean(xs) yTxt 0], ...
+        'String', 'Sig.', ...
+        'Visible', 'on', ...
+        'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'middle', ...
+        'BackgroundColor', [0 0 0], ...
+        'Margin', 1, ...
+        'Clipping', 'on');
 
     uistack(hBasePatch, 'bottom');
     uistack(hSigPatch, 'bottom');
@@ -4171,7 +4303,6 @@ function PSCz = getPSCForSlice(z)
 end
 
 function bg2 = getBg2DForSlice(z)
-    % RGB single-slice atlas underlay
     if ndims(bg) == 3 && size(bg,3) == 3
         bg2 = bg;
         return;
@@ -4193,7 +4324,6 @@ function bg2 = getBg2DForSlice(z)
     end
 
     if ndims(bg) == 4
-        % Optional support for RGB-by-slice stored as [Y X 3 Z]
         if size(bg,3) == 3 && size(bg,4) >= 1
             z = max(1, min(size(bg,4), z));
             bg2 = squeeze(bg(:,:,:,z));
@@ -4209,7 +4339,7 @@ function bg2 = getBg2DForSlice(z)
     bg2 = bg(:,:,1);
 end
 
-    function B = readScmBundleFile(fullf)
+function B = readScmBundleFile(fullf)
     if ~exist(fullf, 'file')
         error('File not found: %s', fullf);
     end
@@ -4231,7 +4361,6 @@ end
     B.loadedField = '';
     B.source = fullf;
 
-    % Prefer explicit overlay / signal restriction masks
     overlayFields = { ...
         'loadedMask', ...
         'overlayMask', ...
@@ -4255,7 +4384,6 @@ end
         end
     end
 
-    % Brain mask fallback
     brainFields = {'brainMask','underlayMask','brain_mask','underlay_mask'};
     for k = 1:numel(brainFields)
         fn = brainFields{k};
@@ -4268,7 +4396,6 @@ end
         end
     end
 
-    % Underlay / brain image
     underlayFields = { ...
         'brainImage', ...
         'underlay', ...
@@ -4288,7 +4415,6 @@ end
         end
     end
 
-    % Include / exclude flags for overlay mask
     if isfield(R, 'overlayMaskIsInclude') && ~isempty(R.overlayMaskIsInclude)
         B.overlayMaskIsInclude = logical(R.overlayMaskIsInclude);
     elseif isfield(S, 'overlayMaskIsInclude') && ~isempty(S.overlayMaskIsInclude)
@@ -4305,7 +4431,6 @@ end
         B.overlayMaskIsInclude = true;
     end
 
-    % Brain mask include / exclude
     if isfield(R, 'brainMaskIsInclude') && ~isempty(R.brainMaskIsInclude)
         B.brainMaskIsInclude = logical(R.brainMaskIsInclude);
     elseif isfield(S, 'brainMaskIsInclude') && ~isempty(S.brainMaskIsInclude)
@@ -4319,7 +4444,7 @@ end
     end
 end
 
-    function M = fitBundleMaskToCurrentScm(M0)
+function M = fitBundleMaskToCurrentScm(M0)
     M = [];
 
     if isempty(M0)
@@ -4521,7 +4646,6 @@ function [M, maskIsInclude, pickedField] = readMask(f, mode)
     if strcmpi(e, '.mat')
         S = load(f);
 
-        % If everything is nested inside maskBundle, prefer that namespace
         if isfield(S, 'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle)
             B = S.maskBundle;
         else
@@ -4597,7 +4721,6 @@ function [M, maskIsInclude, pickedField] = readMask(f, mode)
             error('MAT mask file has no usable mask variable.');
         end
 
-        % Include / exclude flag
         switch lower(pickedField)
             case 'loadedmask'
                 if isfield(B, 'loadedMaskIsInclude') && ~isempty(B.loadedMaskIsInclude)
@@ -4632,7 +4755,6 @@ function [M, maskIsInclude, pickedField] = readMask(f, mode)
         return;
     end
 
-    % Plain .nii
     M = niftiread(f);
     M = logical(M);
     maskIsInclude = true;
@@ -4721,7 +4843,7 @@ function q = prctile_fallback(v, p)
     end
 end
 
-    function s = getStr(h)
+function s = getStr(h)
     try
         s = get(h, 'String');
     catch

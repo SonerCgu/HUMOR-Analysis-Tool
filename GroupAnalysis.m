@@ -88,6 +88,8 @@ S.condList  = {'CondA','CondB','Baseline','Post'};
 S.defaultGroup = 'PACAP';
 S.defaultCond  = 'CondA';
 S.applyAllIfNoneSelected = true;
+S.tableMinRows = 2;   % no dummy padded rows
+S.tableColWidths = {}; % let refreshTable compute compact widths
 
 % Caches for speed
 try
@@ -137,11 +139,11 @@ S.plotTop = struct('auto',true,'forceZero',true,'ymin',0,'ymax',150,'step',5);
 S.plotBot = struct('auto',true,'forceZero',true,'ymin',0,'ymax',150,'step',5);
 
 % Preview style
-S.previewStyle = 'Light';
+S.previewStyle = 'Dark';
 S.previewShowGrid = false;
 
 % Stats
-S.testType = 'None';
+S.testType = 'Two-sample t-test (Student, equal var)';
 S.alpha = 0.05;
 S.annotMode = 'Bottom only';
 S.showPText = true;
@@ -166,8 +168,9 @@ pLeft = uipanel(hFig,'Units','normalized','Position',[0.02 0.05 leftW 0.93], ...
     'FontSize',F.big,'FontWeight','bold');
 
 pRight = uipanel(hFig,'Units','normalized','Position',[0.02+leftW+0.02 0.05 0.96-(0.02+leftW+0.02) 0.93], ...
-    'Title','Analysis', 'BackgroundColor',C.panel,'ForegroundColor','w', ...
+    'Title','', 'BackgroundColor',C.panel,'ForegroundColor','w', ...
     'FontSize',F.big,'FontWeight','bold');
+
 
 % -------------------- Table ------------------------------
 colNames = {'Use','Animal ID','Session','Scan ID','Group','Condition','ROI File','ROI Status'};
@@ -175,20 +178,21 @@ colEdit  = [true true false false true true false false];
 colFmt   = {'logical','char','char','char',S.groupList,S.condList,'char','char'};
 
 S.hTable = uitable(pLeft, ...
-    'Units','normalized','Position',[0.03 0.33 0.70 0.64], ...
-    'Data',subjToUITable(S.subj), ...
+    'Units','normalized','Position',[0.03 0.42 0.70 0.55], ...
+    'Data',makeUITableDisplayData(S.subj, S.tableMinRows), ...
     'ColumnName',colNames, ...
     'ColumnEditable',colEdit, ...
     'ColumnFormat',colFmt, ...
     'RowName','numbered', ...
-    'BackgroundColor',[1 1 1], ...
-    'ForegroundColor',[0 0 0], ...
+    'BackgroundColor',buildTableRowColorsDisplay(S.subj, S.tableMinRows), ...
+    'ForegroundColor',[1 1 1], ...
     'FontName','Consolas', ...
     'FontSize',F.table, ...
     'CellSelectionCallback',@onCellSelect, ...
     'CellEditCallback',@onCellEdit);
+
 % -------------------- Quick Assign -----------------------
-pQuick = uipanel(pLeft,'Units','normalized','Position',[0.75 0.33 0.22 0.64], ...
+pQuick = uipanel(pLeft,'Units','normalized','Position',[0.75 0.42 0.22 0.55], ...
     'Title','Quick Assign', 'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontSize',F.base,'FontWeight','bold');
 
@@ -225,8 +229,8 @@ S.hApplyBoth  = mkBtn(pQuick,'Apply Both',[0.05 0.405 0.90 0.075],C.btnPrimary,@
 S.hAddGroup = mkBtn(pQuick,'Add Group',[0.05 0.305 0.43 0.070],C.btnSecondary,@onAddGroup);
 S.hAddCond  = mkBtn(pQuick,'Add Cond',[0.52 0.305 0.43 0.070],C.btnSecondary,@onAddCond);
 
-S.hRevertExcluded = mkBtn(pQuick,'Revert Excluded',[0.05 0.205 0.90 0.070],C.btnSecondary,@onRevertExcluded);
-S.hHelp = mkBtn(pQuick,'Help',[0.05 0.105 0.90 0.070],C.btnHelp,@onHelp);
+S.hRevertExcluded = mkBtn(pQuick,'Revert Excluded',[0.05 0.145 0.90 0.075],C.btnSecondary,@onRevertExcluded);
+S.hHelp = [];
 
 % Hidden compatibility handles (kept so old logic still works safely)
 S.hAutoPair = uicontrol(pQuick,'Style','checkbox','String','Auto PairID = Subject', ...
@@ -239,14 +243,18 @@ S.hFillFromROI = uicontrol(pQuick,'Style','pushbutton','String','Fill DATA from 
     'Visible','off','Callback',@onFillFromROISelected);
 
 
+
 % -------------------- Left buttons -----------------------
-S.hAddFiles  = mkBtn(pLeft,'Add Files',[0.03 0.24 0.22 0.065],C.btnSecondary,@onAddFiles);
-S.hAddFolder = mkBtn(pLeft,'Add Folder (scan)',[0.26 0.24 0.22 0.065],C.btnSecondary,@onAddFolder);
-S.hRemove    = mkBtn(pLeft,'Remove Selected',[0.49 0.24 0.24 0.065],C.btnDanger,@onRemoveSelected);
+S.hAddFiles  = mkBtn(pLeft,'Add Files',[0.03 0.285 0.29 0.060],C.btnSecondary,@onAddFiles);
+S.hAddFolder = mkBtn(pLeft,'Add Folder (scan)',[0.35 0.285 0.29 0.060],C.btnSecondary,@onAddFolder);
+S.hRemove    = mkBtn(pLeft,'Remove Selected',[0.67 0.285 0.30 0.060],C.btnDanger,@onRemoveSelected);
 
-S.hSaveList = mkBtn(pLeft,'Save List',[0.03 0.155 0.34 0.060],C.btnSecondary,@onSaveList);
-S.hLoadList = mkBtn(pLeft,'Load List',[0.39 0.155 0.34 0.060],C.btnSecondary,@onLoadList);
+S.hSaveList = mkBtn(pLeft,'Save List',[0.03 0.210 0.45 0.055],C.btnSecondary,@onSaveList);
+S.hLoadList = mkBtn(pLeft,'Load List',[0.52 0.210 0.45 0.055],C.btnSecondary,@onLoadList);
 
+% Bottom-right corner actions
+S.hHelp  = mkBtn(pLeft,'Help',[0.47 0.060 0.24 0.050],C.btnHelp,@onHelp);
+S.hClose = mkBtn(pLeft,'Close',[0.73 0.060 0.24 0.050],C.btnDanger,@(~,~) closeMe(hFig,[]));
 % Hidden legacy controls so callbacks remain harmless
 S.hSetData = uicontrol(pLeft,'Style','pushbutton','String','Set DATA for selected', ...
     'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
@@ -276,14 +284,37 @@ S.hHint = uicontrol(pLeft,'Style','text', ...
     'HorizontalAlignment','left','FontSize',F.small, ...
     'Visible','off');
 
-% -------------------- Tabs -------------------------------
-S.tabGroup = uitabgroup(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.96]);
-try, set(S.tabGroup,'FontSize',F.tab); catch, end
+% -------------------- Manual dark tabs -------------------
+S.activeTab = 'ROI';
 
-S.tabROI   = uitab(S.tabGroup,'Title','ROI Timecourse');
-S.tabMAP   = uitab(S.tabGroup,'Title','PSC Maps');
-S.tabSTATS = uitab(S.tabGroup,'Title','Statistics / Export');
-S.tabPREV  = uitab(S.tabGroup,'Title','Preview');
+S.hAnalysisTitle = uicontrol(pRight,'Style','text','String','Analysis', ...
+    'Units','normalized','Position',[0.02 0.965 0.18 0.025], ...
+    'BackgroundColor',C.panel,'ForegroundColor','w', ...
+    'HorizontalAlignment','left', ...
+    'FontSize',F.big,'FontWeight','bold');
+
+S.hTabBar = uipanel(pRight,'Units','normalized','Position',[0.02 0.935 0.96 0.035], ...
+    'BorderType','none','BackgroundColor',C.panel);
+
+S.hTabROI = mkTabBtn(S.hTabBar,'ROI Timecourse',[0.00 0.05 0.18 0.90],@(s,e) onTabClicked('ROI'));
+S.hTabMAP = mkTabBtn(S.hTabBar,'PSC Maps',[0.19 0.05 0.13 0.90],@(s,e) onTabClicked('MAP'));
+S.hTabSTATS = mkTabBtn(S.hTabBar,'Statistics / Export',[0.33 0.05 0.20 0.90],@(s,e) onTabClicked('STATS'));
+S.hTabPREV = mkTabBtn(S.hTabBar,'Preview',[0.54 0.05 0.12 0.90],@(s,e) onTabClicked('PREV'));
+
+S.tabROI   = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
+    'BorderType','none','BackgroundColor',C.bg);
+
+S.tabMAP   = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
+    'BorderType','none','BackgroundColor',C.bg, ...
+    'Visible','off');
+
+S.tabSTATS = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
+    'BorderType','none','BackgroundColor',C.bg, ...
+    'Visible','off');
+
+S.tabPREV  = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
+    'BorderType','none','BackgroundColor',C.bg, ...
+    'Visible','off');
 
 pROIBG   = uipanel(S.tabROI,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
 pMAPBG   = uipanel(S.tabMAP,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
@@ -293,7 +324,8 @@ pSTATSBG = uipanel(S.tabSTATS,'Units','normalized','Position',[0 0 1 1], 'Border
 bg2 = C.panel2;
 
 pROItop = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.92 0.96 0.07], ...
-    'Title','', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
+    'Title','', 'BorderType','none', ...
+    'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');;
 
 uicontrol(pROItop,'Style','text','String','Active mode:', ...
     'Units','normalized','Position',[0.02 0.15 0.18 0.70], ...
@@ -518,15 +550,13 @@ S.hOutInfo = uicontrol(pOut,'Style','listbox', ...
 pRun = uipanel(pSTATSBG,'Units','normalized','Position',[0.02 0.02 0.96 0.48], ...
     'Title','Run / Export', 'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
-S.hRun         = mkBtn(pRun,'Run Analysis',[0.08 0.62 0.24 0.24],C.btnPrimary,@onRun);
-S.hExport      = mkBtn(pRun,'Export Results',[0.38 0.62 0.24 0.24],C.btnSecondary,@onExport);
-S.hExportExcel = mkBtn(pRun,'Export Excel',[0.68 0.62 0.24 0.24],C.btnAction,@onExportExcel);
-
+S.hRun         = mkBtn(pRun,'Run Analysis',[0.14 0.62 0.22 0.24],C.btnPrimary,@onRun);
+S.hExport      = mkBtn(pRun,'Export Results',[0.39 0.62 0.22 0.24],C.btnSecondary,@onExport);
+S.hExportExcel = mkBtn(pRun,'Export Excel',[0.64 0.62 0.22 0.24],C.btnAction,@onExportExcel);
 S.hStatus = uicontrol(pRun,'Style','text','String','Ready.', ...
     'Units','normalized','Position',[0.04 0.10 0.92 0.36], ...
-    'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','left', ...
+    'BackgroundColor',bg2,'ForegroundColor',C.muted,'HorizontalAlignment','center', ...
     'FontSize',F.small);
-
 
 % -------------------- PREVIEW TAB ------------------------
 S.hPrevBG = uipanel(S.tabPREV,'Units','normalized','Position',[0 0 1 1], ...
@@ -589,9 +619,15 @@ guidata(hFig,S);
 S = guidata(hFig);
 stylePreviewPanels(S);
 syncUIFromState();
+updateManualTabs();
 refreshTable();
 clearPreview();
 updateOutlierBox();
+
+drawnow;
+pause(0.05);
+applyDarkUITableViewport(S.hTable, C);
+
 setStatus(false);
 setStatusText('Ready. Preview redraw is clean and cached computations are enabled.');
 
@@ -930,6 +966,50 @@ end
         S0.outDir = d;
         guidata(hFig,S0);
         set(S0.hOutEdit,'String',S0.outDir);
+    end
+
+    function onTabClicked(tabName)
+        S0 = guidata(hFig);
+        S0.activeTab = upper(tabName);
+        guidata(hFig,S0);
+        updateManualTabs();
+    end
+
+    function updateManualTabs()
+        S0 = guidata(hFig);
+
+        % hide all tab pages
+        set(S0.tabROI,'Visible','off');
+        set(S0.tabMAP,'Visible','off');
+        set(S0.tabSTATS,'Visible','off');
+        set(S0.tabPREV,'Visible','off');
+
+        % default tab-button style
+        tabOff = [0.18 0.18 0.18];
+        tabOn  = [0.34 0.34 0.34];
+
+        set(S0.hTabROI,  'BackgroundColor',tabOff,'ForegroundColor','w');
+        set(S0.hTabMAP,  'BackgroundColor',tabOff,'ForegroundColor','w');
+        set(S0.hTabSTATS,'BackgroundColor',tabOff,'ForegroundColor','w');
+        set(S0.hTabPREV, 'BackgroundColor',tabOff,'ForegroundColor','w');
+
+        switch upper(S0.activeTab)
+            case 'ROI'
+                set(S0.tabROI,'Visible','on');
+                set(S0.hTabROI,'BackgroundColor',tabOn);
+
+            case 'MAP'
+                set(S0.tabMAP,'Visible','on');
+                set(S0.hTabMAP,'BackgroundColor',tabOn);
+
+            case 'STATS'
+                set(S0.tabSTATS,'Visible','on');
+                set(S0.hTabSTATS,'BackgroundColor',tabOn);
+
+            case 'PREV'
+                set(S0.tabPREV,'Visible','on');
+                set(S0.hTabPREV,'BackgroundColor',tabOn);
+        end
     end
 
     function onModeChanged(src,~)
@@ -1613,7 +1693,12 @@ end
     try
         dt = get(S0.hTable,'Data');
         if iscell(dt)
-            S0.subj = applyUITableToSubj(S0.subj, dt);
+            dt = stripUITablePlaceholders(dt);
+            if isempty(dt)
+                S0.subj = cell(0,8);
+            else
+                S0.subj = applyUITableToSubj(S0.subj, dt);
+            end
         end
     catch
     end
@@ -1621,7 +1706,7 @@ end
     guidata(hFig,S0);
 end
 
-  function refreshTable()
+ function refreshTable()
     S0 = guidata(hFig);
     S0 = sanitizeTableStruct(S0);
 
@@ -1630,13 +1715,25 @@ end
 
     colFmt = {'logical','char','char','char',S0.groupList,S0.condList,'char','char'};
     try, set(S0.hTable,'ColumnFormat',colFmt); catch, end
-    set(S0.hTable,'Data',subjToUITable(S0.subj));
+
+    set(S0.hTable,'Data',makeUITableDisplayData(S0.subj, S0.tableMinRows));
     set(S0.hTable,'RowName','numbered');
+    drawnow;
 
     try
-        set(S0.hTable,'BackgroundColor',buildTableRowColors(S0.subj));
+        cw = compactTableColWidths(S0.hTable);
+        set(S0.hTable,'ColumnWidth',cw);
+    catch ME
+        disp(['ColumnWidth warning: ' ME.message]);
+    end
+
+    try
+        set(S0.hTable,'BackgroundColor',buildTableRowColorsDisplay(S0.subj, S0.tableMinRows));
     catch
     end
+
+    drawnow;
+    applyDarkUITableViewport(S0.hTable, S0.C);
 
     set(S0.hQuickGroup,'String',S0.groupList);
     set(S0.hQuickCond,'String',S0.condList);
@@ -1795,7 +1892,20 @@ function h = mkBtn(parent, txt, pos, bg, cb)
 h = uicontrol(parent,'Style','pushbutton','String',txt, ...
     'Units','normalized','Position',pos, ...
     'BackgroundColor',bg,'ForegroundColor','w', ...
-    'FontWeight','bold', 'Callback',cb);
+    'FontWeight','bold', ...
+    'FontSize',12, ...
+    'Callback',cb);
+end
+
+
+function h = mkTabBtn(parent, txt, pos, cb)
+h = uicontrol(parent,'Style','pushbutton','String',txt, ...
+    'Units','normalized','Position',pos, ...
+    'BackgroundColor',[0.18 0.18 0.18], ...
+    'ForegroundColor','w', ...
+    'FontWeight','bold', ...
+    'FontSize',11, ...
+    'Callback',cb);
 end
 
 function d = defaultOutDir(opt)
@@ -1945,7 +2055,7 @@ for i = 1:n
     V{i,4} = meta.scanID;                   % Scan ID
     V{i,5} = strtrimSafe(subj{i,3});        % Group
     V{i,6} = strtrimSafe(subj{i,4});        % Condition
-    V{i,7} = strtrimSafe(subj{i,7});        % ROI File
+   V{i,7} = shortPathForTable(strtrimSafe(subj{i,7}), 34);  % display only
     V{i,8} = deriveROIStatus(subj(i,:));    % ROI Status
 end
 end
@@ -4700,13 +4810,19 @@ end
 
 
 function colors = buildTableRowColors(subj)
+% Return a valid uitable BackgroundColor matrix.
+% MATLAB wants at least 2x3, even if table is empty or has 1 row.
+
+neutral = [0.12 0.12 0.12];
+
 n = size(subj,1);
+
 if n <= 0
-    colors = [1 1 1];
+    colors = [neutral; neutral];   % MUST be at least 2x3
     return;
 end
 
-colors = repmat([1.00 1.00 1.00], n, 1);
+colors = repmat(neutral, max(n,2), 1);   % ensure >= 2 rows
 
 for i = 1:n
     use = logicalCellValue(subj{i,1});
@@ -4714,13 +4830,13 @@ for i = 1:n
     st  = lower(strtrimSafe(subj{i,8}));
 
     if contains(st,'excluded') || ~use
-        colors(i,:) = [1.00 0.80 0.80];   % light red
+        colors(i,:) = [0.28 0.12 0.12];   % dark red
     elseif ~isempty(roi) && exist(roi,'file') == 2
-        colors(i,:) = [0.80 1.00 0.80];   % light green
+        colors(i,:) = [0.10 0.24 0.14];   % dark green
     elseif isempty(roi)
-        colors(i,:) = [0.97 0.97 0.97];
+        colors(i,:) = neutral;            % neutral dark
     else
-        colors(i,:) = [1.00 0.93 0.82];   % light orange
+        colors(i,:) = [0.28 0.20 0.10];   % dark amber
     end
 end
 end
@@ -4737,6 +4853,126 @@ if isfield(S,fieldName)
 end
 end
 
+function V = makeUITableDisplayData(subj, minRows)
+if nargin < 2 || isempty(minRows)
+    minRows = 0;
+end
+
+V = subjToUITable(subj);
+n = size(V,1);
+
+if minRows > 0 && n < minRows
+    pad = cell(minRows - n, 8);
+    for i = 1:size(pad,1)
+        pad{i,1} = false;
+        for j = 2:8
+            pad{i,j} = '';
+        end
+    end
+    V = [V; pad];
+end
+end
+
+function V = stripUITablePlaceholders(V)
+if isempty(V), return; end
+
+keep = false(size(V,1),1);
+
+for i = 1:size(V,1)
+    useVal = false;
+    try
+        useVal = logicalCellValue(V{i,1});
+    catch
+    end
+
+    hasContent = false;
+    for j = 2:8
+        x = V{i,j};
+        if ischar(x) || isstring(x)
+            if ~isempty(strtrim(char(x)))
+                hasContent = true;
+                break;
+            end
+        elseif isnumeric(x)
+            if ~isempty(x) && any(isfinite(x(:)))
+                hasContent = true;
+                break;
+            end
+        elseif islogical(x)
+            if any(x(:))
+                hasContent = true;
+                break;
+            end
+        else
+            try
+                if ~isempty(x)
+                    hasContent = true;
+                    break;
+                end
+            catch
+            end
+        end
+    end
+
+    keep(i) = useVal || hasContent;
+end
+
+V = V(keep,:);
+end
+
+function colors = buildTableRowColorsDisplay(subj, minRows)
+if nargin < 2 || isempty(minRows)
+    minRows = 40;
+end
+
+neutral = [0.12 0.12 0.12];
+
+% MATLAB uitable wants at least 2x3 colors
+nWant = max([2, minRows, size(subj,1)]);
+
+colors = repmat(neutral, nWant, 1);
+
+if isempty(subj)
+    return;
+end
+
+base = buildTableRowColors(subj);
+nBase = size(base,1);
+colors(1:min(nBase,nWant),:) = base(1:min(nBase,nWant),:);
+end
+
+function s = shortPathForTable(fp, maxLen)
+if nargin < 2 || isempty(maxLen)
+    maxLen = 34;
+end
+
+s = strtrimSafe(fp);
+if isempty(s)
+    return;
+end
+
+s = strrep(s,'/','\');
+
+if numel(s) <= maxLen
+    return;
+end
+
+[pth,name,ext] = fileparts(s);
+tail = [name ext];
+
+if numel(tail) >= maxLen-4
+    s = ['...' tail(max(1,end-(maxLen-4)+1):end)];
+    return;
+end
+
+[~,lastFolder] = fileparts(pth);
+core = [lastFolder '\' tail];
+if numel(core) <= maxLen-3
+    s = ['...\' core];
+else
+    s = ['...\' core(max(1,end-(maxLen-4)+1):end)];
+end
+end
 
 function [h0,h1] = addPairEditsDark(parent, y, label, v0, v1, C, cb)
 bg = get(parent,'BackgroundColor');
@@ -4759,6 +4995,291 @@ h1 = uicontrol(parent,'Style','edit','String',num2str(v1), ...
     'BackgroundColor',C.editBg, ...
     'ForegroundColor','w', ...
     'Callback',cb);
+end
+
+
+function ok = applyDarkUITableViewport(hTable, C)
+ok = false;
+
+if isempty(hTable) || ~ishandle(hTable)
+    return;
+end
+
+if exist('findjobj','file') ~= 2 && exist('findjobj','file') ~= 6
+    return;
+end
+
+try
+    drawnow;
+    pause(0.05);
+
+    jObj = findjobj(hTable);
+    if isempty(jObj)
+        return;
+    end
+    if iscell(jObj)
+        jObj = jObj{1};
+    end
+
+    [jScroll, jTable] = findJavaScrollAndTable(jObj);
+    if isempty(jScroll) || isempty(jTable)
+        return;
+    end
+
+    bgBody = java.awt.Color(C.editBg(1), C.editBg(2), C.editBg(3));
+    bgHead = java.awt.Color(0.18, 0.18, 0.18);
+    fgMain = java.awt.Color(1.00, 1.00, 1.00);
+    selBg  = java.awt.Color(0.20, 0.45, 0.85);
+    selFg  = java.awt.Color(1.00, 1.00, 1.00);
+    gridC  = java.awt.Color(0.28, 0.28, 0.28);
+
+    % body
+    try, jTable.setOpaque(true); catch, end
+    try, jTable.setBackground(bgBody); catch, end
+    try, jTable.setForeground(fgMain); catch, end
+    try, jTable.setSelectionBackground(selBg); catch, end
+    try, jTable.setSelectionForeground(selFg); catch, end
+    try, jTable.setGridColor(gridC); catch, end
+    try, jTable.setShowHorizontalLines(true); catch, end
+    try, jTable.setShowVerticalLines(true); catch, end
+    try, jTable.setFillsViewportHeight(true); catch, end
+
+    % viewport / empty area
+    try, jScroll.setOpaque(true); catch, end
+    try, jScroll.setBackground(bgBody); catch, end
+    try, jScroll.getViewport.setOpaque(true); catch, end
+    try, jScroll.getViewport.setBackground(bgBody); catch, end
+
+    % table header
+    try
+        jHeader = jTable.getTableHeader;
+        if ~isempty(jHeader)
+            jHeader.setOpaque(true);
+            jHeader.setBackground(bgHead);
+            jHeader.setForeground(fgMain);
+
+            try
+                hr = jHeader.getDefaultRenderer;
+                if ~isempty(hr)
+                    hr.setBackground(bgHead);
+                    hr.setForeground(fgMain);
+                    hr.setOpaque(true);
+                end
+            catch
+            end
+        end
+    catch
+    end
+
+    % column-header viewport
+    try
+        jCH = jScroll.getColumnHeader;
+        if ~isempty(jCH)
+            jCH.setOpaque(true);
+            jCH.setBackground(bgHead);
+            try
+                jCHv = jCH.getView;
+                if ~isempty(jCHv)
+                    jCHv.setBackground(bgHead);
+                    jCHv.setForeground(fgMain);
+                end
+            catch
+            end
+        end
+    catch
+    end
+
+    % row-header viewport / row numbers
+    try
+        jRH = jScroll.getRowHeader;
+        if ~isempty(jRH)
+            jRH.setOpaque(true);
+            jRH.setBackground(bgHead);
+
+            try
+                jRowView = jRH.getView;
+                if ~isempty(jRowView)
+                    jRowView.setOpaque(true);
+                    jRowView.setBackground(bgHead);
+                    jRowView.setForeground(fgMain);
+
+                    % JList-based row numbers
+                    try
+                        rr = jRowView.getCellRenderer;
+                        if ~isempty(rr)
+                            rr.setBackground(bgHead);
+                            rr.setForeground(fgMain);
+                            rr.setOpaque(true);
+                        end
+                    catch
+                    end
+                end
+            catch
+            end
+        end
+    catch
+    end
+
+    % corners
+    try
+        sc = javax.swing.ScrollPaneConstants;
+        c1 = jScroll.getCorner(sc.UPPER_RIGHT_CORNER);
+        if ~isempty(c1), c1.setOpaque(true); c1.setBackground(bgHead); end
+        c2 = jScroll.getCorner(sc.UPPER_LEFT_CORNER);
+        if ~isempty(c2), c2.setOpaque(true); c2.setBackground(bgHead); end
+        c3 = jScroll.getCorner(sc.LOWER_RIGHT_CORNER);
+        if ~isempty(c3), c3.setOpaque(true); c3.setBackground(bgBody); end
+        c4 = jScroll.getCorner(sc.LOWER_LEFT_CORNER);
+        if ~isempty(c4), c4.setOpaque(true); c4.setBackground(bgBody); end
+    catch
+    end
+
+    try, jTable.repaint; catch, end
+    try, jScroll.repaint; catch, end
+    drawnow;
+
+    ok = true;
+
+catch
+    ok = false;
+end
+end
+
+function [jScroll, jTable] = findJavaScrollAndTable(jObj)
+jScroll = [];
+jTable  = [];
+
+if isempty(jObj)
+    return;
+end
+
+% direct hit: scrollpane
+try
+    if isa(jObj,'javax.swing.JScrollPane')
+        jScroll = jObj;
+        try
+            v = jScroll.getViewport.getView;
+            if ~isempty(v) && isa(v,'javax.swing.JTable')
+                jTable = v;
+            else
+                jTable = findJavaTableDeep(v);
+            end
+        catch
+        end
+        return;
+    end
+catch
+end
+
+% direct hit: table
+try
+    if isa(jObj,'javax.swing.JTable')
+        jTable = jObj;
+        jScroll = findJavaAncestorOfClass(jObj, 'javax.swing.JScrollPane');
+        return;
+    end
+catch
+end
+
+% recursive search in children
+try
+    n = jObj.getComponentCount;
+    for k = 1:n
+        child = jObj.getComponent(k-1);
+        [jScroll, jTable] = findJavaScrollAndTable(child);
+        if ~isempty(jScroll) || ~isempty(jTable)
+            return;
+        end
+    end
+catch
+end
+end
+
+function jTable = findJavaTableDeep(jObj)
+jTable = [];
+if isempty(jObj)
+    return;
+end
+
+try
+    if isa(jObj,'javax.swing.JTable')
+        jTable = jObj;
+        return;
+    end
+catch
+end
+
+try
+    n = jObj.getComponentCount;
+    for k = 1:n
+        child = jObj.getComponent(k-1);
+        jTable = findJavaTableDeep(child);
+        if ~isempty(jTable)
+            return;
+        end
+    end
+catch
+end
+end
+
+function cw = compactTableColWidths(hTable)
+% Return valid ColumnWidth for classic figure-based uitable
+% Use numeric cell array, NOT '90x' strings.
+
+oldUnits = get(hTable,'Units');
+set(hTable,'Units','pixels');
+pos = get(hTable,'Position');
+set(hTable,'Units',oldUnits);
+
+avail = max(520, round(pos(3) - 46));   % reserve border / row-index area
+
+% Use | Animal ID | Session | Scan ID | Group | Condition | ROI File | ROI Status
+w = round(avail * [0.05 0.13 0.09 0.12 0.11 0.12 0.26 0.12]);
+
+% minimum widths
+wmin = [34 72 52 72 64 68 140 80];
+w = max(w, wmin);
+
+% shrink if still too wide
+extra = sum(w) - avail;
+order = [7 2 4 5 6 8 3 1];  % shrink ROI first
+while extra > 0
+    changed = false;
+    for k = 1:numel(order)
+        j = order(k);
+        if w(j) > wmin(j)
+            w(j) = w(j) - 1;
+            extra = extra - 1;
+            changed = true;
+            if extra <= 0
+                break;
+            end
+        end
+    end
+    if ~changed
+        break;
+    end
+end
+
+w = max(20, round(double(w(:)')));
+cw = num2cell(w);   % IMPORTANT: numeric cell array for figure-based uitable
+end
+
+
+function anc = findJavaAncestorOfClass(jObj, className)
+anc = [];
+try
+    p = jObj;
+    while ~isempty(p)
+        if isa(p, className)
+            anc = p;
+            return;
+        end
+        p = p.getParent;
+    end
+catch
+    anc = [];
+end
 end
 
 function exportOnePreview(ax, which, S, style)
