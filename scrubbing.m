@@ -169,10 +169,10 @@ stats.trimEndSec    = trimEndVol   * TR;
 stats.newTotalTime  = T * TR;
 
 % ---------------- QC SAVE ----------------
-qcDir = fullfile(saveRoot,'Preprocessing','QC_Scrubbing');
+qcDir = fullfile(saveRoot,'Preprocessing','QC_scrubbing');
 if ~exist(qcDir,'dir'), mkdir(qcDir); end
 
-qcFile = fullfile(qcDir, sprintf('Scrubbing_%s_%s_%s.png', method, interpMethod, tag));
+qcFile = fullfile(qcDir, sprintf('QC_scrubbing_%s_%s_%s.png', method, interpMethod, tag));
 
 globalSig = mean(double(flatMasked), 1);
 

@@ -43,8 +43,16 @@ if ~isfield(opts,'showQC') || isempty(opts.showQC)
     opts.showQC = true;
 end
 
+if ~isfield(opts,'tag') || isempty(opts.tag)
+    opts.tag = datestr(now,'yyyymmdd_HHMMSS');
+end
+
 if ~isfield(opts,'qcDir') || isempty(opts.qcDir)
-    opts.qcDir = 'gabriel_QC';
+    if isfield(opts,'exportPath') && ~isempty(opts.exportPath)
+        opts.qcDir = fullfile(opts.exportPath, 'Preprocessing', 'QC_gabriel');
+    else
+        opts.qcDir = fullfile(pwd, 'Preprocessing', 'QC_gabriel');
+    end
 end
 
 % ------------------ NEW: block method (median vs mean) ------------------
@@ -158,7 +166,7 @@ if opts.saveQC || opts.showQC
     title('QC — Global median signal');
 
     if opts.saveQC
-        saveas(QC.figIntensity, fullfile(opts.qcDir,'QC_globalMedian.png'));
+        saveas(QC.figIntensity, fullfile(opts.qcDir, ['QC_gabriel_globalMedian_' opts.tag '.png']));
     end
 
     % ---- Registration QC (robust for 2D & 3D) ----
@@ -189,7 +197,7 @@ if opts.saveQC || opts.showQC
     colormap gray;
 
     if opts.saveQC
-        saveas(QC.figRejected, fullfile(opts.qcDir,'QC_registration.png'));
+        saveas(QC.figRejected, fullfile(opts.qcDir, ['QC_gabriel_registration_' opts.tag '.png']));
     end
 
     if ~opts.showQC

@@ -1327,15 +1327,21 @@ clearPreview();
         end
     end
 
-    function outBase = exportStartFolder()
-        S0 = guidata(hFig);
-        if exist('Z:\fUS','dir')
-            outBase = 'Z:\fUS';
-        else
-            outBase = S0.outDir;
-            if isempty(outBase) || ~exist(outBase,'dir'), outBase = pwd; end
+   function outBase = exportStartFolder()
+    S0 = guidata(hFig);
+    if isfield(S0,'opt') && isfield(S0.opt,'studio') && isstruct(S0.opt.studio)
+        P = studio_resolve_paths(S0.opt.studio, 'GroupAnalysis', '');
+        outBase = P.groupDir;
+    else
+        outBase = S0.outDir;
+        if isempty(outBase) || ~exist(outBase,'dir')
+            outBase = pwd;
         end
     end
+    if exist(outBase,'dir') ~= 7
+        mkdir(outBase);
+    end
+end
 
     function onExport(~,~)
         S0 = guidata(hFig);
@@ -1910,8 +1916,9 @@ end
 
 function d = defaultOutDir(opt)
 d = pwd;
-if isfield(opt,'studio') && isstruct(opt.studio) && isfield(opt.studio,'exportPath') && ~isempty(opt.studio.exportPath)
-    d = fullfile(opt.studio.exportPath,'GroupAnalysis');
+if isfield(opt,'studio') && isstruct(opt.studio)
+    P = studio_resolve_paths(opt.studio, 'GroupAnalysis', '');
+    d = P.groupDir;
 end
 end
 
@@ -2743,19 +2750,14 @@ end
 %%%%%%% EXCEL Export %%%%%%
 %%%%%%% -------------%%%%%%
 function startDir = getExcelExportStartDir(S)
-root1 = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData\GroupAnalysis';
-root2 = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData';
-
-if exist(root1,'dir') == 7
-    startDir = root1;
-elseif exist(root2,'dir') == 7
-    startDir = root2;
-elseif isfield(S,'outDir') && ~isempty(S.outDir) && exist(S.outDir,'dir') == 7
-    startDir = S.outDir;
-elseif isfield(S,'opt') && isfield(S.opt,'startDir') && ~isempty(S.opt.startDir) && exist(S.opt.startDir,'dir') == 7
-    startDir = S.opt.startDir;
+if isfield(S,'opt') && isfield(S.opt,'studio') && isstruct(S.opt.studio)
+    P = studio_resolve_paths(S.opt.studio, 'GroupAnalysis', '');
+    startDir = P.groupDir;
 else
     startDir = pwd;
+end
+if exist(startDir,'dir') ~= 7
+    mkdir(startDir);
 end
 end
 

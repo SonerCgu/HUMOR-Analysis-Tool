@@ -99,9 +99,15 @@ roi.colors = lines(12);
 roi.isFrozen = false;
 roi.nextId = 1;
 roi.lastAddStamp = 0;
-roi.exportSetId = [];
+
+% export/session naming
+roi.sessionSetId = 0;              % ROI1, ROI2, ROI3 ... per opened SCM session
+roi.lastExportLabel = 'Target';    % default label shown in dialog
+
 roi.exportBusy = false;
 roi.lastExportStampSec = -inf;
+
+state.lastTcExportLabel = 'Target';
 
 state.singleScmExportBusy = false;
 state.lastSingleScmExportStampSec = -inf;
@@ -144,6 +150,13 @@ fig = figure( ...
 
 set(fig, 'DefaultUicontrolFontName', 'Arial');
 set(fig, 'DefaultUicontrolFontSize', 15);
+try
+    set(fig, 'WindowState', 'maximized');
+catch
+    scr2 = get(0, 'ScreenSize');
+    set(fig, 'Position', [1 1 max(1200, scr2(3)-20) max(850, scr2(4)-80)]);
+end
+
 
 %annotation(fig, 'textbox', [0.62 0.004 0.37 0.03], ...
  %   'String', 'SCM GUI - Soner Caner Cagun - MPI Biological Cybernetics', ...
@@ -652,9 +665,15 @@ function layoutUI()
     gapX    = 36;
     gapY    = 24;
 
-    panelW  = min(760, max(600, round(0.37 * W)));
-    btnH    = 54;
-    btnGap  = 12;
+ panelW  = min(760, max(520, round(0.36 * W)));
+
+if Hh < 980
+    btnH   = 46;
+    btnGap = 8;
+else
+    btnH   = 54;
+    btnGap = 12;
+end
 
     yClose  = 28;
     yHelp   = yClose;
@@ -677,10 +696,10 @@ function layoutUI()
     set(btnHelp,  'Position', [panelX yHelp halfW btnH]);
     set(btnClose, 'Position', [panelX + halfW + 14 yClose halfW btnH]);
 
-    leftW = max(730, panelX - leftM - gapX);
+    leftW = max(520, panelX - leftM - gapX);
 
-    tcH = 238;
-    axH = max(510, Hh - botM - tcH - gapY - topM);
+tcH = min(238, max(180, round(0.22 * Hh)));
+axH = max(360, Hh - botM - tcH - gapY - topM);
 
     axX = leftM;
     axY = botM + tcH + gapY;
@@ -724,86 +743,118 @@ end
     layoutUnder(contentW, contentH);
 end
 
-function layoutOverlay(w, h)
-    xLabel = pad;
-    wLabel = 260;
-    xVal   = w - pad - 126;
-    wVal   = 126;
-    xCtrl  = xLabel + wLabel + 16;
-    wCtrl  = max(115, xVal - xCtrl - 12);
+    function layoutOverlay(w, h)
+    compact = (h < 700);
 
-    y = h - 42;
+    if compact
+        rowHLoc      = 30;
+        gapLoc       = 5;
+        groupGapLoc  = 8;
+        sliderHLoc   = 16;
+        wideBtnHLoc  = 32;
+        smallBtnHLoc = 30;
+    else
+        rowHLoc      = rowH;
+        gapLoc       = gap;
+        groupGapLoc  = groupGap;
+        sliderHLoc   = sliderH;
+        wideBtnHLoc  = wideBtnH;
+        smallBtnHLoc = smallBtnH;
+    end
+
+    xLabel = pad;
+    wLabel = 240;
+    wVal   = 120;
+    xVal   = w - pad - wVal;
+    xCtrl  = xLabel + wLabel + 16;
+    wCtrl  = max(90, xVal - xCtrl - 12);
+
+    y = h - rowHLoc;
 
     setRowSlider(lblROIsz, slROI, txtROIsz);
 
-    set(lblRoiXY,    'Position', [xLabel y wLabel rowH]);
-    set(ebRoiXY,     'Position', [xCtrl  y wCtrl  rowH]);
-    set(btnRoiAddXY, 'Position', [xVal   y wVal   rowH]);
-    y = y - (rowH + groupGap);
+    set(lblRoiXY,    'Position', [xLabel y wLabel rowHLoc]);
+    set(ebRoiXY,     'Position', [xCtrl  y wCtrl  rowHLoc]);
+    set(btnRoiAddXY, 'Position', [xVal   y wVal   rowHLoc]);
+    y = y - (rowHLoc + groupGapLoc);
 
     setRowEdit(lblBase, ebBase);
     setRowEdit(lblSig,  ebSig);
-    y = y + (gap - groupGap);
+    y = y + (gapLoc - groupGapLoc);
 
     setRowSlider(lblAlpha, slAlpha, txtAlpha);
     setRowEdit(lblThr, ebThr);
     setRowEdit(lblCax, ebCax);
 
-    set(lblAlphaMod, 'Position', [xLabel y wLabel rowH]);
-    set(cbAlphaMod,  'Position', [xCtrl y (w - xCtrl - pad) rowH]);
-    y = y - (rowH + gap);
+    set(lblAlphaMod, 'Position', [xLabel y wLabel rowHLoc]);
+    set(cbAlphaMod,  'Position', [xCtrl y (w - xCtrl - pad) rowHLoc]);
+    y = y - (rowHLoc + gapLoc);
 
     setRowEdit(lblModMin, ebModMin);
     setRowEdit(lblModMax, ebModMax);
 
-    set(lblMap, 'Position', [xLabel y wLabel rowH]);
-    set(popMap, 'Position', [xCtrl y (w - xCtrl - pad) rowH]);
-    y = y - (rowH + groupGap);
+    set(lblMap, 'Position', [xLabel y wLabel rowHLoc]);
+    set(popMap, 'Position', [xCtrl y (w - xCtrl - pad) rowHLoc]);
+    y = y - (rowHLoc + groupGapLoc);
 
     setRowEdit(lblSigma, ebSigma);
     y = y - 2;
 
-    set(btnRoiExport, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
-    y = y - (wideBtnH + gap);
+    btnW2 = floor((w - 2*pad - 10) / 2);
 
-    set(btnScmExport, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
-    y = y - (wideBtnH + gap);
+    set(btnRoiExport, 'Position', [xLabel y btnW2 wideBtnHLoc]);
+    set(btnScmExport, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+    y = y - (wideBtnHLoc + gapLoc);
 
-    set(btnTcPng, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
-    y = y - (wideBtnH + gap);
+    set(btnTcPng,     'Position', [xLabel y btnW2 wideBtnHLoc]);
+    set(btnScmSeries, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+    y = y - (wideBtnHLoc + groupGapLoc);
 
-    set(btnScmSeries, 'Position', [xLabel y (w - 2*pad) smallBtnH]);
-    y = y - (smallBtnH + groupGap);
-
-    set(btnUnfreeze, 'Position', [xLabel y (w - 2*pad) smallBtnH]);
+    set(btnUnfreeze, 'Position', [xLabel y (w - 2*pad) smallBtnHLoc]);
 
     function setRowSlider(lbl, sl, valbox)
-        set(lbl,    'Position', [xLabel y wLabel rowH]);
-        set(sl,     'Position', [xCtrl y + round((rowH - sliderH) / 2) wCtrl sliderH]);
-        set(valbox, 'Position', [xVal y wVal rowH]);
-        y = y - (rowH + gap);
+        set(lbl,    'Position', [xLabel y wLabel rowHLoc]);
+        set(sl,     'Position', [xCtrl y + round((rowHLoc - sliderHLoc)/2) wCtrl sliderHLoc]);
+        set(valbox, 'Position', [xVal y wVal rowHLoc]);
+        y = y - (rowHLoc + gapLoc);
     end
 
     function setRowEdit(lbl, ed)
-        set(lbl, 'Position', [xLabel y wLabel rowH]);
-        set(ed,  'Position', [xVal y wVal rowH]);
-        y = y - (rowH + gap);
+        set(lbl, 'Position', [xLabel y wLabel rowHLoc]);
+        set(ed,  'Position', [xVal y wVal rowHLoc]);
+        y = y - (rowHLoc + gapLoc);
     end
 end
 
-function layoutUnder(w, h)
+    function layoutUnder(w, h)
+    compact = (h < 700);
+
+    if compact
+        rowHLoc     = 30;
+        gapLoc      = 5;
+        groupGapLoc = 8;
+        sliderHLoc  = 16;
+        wideBtnHLoc = 32;
+    else
+        rowHLoc     = rowH;
+        gapLoc      = gap;
+        groupGapLoc = groupGap;
+        sliderHLoc  = sliderH;
+        wideBtnHLoc = wideBtnH;
+    end
+
     xLabel = pad;
-    wLabel = 270;
-    xVal   = w - pad - 126;
-    wVal   = 126;
+    wLabel = 250;
+    wVal   = 120;
+    xVal   = w - pad - wVal;
     xCtrl  = xLabel + wLabel + 16;
-    wCtrl  = max(115, xVal - xCtrl - 12);
+    wCtrl  = max(90, xVal - xCtrl - 12);
 
-    y = h - 42;
+    y = h - rowHLoc;
 
-    set(lblUnderMode, 'Position', [xLabel y wLabel rowH]);
-    set(popUnder,     'Position', [xCtrl y (w - xCtrl - pad) rowH]);
-    y = y - (rowH + groupGap);
+    set(lblUnderMode, 'Position', [xLabel y wLabel rowHLoc]);
+    set(popUnder,     'Position', [xCtrl y (w - xCtrl - pad) rowHLoc]);
+    y = y - (rowHLoc + groupGapLoc);
 
     setRowSlider(lblBri, slBri, txtBri);
     setRowSlider(lblCon, slCon, txtCon);
@@ -812,19 +863,19 @@ function layoutUnder(w, h)
     setRowSlider(lblVlv, slVlv, txtVlv);
 
     y = y - 2;
-    set(btnLoadUnder, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
-    y = y - (wideBtnH + gap);
+    set(btnLoadUnder, 'Position', [xLabel y (w - 2*pad) wideBtnHLoc]);
+    y = y - (wideBtnHLoc + gapLoc);
 
-    set(btnWarpAtlas, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
-    y = y - (wideBtnH + gap);
+    set(btnWarpAtlas, 'Position', [xLabel y (w - 2*pad) wideBtnHLoc]);
+    y = y - (wideBtnHLoc + gapLoc);
 
-    set(btnResetWarp, 'Position', [xLabel y (w - 2*pad) wideBtnH]);
+    set(btnResetWarp, 'Position', [xLabel y (w - 2*pad) wideBtnHLoc]);
 
     function setRowSlider(lbl, sl, valbox)
-        set(lbl,    'Position', [xLabel y wLabel rowH]);
-        set(sl,     'Position', [xCtrl y + round((rowH - sliderH)/2) wCtrl sliderH]);
-        set(valbox, 'Position', [xVal y wVal rowH]);
-        y = y - (rowH + gap);
+        set(lbl,    'Position', [xLabel y wLabel rowHLoc]);
+        set(sl,     'Position', [xCtrl y + round((rowHLoc - sliderHLoc)/2) wCtrl sliderHLoc]);
+        set(valbox, 'Position', [xVal y wVal rowHLoc]);
+        y = y - (rowHLoc + gapLoc);
     end
 end
 
@@ -1342,14 +1393,18 @@ function exportROIsCB(~,~)
 
     try
         roiDir = getAutoRoiDir();
-        safeMkdirIfNeeded(roiDir);
+safeMkdirIfNeeded(roiDir);
 
-        if ~isfield(roi, 'exportSetId') || isempty(roi.exportSetId) || ~isfinite(roi.exportSetId)
-            roi.exportSetId = detectNextRoiSetId(roiDir);
-        end
-        setId = roi.exportSetId;
+labelTag = askExportLabel(roi.lastExportLabel, 'ROI export label');
+if isempty(labelTag)
+    return;
+end
+roi.lastExportLabel = labelTag;
 
-        dStart = detectNextDIndexForSet(roiDir, setId);
+roi.sessionSetId = roi.sessionSetId + 1;
+setId = roi.sessionSetId;
+
+dIdx = 1;
 
         flat = struct('z', {}, 'id', {}, 'x1', {}, 'x2', {}, 'y1', {}, 'y2', {}, 'color', {});
         for zz = 1:nZ
@@ -1385,15 +1440,14 @@ function exportROIsCB(~,~)
             flat = flat(ord);
         end
 
-        dIdx = dStart;
-        for i = 1:numel(flat)
-            r = flat(i);
+       for i = 1:numel(flat)
+    r = flat(i);
 
-            outFile = fullfile(roiDir, sprintf('ROI%d_d%d.txt', setId, dIdx));
-            while exist(outFile, 'file') == 2
-                dIdx = dIdx + 1;
-                outFile = fullfile(roiDir, sprintf('ROI%d_d%d.txt', setId, dIdx));
-            end
+    outFile = fullfile(roiDir, sprintf('ROI%d_%s_d%d.txt', setId, labelTag, dIdx));
+    while exist(outFile, 'file') == 2
+        dIdx = dIdx + 1;
+        outFile = fullfile(roiDir, sprintf('ROI%d_%s_d%d.txt', setId, labelTag, dIdx));
+    end
 
             fid = fopen(outFile, 'w');
             if fid < 0
@@ -1405,9 +1459,10 @@ function exportROIsCB(~,~)
             fprintf(fid, '# FileLabel: %s\n', fileLabel);
             fprintf(fid, '# TR_sec: %.6g\n', TR);
             fprintf(fid, '# nY nX nZ nT: %d %d %d %d\n', nY, nX, nZ, nT);
-            fprintf(fid, '# ROI_SET_ID: %d\n', setId);
-            fprintf(fid, '# ROI_D_INDEX: %d\n', dIdx);
-            fprintf(fid, '# ROI_MARKER_ID: %d\n', r.id);
+           fprintf(fid, '# ROI_SET_ID: %d\n', setId);
+fprintf(fid, '# ROI_LABEL: %s\n', labelTag);
+fprintf(fid, '# ROI_D_INDEX: %d\n', dIdx);
+fprintf(fid, '# ROI_MARKER_ID: %d\n', r.id);
             fprintf(fid, '# SLICE: %d\n', r.z);
             fprintf(fid, '# BaselineWindow: %s\n', getStr(ebBase));
             fprintf(fid, '# SignalWindow:   %s\n', getStr(ebSig));
@@ -1432,8 +1487,8 @@ function exportROIsCB(~,~)
             dIdx = dIdx + 1;
         end
 
-        msgbox(sprintf('Exported %d ROI(s) to:\n%s\n(as ROI%d_d#.txt)', numel(flat), roiDir, setId), ...
-            'Export ROIs');
+        msgbox(sprintf('Exported %d ROI(s) to:\n%s\n(as ROI%d_%s_d#.txt)', ...
+    numel(flat), roiDir, setId, labelTag), 'Export ROIs');
 
     catch ME
         errordlg(ME.message, 'ROI export failed');
@@ -1445,86 +1500,9 @@ function releaseRoiExportLock()
     roi.lastExportStampSec = now * 86400;
 end
 
-function roiDir = getAutoRoiDir()
-    base = '';
-
-    try
-        if isstruct(par)
-            if isfield(par, 'loadedPath') && ~isempty(par.loadedPath)
-                base = char(par.loadedPath);
-            end
-            if isempty(base) && isfield(par, 'loadedFile') && ~isempty(par.loadedFile)
-                lf = char(par.loadedFile);
-                if exist(lf, 'file')
-                    base = fileparts(lf);
-                end
-            end
-            if isempty(base) && isfield(par, 'rawPath') && ~isempty(par.rawPath)
-                base = char(par.rawPath);
-            end
-            if isempty(base) && isfield(par, 'exportPath') && ~isempty(par.exportPath)
-                base = char(par.exportPath);
-            end
-        end
-    catch
-        base = '';
-    end
-    if isempty(base), base = pwd; end
-
-    analysedRoot = '';
-    try
-        if isstruct(par) && isfield(par, 'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath, 'dir')
-            analysedRoot = char(par.exportPath);
-        end
-    catch
-    end
-    if isempty(analysedRoot)
-        analysedRoot = guessAnalysedRoot(base);
-    end
-
-    dsType = deriveDatasetType();
-    tag0   = deriveDatasetTag();
-    tag    = stripLeadingType(tag0, dsType);
-
-    roiDir = fullfile(analysedRoot, 'ROI', dsType, tag);
-end
-
-function nextSetId = detectNextRoiSetId(roiDir)
-    nextSetId = 1;
-    if exist(roiDir, 'dir') ~= 7, return; end
-
-    ddd = dir(fullfile(roiDir, '*.txt'));
-    if isempty(ddd), return; end
-
-    maxSet = 0;
-    for i = 1:numel(ddd)
-        tok = regexp(ddd(i).name, '(?i)^ROI(\d+)_d(\d+)\.txt$', 'tokens', 'once');
-        if isempty(tok), continue; end
-        sId = str2double(tok{1});
-        if isfinite(sId)
-            maxSet = max(maxSet, sId);
-        end
-    end
-    nextSetId = maxSet + 1;
-end
-
-function nextD = detectNextDIndexForSet(roiDir, setId)
-    nextD = 1;
-    if exist(roiDir, 'dir') ~= 7, return; end
-
-    ddd = dir(fullfile(roiDir, '*.txt'));
-    if isempty(ddd), return; end
-
-    maxD = 0;
-    for i = 1:numel(ddd)
-        tok = regexp(ddd(i).name, sprintf('(?i)^ROI%d_d(\\d+)\\.txt$', setId), 'tokens', 'once');
-        if isempty(tok), continue; end
-        di = str2double(tok{1});
-        if isfinite(di)
-            maxD = max(maxD, di);
-        end
-    end
-    nextD = maxD + 1;
+    function roiDir = getAutoRoiDir()
+    P = getSimpleExportPaths();
+    roiDir = P.roiDir;
 end
 
 %% ==========================================================
@@ -1546,11 +1524,12 @@ function exportSCMImageCB(~,~)
     tf = [];
     slidePng = '';
     try
-        outDir = getAutoScmDir();
-        safeMkdirIfNeeded(outDir);
+        P = getSimpleExportPaths();
+outDir = P.scmImageDir;
+safeMkdirIfNeeded(outDir);
 
-        stamp = datestr(now, 'yyyymmdd_HHMMSS');
-        baseName = sprintf('%s_SCM_z%02d_%s', sanitizeName(fileLabel), state.z, stamp);
+stamp = datestr(now, 'yyyymmdd_HHMMSS');
+baseName = sprintf('SCM_z%02d_%s', state.z, stamp);
 
         outPng = fullfile(outDir, [baseName '.png']);
         outTif = fullfile(outDir, [baseName '.tif']);
@@ -1751,12 +1730,13 @@ function exportScmSeries1minCB(~,~)
         if ~isfinite(doPPT), doPPT = 1; end
         doPPT  = (doPPT ~= 0);
 
-        rootScm = getAutoScmDir();
-        safeMkdirIfNeeded(rootScm);
+       P = getSimpleExportPaths();
+rootScm = P.scmSeriesDir;
+safeMkdirIfNeeded(rootScm);
 
-        stamp = datestr(now, 'yyyymmdd_HHMMSS');
-        outDir = fullfile(rootScm, ['SCM_series_' stamp]);
-        safeMkdirIfNeeded(outDir);
+stamp = datestr(now, 'yyyymmdd_HHMMSS');
+outDir = fullfile(rootScm, ['SCM_series_' stamp]);
+safeMkdirIfNeeded(outDir);
 
         dirPNG = fullfile(outDir, 'tiles_png');
         dirTIF = fullfile(outDir, 'tiles_tif');
@@ -1874,8 +1854,8 @@ function exportScmSeries1minCB(~,~)
                 lbl = sprintf('%.0f-%.0fs | %d min (%s)', s0, s1, minIdx, phase);
             end
 
-            baseName = sprintf('%s_z%02d_w%03d_%0.0f-%0.0fs', ...
-                sanitizeName(fileLabel), state.z, minIdx, s0, s1);
+           baseName = sprintf('SCM_z%02d_w%03d_%0.0f-%0.0fs', ...
+    state.z, minIdx, s0, s1);
 
             outPng = fullfile(dirPNG, [baseName '.png']);
             outTif = fullfile(dirTIF, [baseName '.tif']);
@@ -2062,11 +2042,18 @@ end
 %% ==========================================================
     function exportTimecoursePngCB(~,~)
     try
-        outDir = fullfile(getAutoScmDir(), 'TimeCoursePNG');
-        safeMkdirIfNeeded(outDir);
+      P = getSimpleExportPaths();
+outDir = P.scmTcDir;
+safeMkdirIfNeeded(outDir);
 
-        stamp = datestr(now, 'yyyymmdd_HHMMSS');
-        baseName = sprintf('%s_TimeCourse_%s', sanitizeName(fileLabel), stamp);
+labelTag = askExportLabel(state.lastTcExportLabel, 'Time course export label');
+if isempty(labelTag)
+    return;
+end
+state.lastTcExportLabel = labelTag;
+
+stamp = datestr(now, 'yyyymmdd_HHMMSS');
+baseName = sprintf('%s_%s_TimeCourse_%s', P.fileStem, labelTag, stamp);
 
         outPngGrid   = fullfile(outDir, [baseName '_grid.png']);
         outPngNoGrid = fullfile(outDir, [baseName '_nogrid.png']);
@@ -2091,7 +2078,7 @@ end
 
         xlabel(ax2, 'Time (min)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
         hY = ylabel(ax2, 'PSC (%)', 'Color', 'w', 'FontSize', 13, 'FontWeight', 'bold');
-        title(ax2, sprintf('%s | ROI Time Course', fileLabel), ...
+        title(ax2, sprintf('%s | %s ROI Time Course', fileLabel, labelTag), ...
             'Color', 'w', 'FontWeight', 'bold', 'Interpreter', 'none');
 
    try
@@ -2391,7 +2378,7 @@ function writePptFromSlidePNGs(pptPath, slidePNGs)
     end
 end
 
-function tf = canUsePptApi()
+    function tf = canUsePptApi()
     tf = false;
     try
         tf = ~isempty(which('mlreportgen.ppt.Presentation'));
@@ -2400,31 +2387,14 @@ function tf = canUsePptApi()
     end
 end
 
-function pptPath = chooseShortPptPath(outDir, lbl, stamp)
-    animal = sanitizeName(getAnimalID(lbl));
-    if isempty(animal), animal = 'SCM'; end
-
-    base1 = sprintf('%s_series_%s.pptx', animal, stamp);
-    pptPath = fullfile(outDir, base1);
-
-    if numel(pptPath) > 220
-        base2 = sprintf('SCM_%s.pptx', stamp);
-        pptPath = fullfile(outDir, base2);
-    end
+function pptPath = chooseShortPptPath(outDir, ~, stamp)
+    pptPath = fullfile(outDir, sprintf('SCM_series_%s.pptx', stamp));
 end
 
-function pptPath = chooseShortSinglePptPath(outDir, lbl, stamp)
-    animal = sanitizeName(getAnimalID(lbl));
-    if isempty(animal), animal = 'SCM'; end
-
-    base1 = sprintf('%s_SCM_%s.pptx', animal, stamp);
-    pptPath = fullfile(outDir, base1);
-
-    if numel(pptPath) > 220
-        base2 = sprintf('SCM_SINGLE_%s.pptx', stamp);
-        pptPath = fullfile(outDir, base2);
-    end
+function pptPath = chooseShortSinglePptPath(outDir, ~, stamp)
+    pptPath = fullfile(outDir, sprintf('SCM_%s.pptx', stamp));
 end
+
 
 function safeMkdirIfNeeded(pth)
     if isempty(pth), return; end
@@ -4841,6 +4811,102 @@ function q = prctile_fallback(v, p)
     else
         q = v(k1) + (k-k1)*(v(k2)-v(k1));
     end
+end
+
+function P = getSimpleExportPaths()
+    root = '';
+
+    try
+        if isstruct(par)
+            if isfield(par, 'exportPath') && ~isempty(par.exportPath) && exist(char(par.exportPath), 'dir') == 7
+                root = char(par.exportPath);
+            elseif isfield(par, 'loadedPath') && ~isempty(par.loadedPath) && exist(char(par.loadedPath), 'dir') == 7
+                root = char(par.loadedPath);
+            elseif isfield(par, 'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf, 'file') == 2
+                    root = fileparts(lf);
+                end
+            end
+        end
+    catch
+        root = '';
+    end
+
+    if isempty(root)
+        root = pwd;
+    end
+
+    root = guessAnalysedRoot(root);
+
+    P = struct();
+    P.root         = root;
+    P.roiDir       = fullfile(root, 'ROI');
+    P.scmRootDir   = fullfile(root, 'SCM');
+    P.scmImageDir  = fullfile(P.scmRootDir, 'Images');
+    P.scmSeriesDir = fullfile(P.scmRootDir, 'Series');
+    P.scmTcDir     = fullfile(P.scmRootDir, 'Timecourse');
+
+    P.fileStem = sanitizeName(getAnimalID(fileLabel));
+    if isempty(P.fileStem)
+        P.fileStem = 'SCM';
+    end
+end
+
+function tag = askExportLabel(defaultTag, dlgTitle)
+    if nargin < 1 || isempty(defaultTag)
+        defaultTag = 'Target';
+    end
+    if nargin < 2 || isempty(dlgTitle)
+        dlgTitle = 'Export label';
+    end
+
+    choice = questdlg( ...
+        'How should this export be labeled?', ...
+        dlgTitle, ...
+        'Target', 'Control', 'Custom', defaultTag);
+
+    if isempty(choice)
+        tag = '';
+        return;
+    end
+
+    switch lower(choice)
+        case 'target'
+            tag = 'Target';
+        case 'control'
+            tag = 'Ctrl';
+        otherwise
+            a = inputdlg( ...
+                {'Enter label (for example Target, Ctrl, Hipp, Cortex):'}, ...
+                dlgTitle, 1, {defaultTag});
+            if isempty(a)
+                tag = '';
+                return;
+            end
+            tag = a{1};
+    end
+
+    tag = sanitizeExportTag(tag);
+end
+
+function tag = sanitizeExportTag(s)
+    if isstring(s), s = char(s); end
+    s = strtrim(char(s));
+
+    if isempty(s)
+        s = 'Target';
+    end
+
+    s = regexprep(s, '[^\w\-]+', '_');
+    s = regexprep(s, '_+', '_');
+    s = regexprep(s, '^_+|_+$', '');
+
+    if isempty(s)
+        s = 'Target';
+    end
+
+    tag = s;
 end
 
 function s = getStr(h)

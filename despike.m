@@ -84,12 +84,12 @@ stats.zThreshold = zthr;
 % =========================
 % QC FIGURE
 % =========================
-qcFolder = fullfile(saveRoot,'Preprocessing','despike_QC');
+qcFolder = fullfile(saveRoot,'Preprocessing','QC_despike');
 if ~exist(qcFolder,'dir')
     mkdir(qcFolder);
 end
 
-qcFile = fullfile(qcFolder,['despike_QC_' tag '.png']);
+qcFile = fullfile(qcFolder,['QC_despike_' tag '.png']);
 
 fig = figure('Visible','off','Color','w','Position',[200 200 1200 800]);
 

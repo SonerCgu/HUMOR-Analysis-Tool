@@ -88,16 +88,6 @@ fprintf('Registration2D dir : %s\n', registrationDir);
 searchFolders = { ...
     rawFolder, ...
     analysedFolder, ...
-    fullfile(rawFolder,'Visualization'), ...
-    fullfile(rawFolder,'visualization'), ...
-    fullfile(rawFolder,'Visualisation'), ...
-    fullfile(rawFolder,'Mask'), ...
-    fullfile(rawFolder,'Masks'), ...
-    fullfile(analysedFolder,'Visualization'), ...
-    fullfile(analysedFolder,'visualization'), ...
-    fullfile(analysedFolder,'Visualisation'), ...
-    fullfile(analysedFolder,'Mask'), ...
-    fullfile(analysedFolder,'Masks'), ...
     registrationDir ...
     };
 
@@ -110,19 +100,26 @@ if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile) && exist(studio.l
     directFiles{end+1} = studio.loadedFile; %#ok<AGROW>
 end
 
-[sourceFiles, sourceLabels] = collectSourceFiles(searchFolders, rawFolder, analysedFolder, registrationDir, directFiles);
+preferredSourceFile = '';
 
-if isempty(sourceFiles)
-    error(['No suitable source files found.' char(10) ...
-           'Checked loaded file, RAW root, ANALYSED root, Visualization/Mask folders, and Registration2D.' char(10) ...
-           'Expected source-like files such as brainImage / anatomical reference / mask / atlas underlay MAT-NIfTI-image files.']);
+% Prefer the brainImage MAT created by Mask Editor
+if isfield(studio,'brainImageFile') && ~isempty(studio.brainImageFile) && exist(studio.brainImageFile,'file') == 2
+    preferredSourceFile = studio.brainImageFile;
 end
 
-[idx, tf] = listdlg( ...
-    'PromptString','Select coronal source image (brainImage, mask image, MAT, NIfTI, image file):', ...
-    'SelectionMode','single', ...
-    'ListString',sourceLabels, ...
-    'ListSize',[860 420]);
+if ~isempty(preferredSourceFile)
+    sourceFile = preferredSourceFile;
+    fprintf('Auto-selected Mask Editor brainImage file:\n%s\n', sourceFile);
+else
+    [sourceFiles, sourceLabels] = collectSourceFiles(searchFolders, rawFolder, analysedFolder, registrationDir, directFiles);
+
+    if isempty(sourceFiles)
+        error(['No suitable source files found.' char(10) ...
+               'Checked loaded file, RAW root, ANALYSED root, Visualization/Mask folders, and Registration2D.' char(10) ...
+               'Expected source-like files such as brainImage / anatomical reference / mask / atlas underlay MAT-NIfTI-image files.']);
+    end
+
+   [idx, tf] = chooseSourceFileDialog(sourceLabels);
 
 if ~tf
     fprintf('2D coronal registration cancelled.\n');
@@ -130,6 +127,7 @@ if ~tf
 end
 
 sourceFile = sourceFiles{idx};
+end
 
 %% ---------------------------------------------------------
 % 4) LOAD SOURCE IMAGE + OPTIONAL MASK
@@ -150,22 +148,32 @@ end
 funcCandidates = buildFunctionalCandidates(studio, rawFolder, analysedFolder, registrationDir, sourceFile);
 fprintf('Functional candidates found: %d\n', numel(funcCandidates.items));
 
+
 %% ---------------------------------------------------------
 % 6) OPTIONAL LOAD PREVIOUS Reg2D
 %% ---------------------------------------------------------
-prevFile = fullfile(registrationDir,'CoronalRegistration2D.mat');
 initialReg = [];
 
-if exist(prevFile,'file')
+regFiles = collectRegistration2DFiles(registrationDir);
+
+if ~isempty(regFiles.files)
     choice = questdlg( ...
-        sprintf('Load previous CoronalRegistration2D.mat from:\n%s', registrationDir), ...
+        'Load a previous slice-specific 2D registration?', ...
         'Previous 2D Registration', ...
         'Yes','No','No');
 
     if strcmp(choice,'Yes')
-        tmp = load(prevFile,'Reg2D');
-        if isfield(tmp,'Reg2D')
-            initialReg = tmp.Reg2D;
+        [idxReg, tfReg] = listdlg( ...
+            'PromptString','Select previous 2D registration:', ...
+            'SelectionMode','single', ...
+            'ListString',regFiles.labels, ...
+            'ListSize',[860 420]);
+
+        if tfReg
+            tmp = load(regFiles.files{idxReg}, 'Reg2D');
+            if isfield(tmp,'Reg2D')
+                initialReg = tmp.Reg2D;
+            end
         end
     end
 end
@@ -350,8 +358,16 @@ if isempty(fileList)
     return;
 end
 
-[fileList, ia] = unique(fileList,'stable');
+normKeys = cell(size(fileList));
+for ii = 1:numel(fileList)
+    normKeys{ii} = normalizePathKey(fileList{ii});
+end
+
+[~, ia] = unique(normKeys,'stable');
+fileList = fileList(ia);
 displayList = displayList(ia);
+
+[fileList, displayList] = sortSourceEntries(fileList, displayList);
 
 end
 
@@ -807,6 +823,26 @@ if endsWithLower(sourceFile,'.mat')
         error('Selected MAT contains no suitable 2D or 3D image candidate.');
     end
 
+    jdx = [];
+
+% Auto-prefer brainImage-like variables first
+preferredNames = { ...
+    'brainImage', ...
+    'maskBundle.brainImage', ...
+    'loadedMask.brainImage', ...
+    'anatomical_reference', ...
+    'anatomical_reference_raw'};
+
+for pp = 1:numel(preferredNames)
+    hit = find(strcmpi(candNames, preferredNames{pp}), 1);
+    if ~isempty(hit)
+        jdx = hit;
+        break;
+    end
+end
+
+% Fallback to manual selection only if no preferred source was found
+if isempty(jdx)
     if numel(candData) > 1
         pretty = candNames;
         for k = 1:numel(candData)
@@ -825,6 +861,7 @@ if endsWithLower(sourceFile,'.mat')
     else
         jdx = 1;
     end
+end
 
     tmp = candData{jdx};
     info.label = candNames{jdx};
@@ -1211,6 +1248,306 @@ end
 
 end
 
+function out = collectRegistration2DFiles(registrationDir)
+
+out = struct();
+out.files = {};
+out.labels = {};
+
+if isempty(registrationDir) || ~exist(registrationDir,'dir')
+    return;
+end
+
+allFiles = collectFilesRecursive(registrationDir);
+
+for k = 1:numel(allFiles)
+    fp = allFiles{k};
+    [~,nm,ext] = fileparts(fp);
+
+    if ~strcmpi(ext,'.mat')
+        continue;
+    end
+
+    nmL = lower(nm);
+    if isempty(strfind(nmL,'coronalregistration2d_slice')) %#ok<STREMP>
+        continue;
+    end
+
+    out.files{end+1} = fp; %#ok<AGROW>
+    out.labels{end+1} = makeRegistrationDisplayName(fp, registrationDir); %#ok<AGROW>
+end
+
+if isempty(out.files)
+    return;
+end
+
+normKeys = cell(size(out.files));
+for ii = 1:numel(out.files)
+    normKeys{ii} = normalizePathKey(out.files{ii});
+end
+
+[~, ia] = unique(normKeys,'stable');
+out.files = out.files(ia);
+out.labels = out.labels(ia);
+end
+
+
+function s = makeRegistrationDisplayName(fullpath, registrationDir)
+
+s = fullpath;
+
+try
+    if ~isempty(registrationDir) && strncmpi(fullpath, registrationDir, numel(registrationDir))
+        rel = fullpath(numel(registrationDir)+1:end);
+        if ~isempty(rel) && rel(1)==filesep
+            rel = rel(2:end);
+        end
+        s = ['REG2D: ' rel];
+    end
+catch
+end
+end
+
+
+function [idx, tf] = chooseSourceFileDialog(sourceLabels)
+
+idx = [];
+tf = false;
+
+if isempty(sourceLabels)
+    return;
+end
+
+bg      = [0.00 0.00 0.00];
+fg      = [1.00 1.00 1.00];
+subFG   = [0.82 0.82 0.82];
+btnBlue = [0.20 0.45 0.92];
+btnRed  = [0.85 0.20 0.20];
+
+figSel = figure( ...
+    'Name','Select Coronal Source Image', ...
+    'Color',bg, ...
+    'MenuBar','none', ...
+    'ToolBar','none', ...
+    'NumberTitle','off', ...
+    'Resize','off', ...
+    'WindowStyle','modal', ...
+    'Position',[120 60 1450 900], ...
+    'CloseRequestFcn',@onCancel);
+
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.03 0.94 0.94 0.035], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',fg, ...
+    'HorizontalAlignment','left', ...
+    'FontSize',18, ...
+    'FontWeight','bold', ...
+    'String','Select coronal source image');
+
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.03 0.90 0.94 0.03], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',subFG, ...
+    'HorizontalAlignment','left', ...
+    'FontSize',12, ...
+    'String','Recommended: BrainOnly / brainImage from Mask Editor');
+
+% Optional small legend
+% uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+%     'Position',[0.03 0.865 0.18 0.025], ...
+%     'BackgroundColor',bg, ...
+%     'ForegroundColor',[0.43 0.76 1.00], ...
+%     'HorizontalAlignment','left', ...
+%     'FontSize',11, ...
+%     'FontWeight','bold', ...
+%     'String','[RAW]');
+% 
+% uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+%     'Position',[0.12 0.865 0.18 0.025], ...
+%     'BackgroundColor',bg, ...
+%     'ForegroundColor',[0.49 1.00 0.70], ...
+%     'HorizontalAlignment','left', ...
+%     'FontSize',11, ...
+%     'FontWeight','bold', ...
+%     'String','[ANA]');
+% 
+% uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+%     'Position',[0.20 0.865 0.18 0.025], ...
+%     'BackgroundColor',bg, ...
+%     'ForegroundColor',[1.00 0.80 0.40], ...
+%     'HorizontalAlignment','left', ...
+%     'FontSize',11, ...
+%     'FontWeight','bold', ...
+%     'String','[REG2D]');
+% 
+% uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+%     'Position',[0.31 0.865 0.18 0.025], ...
+%     'BackgroundColor',bg, ...
+%     'ForegroundColor',[1.00 0.55 0.68], ...
+%     'HorizontalAlignment','left', ...
+%     'FontSize',11, ...
+%     'FontWeight','bold', ...
+%     'String','[LOADED]');
+
+listLabels = colorizeSourceLabelsForJava(sourceLabels);
+
+jModel = javaObjectEDT('javax.swing.DefaultListModel');
+for ii = 1:numel(listLabels)
+    jModel.addElement(listLabels{ii});
+end
+
+jList = javaObjectEDT('javax.swing.JList', jModel);
+jList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+jList.setSelectedIndex(0);
+jList.setBackground(java.awt.Color(0,0,0));
+jList.setForeground(java.awt.Color(1,1,1));
+jList.setSelectionBackground(java.awt.Color(0.18,0.18,0.18));
+jList.setSelectionForeground(java.awt.Color(1,1,1));
+jList.setFont(java.awt.Font('Consolas', java.awt.Font.PLAIN, 16));
+jList.setFixedCellHeight(28);
+
+jScroll = javaObjectEDT('javax.swing.JScrollPane', jList);
+jScroll.setBackground(java.awt.Color(0,0,0));
+jScroll.getViewport.setBackground(java.awt.Color(0,0,0));
+
+[~, hListContainer] = javacomponent(jScroll, [40 90 1365 705], figSel);
+set(hListContainer, 'Units','pixels');
+
+set(handle(jList,'CallbackProperties'), 'MouseClickedCallback', @onJListClick);
+set(handle(jList,'CallbackProperties'), 'KeyPressedCallback', @onJListKey);
+
+uicontrol('Style','pushbutton','Parent',figSel,'Units','normalized', ...
+    'Position',[0.58 0.03 0.18 0.06], ...
+    'String','Use Selected', ...
+    'BackgroundColor',btnBlue, ...
+    'ForegroundColor','w', ...
+    'FontWeight','bold', ...
+    'FontSize',13, ...
+    'Callback',@onOK);
+
+uicontrol('Style','pushbutton','Parent',figSel,'Units','normalized', ...
+    'Position',[0.78 0.03 0.18 0.06], ...
+    'String','Cancel', ...
+    'BackgroundColor',btnRed, ...
+    'ForegroundColor','w', ...
+    'FontWeight','bold', ...
+    'FontSize',13, ...
+    'Callback',@onCancel);
+
+uiwait(figSel);
+
+    function onOK(~,~)
+        try
+            idx = double(jList.getSelectedIndex()) + 1;
+        catch
+            idx = 1;
+        end
+        tf = ~isempty(idx) && idx >= 1;
+
+        try
+            uiresume(figSel);
+        catch
+        end
+        try
+            delete(figSel);
+        catch
+        end
+    end
+
+    function onCancel(~,~)
+        idx = [];
+        tf = false;
+
+        try
+            uiresume(figSel);
+        catch
+        end
+        try
+            delete(figSel);
+        catch
+        end
+    end
+
+    function onJListClick(~, evt)
+        try
+            if evt.getClickCount() >= 2
+                onOK();
+            end
+        catch
+        end
+    end
+
+    function onJListKey(~, evt)
+        try
+            keyCode = evt.getKeyCode();
+            if keyCode == java.awt.event.KeyEvent.VK_ENTER
+                onOK();
+            elseif keyCode == java.awt.event.KeyEvent.VK_ESCAPE
+                onCancel();
+            end
+        catch
+        end
+    end
+end
+
+function out = colorizeSourceLabelsForJava(sourceLabels)
+
+out = cell(size(sourceLabels));
+
+for i = 1:numel(sourceLabels)
+    s = sourceLabels{i};
+
+    prefix = '';
+    rest = s;
+    colorHex = '#FFFFFF';
+
+    if startsWithLocal(s, 'LOADED: ')
+        prefix = '[LOADED] ';
+        rest = s(numel('LOADED: ')+1:end);
+        colorHex = '#FF8CA8';
+
+    elseif startsWithLocal(s, 'RAW: ')
+        prefix = '[RAW] ';
+        rest = s(numel('RAW: ')+1:end);
+        colorHex = '#6EC1FF';
+
+    elseif startsWithLocal(s, 'ANA: ')
+        prefix = '[ANA] ';
+        rest = s(numel('ANA: ')+1:end);
+        colorHex = '#7DFFB2';
+
+    elseif startsWithLocal(s, 'REG2D: ')
+        prefix = '[REG2D] ';
+        rest = s(numel('REG2D: ')+1:end);
+        colorHex = '#FFCC66';
+    end
+
+    rest = strrep(rest, '&', '&amp;');
+rest = strrep(rest, '<', '&lt;');
+rest = strrep(rest, '>', '&gt;');
+
+    out{i} = sprintf( ...
+        '<html><span style="font-family:Consolas; font-size:15px;"><b><font color="%s">%s</font></b><font color="#FFFFFF">%s</font></span></html>', ...
+        colorHex, prefix, rest);
+end
+end
+%%%% Other Helpers %%%%
+
+function out = prettifySourceLabels(sourceLabels)
+
+out = sourceLabels;
+
+for i = 1:numel(out)
+    s = out{i};
+
+    s = strrep(s, 'LOADED: ', '[LOADED] ');
+    s = strrep(s, 'RAW: ',    '[RAW]    ');
+    s = strrep(s, 'ANA: ',    '[ANA]    ');
+    s = strrep(s, 'REG2D: ',  '[REG2D]  ');
+
+    out{i} = s;
+end
+end
 
 function tf = isImageFile(f)
 
@@ -1220,6 +1557,15 @@ tf = endsWithLower(f,'.png') || endsWithLower(f,'.jpg') || endsWithLower(f,'.jpe
 
 end
 
+function tf = startsWithLocal(s, prefix)
+
+if numel(s) < numel(prefix)
+    tf = false;
+    return;
+end
+
+tf = strcmpi(s(1:numel(prefix)), prefix);
+end
 
 function tf = isNiftiFile(f)
 
@@ -1228,6 +1574,102 @@ tf = endsWithLower(f,'.nii') || endsWithLower(f,'.nii.gz');
 
 end
 
+function k = normalizePathKey(p)
+
+try
+    p = char(java.io.File(p).getCanonicalPath());
+catch
+    p = char(p);
+end
+
+p = strrep(p, '/', filesep);
+p = strrep(p, '\', filesep);
+
+if ispc
+    p = lower(p);
+end
+
+k = p;
+end
+
+function tableData = makeSourceTableData(sourceLabels)
+
+tableData = cell(numel(sourceLabels), 2);
+
+for i = 1:numel(sourceLabels)
+    s = sourceLabels{i};
+
+    typeStr = 'OTHER';
+    pathStr = s;
+
+    if startsWithLocal(s, 'LOADED: ')
+        typeStr = 'LOADED';
+        pathStr = s(numel('LOADED: ')+1:end);
+
+    elseif startsWithLocal(s, 'RAW: ')
+        typeStr = 'RAW';
+        pathStr = s(numel('RAW: ')+1:end);
+
+    elseif startsWithLocal(s, 'ANA: ')
+        typeStr = 'ANA';
+        pathStr = s(numel('ANA: ')+1:end);
+
+    elseif startsWithLocal(s, 'REG2D: ')
+        typeStr = 'REG2D';
+        pathStr = s(numel('REG2D: ')+1:end);
+    end
+
+    % HTML styling may render in uitable on many MATLAB installs.
+    % If not, it will simply show the raw text, which is still okay.
+    switch typeStr
+        case 'RAW'
+            typeDisp = '<html><b><font color="#6EC1FF">RAW</font></b></html>';
+        case 'ANA'
+            typeDisp = '<html><b><font color="#7CFFB2">ANA</font></b></html>';
+        case 'REG2D'
+            typeDisp = '<html><b><font color="#FFCC66">REG2D</font></b></html>';
+        case 'LOADED'
+            typeDisp = '<html><b><font color="#FF8AAE">LOADED</font></b></html>';
+        otherwise
+            typeDisp = typeStr;
+    end
+
+    tableData{i,1} = typeDisp;
+    tableData{i,2} = pathStr;
+end
+end
+
+function [fileListOut, displayListOut] = sortSourceEntries(fileList, displayList)
+
+if isempty(fileList)
+    fileListOut = fileList;
+    displayListOut = displayList;
+    return;
+end
+
+prio = zeros(numel(displayList),1);
+
+for i = 1:numel(displayList)
+    s = lower(displayList{i});
+
+    if ~isempty(strfind(s,'loaded:')) %#ok<STREMP>
+        prio(i) = 1;
+    elseif ~isempty(strfind(s,'raw:')) %#ok<STREMP>
+        prio(i) = 2;
+    elseif ~isempty(strfind(s,'ana:')) %#ok<STREMP>
+        prio(i) = 3;
+    elseif ~isempty(strfind(s,'reg2d:')) %#ok<STREMP>
+        prio(i) = 4;
+    else
+        prio(i) = 5;
+    end
+end
+
+[~, ord] = sort(prio, 'ascend');
+
+fileListOut = fileList(ord);
+displayListOut = displayList(ord);
+end
 
 function I = load2DImage(f)
 
@@ -1364,6 +1806,8 @@ function terms = getSourceSkipFolderTerms()
 
 terms = { ...
     [filesep 'qc' filesep], ...
+    [filesep 'framerate' filesep], ...
+    [filesep 'frame_rate' filesep], ...
     [filesep 'scm' filesep], ...
     [filesep 'roi' filesep], ...
     [filesep 'video' filesep], ...
