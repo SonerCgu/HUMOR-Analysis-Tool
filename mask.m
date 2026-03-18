@@ -1004,7 +1004,7 @@ uiwait(fig);
             brainImage = [];
         end
 
-        switch lower(mode)
+                              switch lower(mode)
             case 'brain'
                 mask = brainMask;
                 activeMask = brainMask;
@@ -1012,7 +1012,8 @@ uiwait(fig);
                 maskIsInclude = true;
                 loadedMaskIsInclude = true;
                 overlayMaskIsInclude = true;
-                filePrefix = 'MaskBundle_brain';
+                filePrefix = 'MaskEditor_UnderlayMaskOnly';
+                saveModeLabel = 'Underlay mask only';
 
             case 'overlay'
                 mask = overlayMask;
@@ -1021,7 +1022,8 @@ uiwait(fig);
                 maskIsInclude = true;
                 loadedMaskIsInclude = true;
                 overlayMaskIsInclude = true;
-                filePrefix = 'MaskBundle_overlay';
+                filePrefix = 'MaskEditor_OverlayMaskOnly';
+                saveModeLabel = 'Overlay mask only';
 
             otherwise
                 mask = overlayMask;
@@ -1030,13 +1032,16 @@ uiwait(fig);
                 maskIsInclude = true;
                 loadedMaskIsInclude = true;
                 overlayMaskIsInclude = true;
-                filePrefix = 'MaskBundle_both';
+                filePrefix = 'MaskEditor_UnderlayAndOverlayMasks';
+                saveModeLabel = 'Underlay and overlay masks';
         end
 
-        maskEditorInfo = struct();
+                maskEditorInfo = struct();
         maskEditorInfo.datasetLabel = datasetLabel;
         maskEditorInfo.timestamp = ts;
         maskEditorInfo.saveMode = mode;
+        maskEditorInfo.saveModeLabel = saveModeLabel;
+        maskEditorInfo.outputFilePrefix = filePrefix;
         maskEditorInfo.underlayMode = S.underlayMode;
         maskEditorInfo.underlayLabel = UbaseLabel;
         maskEditorInfo.dbLow = S.dbLow;

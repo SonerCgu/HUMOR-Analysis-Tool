@@ -54,6 +54,9 @@ if strcmp(opts.type,'high') || strcmp(opts.type,'band')
     end
 end
 
+if ~isfield(opts,'tag') || isempty(opts.tag)
+    opts.tag = datestr(now,'yyyymmdd_HHMMSS');
+end
 % =========================================================
 % TRIMMING
 % =========================================================
@@ -105,7 +108,11 @@ plot(F,abs(H));
 xlabel('Frequency (Hz)');
 ylabel('|H(f)|');
 title('Butterworth Frequency Response');
-saveas(figResp, fullfile(qcFolder,'Filter_FrequencyResponse.png'));
+tag = 'filter';
+if isfield(opts,'tag') && ~isempty(opts.tag)
+    tag = opts.tag;
+end
+saveas(figResp, fullfile(qcFolder, ['QC_filtering_FrequencyResponse_' tag '.png']));
 close(figResp);
 
 % =========================================================
@@ -176,7 +183,7 @@ xlabel('Time (s)');
 ylabel('Global Mean');
 legend('Before','After');
 title('Filtering QC — Global Mean');
-saveas(fig1, fullfile(qcFolder,'GlobalMean_overlay.png'));
+saveas(fig1, fullfile(qcFolder, ['QC_filtering_GlobalMean_' tag '.png']));
 close(fig1);
 
 % =========================================================
@@ -193,7 +200,7 @@ xlabel('Frequency (Hz)');
 ylabel('Amplitude');
 legend('Before','After');
 title('Filtering QC — Spectrum');
-saveas(fig2, fullfile(qcFolder,'Spectrum_overlay.png'));
+saveas(fig2, fullfile(qcFolder, ['QC_filtering_Spectrum_' tag '.png']));
 close(fig2);
 
 % =========================================================

@@ -81,7 +81,7 @@ S.opacity = 0.65;
 S.winMin = 0.02;
 S.winMax = 0.98;
 S.invert = false;
-S.cmapName = 'gray';
+S.cmapName = 'hot';
 
 S.tx = ((targetW + 1) / 2) - ((srcW + 1) / 2);
 S.ty = ((targetH + 1) / 2) - ((srcH + 1) / 2);
@@ -587,7 +587,7 @@ uiwait(fig);
             cmap = feval(S.cmapName, 256);
         catch
             cmap = gray(256);
-            S.cmapName = 'gray';
+            S.cmapName = 'hot';
         end
         colormap(axFuse, cmap);
         set(axFuse,'CLim',[0 1]);
@@ -743,49 +743,61 @@ uiwait(fig);
         set(hStatus,'String','Transform reset.');
     end
 
-    function onSave(~, ~)
+   function onSave(~, ~)
+
+    Reg2D = buildReg2D();
+
+    sliceDir = getSliceSaveDir(saveDir, S.slice);
+    outFile = fullfile(sliceDir, ...
+        sprintf('CoronalRegistration2D_slice%03d_%s.mat', S.slice, lower(S.atlasMode)));
+
+    try
+        save(outFile,'Reg2D');
+
+        savedFile = outFile;
+        Reg2D.savedFile = outFile;
+        Reg2Dout = Reg2D;
+        didExplicitSave = true;
+
+        set(hStatus,'String',['Saved transformation: ' outFile]);
+        logMessage(['Saved slice-specific registration -> ' outFile]);
+
+    catch ME
+        set(hStatus,'String',['Save failed: ' ME.message]);
+        logMessage(['Save failed: ' ME.message]);
+    end
+end
+
+ function onSaveUnderlays(~, ~)
+
+    try
         Reg2D = buildReg2D();
-        outFile = fullfile(saveDir,'CoronalRegistration2D.mat');
 
-        try
-            save(outFile,'Reg2D');
-            savedFile = outFile;
-            Reg2D.savedFile = outFile;
-            Reg2Dout = Reg2D;
-            didExplicitSave = true;
-            set(hStatus,'String',['Saved transformation: ' outFile]);
-            logMessage(['Saved CoronalRegistration2D.mat -> ' outFile]);
-        catch ME
-            set(hStatus,'String',['Save failed: ' ME.message]);
-            logMessage(['Save failed: ' ME.message]);
-        end
+        sliceDir = getSliceSaveDir(saveDir, S.slice);
+        sliceFile = fullfile(sliceDir, ...
+            sprintf('CoronalRegistration2D_slice%03d_%s.mat', S.slice, lower(S.atlasMode)));
+
+        save(sliceFile,'Reg2D');
+
+        savedFile = sliceFile;
+        Reg2D.savedFile = sliceFile;
+        Reg2Dout = Reg2D;
+        didExplicitSave = true;
+
+        files = saveAtlasUnderlaysLocal(atlas, Reg2D, sliceDir);
+
+        set(hStatus,'String','Saved transformation and atlas underlays.');
+        logMessage(['Saved slice registration -> ' sliceFile]);
+        logMessage(['Saved atlas underlays    -> ' sliceDir]);
+        logMessage(['Vascular underlay        -> ' files.vascular]);
+        logMessage(['Histology underlay       -> ' files.histology]);
+        logMessage(['Regions underlay         -> ' files.regions]);
+
+    catch ME
+        set(hStatus,'String',['Save underlays failed: ' ME.message]);
+        logMessage(['Save underlays failed: ' ME.message]);
     end
-
-    function onSaveUnderlays(~, ~)
-        try
-            Reg2D = buildReg2D();
-            outFile = fullfile(saveDir,'CoronalRegistration2D.mat');
-            save(outFile,'Reg2D');
-
-            savedFile = outFile;
-            Reg2D.savedFile = outFile;
-            Reg2Dout = Reg2D;
-            didExplicitSave = true;
-
-            files = saveAtlasUnderlaysLocal(atlas, Reg2D, saveDir);
-
-            set(hStatus,'String','Saved transformation and atlas underlays.');
-            logMessage(['Saved CoronalRegistration2D.mat -> ' outFile]);
-            logMessage(['Saved atlas underlays -> ' saveDir]);
-            logMessage(['Vascular underlay  -> ' files.vascular]);
-            logMessage(['Histology underlay -> ' files.histology]);
-            logMessage(['Regions underlay   -> ' files.regions]);
-
-        catch ME
-            set(hStatus,'String',['Save underlays failed: ' ME.message]);
-            logMessage(['Save underlays failed: ' ME.message]);
-        end
-    end
+end
 
     function onHelp(~, ~)
 
@@ -972,10 +984,11 @@ uiwait(fig);
         end
 
         if ~isempty(savedFile)
-            Reg2D.savedFile = savedFile;
-        else
-            Reg2D.savedFile = fullfile(saveDir,'CoronalRegistration2D.mat');
-        end
+    Reg2D.savedFile = savedFile;
+else
+    Reg2D.savedFile = fullfile(getSliceSaveDir(saveDir, S.slice), ...
+    sprintf('CoronalRegistration2D_slice%03d_%s.mat', S.slice, lower(S.atlasMode)));
+end
     end
 
     function logMessage(msg)
@@ -1015,7 +1028,7 @@ for i = 1:numel(modes)
     atlasUnderlayRGB = getAtlasSliceRGB(atlas, modeName, sliceIdx);
     atlasMode        = modeName; %#ok<NASGU>
 
-    outFile = fullfile(saveDir, sprintf('atlasUnderlay_%s_slice%03d.mat', lower(modeName), sliceIdx));
+    outFile = fullfile(saveDir, sprintf('AtlasUnderlay_%s_slice%03d.mat', lower(modeName), sliceIdx));
 
     if strcmpi(modeName,'regions')
 
@@ -1043,7 +1056,7 @@ for i = 1:numel(modes)
             'regionList');
 
         try
-            txtFile = fullfile(saveDir, sprintf('atlasUnderlay_regions_slice%03d_regions.txt', sliceIdx));
+            txtFile = fullfile(saveDir, sprintf('AtlasRegions_slice%03d.txt', sliceIdx));
             writeRegionListTextFile(txtFile, regionList);
         catch
         end
@@ -1299,6 +1312,14 @@ for c = 1:3
 end
 end
 
+function sliceDir = getSliceSaveDir(baseDir, sliceIdx)
+
+    sliceDir = fullfile(baseDir, sprintf('Slice%03d', round(sliceIdx)));
+
+    if ~exist(sliceDir,'dir')
+        mkdir(sliceDir);
+    end
+end
 
 function A = rescale01(A)
 A = double(A);
