@@ -76,6 +76,23 @@ bgMeanFull   = [];
 bgMedianFull = [];
 bgFileFull   = [];
 
+% native/original snapshots (used by atlas warp + reset)
+origI             = I;
+origI_interp      = I_interp;
+origPSC           = PSC;
+origBgDefaultFull = bgDefaultFull;
+
+% atlas state (SCM-style)
+state = struct();
+state.isAtlasWarped      = false;
+state.atlasTransformFile = '';
+state.lastAtlasTransformFile = '';
+
+state.isColorUnderlay     = (ndims(bgDefaultFull) == 3 && size(bgDefaultFull,3) == 3);
+state.regionLabelUnderlay = [];
+state.regionColorLUT      = [];
+state.regionInfo          = struct();
+
 uState.mode       = 3;
 uState.brightness = -0.04;
 uState.contrast   = 1.10;
@@ -130,7 +147,13 @@ if exist('loadedMask','var') && ~isempty(loadedMask)
         statusLine = ['Initial mask load failed: ' ME.message];
     end
 end
+origMask = mask;
+origMaskIsInclude = maskIsInclude;
+origBgDefaultFull = bgDefaultFull;
 
+if ndims(bgDefaultFull) == 3 && size(bgDefaultFull,3) == 3
+    state.isColorUnderlay = true;
+end
 volume  = 1;
 frame   = 1;
 playing = false;
@@ -410,7 +433,7 @@ btnSaveInterp = mkBtn(pVideo,'Save interpolated data (.mat)',@saveInterpolatedMa
 % UNDERLAY TAB
 % -----------------------------
 lblUSrc = mkLbl(pUnder,'Underlay source');
-popUSrc = mkPopup(pUnder,{'1) Default(bg)','2) Mean(I)','3) Median(I) robust','4) Load file...'},underSrc,@underSrcChanged);
+popUSrc = mkPopup(pUnder,{'1) Default(bg)','2) Mean(I)','3) Median(I) robust'},underSrc,@underSrcChanged);
 
 lblUMode = mkLbl(pUnder,'Underlay mode');
 popUMode = mkPopup(pUnder,{'1) Legacy(mat2gray)','2) Robust(1-99%)','3) Video robust(0.5-99.5%)','4) Vessel enhance'},uState.mode,@underModeChanged);
@@ -436,6 +459,10 @@ lblVlv = mkLbl(pUnder,sprintf('Vessel conectLev (0-%d)',MAX_CONLEV));
 slVlv  = mkSlider(pUnder,0,MAX_CONLEV,uState.conectLev,@underSliderChanged);
 set(slVlv,'SliderStep',[1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnder,sprintf('%d',uState.conectLev));
+
+btnLoadUnder = mkBtn(pUnder,'LOAD NEW UNDERLAY',@loadNewUnderlayCB,[0.20 0.38 0.62],12);
+btnWarpAtlas = mkBtn(pUnder,'WARP FUNCTIONAL TO ATLAS',@warpFunctionalToAtlasCB,[0.20 0.38 0.62],12);
+btnResetWarp = mkBtn(pUnder,'RESET TO NATIVE',@resetWarpToNativeCB,[0.28 0.28 0.30],12);
 
 % -----------------------------
 % OVERLAY TAB
@@ -750,59 +777,69 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
         set(btnSaveInterp,'Position',[xLabel y0 (w-2*pad) 36]);
     end
 
-    function layoutUnderTab(w, h)
-        xLabel = pad;
-        wLabel = 230;
-        xCtrl  = xLabel + wLabel + 14;
-        xVal   = w - pad - 116;
-        wVal   = 116;
-        wCtrl  = max(140, xVal - xCtrl - 12);
+   function layoutUnderTab(w, h)
+    xLabel = pad;
+    wLabel = 230;
+    xCtrl  = xLabel + wLabel + 14;
+    xVal   = w - pad - 116;
+    wVal   = 116;
+    wCtrl  = max(140, xVal - xCtrl - 12);
 
-        fixed = 0;
-        fixed = fixed + 2*rowHc;
-        fixed = fixed + 3*rowHc;
-        fixed = fixed + 2*rowHc;
+    fixed = 0;
+    fixed = fixed + 2*rowHc;
+    fixed = fixed + 3*rowHc;
+    fixed = fixed + 2*rowHc;
+    fixed = fixed + 3*36;
 
-        nGaps = 7;
-        gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
-        gapBig = gapc + 8;
+    nGaps = 10;
+    gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
+    gapBig = gapc + 8;
 
-        y0 = h - 52;
+    y0 = h - 52;
 
-        set(lblUSrc,'Position',[xLabel y0 wLabel rowHc]);
-        set(popUSrc,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblUSrc,'Position',[xLabel y0 wLabel rowHc]);
+    set(popUSrc,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblUMode,'Position',[xLabel y0 wLabel rowHc]);
-        set(popUMode,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
-        y0 = y0 - (rowHc + gapBig);
+    set(lblUMode,'Position',[xLabel y0 wLabel rowHc]);
+    set(popUMode,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
+    y0 = y0 - (rowHc + gapBig);
 
-        set(lblBri,'Position',[xLabel y0 wLabel rowHc]);
-        set(slBri,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(txtBri,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblBri,'Position',[xLabel y0 wLabel rowHc]);
+    set(slBri,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(txtBri,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblCon,'Position',[xLabel y0 wLabel rowHc]);
-        set(slCon,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(txtCon,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblCon,'Position',[xLabel y0 wLabel rowHc]);
+    set(slCon,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(txtCon,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblGam,'Position',[xLabel y0 wLabel rowHc]);
-        set(slGam,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(txtGam,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapBig);
+    set(lblGam,'Position',[xLabel y0 wLabel rowHc]);
+    set(slGam,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(txtGam,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapBig);
 
-        set(lblVsz,'Position',[xLabel y0 wLabel rowHc]);
-        set(slVsz,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(txtVsz,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblVsz,'Position',[xLabel y0 wLabel rowHc]);
+    set(slVsz,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(txtVsz,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblVlv,'Position',[xLabel y0 wLabel rowHc]);
-        set(slVlv,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(txtVlv,'Position',[xVal y0 wVal rowHc]);
+    set(lblVlv,'Position',[xLabel y0 wLabel rowHc]);
+    set(slVlv,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(txtVlv,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapBig);
 
-        updateUnderlayEnable();
-    end
+    set(btnLoadUnder,'Position',[xLabel y0 (w-2*pad) 36]);
+    y0 = y0 - (36 + gapc);
+
+    set(btnWarpAtlas,'Position',[xLabel y0 (w-2*pad) 36]);
+    y0 = y0 - (36 + gapc);
+
+    set(btnResetWarp,'Position',[xLabel y0 (w-2*pad) 36]);
+
+    updateUnderlayEnable();
+end
 
     function layoutOverlayTab(w, h)
         xLabel = pad;
@@ -872,17 +909,14 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
         sliceIdx = max(1, min(nZ, sliceIdx));
         set(txtSliceTop,'String',sliceString(sliceIdx,nZ));
 
-        bgFullActive = getUnderlayFull();
-        bg2 = getBg2DForSlice(bgFullActive, sliceIdx);
-        bg2(~isfinite(bg2)) = 0;
-
-        bg01 = processUnderlay(bg2);
-        bgRGB = toRGB(bg01);
+     bgFullActive = getUnderlayFull();
+bg2 = getBg2DForSlice(bgFullActive, sliceIdx);
+bgRGB = renderUnderlayRGB(bg2);
 
         if frame < 1 || frame > nFrames
-            img.CData = bgRGB;
-            return;
-        end
+    syncImageAxesToCurrentFrame(bgRGB);
+    return;
+end
 
         if ndPSC == 4
             A = squeeze(PSC(:,:,sliceIdx, frame));
@@ -893,6 +927,9 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
         end
         A = double(A);
         A(~isfinite(A)) = 0;
+        if size(bgRGB,1) ~= size(A,1) || size(bgRGB,2) ~= size(A,2)
+    bgRGB = forceRgbToSize(bgRGB, size(A,1), size(A,2));
+end
 
         if overlaySmoothSigma > 0
             filtSize = max(3, 2*ceil(2*overlaySmoothSigma)+1);
@@ -923,9 +960,12 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
         A_scaled = max(0, min(1, A_scaled));
         pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
 
-        M = squeeze(mask(:,:,sliceIdx, volume));
-        M = logical(M);
-        M = M(1:size(bg2,1), 1:size(bg2,2));
+       M = squeeze(mask(:,:,sliceIdx, volume));
+M = logical(M);
+
+if size(M,1) ~= size(A,1) || size(M,2) ~= size(A,2)
+    M = resizeLogical2D(M, size(A,1), size(A,2));
+end
 
         if any(M(:))
             if maskIsInclude
@@ -978,9 +1018,9 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
 
         if ~viewMaskedOnly && any(M(:))
             maskRGB = cat(3, ...
-                ones(size(bg2))*maskColor(1), ...
-                ones(size(bg2))*maskColor(2), ...
-                ones(size(bg2))*maskColor(3));
+    ones(size(A,1), size(A,2)) * maskColor(1), ...
+    ones(size(A,1), size(A,2)) * maskColor(2), ...
+    ones(size(A,1), size(A,2)) * maskColor(3));
             M3 = repmat(M,[1 1 3]);
             alphaUse = maskAlpha;
             if editorMode
@@ -989,7 +1029,7 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
             outRGB = outRGB .* (1 - alphaUse .* M3) + maskRGB .* (alphaUse .* M3);
         end
 
-        img.CData = outRGB;
+   syncImageAxesToCurrentFrame(outRGB);
 
         t = (volume - 1) * TR;
 
@@ -1142,26 +1182,14 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
 % =========================================================
 % UNDERLAY TAB CALLBACKS
 % =========================================================
-    function underSrcChanged(src,~)
-        v = get(src,'Value');
-        if v == 4
-            [U, lab] = loadUnderlayInteractive();
-            if isempty(U)
-                set(src,'Value',underSrc);
-                return;
-            end
-            bgFileFull = U;
-            underSrc = 4;
-            underSrcLabel = lab;
-        else
-            underSrc = v;
-            if underSrc == 1, underSrcLabel = 'Default(bg)'; end
-            if underSrc == 2, underSrcLabel = 'Mean(I)'; end
-            if underSrc == 3, underSrcLabel = 'Median(I)'; end
-        end
-        statusLine = '';
-        render();
-    end
+  function underSrcChanged(src,~)
+    underSrc = get(src,'Value');
+    if underSrc == 1, underSrcLabel = 'Default(bg)'; end
+    if underSrc == 2, underSrcLabel = 'Mean(I)'; end
+    if underSrc == 3, underSrcLabel = 'Median(I)'; end
+    statusLine = '';
+    render();
+end
 
     function underModeChanged(src,~)
         uState.mode = get(src,'Value');
@@ -2018,22 +2046,20 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
 % =========================================================
 % UNDERLAY CORE
 % =========================================================
-    function bgFull = getUnderlayFull()
-        switch underSrc
-            case 1
-                bgFull = bgDefaultFull;
-            case 2
-                if isempty(bgMeanFull), bgMeanFull = computeUnderlayFromI('mean'); end
-                bgFull = bgMeanFull;
-            case 3
-                if isempty(bgMedianFull), bgMedianFull = computeUnderlayFromI('median'); end
-                bgFull = bgMedianFull;
-            case 4
-                bgFull = bgFileFull;
-            otherwise
-                bgFull = bgDefaultFull;
-        end
+  function bgFull = getUnderlayFull()
+    switch underSrc
+        case 1
+            bgFull = bgDefaultFull;
+        case 2
+            if isempty(bgMeanFull), bgMeanFull = computeUnderlayFromI('mean'); end
+            bgFull = bgMeanFull;
+        case 3
+            if isempty(bgMedianFull), bgMedianFull = computeUnderlayFromI('median'); end
+            bgFull = bgMedianFull;
+        otherwise
+            bgFull = bgDefaultFull;
     end
+end
 
     function bgFull = computeUnderlayFromI(method)
         dimT = ndims(I);
@@ -2057,19 +2083,37 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
     end
 
     function bg2 = getBg2DForSlice(bgIn, z)
-        if ndims(bgIn) == 2
-            bg2 = bgIn;
-        elseif ndims(bgIn) == 3
-            z = max(1,min(size(bgIn,3),z));
-            bg2 = bgIn(:,:,z);
-        elseif ndims(bgIn) == 4
-            tmp = mean(bgIn,4);
-            z = max(1,min(size(tmp,3),z));
-            bg2 = tmp(:,:,z);
-        else
-            bg2 = bgIn(:,:,1);
-        end
+    if ndims(bgIn) == 3 && size(bgIn,3) == 3
+        bg2 = bgIn;
+        return;
     end
+
+    if ndims(bgIn) == 2
+        bg2 = bgIn;
+        return;
+    end
+
+    if ndims(bgIn) == 3
+        z = max(1, min(size(bgIn,3), z));
+        bg2 = bgIn(:,:,z);
+        return;
+    end
+
+    if ndims(bgIn) == 4
+        if size(bgIn,3) == 3 && size(bgIn,4) >= 1
+            z = max(1, min(size(bgIn,4), z));
+            bg2 = squeeze(bgIn(:,:,:,z));
+            return;
+        end
+
+        tmp = mean(bgIn,4);
+        z = max(1, min(size(tmp,3), z));
+        bg2 = tmp(:,:,z);
+        return;
+    end
+
+    bg2 = squeeze(bgIn(:,:,1));
+end
 
     function U01 = processUnderlay(Uin)
         U = double(Uin);
@@ -2377,6 +2421,29 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
         end
     end
 
+function syncImageAxesToCurrentFrame(C)
+    if isempty(C)
+        return;
+    end
+
+    h = size(C,1);
+    w = size(C,2);
+
+    set(img, ...
+        'CData', C, ...
+        'XData', [1 w], ...
+        'YData', [1 h]);
+
+    set(ax, ...
+        'XLim', [0.5 w+0.5], ...
+        'YLim', [0.5 h+0.5], ...
+        'YDir', 'reverse', ...
+        'Color', 'k');
+
+    axis(ax,'image');
+    axis(ax,'off');
+end
+
     function B = makeBrushMask(x0, y0, r, ny0, nx0)
         [X,Y] = meshgrid(1:nx0, 1:ny0);
         B = (X-x0).^2 + (Y-y0).^2 <= r^2;
@@ -2467,7 +2534,13 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
             mask = maskNew;
             maskIsInclude = includeNew;
             bgDefaultFull = bgNew;
+applyUnderlayMeta(defaultUnderlayMeta(), bgDefaultFull);
 
+if ~state.isAtlasWarped
+    origMask = mask;
+    origMaskIsInclude = maskIsInclude;
+    origBgDefaultFull = bgDefaultFull;
+end
             underSrc = 1;
             underSrcLabel = 'Default(bg)';
             if ishandle(popUSrc)
@@ -2567,13 +2640,8 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
 
             maskOut = expandMaskToVideoSize(M, ny0, nx0, nZ0, nVols0, slice0);
 
-            if isfield(S,'brainImage') && ~isempty(S.brainImage) && isnumeric(S.brainImage)
-                bgOut = fitBundleUnderlayToVideo(S.brainImage, bgIn, ny0, nx0, nZ0);
-            elseif isfield(S,'underlay') && ~isempty(S.underlay) && isnumeric(S.underlay)
-                bgOut = fitBundleUnderlayToVideo(S.underlay, bgIn, ny0, nx0, nZ0);
-            elseif isfield(S,'bg') && ~isempty(S.bg) && isnumeric(S.bg)
-                bgOut = fitBundleUnderlayToVideo(S.bg, bgIn, ny0, nx0, nZ0);
-            end
+            % Keep current underlay unchanged when loading a mask / bundle.
+bgOut = bgIn;
 
             note = ['Loaded bundle mask: ' pickedField];
             return;
@@ -2681,61 +2749,74 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
         end
     end
 
-    function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
-        bgOut = bgFallback;
+  function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
+    bgOut = bgFallback;
 
-        if isempty(Uin) || ~isnumeric(Uin)
-            return;
-        end
-
-        U = double(Uin);
-
-        if ndims(U) == 3 && size(U,3) == 3
-            U = toGray(U);
-        end
-
-        if ndims(U) == 2
-            if size(U,1) == ny0 && size(U,2) == nx0
-                bgOut = U;
-            else
-                try
-                    bgOut = imresize(U, [ny0 nx0], 'bilinear');
-                catch
-                    bgOut = bgFallback;
-                end
-            end
-            return;
-        end
-
-        if ndims(U) == 3
-            n3 = size(U,3);
-            tmp = zeros(ny0, nx0, n3);
-
-            for kk = 1:n3
-                if size(U,1) == ny0 && size(U,2) == nx0
-                    tmp(:,:,kk) = U(:,:,kk);
-                else
-                    try
-                        tmp(:,:,kk) = imresize(U(:,:,kk), [ny0 nx0], 'bilinear');
-                    catch
-                        tmp(:,:,kk) = 0;
-                    end
-                end
-            end
-
-            if nZ0 > 1 && n3 == nZ0
-                bgOut = tmp;
-            elseif nZ0 == 1
-                bgOut = mean(tmp, 3);
-            else
-                idx = round(linspace(1, n3, nZ0));
-                idx = max(1, min(n3, idx));
-                bgOut = tmp(:,:,idx);
-            end
-            return;
-        end
+    if isempty(Uin) || ~isnumeric(Uin)
+        return;
     end
 
+    U = double(Uin);
+
+    % preserve RGB underlays
+    if ndims(U) == 3 && size(U,3) == 3
+        if size(U,1) == ny0 && size(U,2) == nx0
+            bgOut = U;
+        else
+            try
+                tmp = zeros(ny0, nx0, 3);
+                for cc = 1:3
+                    tmp(:,:,cc) = imresize(U(:,:,cc), [ny0 nx0], 'bilinear');
+                end
+                bgOut = tmp;
+            catch
+                bgOut = bgFallback;
+            end
+        end
+        return;
+    end
+
+    if ndims(U) == 2
+        if size(U,1) == ny0 && size(U,2) == nx0
+            bgOut = U;
+        else
+            try
+                bgOut = imresize(U, [ny0 nx0], 'bilinear');
+            catch
+                bgOut = bgFallback;
+            end
+        end
+        return;
+    end
+
+    if ndims(U) == 3
+        n3 = size(U,3);
+        tmp = zeros(ny0, nx0, n3);
+
+        for kk = 1:n3
+            if size(U,1) == ny0 && size(U,2) == nx0
+                tmp(:,:,kk) = U(:,:,kk);
+            else
+                try
+                    tmp(:,:,kk) = imresize(U(:,:,kk), [ny0 nx0], 'bilinear');
+                catch
+                    tmp(:,:,kk) = 0;
+                end
+            end
+        end
+
+        if nZ0 > 1 && n3 == nZ0
+            bgOut = tmp;
+        elseif nZ0 == 1
+            bgOut = mean(tmp, 3);
+        else
+            idx = round(linspace(1, n3, nZ0));
+            idx = max(1, min(n3, idx));
+            bgOut = tmp(:,:,idx);
+        end
+        return;
+    end
+end
     function M = readMaskFileForVideo(f)
         if ~exist(f,'file')
             error('Mask file not found: %s', f);
@@ -2867,6 +2948,955 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
 
         startPath = pwd;
     end
+
+   function warpFunctionalToAtlasCB(~,~)
+    startDir = getUnderlayStartPath();
+
+    [f,p] = uigetfile({'*.mat','Transform files (*.mat)'}, ...
+        'Select atlas Transformation / CoronalRegistration2D', startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+    try
+        S = load(fullfile(p,f));
+        T = extractAtlasWarpStruct(S);
+
+        % Warp ONLY the functional data
+        Inew        = warpDataSeriesToAtlas(origI,        T, sliceIdx);
+        IinterpNew  = warpDataSeriesToAtlas(origI_interp, T, sliceIdx);
+        PSCnew      = warpDataSeriesToAtlas(origPSC,      T, sliceIdx);
+
+        % Commit only after successful warp
+        I        = Inew;
+        I_interp = IinterpNew;
+        PSC      = PSCnew;
+
+        % IMPORTANT:
+        % Keep currently loaded underlay unchanged.
+        % Do NOT warp bgDefaultFull here, because it may already be atlas-space.
+        % This was the source of the mismatch vs SCM GUI.
+
+        state.isAtlasWarped = true;
+        state.atlasTransformFile = fullfile(p,f);
+        state.lastAtlasTransformFile = state.atlasTransformFile;
+
+        % Recompute dimensions after PSC warp
+        resetAfterDataSpaceChange(false);
+
+        underSrc = 1;
+        underSrcLabel = 'Default(bg)';
+        if ishandle(popUSrc)
+            set(popUSrc,'Value',1);
+        end
+
+        try
+            if isfield(T,'type') && strcmpi(char(T.type),'simple_coronal_2d') && ...
+                    isfield(T,'atlasSliceIndex') && isfinite(T.atlasSliceIndex)
+                set(txtTitle,'String',sprintf('%s | warped to atlas coronal slice %d', ...
+                    safeStr(fileLabel), round(T.atlasSliceIndex)));
+            else
+                set(txtTitle,'String',sprintf('%s | warped to atlas', safeStr(fileLabel)));
+            end
+        catch
+            set(txtTitle,'String',sprintf('%s | warped to atlas', safeStr(fileLabel)));
+        end
+
+        statusLine = 'Functional data warped to atlas.';
+        render();
+
+    catch ME
+        errordlg(ME.message,'Atlas warp failed');
+    end
+end
+
+function resetWarpToNativeCB(~,~)
+    try
+        I            = origI;
+        I_interp     = origI_interp;
+        PSC          = origPSC;
+        bgDefaultFull = origBgDefaultFull;
+
+        state.isAtlasWarped = false;
+        state.atlasTransformFile = '';
+
+        applyUnderlayMeta(defaultUnderlayMeta(), bgDefaultFull);
+
+        mask = origMask;
+        maskIsInclude = origMaskIsInclude;
+
+        underSrc = 1;
+        underSrcLabel = 'Default(bg)';
+        if ishandle(popUSrc)
+            set(popUSrc,'Value',1);
+        end
+        if ishandle(popIncExc)
+            set(popIncExc,'Value', tern(maskIsInclude,1,2));
+        end
+
+        set(txtTitle,'String',safeStr(fileLabel));
+
+        resetAfterDataSpaceChange(false);
+
+        statusLine = 'Returned to native functional space.';
+        render();
+
+    catch ME
+        errordlg(ME.message,'Reset to native failed');
+    end
+end
+
+function resetAfterDataSpaceChange(clearMaskNow)
+    if nargin < 1
+        clearMaskNow = false;
+    end
+
+    bgMeanFull = [];
+    bgMedianFull = [];
+    bgFileFull = [];
+
+    ndPSC = ndims(PSC);
+    switch ndPSC
+        case 4
+            [ny, nx, nZ, nFrames] = size(PSC);
+        case 3
+            [ny, nx, nFrames] = size(PSC);
+            nZ = 1;
+        case 2
+            [ny, nx] = size(PSC);
+            nZ = 1;
+            nFrames = 1;
+        otherwise
+            error('PSC must be 2D, 3D or 4D after space change.');
+    end
+
+    sliceIdx = max(1, min(nZ, round(sliceIdx)));
+    volume   = max(1, min(nVols, volume));
+    frame    = (volume - 1) * par.interpol + 1;
+    frame    = max(1, min(nFrames, round(frame)));
+
+    if clearMaskNow || isempty(mask) || ~isequal(size(mask), [ny nx nZ nVols])
+        mask = false(ny, nx, nZ, nVols);
+        maskIsInclude = true;
+        if ishandle(popIncExc)
+            set(popIncExc,'Value',1);
+        end
+    end
+
+    try
+        set(slVol,'Max',nVols,'Value',volume);
+        set(txtVol,'String',sprintf('%d / %d',volume,nVols));
+    catch
+    end
+
+    try
+        txtSliceAx.String = sliceString(sliceIdx,nZ);
+        set(txtSliceTop,'String',sliceString(sliceIdx,nZ));
+    catch
+    end
+end
+
+function T = extractAtlasWarpStruct(S)
+    if isfield(S,'Transf') && isstruct(S.Transf)
+        T = S.Transf;
+    elseif isfield(S,'Reg2D') && isstruct(S.Reg2D)
+        T = S.Reg2D;
+    else
+        T = S;
+    end
+
+    if isfield(T,'A') && ~isempty(T.A)
+        T.warpA = T.A;
+    elseif isfield(T,'M') && ~isempty(T.M)
+        T.warpA = T.M;
+    elseif isfield(T,'T') && ~isempty(T.T)
+        T.warpA = T.T;
+    elseif isfield(T,'tform') && ~isempty(T.tform)
+        T.warpA = T.tform.T;
+    else
+        error('Transform file has no usable matrix field.');
+    end
+
+    if isfield(T,'outputSize') && ~isempty(T.outputSize)
+        T.outSize = double(T.outputSize);
+    elseif isfield(T,'size') && ~isempty(T.size)
+        T.outSize = double(T.size);
+    elseif isfield(T,'atlasSize') && ~isempty(T.atlasSize)
+        T.outSize = double(T.atlasSize);
+    elseif isfield(T,'outSize') && ~isempty(T.outSize)
+        T.outSize = double(T.outSize);
+    else
+        T.outSize = [];
+    end
+
+    if ~isfield(T,'type') || isempty(T.type)
+        T.type = 'unknown';
+    end
+    if ~isfield(T,'atlasSliceIndex') || isempty(T.atlasSliceIndex)
+        T.atlasSliceIndex = NaN;
+    end
+end
+
+function Y = warpDataSeriesToAtlas(X, T, zSel)
+    A = double(T.warpA);
+
+    if isequal(size(A), [4 4])
+        if isempty(T.outSize) || numel(T.outSize) < 3
+            error('3D atlas warp requires output size.');
+        end
+
+        outSize3 = round(T.outSize(1:3));
+        tform3 = affine3d(A);
+        Rout3  = imref3d(outSize3);
+
+        if ndims(X) == 4
+            nTT = size(X,4);
+            Y = zeros([outSize3 nTT], 'single');
+            for tt = 1:nTT
+                Y(:,:,:,tt) = imwarp(single(X(:,:,:,tt)), tform3, 'linear', 'OutputView', Rout3);
+            end
+            return;
+        end
+
+        error('3D warp currently expects [Y X Z T].');
+    end
+
+    if isequal(size(A), [3 3])
+        if isempty(T.outSize) || numel(T.outSize) < 2
+            error('2D atlas warp requires output size.');
+        end
+
+        outSize2 = round(T.outSize(1:2));
+        tform2 = affine2d(A);
+        Rout2  = imref2d(outSize2);
+
+        if ndims(X) == 3
+            nTT = size(X,3);
+            Y = zeros([outSize2 nTT], 'single');
+            for tt = 1:nTT
+                Y(:,:,tt) = imwarp(single(X(:,:,tt)), tform2, 'linear', 'OutputView', Rout2);
+            end
+            return;
+        elseif ndims(X) == 4
+            zSel = max(1, min(size(X,3), zSel));
+            X2   = squeeze(X(:,:,zSel,:));
+            nTT = size(X2,3);
+            Y = zeros([outSize2 nTT], 'single');
+            for tt = 1:nTT
+                Y(:,:,tt) = imwarp(single(X2(:,:,tt)), tform2, 'linear', 'OutputView', Rout2);
+            end
+            return;
+        elseif ndims(X) == 2
+            Y = imwarp(single(X), tform2, 'linear', 'OutputView', Rout2);
+            return;
+        end
+    end
+
+    error('Unsupported transform matrix size.');
+end
+
+function loadNewUnderlayCB(~,~)
+    ensureUnderlayStateFields();
+    startPath = getUnderlayStartPath();
+
+    [f,p] = uigetfile( ...
+        {'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp', ...
+         'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.bmp)'}, ...
+        'Select new underlay', startPath);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fullf = fullfile(p,f);
+
+    try
+        [Uraw, meta] = readUnderlayFile(fullf);
+        Uraw = squeeze(Uraw);
+
+        if state.isAtlasWarped
+            if doesUnderlayMatchCurrentDisplay(Uraw)
+                bgDefaultFull = validateAndPrepareUnderlay(Uraw, fullf);
+                applyUnderlayMeta(meta, bgDefaultFull);
+                underSrc = 1;
+                underSrcLabel = 'Default(bg)';
+                set(popUSrc,'Value',1);
+                statusLine = ['Loaded atlas-space underlay: ' fullf];
+                render();
+                return;
+
+            elseif doesUnderlayMatchOriginalDisplay(Uraw)
+                tfFile = getBestTransformForUnderlay(fullf);
+                if isempty(tfFile) || exist(tfFile,'file') ~= 2
+                    error('Current video is atlas-warped, but no transform file was found to warp the selected native underlay.');
+                end
+
+                S = load(tfFile);
+                T = extractAtlasWarpStruct(S);
+
+                U = warpUnderlayForCurrentDisplay(Uraw, T, sliceIdx);
+                bgDefaultFull = validateAndPrepareUnderlay(U, fullf);
+                applyUnderlayMeta(meta, bgDefaultFull);
+
+                underSrc = 1;
+                underSrcLabel = 'Default(bg)';
+                set(popUSrc,'Value',1);
+
+                statusLine = ['Loaded warped atlas underlay: ' fullf];
+                render();
+                return;
+            else
+                error('Selected underlay does not match current atlas display or original native display.');
+            end
+        end
+
+        % native mode
+        if doesUnderlayMatchCurrentDisplay(Uraw)
+            bgDefaultFull = validateAndPrepareUnderlay(Uraw, fullf);
+            applyUnderlayMeta(meta, bgDefaultFull);
+
+            origBgDefaultFull = bgDefaultFull;
+
+            underSrc = 1;
+            underSrcLabel = 'Default(bg)';
+            set(popUSrc,'Value',1);
+
+            statusLine = ['Loaded native underlay: ' fullf];
+            render();
+            return;
+        end
+
+        % atlas underlay loaded while still in native mode -> auto warp functional
+        tfFile = getBestTransformForUnderlay(fullf);
+        if isempty(tfFile) || exist(tfFile,'file') ~= 2
+            [ft,pt] = uigetfile({'*.mat','Transform files (*.mat)'}, ...
+                'Selected underlay looks atlas-sized. Select transform file', getUnderlayStartPath());
+            if isequal(ft,0)
+                return;
+            end
+            tfFile = fullfile(pt,ft);
+        end
+
+        S = load(tfFile);
+        T = extractAtlasWarpStruct(S);
+
+        if ~doesUnderlayMatchTransformOutput(Uraw, T)
+            error('Selected underlay does not match native display and also does not match transform output size.');
+        end
+
+       Inew        = warpDataSeriesToAtlas(origI,        T, sliceIdx);
+IinterpNew  = warpDataSeriesToAtlas(origI_interp, T, sliceIdx);
+PSCnew      = warpDataSeriesToAtlas(origPSC,      T, sliceIdx);
+
+ndNew = ndims(PSCnew);
+switch ndNew
+    case 4
+        [nyNew, nxNew, nZNew, ~] = size(PSCnew);
+    case 3
+        [nyNew, nxNew, ~] = size(PSCnew);
+        nZNew = 1;
+    case 2
+        [nyNew, nxNew] = size(PSCnew);
+        nZNew = 1;
+    otherwise
+        error('Warped PSC has unsupported dimensionality.');
+end
+
+bgAtlas = validateAndPrepareUnderlay(Uraw, fullf, nyNew, nxNew, nZNew);
+
+I        = Inew;
+I_interp = IinterpNew;
+PSC      = PSCnew;
+
+state.isAtlasWarped = true;
+state.atlasTransformFile = tfFile;
+state.lastAtlasTransformFile = tfFile;
+
+bgDefaultFull = bgAtlas;
+applyUnderlayMeta(meta, bgDefaultFull);
+
+        underSrc = 1;
+        underSrcLabel = 'Default(bg)';
+        set(popUSrc,'Value',1);
+
+        mask = [];
+        maskIsInclude = true;
+
+        resetAfterDataSpaceChange(true);
+
+        try
+            if isfield(T,'type') && strcmpi(char(T.type),'simple_coronal_2d') ...
+                    && isfield(T,'atlasSliceIndex') && isfinite(T.atlasSliceIndex)
+                set(txtTitle,'String',sprintf('%s | warped to atlas coronal slice %d', ...
+                    safeStr(fileLabel), round(T.atlasSliceIndex)));
+            else
+                set(txtTitle,'String',sprintf('%s | warped to atlas', safeStr(fileLabel)));
+            end
+        catch
+            set(txtTitle,'String',sprintf('%s | warped to atlas', safeStr(fileLabel)));
+        end
+
+        statusLine = ['Loaded atlas underlay and warped functional: ' fullf];
+        render();
+
+    catch ME
+        errordlg(ME.message,'Load underlay failed');
+    end
+end
+
+    function U = validateAndPrepareUnderlay(U, fullf, nyTarget, nxTarget, nZTarget)
+    U = squeeze(U);
+
+    if isempty(U) || ~(isnumeric(U) || islogical(U))
+        error('Loaded underlay is not numeric: %s', fullf);
+    end
+
+    if nargin < 3 || isempty(nyTarget), nyTarget = ny; end
+    if nargin < 4 || isempty(nxTarget), nxTarget = nx; end
+    if nargin < 5 || isempty(nZTarget), nZTarget = nZ; end
+
+    U = double(U);
+    U = fitUnderlayToCurrentDisplay(U, nyTarget, nxTarget, nZTarget);
+end
+    function Uout = fitUnderlayToCurrentDisplay(Uin, ny0, nx0, nZ0)
+    U = squeeze(double(Uin));
+
+    % ---------------- RGB 2D ----------------
+    if ndims(U) == 3 && size(U,3) == 3
+        if size(U,1) == ny0 && size(U,2) == nx0
+            Uout = U;
+            return;
+        end
+
+        if size(U,1) == nx0 && size(U,2) == ny0
+            Uout = permute(U, [2 1 3]);
+            return;
+        end
+
+        Uout = zeros(ny0, nx0, 3, 'double');
+        for cc = 1:3
+            Uout(:,:,cc) = centerCropPad2D(U(:,:,cc), ny0, nx0);
+        end
+        return;
+    end
+
+    % ---------------- 2D grayscale / labels ----------------
+    if ndims(U) == 2
+        if size(U,1) == ny0 && size(U,2) == nx0
+            Uout = U;
+            return;
+        end
+
+        if size(U,1) == nx0 && size(U,2) == ny0
+            Uout = U.';
+            return;
+        end
+
+        Uout = centerCropPad2D(U, ny0, nx0);
+        return;
+    end
+
+    % ---------------- 3D grayscale stack ----------------
+    if ndims(U) == 3
+        if size(U,1) == nx0 && size(U,2) == ny0
+            U = permute(U, [2 1 3]);
+        end
+
+        n3 = size(U,3);
+
+        tmp = zeros(ny0, nx0, n3, 'double');
+        for kk = 1:n3
+            tmp(:,:,kk) = centerCropPad2D(U(:,:,kk), ny0, nx0);
+        end
+
+        if n3 == nZ0
+            Uout = tmp;
+        elseif nZ0 == 1
+            Uout = tmp(:,:,max(1, min(n3, 1)));
+        else
+            idx = round(linspace(1, n3, nZ0));
+            idx = max(1, min(n3, idx));
+            Uout = tmp(:,:,idx);
+        end
+        return;
+    end
+
+    error('Unsupported underlay dimensionality after squeeze.');
+end
+
+function Aout = centerCropPad2D(Ain, nyT, nxT)
+    Ain = double(Ain);
+    [nyA, nxA] = size(Ain);
+
+    Aout = zeros(nyT, nxT, 'double');
+
+    yCopy = min(nyA, nyT);
+    xCopy = min(nxA, nxT);
+
+    yA1 = floor((nyA - yCopy)/2) + 1;
+    xA1 = floor((nxA - xCopy)/2) + 1;
+
+    yT1 = floor((nyT - yCopy)/2) + 1;
+    xT1 = floor((nxT - xCopy)/2) + 1;
+
+    Aout(yT1:yT1+yCopy-1, xT1:xT1+xCopy-1) = ...
+        Ain(yA1:yA1+yCopy-1, xA1:xA1+xCopy-1);
+end
+
+function Lout = fitRegionLabelsToCurrentDisplay(Lin, ny0, nx0)
+    L = squeeze(double(Lin));
+
+    if isempty(L)
+        Lout = [];
+        return;
+    end
+
+    if ndims(L) ~= 2
+        while ndims(L) > 2
+            L = L(:,:,1);
+        end
+    end
+
+    if size(L,1) == ny0 && size(L,2) == nx0
+        Lout = L;
+        return;
+    end
+
+    if size(L,1) == nx0 && size(L,2) == ny0
+        Lout = L.';
+        return;
+    end
+
+    Lout = imresize(L, [ny0 nx0], 'nearest');
+end
+
+    function rgb = forceRgbToSize(rgbIn, ny0, nx0)
+    rgb = double(rgbIn);
+
+    if ndims(rgb) == 3 && size(rgb,3) == 3
+        if size(rgb,1) == ny0 && size(rgb,2) == nx0
+            return;
+        end
+
+        if size(rgb,1) == nx0 && size(rgb,2) == ny0
+            rgb = permute(rgb, [2 1 3]);
+            return;
+        end
+
+        tmp = zeros(ny0, nx0, 3, 'double');
+        for cc = 1:3
+            tmp(:,:,cc) = centerCropPad2D(rgb(:,:,cc), ny0, nx0);
+        end
+        rgb = tmp;
+        return;
+    end
+
+    error('forceRgbToSize expected RGB image.');
+end
+
+function applyUnderlayMeta(meta, U)
+    ensureUnderlayStateFields();
+
+    state.isColorUnderlay     = false;
+    state.regionLabelUnderlay = [];
+    state.regionColorLUT      = [];
+    state.regionInfo          = struct();
+
+    if nargin >= 1 && isstruct(meta)
+        if isfield(meta,'isColor') && ~isempty(meta.isColor)
+            state.isColorUnderlay = logical(meta.isColor);
+        end
+        if isfield(meta,'regionLabels') && ~isempty(meta.regionLabels)
+    state.regionLabelUnderlay = fitRegionLabelsToCurrentDisplay(meta.regionLabels, ny, nx);
+    state.isColorUnderlay = true;
+end
+        if isfield(meta,'regionInfo') && ~isempty(meta.regionInfo)
+            state.regionInfo = meta.regionInfo;
+        end
+    end
+
+    if nargin >= 2 && ~state.isColorUnderlay
+        if ndims(U) == 3 && size(U,3) == 3
+            state.isColorUnderlay = true;
+        end
+    end
+end
+
+function tf = doesUnderlayMatchTransformOutput(U, T)
+    tf = false;
+    try
+        U = squeeze(U);
+        if isempty(T) || ~isfield(T,'outSize') || isempty(T.outSize)
+            return;
+        end
+        outSize = round(double(T.outSize));
+        if numel(outSize) < 2
+            return;
+        end
+        tf = (size(U,1) == outSize(1) && size(U,2) == outSize(2));
+    catch
+        tf = false;
+    end
+end
+
+function tfFile = getBestTransformForUnderlay(underlayFile)
+    tfFile = '';
+    cand = {};
+
+    try
+        if ~isempty(state.atlasTransformFile) && exist(state.atlasTransformFile,'file') == 2
+            cand{end+1} = char(state.atlasTransformFile);
+        end
+    catch
+    end
+
+    try
+        if ~isempty(state.lastAtlasTransformFile) && exist(state.lastAtlasTransformFile,'file') == 2
+            cand{end+1} = char(state.lastAtlasTransformFile);
+        end
+    catch
+    end
+
+    try
+        udir = fileparts(char(underlayFile));
+        cand{end+1} = fullfile(udir,'CoronalRegistration2D.mat');
+        cand{end+1} = fullfile(udir,'Transformation.mat');
+
+        p1 = fileparts(udir);
+        cand{end+1} = fullfile(p1,'Registration2D','CoronalRegistration2D.mat');
+        cand{end+1} = fullfile(p1,'Registration','Transformation.mat');
+        cand{end+1} = fullfile(p1,'CoronalRegistration2D.mat');
+        cand{end+1} = fullfile(p1,'Transformation.mat');
+    catch
+    end
+
+    try
+        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
+            ep = char(par.exportPath);
+            cand{end+1} = fullfile(ep,'Registration2D','CoronalRegistration2D.mat');
+            cand{end+1} = fullfile(ep,'Registration','Transformation.mat');
+        end
+    catch
+    end
+
+    for ii = 1:numel(cand)
+        try
+            if ~isempty(cand{ii}) && exist(cand{ii},'file') == 2
+                tfFile = cand{ii};
+                return;
+            end
+        catch
+        end
+    end
+end
+
+function startPath = getUnderlayStartPath()
+    startPath = getStartPath();
+
+    try
+        if state.isAtlasWarped && ~isempty(state.atlasTransformFile) && exist(state.atlasTransformFile,'file') == 2
+            startPath = fileparts(state.atlasTransformFile);
+            return;
+        end
+    catch
+    end
+end
+
+function [U, meta] = readUnderlayFile(f)
+    if ~exist(f,'file')
+        error('Underlay file not found: %s', f);
+    end
+
+    meta = defaultUnderlayMeta();
+
+    isNiiGz = (numel(f) >= 7 && strcmpi(f(end-6:end), '.nii.gz'));
+    if isNiiGz
+        tmpDir = tempname;
+        mkdir(tmpDir);
+        gunzip(f, tmpDir);
+        ddd = dir(fullfile(tmpDir, '*.nii'));
+        if isempty(ddd)
+            error('Failed to gunzip .nii.gz underlay.');
+        end
+        niiFile = fullfile(tmpDir, ddd(1).name);
+        U = double(niftiread(niiFile));
+        try, rmdir(tmpDir,'s'); catch, end
+        return;
+    end
+
+    [~,~,e] = fileparts(f);
+    e = lower(e);
+
+    switch e
+        case '.mat'
+            S = load(f);
+            [U, meta] = extractUnderlayFromMatStruct(S);
+
+        case '.nii'
+            U = double(niftiread(f));
+
+        case {'.png','.jpg','.jpeg','.tif','.tiff','.bmp'}
+            U = imread(f);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            U = double(U);
+
+        otherwise
+            error('Unsupported underlay file type: %s', e);
+    end
+end
+
+function meta = defaultUnderlayMeta()
+    meta = struct();
+    meta.isColor = false;
+    meta.regionLabels = [];
+    meta.regionInfo = struct();
+    meta.atlasMode = '';
+end
+
+function [U, meta] = extractUnderlayFromMatStruct(S)
+    meta = defaultUnderlayMeta();
+
+    if isfield(S,'atlasMode') && ~isempty(S.atlasMode)
+        try
+            meta.atlasMode = char(S.atlasMode);
+        catch
+            meta.atlasMode = '';
+        end
+    end
+
+    if strcmpi(meta.atlasMode,'regions')
+        if isfield(S,'atlasUnderlayRGB') && ~isempty(S.atlasUnderlayRGB)
+            U = double(S.atlasUnderlayRGB);
+            meta.isColor = true;
+        elseif isfield(S,'brainImage') && ~isempty(S.brainImage)
+            U = double(S.brainImage);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+        else
+            error('Regions MAT file has no atlasUnderlayRGB / brainImage.');
+        end
+
+        if isfield(S,'atlasRegionLabels2D') && ~isempty(S.atlasRegionLabels2D)
+            meta.regionLabels = double(S.atlasRegionLabels2D);
+        elseif isfield(S,'atlasUnderlay') && ~isempty(S.atlasUnderlay)
+            meta.regionLabels = double(S.atlasUnderlay);
+        end
+
+        if isfield(S,'atlasInfoRegions') && ~isempty(S.atlasInfoRegions)
+            meta.regionInfo = S.atlasInfoRegions;
+        elseif isfield(S,'infoRegions') && ~isempty(S.infoRegions)
+            meta.regionInfo = S.infoRegions;
+        end
+        return;
+    end
+
+    pref = {'atlasUnderlayRGB','underlay','bg','brainImage','img','I','atlasUnderlay','vascular','histology','regions','Data'};
+
+    for ii = 1:numel(pref)
+        if isfield(S,pref{ii})
+            v = S.(pref{ii});
+            if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data)
+                U = double(v.Data);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                return;
+            elseif isnumeric(v) || islogical(v)
+                U = double(v);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                return;
+            end
+        end
+    end
+
+    fn = fieldnames(S);
+    for ii = 1:numel(fn)
+        v = S.(fn{ii});
+        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data)
+            U = double(v.Data);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            return;
+        elseif isnumeric(v) || islogical(v)
+            U = double(v);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            return;
+        end
+    end
+
+    error('MAT underlay file has no usable numeric variable.');
+end
+
+function Uout = warpUnderlayForCurrentDisplay(Uin, T, zSel)
+    A = double(T.warpA);
+
+    if isequal(size(A), [3 3])
+        if isempty(T.outSize) || numel(T.outSize) < 2
+            error('2D underlay warp requires output size.');
+        end
+
+        outSize2 = round(T.outSize(1:2));
+        tform2 = affine2d(A);
+        Rout2  = imref2d(outSize2);
+
+        if ndims(Uin) == 2
+            Uout = imwarp(single(Uin), tform2, 'linear', 'OutputView', Rout2);
+            return;
+        end
+
+        if ndims(Uin) == 3
+            if size(Uin,3) == 3
+                Uout = zeros([outSize2 3], 'single');
+                for cc = 1:3
+                    Uout(:,:,cc) = imwarp(single(Uin(:,:,cc)), tform2, 'linear', 'OutputView', Rout2);
+                end
+                return;
+            else
+                zSel = max(1, min(size(Uin,3), zSel));
+                Uout = imwarp(single(Uin(:,:,zSel)), tform2, 'linear', 'OutputView', Rout2);
+                return;
+            end
+        end
+    end
+
+    if isequal(size(A), [4 4])
+        if isempty(T.outSize) || numel(T.outSize) < 3
+            error('3D underlay warp requires output size.');
+        end
+
+        outSize3 = round(T.outSize(1:3));
+        tform3 = affine3d(A);
+        Rout3  = imref3d(outSize3);
+
+        if ndims(Uin) == 3
+            Uout = imwarp(single(Uin), tform3, 'linear', 'OutputView', Rout3);
+            return;
+        end
+    end
+
+    error('Unsupported transform matrix size for underlay warp.');
+end
+
+function tf = doesUnderlayMatchCurrentDisplay(U)
+    tf = false;
+    try
+        U = squeeze(U);
+        tf = (size(U,1) == ny && size(U,2) == nx);
+    catch
+        tf = false;
+    end
+end
+
+function tf = doesUnderlayMatchOriginalDisplay(U)
+    tf = false;
+    try
+        U = squeeze(U);
+        tf = (size(U,1) == size(origPSC,1) && size(U,2) == size(origPSC,2));
+    catch
+        tf = false;
+    end
+end
+
+function rgb = renderUnderlayRGB(Uin)
+    ensureUnderlayStateFields();
+
+    if state.isColorUnderlay
+        rgb = convertUnderlayToColorRGB(Uin);
+    else
+        rgb = toRGB(processUnderlay(Uin));
+    end
+end
+
+function rgb = convertUnderlayToColorRGB(U)
+    U = squeeze(U);
+
+    if ndims(U) == 3 && size(U,3) == 3
+        rgb = double(U);
+        if max(rgb(:)) > 1
+            rgb = rgb / 255;
+        end
+        rgb = min(max(rgb,0),1);
+        return;
+    end
+
+    if isnumeric(U) || islogical(U)
+        L = double(U);
+        L(~isfinite(L)) = 0;
+
+        maxLab = max(L(:));
+        if isempty(state.regionColorLUT) || size(state.regionColorLUT,1) < max(1,maxLab)
+            state.regionColorLUT = makeRegionColorLUT(max(1,maxLab));
+        end
+
+        rgb = zeros([size(L,1) size(L,2) 3], 'double');
+
+        zmask = (L == 0);
+        rgb(:,:,1) = 0.85 * zmask;
+        rgb(:,:,2) = 0.85 * zmask;
+        rgb(:,:,3) = 0.85 * zmask;
+
+        pos = find(L > 0);
+        if ~isempty(pos)
+            labs = round(L(pos));
+            labs(labs < 1) = 1;
+            labs(labs > size(state.regionColorLUT,1)) = size(state.regionColorLUT,1);
+
+            c = state.regionColorLUT(labs, :);
+            tmp = reshape(rgb, [], 3);
+            tmp(pos, :) = c;
+            rgb = reshape(tmp, size(rgb));
+        end
+
+        rgb = min(max(rgb,0),1);
+        return;
+    end
+
+    rgb = toRGB(processUnderlay(U));
+end
+
+function lut = makeRegionColorLUT(n)
+    if n <= 0
+        lut = zeros(1,3);
+        return;
+    end
+
+    base = lines(max(n,12));
+    lut = base(1:n,:);
+
+    if n > size(base,1)
+        x  = linspace(0,1,size(base,1));
+        xi = linspace(0,1,n);
+        tmp = zeros(n,3);
+        for k = 1:3
+            tmp(:,k) = interp1(x, base(:,k), xi, 'linear');
+        end
+        lut = min(max(tmp,0),1);
+    end
+end
+
+function ensureUnderlayStateFields()
+    if ~isfield(state,'isColorUnderlay') || isempty(state.isColorUnderlay)
+        state.isColorUnderlay = false;
+    end
+    if ~isfield(state,'regionLabelUnderlay') || isempty(state.regionLabelUnderlay)
+        state.regionLabelUnderlay = [];
+    end
+    if ~isfield(state,'regionColorLUT') || isempty(state.regionColorLUT)
+        state.regionColorLUT = [];
+    end
+    if ~isfield(state,'regionInfo') || isempty(state.regionInfo)
+        state.regionInfo = struct();
+    end
+end
 
     function s = safeStr(x)
         s = '';

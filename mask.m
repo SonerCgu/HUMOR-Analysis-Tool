@@ -18,20 +18,12 @@ function out = mask(varargin)
 %       overlayMask / signalMask = display restriction region
 %       mask / loadedMask = overlayMask
 %
-% SAVED VARIABLES
-%   brainImage
-%   brainMask
-%   underlayMask
-%   overlayMask
-%   signalMask
-%   mask
-%   activeMask
-%   loadedMask
-%   maskIsInclude
-%   loadedMaskIsInclude
-%   overlayMaskIsInclude
-%   maskBundle
-%   maskEditorInfo
+% ADVANCED UNDERLAY RESTORE
+%   - Two right-side tabs: Mask and Underlay
+%   - Restored advanced underlay controls:
+%       * Vessel enhancement / connectivity boost
+%       * Soft tone mapping
+%   - All original painting and save compatibility kept
 %
 % PAINTING
 %   Left drag  = ADD
@@ -39,7 +31,7 @@ function out = mask(varargin)
 %   Shift+Left = ERASE
 %
 % KEY
-%   F = fill current slice of active target
+%   F   = fill current slice of active target
 %   ESC = close editor
 
 % =========================================================
@@ -162,8 +154,8 @@ end
 % =========================================================
 C = struct();
 C.fig      = [0.07 0.08 0.10];
-C.panel    = [0.11 0.12 0.15];
-C.panel2   = [0.15 0.16 0.20];
+C.panel    = [0.04 0.05 0.06];
+C.panel2   = [0.12 0.13 0.16];
 C.axbg     = [0.00 0.00 0.00];
 
 C.text     = [0.95 0.96 0.98];
@@ -189,6 +181,8 @@ UI.fsText   = 12;
 UI.fsBtn    = 12;
 UI.fsSmall  = 11;
 UI.fsStatus = 10;
+UI.fsTab    = 13;
+
 % =========================================================
 % 3) State
 % =========================================================
@@ -236,6 +230,19 @@ S.brushShape = 2; % 1 round, 2 square, 3 pen, 4 diamond
 S.isPainting = false;
 S.paintMode = '';
 S.lastRaw = [NaN NaN];
+S.activeTab = 1;
+
+% Restored advanced underlay controls
+S.vesselEnable = false;
+S.vesselSigma = 1.25;
+S.vesselGain = 1.20;
+S.vesselThresh = 0.18;
+S.vesselConnect = true;
+
+S.softToneEnable = false;
+S.softToneStrength = 0.45;
+S.softToneMid = 0.48;
+S.softToneToe = 0.08;
 
 brushCache = struct('r',NaN,'shape',NaN,'K',[],'R',0);
 
@@ -249,14 +256,13 @@ if ~isempty(initOverlayMask)
     overlayMaskVol = fitMaskToDims(initOverlayMask, nY, nX, nZ);
 end
 
-% Preload commonly used underlays
 Ucache = struct();
-Ucache.mip        = [];
-Ucache.mean       = [];
-Ucache.median     = [];
-Ucache.max        = [];
-Ucache.imregd     = [];
-Ucache.external   = [];
+Ucache.mip      = [];
+Ucache.mean     = [];
+Ucache.median   = [];
+Ucache.max      = [];
+Ucache.imregd   = [];
+Ucache.external = [];
 
 try
     Ucache.mip = underlayMIP_Z_ofMeanT(I);
@@ -387,35 +393,61 @@ panel = uipanel('Parent',fig,'Units','normalized', ...
     'FontSize',13, ...
     'FontWeight','bold');
 
-pMode = uipanel('Parent',panel,'Units','normalized', ...
-    'Position',[0.02 0.80 0.96 0.17], ...
+pTabs = uipanel('Parent',panel,'Units','normalized', ...
+    'Position',[0.02 0.92 0.96 0.045], ...
+    'BackgroundColor',C.panel, ...
+    'ForegroundColor',C.panel, ...
+    'BorderType','none');
+
+pMaskTab = uipanel('Parent',panel,'Units','normalized', ...
+    'Position',[0.02 0.16 0.96 0.74], ...
+    'BackgroundColor',C.panel, ...
+    'ForegroundColor',C.panel, ...
+    'BorderType','none');
+
+pUnderTab = uipanel('Parent',panel,'Units','normalized', ...
+    'Position',[0.02 0.16 0.96 0.74], ...
+    'BackgroundColor',C.panel, ...
+    'ForegroundColor',C.panel, ...
+    'BorderType','none');
+
+pMode = uipanel('Parent',pMaskTab,'Units','normalized', ...
+    'Position',[0.02 0.71 0.96 0.26], ...
     'BackgroundColor',C.panel, ...
     'ForegroundColor',C.text, ...
     'Title','Mode', ...
     'FontSize',13, ...
     'FontWeight','bold');
 
-pUnder = uipanel('Parent',panel,'Units','normalized', ...
-    'Position',[0.02 0.60 0.96 0.17], ...
+pTools = uipanel('Parent',pMaskTab,'Units','normalized', ...
+    'Position',[0.02 0.02 0.96 0.66], ...
     'BackgroundColor',C.panel, ...
     'ForegroundColor',C.text, ...
-    'Title','Underlay', ...
+    'Title','Tools', ...
     'FontSize',13, ...
     'FontWeight','bold');
 
-pDisplay = uipanel('Parent',panel,'Units','normalized', ...
-    'Position',[0.02 0.40 0.96 0.18], ...
+pUnder = uipanel('Parent',pUnderTab,'Units','normalized', ...
+    'Position',[0.02 0.61 0.96 0.36], ...
+    'BackgroundColor',C.panel, ...
+    'ForegroundColor',C.text, ...
+    'Title','Underlay Source', ...
+    'FontSize',13, ...
+    'FontWeight','bold');
+
+pDisplay = uipanel('Parent',pUnderTab,'Units','normalized', ...
+    'Position',[0.02 0.37 0.96 0.21], ...
     'BackgroundColor',C.panel, ...
     'ForegroundColor',C.text, ...
     'Title','Display', ...
     'FontSize',13, ...
     'FontWeight','bold');
 
-pTools = uipanel('Parent',panel,'Units','normalized', ...
-    'Position',[0.02 0.16 0.96 0.22], ...
+pAdv = uipanel('Parent',pUnderTab,'Units','normalized', ...
+    'Position',[0.02 0.02 0.96 0.32], ...
     'BackgroundColor',C.panel, ...
     'ForegroundColor',C.text, ...
-    'Title','Tools', ...
+    'Title','Advanced Underlay', ...
     'FontSize',13, ...
     'FontWeight','bold');
 
@@ -432,6 +464,7 @@ pBottom = uipanel('Parent',panel,'Units','normalized', ...
     'BackgroundColor',C.panel, ...
     'ForegroundColor',C.panel, ...
     'BorderType','none');
+
 % =========================================================
 % 7) Helper makers
 % =========================================================
@@ -483,42 +516,79 @@ pBottom = uipanel('Parent',panel,'Units','normalized', ...
 % =========================================================
 h = struct();
 
+h.btnTabMask = uicontrol('Style','pushbutton','Parent',pTabs,'Units','normalized', ...
+    'Position',[0.00 0.02 0.49 0.96], ...
+    'String','MASK', ...
+    'BackgroundColor',C.panel2,'ForegroundColor',C.text, ...
+    'FontName',UI.fontName,'FontSize',UI.fsTab,'FontWeight','bold', ...
+    'Callback',@(src,evt) onTabSelect(1));
+
+h.btnTabUnder = uicontrol('Style','pushbutton','Parent',pTabs,'Units','normalized', ...
+    'Position',[0.51 0.02 0.49 0.96], ...
+    'String','UNDERLAY', ...
+    'BackgroundColor',C.panel2,'ForegroundColor',C.text, ...
+    'FontName',UI.fontName,'FontSize',UI.fsTab,'FontWeight','bold', ...
+    'Callback',@(src,evt) onTabSelect(2));
+
 % -------------------- Mode --------------------
 h.togEditor = uicontrol('Style','togglebutton','Parent',pMode,'Units','normalized', ...
-    'Position',[0.02 0.69 0.46 0.19], ...
+    'Position',[0.03 0.73 0.45 0.17], ...
     'String','Editor ON','Value',1, ...
     'BackgroundColor',C.green,'ForegroundColor','w', ...
     'FontName',UI.fontName,'FontSize',12,'FontWeight','bold', ...
     'Callback',@onToggleEditor);
 
 h.togPreview = uicontrol('Style','togglebutton','Parent',pMode,'Units','normalized', ...
-    'Position',[0.52 0.69 0.46 0.19], ...
+    'Position',[0.52 0.73 0.45 0.17], ...
     'String','Preview: FULL','Value',0, ...
     'BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',UI.fontName,'FontSize',12,'FontWeight','bold', ...
     'Callback',@onTogglePreview);
 
-h.btnTargetBrain = makeButton(pMode,[0.02 0.44 0.46 0.19],'BRAIN / UNDERLAY',C.brain,'w',@onTargetBrain);
-h.btnTargetOverlay = makeButton(pMode,[0.52 0.44 0.46 0.19],'OVERLAY / SIGNAL',C.grayBtn,C.text,@onTargetOverlay);
+h.btnTargetBrain = makeButton(pMode,[0.03 0.49 0.45 0.17],'BRAIN / UNDERLAY',C.brain,'w',@onTargetBrain);
+h.btnTargetOverlay = makeButton(pMode,[0.52 0.49 0.45 0.17],'OVERLAY / SIGNAL',C.grayBtn,C.text,@onTargetOverlay);
 
-h.txtTargetInfo = makeText(pMode,[0.03 0.24 0.94 0.11],'Active: Brain / Underlay mask',C.brain,11,'bold','left');
+h.txtTargetInfo = makeText(pMode,[0.03 0.31 0.94 0.10],'Active: Brain / Underlay mask',C.brain,11,'bold','left');
 
 h.chkShowOverlay = uicontrol('Style','checkbox','Parent',pMode,'Units','normalized', ...
-    'Position',[0.03 0.14 0.42 0.08], ...
+    'Position',[0.03 0.15 0.36 0.10], ...
     'String','Show overlay', ...
     'Value',double(S.showOverlay), ...
     'BackgroundColor',C.panel,'ForegroundColor',C.text, ...
     'FontName',UI.fontName,'FontSize',11, ...
     'Callback',@onShowOverlayToggle);
 
-h.lblOverlayAlpha = makeText(pMode,[0.03 0.03 0.08 0.07],'Alpha',C.text,11,'normal','left');
-h.slOverlayAlpha = makeSlider(pMode,[0.12 0.045 0.66 0.10],0,1,S.overlayAlpha,@onOverlayAlphaChange);
-h.txtOverlayAlpha = makeText(pMode,[0.84 0.03 0.12 0.07],sprintf('%.2f',S.overlayAlpha),C.text,11,'normal','right');
+h.lblOverlayAlpha = makeText(pMode,[0.45 0.15 0.11 0.10],'Alpha',C.text,11,'normal','left');
+h.slOverlayAlpha = makeSlider(pMode,[0.56 0.18 0.22 0.08],0,1,S.overlayAlpha,@onOverlayAlphaChange);
+h.txtOverlayAlpha = makeText(pMode,[0.81 0.15 0.15 0.10],sprintf('%.2f',S.overlayAlpha),C.text,11,'normal','right');
 
+% -------------------- Tools --------------------
+h.lblBrush = makeText(pTools,[0.03 0.87 0.26 0.08],'Brush Size & Type',C.text,11,'normal','left');
+h.slBrush = makeSlider(pTools,[0.30 0.90 0.50 0.08],1,200,S.brushR,@onBrushChange);
+h.txtBrush = makeText(pTools,[0.82 0.87 0.15 0.08],sprintf('%.0f',S.brushR),C.text,11,'normal','right');
 
-% -------------------- Underlay --------------------
+h.popShape = uicontrol('Style','popupmenu','Parent',pTools,'Units','normalized', ...
+    'Position',[0.03 0.76 0.94 0.08], ...
+    'String',{'Round','Square','Pen','Diamond'}, ...
+    'Value',shapeToPopupValue(S.brushShape), ...
+    'BackgroundColor',C.panel2,'ForegroundColor','w', ...
+    'FontName',UI.fontName,'FontSize',11, ...
+    'Callback',@onShapeChange);
+
+h.lblSmooth = makeText(pTools,[0.03 0.62 0.15 0.08],'Smooth',C.text,11,'normal','left');
+h.slSmooth = makeSlider(pTools,[0.20 0.65 0.60 0.08],0,100,S.smoothSize,@onSmoothSize);
+h.txtSmooth = makeText(pTools,[0.82 0.62 0.15 0.08],sprintf('%.0f',S.smoothSize),C.text,11,'normal','right');
+
+h.btnFillSlice = makeButton(pTools,[0.03 0.43 0.22 0.12],'Fill Slice',C.grayBtn,'w',@onFillSlice);
+h.btnFillAll = makeButton(pTools,[0.27 0.43 0.22 0.12],'Fill All',C.grayBtn,'w',@onFillAll);
+h.btnSmooth = makeButton(pTools,[0.51 0.43 0.22 0.12],'Smooth',C.grayBtn,'w',@onSmooth);
+h.btnClearSlice = makeButton(pTools,[0.75 0.43 0.22 0.12],'Clr Slice',C.grayBtn,'w',@onClearSlice);
+
+h.btnClearMask = makeButton(pTools,[0.03 0.24 0.94 0.11],'Clear Active Mask',C.red,'w',@onClearMask);
+
+% -------------------- Underlay Source --------------------
 h.popUnderlay = uicontrol('Style','popupmenu','Parent',pUnder,'Units','normalized', ...
-    'Position',[0.03 0.79 0.94 0.12], ...
+    'Position',[0.03 0.81 0.94 0.10], ...
     'String',{'MIP (Z) of Mean(T) [default]', ...
               'Mean (T) [linear]', ...
               'Median (T) [linear]', ...
@@ -530,91 +600,111 @@ h.popUnderlay = uicontrol('Style','popupmenu','Parent',pUnder,'Units','normalize
     'FontName',UI.fontName,'FontSize',11, ...
     'Callback',@onUnderlayMode);
 
-h.btnLoadUnderlay = makeButton(pUnder,[0.03 0.61 0.94 0.12],'Load external underlay',C.grayBtn,'w',@onLoadExternal);
+h.btnLoadUnderlay = makeButton(pUnder,[0.03 0.66 0.94 0.10],'Load external underlay',C.grayBtn,'w',@onLoadExternal);
 
 h.chkGlobal = uicontrol('Style','checkbox','Parent',pUnder,'Units','normalized', ...
-    'Position',[0.03 0.47 0.94 0.09], ...
+    'Position',[0.03 0.53 0.94 0.09], ...
     'String','Global scaling (linear modes only)', ...
     'Value',double(S.globalScaling), ...
     'BackgroundColor',C.panel,'ForegroundColor',C.subtle, ...
     'FontName',UI.fontName,'FontSize',10, ...
     'Callback',@onGlobalScaling);
 
-h.txtUnderlayLabel = makeText(pUnder,[0.03 0.36 0.94 0.09],['Underlay: ' UbaseLabel],[0.72 0.86 1.00],11,'normal','left');
+h.txtUnderlayLabel = makeText(pUnder,[0.03 0.41 0.94 0.09],['Underlay: ' UbaseLabel],[0.72 0.86 1.00],11,'normal','left');
 
-h.lblDbLow = makeText(pUnder,[0.03 0.15 0.13 0.08],'dB low',C.text,11,'normal','left');
+h.lblDbLow = makeText(pUnder,[0.03 0.24 0.13 0.08],'dB low',C.text,11,'normal','left');
 h.edDbLow = uicontrol('Style','edit','Parent',pUnder,'Units','normalized', ...
-    'Position',[0.18 0.16 0.18 0.13], ...
+    'Position',[0.18 0.25 0.18 0.11], ...
     'String',num2str(S.dbLow), ...
     'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontName',UI.fontName,'FontSize',11, ...
     'Callback',@onDbEdit);
 
-h.lblDbHigh = makeText(pUnder,[0.44 0.15 0.13 0.08],'dB high',C.text,11,'normal','left');
+h.lblDbHigh = makeText(pUnder,[0.44 0.24 0.13 0.08],'dB high',C.text,11,'normal','left');
 h.edDbHigh = uicontrol('Style','edit','Parent',pUnder,'Units','normalized', ...
-    'Position',[0.59 0.16 0.18 0.13], ...
+    'Position',[0.59 0.25 0.18 0.11], ...
     'String',num2str(S.dbHigh), ...
     'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontName',UI.fontName,'FontSize',11, ...
     'Callback',@onDbEdit);
 
 if nZ > 1
-    h.slSlice = makeSlider(pUnder,[0.03 0.02 0.72 0.12],1,nZ,S.z,@onSliceChange);
+    h.slSlice = makeSlider(pUnder,[0.03 0.05 0.72 0.10],1,nZ,S.z,@onSliceChange);
     set(h.slSlice,'SliderStep',[1/max(1,nZ-1) 5/max(1,nZ-1)]);
-    h.txtSliceVal = makeText(pUnder,[0.76 0.02 0.20 0.09],sprintf('z=%d/%d',S.z,nZ),C.text,11,'normal','right');
+    h.txtSliceVal = makeText(pUnder,[0.76 0.05 0.20 0.08],sprintf('z=%d/%d',S.z,nZ),C.text,11,'normal','right');
 else
     h.slSlice = [];
     h.txtSliceVal = [];
 end
 
 % -------------------- Display --------------------
-h.lblBright = makeText(pDisplay,[0.03 0.80 0.18 0.10],'Bright',C.text,11,'normal','left');
-h.slBright = makeSlider(pDisplay,[0.22 0.83 0.58 0.11],-0.6,0.6,S.brightness,@onDisplayChange);
-h.txtBright = makeText(pDisplay,[0.82 0.80 0.15 0.10],sprintf('%.2f',S.brightness),C.text,11,'normal','right');
+h.lblBright = makeText(pDisplay,[0.03 0.76 0.18 0.12],'Bright',C.text,11,'normal','left');
+h.slBright = makeSlider(pDisplay,[0.22 0.79 0.58 0.10],-0.6,0.6,S.brightness,@onDisplayChange);
+h.txtBright = makeText(pDisplay,[0.82 0.76 0.15 0.12],sprintf('%.2f',S.brightness),C.text,11,'normal','right');
 
-h.lblCont = makeText(pDisplay,[0.03 0.59 0.18 0.10],'Contrast',C.text,11,'normal','left');
-h.slCont = makeSlider(pDisplay,[0.22 0.62 0.58 0.11],0.5,3.0,S.contrast,@onDisplayChange);
-h.txtCont = makeText(pDisplay,[0.82 0.59 0.15 0.10],sprintf('%.2f',S.contrast),C.text,11,'normal','right');
+h.lblCont = makeText(pDisplay,[0.03 0.51 0.18 0.12],'Contrast',C.text,11,'normal','left');
+h.slCont = makeSlider(pDisplay,[0.22 0.54 0.58 0.10],0.5,3.0,S.contrast,@onDisplayChange);
+h.txtCont = makeText(pDisplay,[0.82 0.51 0.15 0.12],sprintf('%.2f',S.contrast),C.text,11,'normal','right');
 
-h.lblGamma = makeText(pDisplay,[0.03 0.38 0.18 0.10],'Gamma',C.text,11,'normal','left');
-h.slGamma = makeSlider(pDisplay,[0.22 0.41 0.58 0.11],0.2,3.0,S.gamma,@onDisplayChange);
-h.txtGamma = makeText(pDisplay,[0.82 0.38 0.15 0.10],sprintf('%.2f',S.gamma),C.text,11,'normal','right');
+h.lblGamma = makeText(pDisplay,[0.03 0.26 0.18 0.12],'Gamma',C.text,11,'normal','left');
+h.slGamma = makeSlider(pDisplay,[0.22 0.29 0.58 0.10],0.2,3.0,S.gamma,@onDisplayChange);
+h.txtGamma = makeText(pDisplay,[0.82 0.26 0.15 0.12],sprintf('%.2f',S.gamma),C.text,11,'normal','right');
 
-h.lblSharp = makeText(pDisplay,[0.03 0.18 0.18 0.10],'Sharp',C.text,11,'normal','left');
-h.slSharp = makeSlider(pDisplay,[0.22 0.21 0.58 0.11],0,300,S.sharpness,@onDisplayChange);
-h.txtSharp = makeText(pDisplay,[0.82 0.18 0.15 0.10],sprintf('%.2f',S.sharpness),C.text,11,'normal','right');
+h.lblSharp = makeText(pDisplay,[0.03 0.01 0.18 0.12],'Sharp',C.text,11,'normal','left');
+h.slSharp = makeSlider(pDisplay,[0.22 0.04 0.58 0.10],0,300,S.sharpness,@onDisplayChange);
+h.txtSharp = makeText(pDisplay,[0.82 0.01 0.15 0.12],sprintf('%.2f',S.sharpness),C.text,11,'normal','right');
 
-h.popCmap = uicontrol('Style','popupmenu','Parent',pDisplay,'Units','normalized', ...
-    'Position',[0.03 0.02 0.94 0.11], ...
+h.popCmap = uicontrol('Style','popupmenu','Parent',pAdv,'Units','normalized', ...
+    'Position',[0.03 0.02 0.30 0.11], ...
     'String',{'Gray','B/W (inverted)','Hot','Copper','Bone'}, ...
     'Value',S.cmapMode, ...
     'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontName',UI.fontName,'FontSize',11, ...
     'Callback',@onCmapChange);
+h.txtCmap = makeText(pAdv,[0.35 0.03 0.14 0.08],'Colormap',C.text,11,'normal','left');
 
-% -------------------- Tools --------------------
-h.lblBrush = makeText(pTools,[0.03 0.82 0.26 0.10],'Brush Size & Type',C.text,11,'normal','left');
-h.slBrush = makeSlider(pTools,[0.30 0.85 0.50 0.11],1,200,S.brushR,@onBrushChange);
-h.txtBrush = makeText(pTools,[0.82 0.82 0.15 0.10],sprintf('%.0f',S.brushR),C.text,11,'normal','right');
-
-h.popShape = uicontrol('Style','popupmenu','Parent',pTools,'Units','normalized', ...
-    'Position',[0.03 0.66 0.94 0.10], ...
-    'String',{'Round','Square','Pen','Diamond'}, ...
-    'Value',shapeToPopupValue(S.brushShape), ...
-    'BackgroundColor',C.panel2,'ForegroundColor','w', ...
+% -------------------- Advanced underlay --------------------
+h.chkVessel = uicontrol('Style','checkbox','Parent',pAdv,'Units','normalized', ...
+    'Position',[0.03 0.84 0.36 0.10], ...
+    'String','Enable vessel boost', ...
+    'Value',double(S.vesselEnable), ...
+    'BackgroundColor',C.panel,'ForegroundColor',C.text, ...
     'FontName',UI.fontName,'FontSize',11, ...
-    'Callback',@onShapeChange);
+    'Callback',@onAdvancedUnderlayChange);
 
-h.lblSmooth = makeText(pTools,[0.03 0.46 0.15 0.10],'Smooth',C.text,11,'normal','left');
-h.slSmooth = makeSlider(pTools,[0.20 0.49 0.60 0.11],0,100,S.smoothSize,@onSmoothSize);
-h.txtSmooth = makeText(pTools,[0.82 0.46 0.15 0.10],sprintf('%.0f',S.smoothSize),C.text,11,'normal','right');
+h.chkVesselConnect = uicontrol('Style','checkbox','Parent',pAdv,'Units','normalized', ...
+    'Position',[0.52 0.84 0.40 0.10], ...
+    'String','Connect / bridge vessels', ...
+    'Value',double(S.vesselConnect), ...
+    'BackgroundColor',C.panel,'ForegroundColor',C.text, ...
+    'FontName',UI.fontName,'FontSize',11, ...
+    'Callback',@onAdvancedUnderlayChange);
 
-h.btnFillSlice = makeButton(pTools,[0.03 0.22 0.22 0.14],'Fill Slice',C.yellow,'k',@onFillSlice);
-h.btnFillAll = makeButton(pTools,[0.27 0.22 0.22 0.14],'Fill All',[0.92 0.74 0.12],'k',@onFillAll);
-h.btnSmooth = makeButton(pTools,[0.51 0.22 0.22 0.14],'Smooth',C.grayBtn,'w',@onSmooth);
-h.btnClearSlice = makeButton(pTools,[0.75 0.22 0.22 0.14],'Clr Slice',C.orange,'w',@onClearSlice);
+h.lblVesselSigma = makeText(pAdv,[0.03 0.67 0.15 0.08],'Sigma',C.text,11,'normal','left');
+h.slVesselSigma = makeSlider(pAdv,[0.20 0.70 0.60 0.08],0.4,4.5,S.vesselSigma,@onAdvancedUnderlayChange);
+h.txtVesselSigma = makeText(pAdv,[0.82 0.67 0.15 0.08],sprintf('%.2f',S.vesselSigma),C.text,11,'normal','right');
 
-h.btnClearMask = makeButton(pTools,[0.03 0.05 0.94 0.11],'Clear Active Mask',C.red,'w',@onClearMask);
+h.lblVesselGain = makeText(pAdv,[0.03 0.51 0.15 0.08],'Boost',C.text,11,'normal','left');
+h.slVesselGain = makeSlider(pAdv,[0.20 0.54 0.60 0.08],0,3,S.vesselGain,@onAdvancedUnderlayChange);
+h.txtVesselGain = makeText(pAdv,[0.82 0.51 0.15 0.08],sprintf('%.2f',S.vesselGain),C.text,11,'normal','right');
+
+h.lblVesselThresh = makeText(pAdv,[0.03 0.35 0.15 0.08],'Thresh',C.text,11,'normal','left');
+h.slVesselThresh = makeSlider(pAdv,[0.20 0.38 0.60 0.08],0.02,0.70,S.vesselThresh,@onAdvancedUnderlayChange);
+h.txtVesselThresh = makeText(pAdv,[0.82 0.35 0.15 0.08],sprintf('%.2f',S.vesselThresh),C.text,11,'normal','right');
+
+h.chkSoftTone = uicontrol('Style','checkbox','Parent',pAdv,'Units','normalized', ...
+    'Position',[0.03 0.19 0.36 0.10], ...
+    'String','Enable soft tone map', ...
+    'Value',double(S.softToneEnable), ...
+    'BackgroundColor',C.panel,'ForegroundColor',C.text, ...
+    'FontName',UI.fontName,'FontSize',11, ...
+    'Callback',@onAdvancedUnderlayChange);
+
+h.btnResetUnderlayFX = makeButton(pAdv,[0.52 0.17 0.43 0.12],'Reset Underlay FX',C.grayBtn,'w',@onResetUnderlayFX);
+
+h.lblToneStrength = makeText(pAdv,[0.52 0.03 0.18 0.08],'Soft tone',C.text,11,'normal','left');
+h.slToneStrength = makeSlider(pAdv,[0.68 0.05 0.17 0.07],0,1,S.softToneStrength,@onAdvancedUnderlayChange);
+h.txtToneStrength = makeText(pAdv,[0.86 0.03 0.10 0.08],sprintf('%.2f',S.softToneStrength),C.text,11,'normal','right');
 
 % -------------------- Save --------------------
 h.btnSaveBrain = makeButton(pSave,[0.00 0.14 0.31 0.62],'SAVE UNDERLAY',C.green,'w',@onSaveBrain);
@@ -636,7 +726,10 @@ set(fig,'KeyPressFcn',@onKey);
 
 updateTitle();
 updateTargetUI();
+updateTabUI();
 updateDbControlsEnabled();
+syncAdvancedControls();
+updateAdvancedControlsEnabled();
 updateStatus('Ready. Left drag = add. Right drag = erase. Press F to fill current slice.');
 renderNow();
 
@@ -696,6 +789,25 @@ uiwait(fig);
         end
     end
 
+    function onTabSelect(idx)
+        S.activeTab = idx;
+        updateTabUI();
+    end
+
+    function updateTabUI()
+        if S.activeTab == 1
+            set(pMaskTab,'Visible','on');
+            set(pUnderTab,'Visible','off');
+            set(h.btnTabMask,'BackgroundColor',C.blue,'ForegroundColor','w');
+            set(h.btnTabUnder,'BackgroundColor',C.panel2,'ForegroundColor',C.text);
+        else
+            set(pMaskTab,'Visible','off');
+            set(pUnderTab,'Visible','on');
+            set(h.btnTabMask,'BackgroundColor',C.panel2,'ForegroundColor',C.text);
+            set(h.btnTabUnder,'BackgroundColor',C.blue,'ForegroundColor','w');
+        end
+    end
+
     function onShowOverlayToggle(src,~)
         S.showOverlay = logical(get(src,'Value'));
         renderNow();
@@ -709,11 +821,23 @@ uiwait(fig);
 
 % -------------------- Underlay controls --------------------
     function onUnderlayMode(src,~)
-        S.underlayMode = get(src,'Value');
-        if S.underlayMode == 5
-            onLoadExternal();
+        oldMode = S.underlayMode;
+        newMode = get(src,'Value');
+
+        if newMode == 5
+            ok = loadExternalUnderlayInteractive();
+            if ok
+                S.underlayMode = 5;
+            else
+                S.underlayMode = oldMode;
+                set(src,'Value',oldMode);
+            end
+            updateDbControlsEnabled();
+            renderNow();
             return;
         end
+
+        S.underlayMode = newMode;
         Ubase = computeUnderlayVolume(S.underlayMode);
         updateTitle();
         updateDbControlsEnabled();
@@ -721,6 +845,17 @@ uiwait(fig);
     end
 
     function onLoadExternal(~,~)
+        ok = loadExternalUnderlayInteractive();
+        if ok
+            S.underlayMode = 5;
+            set(h.popUnderlay,'Value',5);
+            updateDbControlsEnabled();
+            renderNow();
+        end
+    end
+
+    function ok = loadExternalUnderlayInteractive()
+        ok = false;
         startPath = studio.exportPath;
         if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
             startPath = studio.loadedPath;
@@ -731,9 +866,6 @@ uiwait(fig);
                            'Select external underlay', startPath);
 
         if isequal(f,0)
-            if isgraphics(h.popUnderlay)
-                set(h.popUnderlay,'Value',S.underlayMode);
-            end
             return;
         end
 
@@ -744,24 +876,15 @@ uiwait(fig);
             tmp = fitUnderlayToDims(tmp, nY, nX, nZ);
             Ucache.external = double(tmp);
             Ubase = Ucache.external;
-            S.underlayMode = 5;
-            set(h.popUnderlay,'Value',5);
 
             [~,nm,ex] = fileparts(f);
             UbaseLabel = ['External: ' nm ex];
 
             updateTitle();
-            updateDbControlsEnabled();
             updateStatus('External underlay loaded.');
-            renderNow();
+            ok = true;
         catch ME
             errordlg(ME.message,'External underlay failed');
-            set(h.popUnderlay,'Value',1);
-            S.underlayMode = 1;
-            Ubase = computeUnderlayVolume(1);
-            updateTitle();
-            updateDbControlsEnabled();
-            renderNow();
         end
     end
 
@@ -857,6 +980,78 @@ uiwait(fig);
     function onCmapChange(src,~)
         S.cmapMode = get(src,'Value');
         renderNow();
+    end
+
+% -------------------- Advanced underlay --------------------
+    function onAdvancedUnderlayChange(~,~)
+        S.vesselEnable = logical(get(h.chkVessel,'Value'));
+        S.vesselConnect = logical(get(h.chkVesselConnect,'Value'));
+        S.vesselSigma = get(h.slVesselSigma,'Value');
+        S.vesselGain = get(h.slVesselGain,'Value');
+        S.vesselThresh = get(h.slVesselThresh,'Value');
+        S.softToneEnable = logical(get(h.chkSoftTone,'Value'));
+        S.softToneStrength = get(h.slToneStrength,'Value');
+
+        syncAdvancedControls();
+        updateAdvancedControlsEnabled();
+        renderNow();
+    end
+
+    function onResetUnderlayFX(~,~)
+        S.vesselEnable = false;
+        S.vesselSigma = 1.25;
+        S.vesselGain = 1.20;
+        S.vesselThresh = 0.18;
+        S.vesselConnect = true;
+        S.softToneEnable = false;
+        S.softToneStrength = 0.45;
+        syncAdvancedControls();
+        updateAdvancedControlsEnabled();
+        renderNow();
+    end
+
+    function syncAdvancedControls()
+        set(h.chkVessel,'Value',double(S.vesselEnable));
+        set(h.chkVesselConnect,'Value',double(S.vesselConnect));
+        set(h.slVesselSigma,'Value',S.vesselSigma);
+        set(h.slVesselGain,'Value',S.vesselGain);
+        set(h.slVesselThresh,'Value',S.vesselThresh);
+        set(h.chkSoftTone,'Value',double(S.softToneEnable));
+        set(h.slToneStrength,'Value',S.softToneStrength);
+
+        set(h.txtVesselSigma,'String',sprintf('%.2f',S.vesselSigma));
+        set(h.txtVesselGain,'String',sprintf('%.2f',S.vesselGain));
+        set(h.txtVesselThresh,'String',sprintf('%.2f',S.vesselThresh));
+        set(h.txtToneStrength,'String',sprintf('%.2f',S.softToneStrength));
+    end
+
+    function updateAdvancedControlsEnabled()
+        if S.vesselEnable
+            vState = 'on';
+        else
+            vState = 'off';
+        end
+
+        if S.softToneEnable
+            tState = 'on';
+        else
+            tState = 'off';
+        end
+
+        set(h.lblVesselSigma,'Enable',vState);
+        set(h.slVesselSigma,'Enable',vState);
+        set(h.txtVesselSigma,'Enable',vState);
+        set(h.lblVesselGain,'Enable',vState);
+        set(h.slVesselGain,'Enable',vState);
+        set(h.txtVesselGain,'Enable',vState);
+        set(h.lblVesselThresh,'Enable',vState);
+        set(h.slVesselThresh,'Enable',vState);
+        set(h.txtVesselThresh,'Enable',vState);
+        set(h.chkVesselConnect,'Enable',vState);
+
+        set(h.lblToneStrength,'Enable',tState);
+        set(h.slToneStrength,'Enable',tState);
+        set(h.txtToneStrength,'Enable',tState);
     end
 
 % -------------------- Tool controls --------------------
@@ -1004,7 +1199,7 @@ uiwait(fig);
             brainImage = [];
         end
 
-                              switch lower(mode)
+        switch lower(mode)
             case 'brain'
                 mask = brainMask;
                 activeMask = brainMask;
@@ -1036,7 +1231,7 @@ uiwait(fig);
                 saveModeLabel = 'Underlay and overlay masks';
         end
 
-                maskEditorInfo = struct();
+        maskEditorInfo = struct();
         maskEditorInfo.datasetLabel = datasetLabel;
         maskEditorInfo.timestamp = ts;
         maskEditorInfo.saveMode = mode;
@@ -1058,6 +1253,13 @@ uiwait(fig);
         maskEditorInfo.maskIsInclude = maskIsInclude;
         maskEditorInfo.loadedMaskIsInclude = loadedMaskIsInclude;
         maskEditorInfo.overlayMaskIsInclude = overlayMaskIsInclude;
+        maskEditorInfo.vesselEnable = S.vesselEnable;
+        maskEditorInfo.vesselSigma = S.vesselSigma;
+        maskEditorInfo.vesselGain = S.vesselGain;
+        maskEditorInfo.vesselThresh = S.vesselThresh;
+        maskEditorInfo.vesselConnect = S.vesselConnect;
+        maskEditorInfo.softToneEnable = S.softToneEnable;
+        maskEditorInfo.softToneStrength = S.softToneStrength;
 
         maskBundle = struct();
         maskBundle.brainImage = brainImage;
@@ -1134,7 +1336,7 @@ uiwait(fig);
             'ToolBar','none', ...
             'NumberTitle','off', ...
             'Resize','off', ...
-            'Position',[220 160 760 520], ...
+            'Position',[220 160 820 560], ...
             'InvertHardcopy','off');
 
         uicontrol('Style','text','Parent',helpFig,'Units','normalized', ...
@@ -1148,29 +1350,32 @@ uiwait(fig);
             'HorizontalAlignment','center');
 
         helpLines = { ...
-            'The mask editor lets you define two separate masks on top of an anatomical-style underlay.', ...
-            'The brain / underlay mask defines the structural region to keep as valid brain area.', ...
-            'The overlay / signal mask defines where overlay-like signal display is allowed to appear.', ...
+            'The editor now separates controls into two tabs: Mask and Underlay.', ...
+            'Mask tab contains painting, fill, smoothing and target selection.', ...
+            'Underlay tab contains source selection, display controls and restored advanced underlay tools.', ...
             ' ', ...
             'How to paint:', ...
             'Left drag adds pixels. Right drag erases pixels. Shift + left also erases.', ...
             'Use the mouse wheel over the image to move through slices. Press F to fill holes in the current slice.', ...
             ' ', ...
-            'Main controls:', ...
-            'Editor ON/OFF enables drawing.', ...
-            'Preview FULL or MASKED switches whether display is shown everywhere or only inside the brain mask.', ...
-            'BRAIN / UNDERLAY selects the structural mask target.', ...
-            'OVERLAY / SIGNAL selects the signal display restriction mask target.', ...
-            'Show overlay and Alpha control how strongly the overlay mask is visualized.', ...
+            'Main masks:', ...
+            'BRAIN / UNDERLAY selects the structural brain-area mask.', ...
+            'OVERLAY / SIGNAL selects the signal-display restriction mask.', ...
+            'Preview FULL or MASKED changes whether the displayed underlay is shown everywhere or only inside the brain mask.', ...
             ' ', ...
-            'Underlay options:', ...
-            'MIP is the default starting underlay for easier overall overview.', ...
-            'imregdemons Mean (dB) remains available as the dB-based structural view.', ...
-            'Brightness, Contrast, Gamma and Sharp only change visualization, not the actual saved mask geometry.', ...
+            'Underlay source:', ...
+            'Choose MIP, Mean, Median, Max, External file or imregdemons Mean (dB).', ...
+            'Global scaling is meant for linear modes only. dB low/high are active only in the dB mode.', ...
             ' ', ...
-            'Tools:', ...
-            'Brush changes size, Shape changes geometry, Smooth regularizes the active mask.', ...
-            'Fill Slice / Fill All fill holes, Clear Slice clears one slice, Clear Active Mask clears the selected mask entirely.', ...
+            'Advanced underlay:', ...
+            'Enable vessel boost to enhance vessel-like local ridges in the underlay.', ...
+            'Connect / bridge vessels helps close short gaps in detected vessel fragments.', ...
+            'Enable soft tone map applies a gentle S-shaped tone compression for a softer anatomy look.', ...
+            'Reset Underlay FX returns these advanced options to safe defaults.', ...
+            ' ', ...
+            'Display:', ...
+            'Brightness, Contrast, Gamma, Sharp and Colormap affect visualization only, not mask geometry.', ...
+            'brainImage export does preserve the current processed underlay look inside the saved brain mask.', ...
             ' ', ...
             'Saving:', ...
             'SAVE UNDERLAY stores the underlay / brain mask as compatibility mask.', ...
@@ -1371,13 +1576,7 @@ uiwait(fig);
             Osl = Osl_raw;
         end
 
-        if S.underlayMode == 6
-            U01 = scaleFixed(Usl, S.dbLow, S.dbHigh);
-        else
-            U01 = scale01(Usl, S.globalScaling);
-        end
-
-        U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
+        U01 = buildDisplayUnderlay(Usl);
         RGB = mapToRGB(U01, S.cmapMode);
 
         if S.previewMasked
@@ -1387,7 +1586,6 @@ uiwait(fig);
             RGB = tmpRGB;
         end
 
-        % Brain mask in green
         if any(Bsl(:))
             alphaB = 0.16;
             B3 = repmat(Bsl,[1 1 3]);
@@ -1406,7 +1604,6 @@ uiwait(fig);
             end
         end
 
-        % Overlay mask in orange
         if S.showOverlay && any(Osl(:))
             alphaO = max(0,min(1,double(S.overlayAlpha)));
             O3 = repmat(Osl,[1 1 3]);
@@ -1442,6 +1639,19 @@ uiwait(fig);
         end
     end
 
+    function U01 = buildDisplayUnderlay(Usl)
+        if S.underlayMode == 6
+            U01 = scaleFixed(Usl, S.dbLow, S.dbHigh);
+        else
+            U01 = scale01(Usl, S.globalScaling);
+        end
+
+        U01 = applyVesselEnhanceMaybe(U01);
+        U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
+        U01 = applySoftToneMaybe(U01);
+        U01 = min(max(U01,0),1);
+    end
+
     function brainImage = buildBrainImageForSave_native()
         brainImage = zeros(nY,nX,nZ,'single');
 
@@ -1449,13 +1659,7 @@ uiwait(fig);
             Usl = Ubase(:,:,zz);
             Msl = brainMaskVol(:,:,zz);
 
-            if S.underlayMode == 6
-                U01 = scaleFixed(Usl, S.dbLow, S.dbHigh);
-            else
-                U01 = scale01(Usl, S.globalScaling);
-            end
-
-            U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
+            U01 = buildDisplayUnderlay(Usl);
             U01(~Msl) = 0;
             brainImage(:,:,zz) = single(U01);
         end
@@ -1487,10 +1691,27 @@ uiwait(fig);
             tgt = 'Overlay';
         end
 
+        fx = fxLabel();
+
         set(statusBox,'String',sprintf( ...
-            'Editor=%s | View=%s | Target=%s | Brush=%d (%s) | z=%d/%d | %s', ...
-            mode, viewText, tgt, S.brushR, brushShapeName(S.brushShape), S.z, nZ, msg));
+            'Editor=%s | View=%s | Target=%s | Brush=%d (%s) | z=%d/%d | %s | %s', ...
+            mode, viewText, tgt, S.brushR, brushShapeName(S.brushShape), S.z, nZ, fx, msg));
         drawnow;
+    end
+
+    function s = fxLabel()
+        parts = {};
+        if S.vesselEnable
+            parts{end+1} = 'vessel';
+        end
+        if S.softToneEnable
+            parts{end+1} = 'tone';
+        end
+        if isempty(parts)
+            s = 'FX=none';
+        else
+            s = ['FX=' strjoin(parts,'+')];
+        end
     end
 
 % -------------------- Brush preview --------------------
@@ -2009,13 +2230,13 @@ uiwait(fig);
 
         if ~globalFlag
             v = U(:);
-            p1  = prctile(v, S.pctLow);
-            p99 = prctile(v, S.pctHigh);
+            p1  = safePercentile(v, S.pctLow);
+            p99 = safePercentile(v, S.pctHigh);
         else
             vAll = double(Ubase(:));
             vAll(~isfinite(vAll)) = 0;
-            p1  = prctile(vAll, S.pctLow);
-            p99 = prctile(vAll, S.pctHigh);
+            p1  = safePercentile(vAll, S.pctLow);
+            p99 = safePercentile(vAll, S.pctHigh);
         end
 
         if ~isfinite(p1) || ~isfinite(p99) || p99 <= p1
@@ -2032,6 +2253,33 @@ uiwait(fig);
         U01 = min(max(U01,0),1);
     end
 
+    function p = safePercentile(v, q)
+        v = double(v(:));
+        v = v(isfinite(v));
+        if isempty(v)
+            p = 0;
+            return;
+        end
+        q = max(0,min(100,double(q)));
+        try
+            p = prctile(v,q);
+        catch
+            v = sort(v);
+            if numel(v) == 1
+                p = v(1);
+                return;
+            end
+            pos = 1 + (numel(v)-1) * (q/100);
+            i0 = floor(pos);
+            i1 = ceil(pos);
+            if i0 == i1
+                p = v(i0);
+            else
+                p = v(i0) + (pos - i0) * (v(i1) - v(i0));
+            end
+        end
+    end
+
     function U01 = scaleFixed(U, lo, hi)
         U = double(U);
         U(~isfinite(U)) = lo;
@@ -2042,6 +2290,70 @@ uiwait(fig);
         end
         U = min(max(U, lo), hi);
         U01 = (U - lo) / max(eps, (hi - lo));
+        U01 = min(max(U01,0),1);
+    end
+
+    function U01 = applyVesselEnhanceMaybe(U01)
+        U01 = double(U01);
+        U01 = min(max(U01,0),1);
+
+        if ~S.vesselEnable
+            return;
+        end
+
+        sig = max(0.4, double(S.vesselSigma));
+        gain = max(0, double(S.vesselGain));
+        thr = max(0.02, min(0.95, double(S.vesselThresh)));
+
+        b1 = gaussBlur2D(U01, sig);
+        b2 = gaussBlur2D(U01, max(sig*2.5, sig+0.35));
+        detail = max(0, b1 - b2);
+
+        d99 = safePercentile(detail(:), 99.0);
+        if d99 <= 0
+            d99 = max(detail(:));
+        end
+        if d99 > 0
+            detail = detail / d99;
+        end
+        detail = min(max(detail,0),1);
+
+        boost = min(1, U01 + gain * detail .* (0.20 + 0.80*U01));
+
+        maskV = detail >= thr;
+        if S.vesselConnect
+            maskV = binaryCloseSafe(maskV, max(1, round(sig)));
+        end
+
+        if any(maskV(:))
+            boost(maskV) = min(1, boost(maskV) + 0.15 + 0.20*gain*detail(maskV));
+        end
+
+        U01 = 0.55*U01 + 0.45*boost;
+        U01 = min(max(U01,0),1);
+    end
+
+    function U01 = applySoftToneMaybe(U01)
+        U01 = double(U01);
+        U01 = min(max(U01,0),1);
+
+        if ~S.softToneEnable
+            return;
+        end
+
+        a = max(0,min(1,double(S.softToneStrength)));
+        mid = max(0.05,min(0.95,double(S.softToneMid)));
+        toe = max(0,min(0.35,double(S.softToneToe)));
+        gain = 1 + 10*a;
+
+        L = 0.5 + 0.5*tanh(gain*(U01 - mid));
+        L0 = 0.5 + 0.5*tanh(gain*(0 - mid));
+        L1 = 0.5 + 0.5*tanh(gain*(1 - mid));
+        L = (L - L0) / max(eps,(L1 - L0));
+        L = min(max(L,0),1);
+
+        L = (1 - toe) * L + toe * sqrt(L);
+        U01 = (1 - a) * U01 + a * L;
         U01 = min(max(U01,0),1);
     end
 
@@ -2292,6 +2604,29 @@ uiwait(fig);
             K = ones(2*rad+1);
             Sx = conv2(double(M), K, 'same');
             M = Sx >= numel(K);
+        end
+    end
+
+    function M = dilateBinarySafe(M, rad)
+        M = logical(M);
+        rad = max(1, round(rad));
+        try
+            se = strel('square',2*rad+1);
+            M = imdilate(M,se);
+        catch
+            K = ones(2*rad+1);
+            Sx = conv2(double(M), K, 'same');
+            M = Sx > 0;
+        end
+    end
+
+    function M = binaryCloseSafe(M, rad)
+        rad = max(1, round(rad));
+        try
+            se = strel('disk',rad);
+            M = imclose(M,se);
+        catch
+            M = erodeBinarySafe(dilateBinarySafe(M,rad),rad);
         end
     end
 
