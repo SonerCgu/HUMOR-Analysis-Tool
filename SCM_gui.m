@@ -522,11 +522,12 @@ lblSigma = mkLblImp(pOverlay, 'SCM smoothing sigma');
 ebSigma  = mkEdit(pOverlay, '1', @computeSCM);
 set(ebSigma, 'ForegroundColor', [1.00 0.35 0.35]);
 
-btnRoiExport = mkBtn(pOverlay, 'EXPORT ROIs (TXT)', @exportROIsCB, colBtnExport, 13);
-btnScmExport = mkBtn(pOverlay, 'EXPORT SCM IMAGE', @exportSCMImageCB, colBtnExport, 13);
-btnTcPng     = mkBtn(pOverlay, 'EXPORT TIME COURSE PNG', @exportTimecoursePngCB, colBtnExport, 13);
-btnScmSeries = mkBtn(pOverlay, 'EXPORT SCM PPT', @exportScmSeries1minCB, colBtnExport, 12);
-btnUnfreeze  = mkBtn(pOverlay, 'UNFREEZE HOVER', @unfreezeHover, colBtnNeutral, 12);
+btnRoiExport   = mkBtn(pOverlay, 'EXPORT ROIs (TXT)', @exportROIsCB, colBtnExport, 13);
+btnScmExport   = mkBtn(pOverlay, 'EXPORT SCM IMAGE', @exportSCMImageCB, colBtnExport, 13);
+btnTcPng       = mkBtn(pOverlay, 'EXPORT TIME COURSE PNG', @exportTimecoursePngCB, colBtnExport, 13);
+btnScmSeries   = mkBtn(pOverlay, 'EXPORT SCM PPT', @exportScmSeries1minCB, colBtnExport, 12);
+btnGroupBundle = mkBtn(pOverlay, 'EXPORT FOR GROUP ANALYSIS', @exportForGroupAnalysisCB, colBtnPrimary, 12);
+btnUnfreeze    = mkBtn(pOverlay, 'UNFREEZE HOVER', @unfreezeHover, colBtnNeutral, 12);
 
 %% ---------------- Underlay controls ----------------
 lblUnderMode = mkLbl(pUnderlay, 'Underlay view');
@@ -800,17 +801,20 @@ end
     setRowEdit(lblSigma, ebSigma);
     y = y - 2;
 
-    btnW2 = floor((w - 2*pad - 10) / 2);
+   btnW2 = floor((w - 2*pad - 10) / 2);
 
-    set(btnRoiExport, 'Position', [xLabel y btnW2 wideBtnHLoc]);
-    set(btnScmExport, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
-    y = y - (wideBtnHLoc + gapLoc);
+set(btnRoiExport, 'Position', [xLabel y btnW2 wideBtnHLoc]);
+set(btnScmExport, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+y = y - (wideBtnHLoc + gapLoc);
 
-    set(btnTcPng,     'Position', [xLabel y btnW2 wideBtnHLoc]);
-    set(btnScmSeries, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
-    y = y - (wideBtnHLoc + groupGapLoc);
+set(btnTcPng,     'Position', [xLabel y btnW2 wideBtnHLoc]);
+set(btnScmSeries, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+y = y - (wideBtnHLoc + gapLoc);
 
-    set(btnUnfreeze, 'Position', [xLabel y (w - 2*pad) smallBtnHLoc]);
+set(btnGroupBundle, 'Position', [xLabel y (w - 2*pad) wideBtnHLoc]);
+y = y - (wideBtnHLoc + groupGapLoc);
+
+set(btnUnfreeze, 'Position', [xLabel y (w - 2*pad) smallBtnHLoc]);
 
     function setRowSlider(lbl, sl, valbox)
         set(lbl,    'Position', [xLabel y wLabel rowHLoc]);
@@ -2183,6 +2187,283 @@ end
         errordlg(ME.message, 'Export time course PNG failed');
     end
     end
+
+
+%% ==========================================================
+% Group Analysis Export Button
+%% ==========================================================
+
+function exportForGroupAnalysisCB(~,~)
+    if ~state.isAtlasWarped
+        warndlg(['Export for Group Analysis requires atlas-warped functional data.' newline ...
+                 'Please use "WARP FUNCTIONAL TO ATLAS" first.'], ...
+                 'Group Analysis export');
+        return;
+    end
+
+    try
+        Pexp = getGroupBundleExportPathsLocal();
+        safeMkdirIfNeeded(Pexp.bundleRoot);
+        safeMkdirIfNeeded(Pexp.bundleDir);
+
+        [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
+        [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
+
+        sigma = str2double(getStr(ebSigma));
+        if ~isfinite(sigma), sigma = 1; end
+
+        thr = str2double(getStr(ebThr));
+        if ~isfinite(thr), thr = 0; end
+
+        alphaPct = get(slAlpha, 'Value');
+
+        cmapName = getCurrentPopupStringLocal(popMap);
+
+        stamp = datestr(now, 'yyyymmdd_HHMMSS');
+        outFile = fullfile(Pexp.bundleDir, ...
+            sprintf('SCM_GroupExport_%s_%s_%s_%s.mat', ...
+            Pexp.animalID, Pexp.session, Pexp.scanID, stamp));
+
+        G = struct();
+        G.kind = 'SCM_GROUP_EXPORT';
+        G.version = '1.0';
+        G.created = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+
+        G.fileLabel = fileLabel;
+        G.loadedFile = safeParFieldLocal('loadedFile');
+        G.loadedPath = safeParFieldLocal('loadedPath');
+        G.exportPath = safeParFieldLocal('exportPath');
+
+        G.animalID = Pexp.animalID;
+        G.session  = Pexp.session;
+        G.scanID   = Pexp.scanID;
+        G.subjectKey = Pexp.subjectKey;
+
+        G.isAtlasWarped = logical(state.isAtlasWarped);
+        G.atlasTransformFile = state.atlasTransformFile;
+        G.atlasSliceIndex = state.z;
+
+        G.baseWindowStr = getStr(ebBase);
+        G.sigWindowStr  = getStr(ebSig);
+        G.baseWindowSec = [b0 b1];
+        G.sigWindowSec  = [s0 s1];
+        G.sigma = sigma;
+
+        G.display = struct();
+        G.display.threshold = thr;
+        G.display.caxis = state.cax;
+        G.display.alphaPercent = alphaPct;
+        G.display.alphaModOn = logical(state.alphaModOn);
+        G.display.modMin = state.modMin;
+        G.display.modMax = state.modMax;
+        G.display.colormapName = cmapName;
+
+        G.TR = TR;
+        G.tsec = tsec;
+        G.tmin = tmin;
+
+        G.nY = nY;
+        G.nX = nX;
+        G.nZ = nZ;
+        G.nT = nT;
+
+        % Current atlas-space numeric content
+        G.pscAtlas4D = PSC;                 % atlas-warped PSC series currently loaded in SCM_gui
+        G.scmMapAtlas = get(hOV, 'CData');  % currently displayed SCM map
+        G.alphaAtlas  = get(hOV, 'AlphaData');
+
+        % Current underlay as shown in atlas space
+        G.underlayAtlas = bg;
+        G.underlayInfo = struct();
+        G.underlayInfo.isColorUnderlay = logical(state.isColorUnderlay);
+        G.underlayInfo.regionLabelUnderlay = [];
+        G.underlayInfo.regionInfo = struct();
+        if isfield(state,'regionLabelUnderlay')
+            G.underlayInfo.regionLabelUnderlay = state.regionLabelUnderlay;
+        end
+        if isfield(state,'regionInfo')
+            G.underlayInfo.regionInfo = state.regionInfo;
+        end
+
+        % Current mask
+        G.mask2DCurrentSlice = mask2D;
+        G.maskAtlas = [];
+        if ~isempty(passedMask)
+            G.maskAtlas = passedMask;
+        end
+        G.maskIsInclude = passedMaskIsInclude;
+
+        % Optional placeholder for later side normalization
+        G.injectionSide = '?';
+
+        save(outFile, 'G', '-v7.3');
+
+        try
+            set(info1, 'String', ['Group bundle saved: ' shortenPath(outFile,85)]);
+            set(info1, 'TooltipString', outFile);
+        catch
+        end
+
+        msgbox(sprintf('Saved GroupAnalysis bundle:\n%s', outFile), ...
+               'SCM group export');
+
+    catch ME
+        errordlg(ME.message, 'Export for Group Analysis failed');
+    end
+end
+
+
+    function Pexp = getGroupBundleExportPathsLocal()
+    base = '';
+
+    try
+        if isstruct(par)
+            if isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(char(par.exportPath),'dir') == 7
+                base = char(par.exportPath);
+            elseif isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(char(par.loadedPath),'dir') == 7
+                base = char(par.loadedPath);
+            elseif isfield(par,'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf,'file') == 2
+                    base = fileparts(lf);
+                end
+            end
+        end
+    catch
+        base = '';
+    end
+
+    if isempty(base)
+        base = pwd;
+    end
+
+    analysedRoot = guessAnalysedRoot(base);
+    meta = deriveGroupBundleMetaLocal();
+
+    bundleRoot = fullfile(analysedRoot, 'GroupAnalysis', 'Bundles', 'SCM');
+    subjectKey = sanitizeName(sprintf('%s_%s_%s', meta.animalID, meta.session, meta.scanID));
+
+    Pexp = struct();
+    Pexp.root = analysedRoot;
+    Pexp.bundleRoot = bundleRoot;
+    Pexp.bundleDir = fullfile(bundleRoot, subjectKey);
+    Pexp.subjectKey = subjectKey;
+    Pexp.animalID = meta.animalID;
+    Pexp.session  = meta.session;
+    Pexp.scanID   = meta.scanID;
+end
+
+    function meta = deriveGroupBundleMetaLocal()
+    meta = struct();
+    meta.animalID = '';
+    meta.session  = '';
+    meta.scanID   = '';
+
+    txts = {fileLabel, safeParFieldLocal('loadedFile'), safeParFieldLocal('loadedPath')};
+
+    % ------------------------------------------------------
+    % PASS 1: strongest pattern
+    % Accepts:
+    %   WT250407_S1_FUS_160020
+    %   Mouse250407_S1_PACAP_FUS_160020
+    %   WT250407_S1_PACAP_FUS_160020
+    % ------------------------------------------------------
+    for ii = 1:numel(txts)
+        s = txts{ii};
+        if isempty(s), continue; end
+
+        tok = regexpi(s, '([A-Za-z]{1,16}\d{6}[A-Za-z]?)_(S\d+).*?(FUS_\d+)', 'tokens', 'once');
+        if ~isempty(tok)
+            meta.animalID = sanitizeName(tok{1});
+            meta.session  = sanitizeName(tok{2});
+            meta.scanID   = sanitizeName(tok{3});
+            return;
+        end
+    end
+
+    % ------------------------------------------------------
+    % PASS 2: recover separately
+    % no \b because underscores break word boundaries
+    % ------------------------------------------------------
+    for ii = 1:numel(txts)
+        s = txts{ii};
+        if isempty(s), continue; end
+
+        if isempty(meta.animalID)
+            tokA = regexpi(s, '([A-Za-z]{1,16}\d{6}[A-Za-z]?)', 'tokens', 'once');
+            if ~isempty(tokA)
+                meta.animalID = sanitizeName(tokA{1});
+            end
+        end
+
+        if isempty(meta.session)
+            tokS = regexpi(s, '(S\d+)', 'tokens', 'once');
+            if ~isempty(tokS)
+                meta.session = sanitizeName(tokS{1});
+            end
+        end
+
+        if isempty(meta.scanID)
+            tokF = regexpi(s, '(FUS_\d+)', 'tokens', 'once');
+            if ~isempty(tokF)
+                meta.scanID = sanitizeName(tokF{1});
+            end
+        end
+    end
+
+    % ------------------------------------------------------
+    % PASS 3: if animal still empty, try parent folder style
+    % Example:
+    %   ...\WT250407_S1\Mouse250407_S1_PACAP_FUS_160020\
+    % prefer WT250407 from folder name if available
+    % ------------------------------------------------------
+    for ii = 1:numel(txts)
+        s = txts{ii};
+        if isempty(s), continue; end
+
+        if isempty(meta.animalID)
+            tokWT = regexpi(s, '(WT\d{6}[A-Za-z]?)', 'tokens', 'once');
+            if ~isempty(tokWT)
+                meta.animalID = sanitizeName(tokWT{1});
+                break;
+            end
+        end
+    end
+
+    % defaults
+    if isempty(meta.animalID), meta.animalID = 'Animal'; end
+    if isempty(meta.session),  meta.session  = 'S1'; end
+    if isempty(meta.scanID),   meta.scanID   = 'FUS_UNKNOWN'; end
+end
+
+function s = safeParFieldLocal(fn)
+    s = '';
+    try
+        if isstruct(par) && isfield(par,fn) && ~isempty(par.(fn))
+            s = char(par.(fn));
+        end
+    catch
+        s = '';
+    end
+end
+
+function s = getCurrentPopupStringLocal(hPop)
+    s = '';
+    try
+        items = get(hPop,'String');
+        v = get(hPop,'Value');
+        v = max(1, min(numel(items), v));
+        if iscell(items)
+            s = char(items{v});
+        else
+            s = char(items(v,:));
+        end
+    catch
+        s = '';
+    end
+end
+
+
 
 function renderSingleScmSlidePNG(outFile, imagePng, titleLabel, zSel, nZSel, caxV, cm)
     figS = figure('Visible', 'off', 'Color', [0 0 0], 'InvertHardcopy', 'off');
