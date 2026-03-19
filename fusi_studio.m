@@ -147,7 +147,7 @@ buttons = { ...
     {'Load fUSI Data'}, ...
     {'Full QC','Specific QC'}, ...
     {'Frame Rejection','Imregdemons','Scrubbing','Motor'}, ...
-    {'Temporal smoothing','Filtering','PCA','Despike'}, ...
+    {'Temporal Smoothing/Subsampling','Filtering','PCA','Despike'}, ...
     {'Time-Course Viewer','SCM','Video & SCM Mask','Mask Editor'}, ...
     {'Registration to Atlas','Segmentation'}, ...
     {'Functional connectivity','Group analysis'}};
@@ -345,6 +345,8 @@ function drawButtons(parent, btns, sectionIndex)
                 callback = @scrubbingCallback;
             case 'motor'
                 callback = @stepMotorCallback;
+                        case 'temporal smoothing/subsampling'
+                callback = @temporalSmoothingCallback;
             case 'temporal smoothing'
                 callback = @temporalSmoothingCallback;
             case 'filtering'
@@ -626,33 +628,22 @@ function runFullQCCallback(~,~)
 end
 
 %% =========================================================
-%  SPECIFIC QC
+%  SPECIFIC QC + Helper
 % =========================================================
-function runSpecificQCCallback(~,~)
+    function runSpecificQCCallback(~,~)
+
+    if isempty(fig) || ~ishghandle(fig)
+        errordlg('Main Studio figure handle is invalid. Please restart fusi_studio.');
+        return;
+    end
 
     studio = guidata(fig);
-    if ~isfield(studio,'isLoaded') || ~studio.isLoaded
+    if isempty(studio) || ~isstruct(studio) || ~isfield(studio,'isLoaded') || ~studio.isLoaded
         errordlg('Load data first.');
         return;
     end
 
-    list = { ...
-        'Frequency QC', ...
-        'Spatial QC (Mean/CV/tSNR)', ...
-        'Temporal QC (GS/rGS/DVARS/spikes)', ...
-        'Motion QC (COM drift)', ...
-        'Stability QC (intensity distribution + rejection)', ...
-        'Frame-rate QC (global rejection/stability)', ...
-        'PCA QC', ...
-        'Burst Error QC', ...
-        'CNR QC', ...
-        'Common-Mode QC'};
-
-    choice = listdlg( ...
-        'PromptString','Select QC modules:', ...
-        'SelectionMode','multiple', ...
-        'ListString',list, ...
-        'ListSize',[460 320]);
+    [choice, choiceNames] = showSpecificQCDialog();
 
     if isempty(choice)
         addLog('QC selection cancelled.');
@@ -660,20 +651,26 @@ function runSpecificQCCallback(~,~)
     end
 
     opts = struct();
-    opts.frequency = ismember(1,choice);
-    opts.spatial = ismember(2,choice);
-    opts.temporal = ismember(3,choice);
-    opts.motion = ismember(4,choice);
-    opts.stability = ismember(5,choice);
-    opts.framerate = ismember(6,choice);
-    opts.pca = ismember(7,choice);
-    opts.burst = ismember(8,choice);
-    opts.cnr = ismember(9,choice);
-    opts.commonmode = ismember(10,choice);
+    opts.frequency  = ismember(1, choice);
+    opts.spatial    = ismember(2, choice);
+    opts.temporal   = ismember(3, choice);
+    opts.motion     = ismember(4, choice);
+    opts.stability  = ismember(5, choice);
+    opts.framerate  = ismember(6, choice);
+    opts.pca        = ismember(7, choice);
+    opts.burst      = ismember(8, choice);
+    opts.cnr        = ismember(9, choice);
+    opts.commonmode = ismember(10, choice);
+
     opts.datasetTag = studio.activeDataset;
     opts.useTimestampSubfolder = false;
 
     addLog('Running selected QC...');
+    for ii = 1:numel(choiceNames)
+        thisName = choiceNames{ii};
+        addLog(['  - ' thisName]);
+    end
+
     setProgramStatus(false);
     drawnow;
 
@@ -691,6 +688,227 @@ function runSpecificQCCallback(~,~)
 
     setProgramStatus(true);
 end
+    function [choice, choiceNames] = showSpecificQCDialog()
+
+    choice = [];
+    choiceNames = {};
+
+    modules = { ...
+        'Frequency QC',      'Power spectrum: 0-2 Hz and 0-0.1 Hz',                 [0.20 0.75 1.00]; ...
+        'Spatial QC',        'Mean image, temporal CV, tSNR map and histogram',     [0.20 0.90 0.55]; ...
+        'Temporal QC',       'Global signal, rGS, DVARS, spike detection',          [1.00 0.80 0.25]; ...
+        'Motion QC',         'Center-of-mass drift over time',                       [1.00 0.50 0.30]; ...
+        'Stability QC',      'Intensity distribution and rejected volumes',          [0.95 0.35 0.75]; ...
+        'Frame-rate QC',     'Global rejection and interpolation stability',         [0.75 0.60 1.00]; ...
+        'PCA QC',            'Explained variance and PCA component overview',        [0.60 0.85 1.00]; ...
+        'Burst Error QC',    'Burst ratio, noisy voxels, burst coverage over time', [1.00 0.35 0.35]; ...
+        'CNR QC',            'Contrast-to-noise ratio map and histogram',            [0.35 0.90 0.90]; ...
+        'Common-Mode QC',    'Block-correlation common-mode artifact detection',     [0.85 0.85 0.35]  ...
+    };
+
+    n = size(modules,1);
+
+    bg    = [0.06 0.06 0.07];
+    bg2   = [0.10 0.10 0.11];
+    fg    = [0.96 0.96 0.96];
+    fgDim = [0.72 0.72 0.75];
+
+    dlg = figure( ...
+        'Name','Select Specific QC Modules', ...
+        'Color',bg, ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'NumberTitle','off', ...
+        'Resize','off', ...
+        'Units','pixels', ...
+        'Position',[200 100 760 610], ...
+        'WindowStyle','modal', ...
+        'Visible','off', ...
+        'CloseRequestFcn',@onCancel);
+
+    try
+        if ~isempty(fig) && ishghandle(fig)
+            movegui(dlg,'center');
+        end
+    catch
+        movegui(dlg,'center');
+    end
+
+    uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.04 0.93 0.92 0.05], ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fg, ...
+        'FontSize',18, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left', ...
+        'String','Specific QC Selection');
+
+    uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.04 0.885 0.92 0.035], ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fgDim, ...
+        'FontSize',11, ...
+        'HorizontalAlignment','left', ...
+        'String','Choose the QC modules you want to run.');
+
+    mainPanel = uipanel('Parent',dlg, ...
+        'Units','normalized', ...
+        'Position',[0.04 0.18 0.92 0.68], ...
+        'BackgroundColor',bg2, ...
+        'ForegroundColor',[0.35 0.35 0.35], ...
+        'BorderType','line', ...
+        'Title','QC Modules', ...
+        'FontSize',12, ...
+        'FontWeight','bold');
+
+    cb = zeros(1,n);
+
+    y0 = 0.89;
+    dy = 0.085;
+
+    for ii = 1:n
+        y = y0 - (ii-1)*dy;
+
+        uipanel('Parent',mainPanel, ...
+            'Units','normalized', ...
+            'Position',[0.03 y-0.005 0.025 0.045], ...
+            'BackgroundColor',modules{ii,3}, ...
+            'BorderType','line');
+
+        cb(ii) = uicontrol('Parent',mainPanel, ...
+            'Style','checkbox', ...
+            'Units','normalized', ...
+            'Position',[0.07 y 0.30 0.05], ...
+            'BackgroundColor',bg2, ...
+            'ForegroundColor',fg, ...
+            'FontSize',12, ...
+            'FontWeight','bold', ...
+            'HorizontalAlignment','left', ...
+            'String',modules{ii,1}, ...
+            'Value',0);
+
+        uicontrol('Parent',mainPanel,'Style','text', ...
+            'Units','normalized', ...
+            'Position',[0.39 y-0.003 0.57 0.05], ...
+            'BackgroundColor',bg2, ...
+            'ForegroundColor',fgDim, ...
+            'FontSize',11, ...
+            'HorizontalAlignment','left', ...
+            'String',modules{ii,2});
+    end
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'String','Select All', ...
+        'Units','normalized', ...
+        'Position',[0.04 0.09 0.14 0.055], ...
+        'FontWeight','bold', ...
+        'FontSize',11, ...
+        'BackgroundColor',[0.22 0.52 0.95], ...
+        'ForegroundColor','w', ...
+        'Callback',@onSelectAll);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'String','Clear All', ...
+        'Units','normalized', ...
+        'Position',[0.20 0.09 0.14 0.055], ...
+        'FontWeight','bold', ...
+        'FontSize',11, ...
+        'BackgroundColor',[0.30 0.30 0.32], ...
+        'ForegroundColor','w', ...
+        'Callback',@onClearAll);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'String','Core Set', ...
+        'Units','normalized', ...
+        'Position',[0.36 0.09 0.14 0.055], ...
+        'FontWeight','bold', ...
+        'FontSize',11, ...
+        'BackgroundColor',[0.15 0.65 0.55], ...
+        'ForegroundColor','w', ...
+        'Callback',@onCoreSet);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'String','Run Selected QC', ...
+        'Units','normalized', ...
+        'Position',[0.60 0.09 0.20 0.065], ...
+        'FontWeight','bold', ...
+        'FontSize',12, ...
+        'BackgroundColor',[0.15 0.70 0.35], ...
+        'ForegroundColor','w', ...
+        'Callback',@onRun);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'String','Cancel', ...
+        'Units','normalized', ...
+        'Position',[0.82 0.09 0.14 0.065], ...
+        'FontWeight','bold', ...
+        'FontSize',12, ...
+        'BackgroundColor',[0.75 0.25 0.25], ...
+        'ForegroundColor','w', ...
+        'Callback',@onCancel);
+
+    set(dlg,'Visible','on');
+    waitfor(dlg);
+
+    function onSelectAll(~,~)
+        for kk = 1:n
+            if ishandle(cb(kk))
+                set(cb(kk),'Value',1);
+            end
+        end
+    end
+
+    function onClearAll(~,~)
+        for kk = 1:n
+            if ishandle(cb(kk))
+                set(cb(kk),'Value',0);
+            end
+        end
+    end
+
+    function onCoreSet(~,~)
+        coreIdx = [1 2 3 4 5 8 9 10];
+        for kk = 1:n
+            if ishandle(cb(kk))
+                set(cb(kk),'Value',ismember(kk,coreIdx));
+            end
+        end
+    end
+
+    function onRun(~,~)
+        idx = [];
+        for kk = 1:n
+            if ishandle(cb(kk))
+                if get(cb(kk),'Value') == 1
+                    idx(end+1) = kk; %#ok<AGROW>
+                end
+            end
+        end
+
+        if isempty(idx)
+            errordlg('Please select at least one QC module.','Specific QC');
+            return;
+        end
+
+        choice = idx;
+        choiceNames = modules(idx,1);
+
+        if ishandle(dlg)
+            delete(dlg);
+        end
+    end
+
+    function onCancel(~,~)
+        choice = [];
+        choiceNames = {};
+        if ishandle(dlg)
+            delete(dlg);
+        end
+    end
+end
+
 
 %% =========================================================
 %  IMREGDEMONS / GABRIEL PREPROCESSING
@@ -1170,7 +1388,7 @@ fullName = sprintf('%s_despike_z%s_%s', baseStem, numTag(zthr), ts);
 end
 
 %% =========================================================
-%  TEMPORAL SMOOTHING
+%  TEMPORAL SMOOTHING / SUBSAMPLING
 % =========================================================
 function temporalSmoothingCallback(~,~)
 
@@ -1184,26 +1402,28 @@ function temporalSmoothingCallback(~,~)
     data = getActiveData();
 
     if ~isstruct(data) || ~isfield(data,'I') || isempty(data.I)
-        errordlg('Active dataset has no data.I to smooth.');
+        errordlg('Active dataset has no data.I to process.');
         return;
     end
 
-    defWin = '60';
-    answ = inputdlg({'Temporal smoothing window (seconds):'}, ...
-        'Temporal smoothing', 1, {defWin});
+    modeChoice = questdlg( ...
+        ['Choose operation:' newline newline ...
+         ' - Sliding temporal smoothing = moving average with same number of volumes' newline ...
+         ' - Block averaging / subsampling = non-overlapping blocks, fewer volumes, larger TR'], ...
+        'Temporal Smoothing/Subsampling', ...
+        'Sliding temporal smoothing', ...
+        'Block averaging / subsampling', ...
+        'Cancel', ...
+        'Sliding temporal smoothing');
 
-    if isempty(answ)
-        addLog('Temporal smoothing cancelled.');
+    if isempty(modeChoice) || strcmpi(modeChoice,'Cancel')
+        addLog('Temporal smoothing/subsampling cancelled.');
         return;
     end
 
-    winSec = str2double(answ{1});
-    if isnan(winSec) || ~isfinite(winSec) || winSec <= 0
-        errordlg('Invalid window (seconds). Must be > 0.');
-        return;
-    end
+    defaultBlockSec = max(data.TR * 50, data.TR);
+    defaultBlockSecStr = num2str(defaultBlockSec,'%.6g');
 
-    addLog(sprintf('Running temporal smoothing (win=%.3g sec, TR=%.4g sec)...', winSec, data.TR));
     setProgramStatus(false);
     drawnow;
 
@@ -1212,19 +1432,120 @@ function temporalSmoothingCallback(~,~)
         opts.chunkVoxels = 50000;
         opts.logFcn = [];
 
-        [Iout, stats] = temporalsmoothing(data.I, data.TR, winSec, opts);
-
         newData = data;
-        newData.I = single(Iout);
-        newData.temporalSmoothing = stats;
-        newData.preprocessing = sprintf('Temporal smoothing (moving avg, %.3g s)', winSec);
-
         ts = datestr(now,'yyyymmdd_HHMMSS');
-       baseStem = getCurrentNamingStem(studio);
-        secTag = num2str(winSec,'%.6g');
-        secTag = strrep(secTag,'.','p');
-        secTag = strrep(secTag,'-','m');
-        fullName = sprintf('%s_temporal_%ss_%s', baseStem, secTag, ts);
+        baseStem = getCurrentNamingStem(studio);
+
+        if strcmpi(modeChoice,'Sliding temporal smoothing')
+
+            answ = inputdlg( ...
+                {'Temporal smoothing window (seconds):'}, ...
+                'Temporal Smoothing/Subsampling', ...
+                1, {'60'});
+
+            if isempty(answ)
+                addLog('Temporal smoothing cancelled.');
+                setProgramStatus(true);
+                return;
+            end
+
+            winSec = str2double(answ{1});
+            if isnan(winSec) || ~isfinite(winSec) || winSec <= 0
+                errordlg('Invalid smoothing window (seconds). Must be > 0.');
+                setProgramStatus(true);
+                return;
+            end
+
+            addLog(sprintf('Running temporal smoothing (window = %.6g s, TR = %.6g s)...', ...
+                winSec, data.TR));
+
+            opts.mode = 'sliding';
+
+            [Iout, stats] = temporalsmoothing(data.I, data.TR, winSec, opts);
+
+            newData.I = single(Iout);
+            newData.temporalSmoothing = stats;
+            newData.preprocessing = sprintf('Temporal smoothing (moving average, %.6g s)', stats.winSec);
+
+            % avoid stale PSC/bg from an older dataset version
+            if isfield(newData,'PSC'), newData.PSC = []; end
+            if isfield(newData,'bg'),  newData.bg  = []; end
+
+            secTag = num2str(winSec,'%.6g');
+            secTag = strrep(secTag,'.','p');
+            secTag = strrep(secTag,'-','m');
+
+            fullName = sprintf('%s_temporalSmooth_%ss_%s', baseStem, secTag, ts);
+
+            addLog(sprintf('Temporal smoothing complete: %.6g s (%d vols), runtime %.2f s', ...
+                stats.winSec, stats.winVol, stats.runtimeSec));
+
+        else
+            methodChoice = questdlg( ...
+                'Use MEAN or MEDIAN for each non-overlapping block?', ...
+                'Block averaging / subsampling', ...
+                'Mean','Median','Cancel','Mean');
+
+            if isempty(methodChoice) || strcmpi(methodChoice,'Cancel')
+                addLog('Subsampling cancelled.');
+                setProgramStatus(true);
+                return;
+            end
+
+            defaultNsub = max(2, round(50));
+
+answ = inputdlg( ...
+    {'Subsampling factor n (frames per block, n >= 2):'}, ...
+    'Temporal Smoothing/Subsampling', ...
+    1, {num2str(defaultNsub)});
+
+if isempty(answ)
+    addLog('Subsampling cancelled.');
+    setProgramStatus(true);
+    return;
+end
+
+nsub = str2double(answ{1});
+if isnan(nsub) || ~isfinite(nsub) || nsub < 2
+    errordlg('Invalid n. It must be >= 2.');
+    setProgramStatus(true);
+    return;
+end
+nsub = round(nsub);
+
+winSec = nsub * data.TR;
+
+opts.mode = 'block';
+opts.blockMethod = lower(strtrim(methodChoice));
+
+addLog(sprintf('Running subsampling (%s, n = %d frames, block = %.6g s, TR = %.6g s)...', ...
+    upper(opts.blockMethod), nsub, winSec, data.TR));
+
+[Iout, stats] = temporalsmoothing(data.I, data.TR, winSec, opts);
+
+            newData.I = single(Iout);
+            newData.temporalSmoothing = stats;
+            newData.subsampling = stats;
+            newData.TR = stats.TRout;
+            newData.nVols = stats.nVolsOut;
+            newData.totalTime = stats.totalTimeSec;
+            newData.TotalTimeSec = stats.totalTimeSec;
+          newData.preprocessing = sprintf('Subsampling (%s, n=%d)', ...
+    upper(stats.blockMethod), stats.winVol);
+
+            % avoid stale PSC/bg from an older dataset version
+            if isfield(newData,'PSC'), newData.PSC = []; end
+            if isfield(newData,'bg'),  newData.bg  = []; end
+
+            fullName = sprintf('%s_subsample_%s_nsub%d_%s', ...
+                baseStem, lower(stats.blockMethod), stats.winVol, ts);
+
+           addLog(sprintf(['Subsampling complete: %s, n=%d frames/block (%.6g s), ' ...
+                'TR %.6g -> %.6g s, nVols %d -> %d, runtime %.2f s'], ...
+    upper(stats.blockMethod), stats.winVol, stats.winSec, ...
+    stats.TR, stats.TRout, stats.nVolsIn, stats.nVolsOut, stats.runtimeSec));
+        end
+
         keyName = makeSafeKey(fullName, studio.datasets);
 
         newData.displayNameFull = fullName;
@@ -1240,13 +1561,11 @@ function temporalSmoothingCallback(~,~)
         guidata(fig, studio);
         refreshDatasetDropdown();
 
-        addLog(sprintf('Temporal smoothing complete -> %s', fullName));
-        addLog(sprintf('Window: %.6g sec (%d vols), runtime: %.2f sec', ...
-            stats.winSec, stats.winVol, stats.runtimeSec));
+        addLog(['Saved dataset -> ' fullName]);
 
     catch ME
-        addLog(['TEMP SMOOTH ERROR: ' ME.message]);
-        errordlg(ME.message,'Temporal smoothing failed');
+        addLog(['TEMPORAL / SUBSAMPLING ERROR: ' ME.message]);
+        errordlg(ME.message,'Temporal Smoothing/Subsampling failed');
     end
 
     setProgramStatus(true);
@@ -2610,6 +2929,8 @@ end
     base = strrep(base, '_gabriel_', '_imregdemons_');
     base = strrep(base, '_frrej_', '_frameRej_');
     base = strrep(base, '_temporal_', '_temp_');
+    base = strrep(base, '_temporalSmooth_', '_tempSmooth_');
+base = strrep(base, '_subsample_', '_subsample_');
     base = strrep(base, '_scrub_', '_scrub_');
     base = strrep(base, '_despike_', '_despike_');
     base = strrep(base, '_filt_', '_filt_');

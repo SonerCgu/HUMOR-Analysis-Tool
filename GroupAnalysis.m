@@ -183,17 +183,28 @@ S.baseStart = 0;
 S.baseEnd   = 10;
 S.sigStart  = 10;
 S.sigEnd    = 30;
-S.mapSummary = 'Mean';
 
-S.mapSource          = 'Use exported SCM map';
+S.mapSummary          = 'Mean';
+
+% Recommended default:
+% use explicit global windows and PSC recomputation from exported bundle PSC
+S.mapUseGlobalWindows = true;
+S.mapGlobalBaseSec    = [30 240];
+S.mapGlobalSigSec     = [600 900];
+
+S.mapSource           = 'Recompute from exported PSC';
 S.mapUseBundleWindows = true;
-S.mapSigma           = 1;
-S.mapUnderlayMode    = 'Bundle underlay';
+S.mapSigma            = 1;
+
+S.mapUnderlayMode     = 'Bundle underlay';
 S.mapCustomUnderlayFile = '';
-S.mapLoadedUnderlay  = [];
-S.rowPacapSide       = cell(0,1);
-S.mapRefPacapSide    = 'Left';
-S.mapPreviewRow      = NaN;
+S.mapLoadedUnderlay   = [];
+
+S.rowPacapSide        = cell(0,1);
+S.mapRefPacapSide     = 'Left';
+S.mapPreviewRow       = NaN;
+
+S.mapExportLog        = {'Ready.'};
 
 S.mapThreshold       = 0;
 S.mapCaxis           = [0 100];
@@ -201,7 +212,7 @@ S.mapAlphaModOn      = true;
 S.mapModMin          = 10;
 S.mapModMax          = 20;
 S.mapBlackBody       = true;
-S.mapNormalizeSide   = false;
+S.mapFlipMode        = 'Off';
 S.mapColormap        = 'blackbdy_iso';
 
 %%% color/style
@@ -603,138 +614,141 @@ pY = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.02 0.96 0.32], ...
 %%% =====================================================================
 %%% GROUP MAPS TAB
 %%% =====================================================================
-pMapTop = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.88 0.96 0.08], ...
-    'Title','','BorderType','none','BackgroundColor',bg2,'ForegroundColor','w');
-
-S.hMapPreviewSel = mkBtn(pMapTop,'Preview Selected Bundle',[0.02 0.18 0.22 0.64],C.btnSecondary,@onPreviewSelectedBundle);
-S.hMapCompute    = mkBtn(pMapTop,'Compute Group Maps',[0.26 0.18 0.22 0.64],C.btnPrimary,@onComputeGroupMaps);
-
-uicontrol(pMapTop,'Style','text','String','Summary:', ...
-    'Units','normalized','Position',[0.54 0.18 0.10 0.60], ...
-    'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
-
-S.hMapSummary = uicontrol(pMapTop,'Style','popupmenu','String',{'Mean','Median'}, ...
-    'Units','normalized','Position',[0.64 0.22 0.12 0.52], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onMapChanged);
-
-uicontrol(pMapTop,'Style','text','String','Source:', ...
-    'Units','normalized','Position',[0.78 0.18 0.08 0.60], ...
-    'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
-
-S.hMapSource = uicontrol(pMapTop,'Style','popupmenu', ...
-    'String',{'Use exported SCM map','Recompute from exported PSC'}, ...
-    'Units','normalized','Position',[0.86 0.22 0.12 0.52], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
-    'Callback',@onMapDisplayChanged);
-
-pMapDisp = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.66 0.96 0.19], ...
+pMapDisp = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.855 0.96 0.140], ...
     'Title','Render style','BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
-uicontrol(pMapDisp,'Style','text','String','Alpha mod min:', ...
-    'Units','normalized','Position',[0.02 0.60 0.12 0.22], ...
+% -------------------- Row 1 --------------------
+uicontrol(pMapDisp,'Style','text','String','Summary:', ...
+    'Units','normalized','Position',[0.02 0.66 0.09 0.18], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'HorizontalAlignment','left','FontWeight','bold');
 
-S.hMapModMin = uicontrol(pMapDisp,'Style','edit','String',num2str(S.mapModMin), ...
-    'Units','normalized','Position',[0.14 0.63 0.08 0.20], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
-    'Callback',@onMapDisplayChanged);
+S.hMapSummary = uicontrol(pMapDisp,'Style','popupmenu','String',{'Mean','Median'}, ...
+    'Units','normalized','Position',[0.12 0.64 0.12 0.20], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w','Callback',@onMapChanged);
 
-uicontrol(pMapDisp,'Style','text','String','Alpha mod max:', ...
-    'Units','normalized','Position',[0.25 0.60 0.12 0.22], ...
+uicontrol(pMapDisp,'Style','text','String','Source:', ...
+    'Units','normalized','Position',[0.30 0.66 0.08 0.18], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'HorizontalAlignment','left','FontWeight','bold');
 
-S.hMapModMax = uicontrol(pMapDisp,'Style','edit','String',num2str(S.mapModMax), ...
-    'Units','normalized','Position',[0.37 0.63 0.08 0.20], ...
+S.hMapSource = uicontrol(pMapDisp,'Style','popupmenu', ...
+    'String',{'Use exported SCM map','Recompute from exported PSC'}, ...
+    'Units','normalized','Position',[0.39 0.64 0.30 0.20], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapDisplayChanged);
 
-uicontrol(pMapDisp,'Style','text','String','Spatial sigma:', ...
-    'Units','normalized','Position',[0.48 0.60 0.11 0.22], ...
-    'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
-
-S.hMapSigma = uicontrol(pMapDisp,'Style','edit','String',num2str(S.mapSigma), ...
-    'Units','normalized','Position',[0.59 0.63 0.08 0.20], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
-    'Callback',@onMapDisplayChanged);
-
-uicontrol(pMapDisp,'Style','text','String','Caxis:', ...
-    'Units','normalized','Position',[0.70 0.60 0.07 0.22], ...
-    'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
-
-S.hMapCaxis = uicontrol(pMapDisp,'Style','edit','String',sprintf('%g %g',S.mapCaxis(1),S.mapCaxis(2)), ...
-    'Units','normalized','Position',[0.77 0.63 0.13 0.20], ...
-    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
-    'Callback',@onMapDisplayChanged);
-
+% -------------------- Row 2 --------------------
 uicontrol(pMapDisp,'Style','text','String','Colormap:', ...
-    'Units','normalized','Position',[0.02 0.18 0.10 0.22], ...
+    'Units','normalized','Position',[0.02 0.36 0.09 0.18], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'HorizontalAlignment','left','FontWeight','bold');
 
 S.hMapColormap = uicontrol(pMapDisp,'Style','popupmenu', ...
     'String',{'blackbdy_iso','hot','parula','turbo','jet','gray'}, ...
-    'Units','normalized','Position',[0.12 0.21 0.14 0.20], ...
+    'Units','normalized','Position',[0.12 0.34 0.16 0.20], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapDisplayChanged);
 
 S.hMapBlackBody = uicontrol(pMapDisp,'Style','checkbox', ...
     'String','Black body', ...
-    'Units','normalized','Position',[0.30 0.18 0.14 0.22], ...
+    'Units','normalized','Position',[0.31 0.34 0.12 0.20], ...
     'Value',double(S.mapBlackBody), ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'Callback',@onMapDisplayChanged);
 
-S.hMapNormalizeSide = uicontrol(pMapDisp,'Style','checkbox', ...
-    'String','Flip right-injected animals', ...
-    'Units','normalized','Position',[0.48 0.18 0.24 0.22], ...
-    'Value',double(S.mapNormalizeSide), ...
+uicontrol(pMapDisp,'Style','text','String','Flip mode:', ...
+    'Units','normalized','Position',[0.46 0.36 0.09 0.18], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapFlipMode = uicontrol(pMapDisp,'Style','popupmenu', ...
+    'String',{'Off','Flip right-injected animals','Flip left-injected animals','Align to Reference Hemisphere'}, ...
+    'Units','normalized','Position',[0.56 0.34 0.40 0.20], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapDisplayChanged);
 
-pMapPrev = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.02 0.96 0.60], ...
+% -------------------- Row 3 --------------------
+uicontrol(pMapDisp,'Style','text','String','Alpha min:', ...
+    'Units','normalized','Position',[0.02 0.08 0.08 0.16], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapModMin = uicontrol(pMapDisp,'Style','edit','String',num2str(S.mapModMin), ...
+    'Units','normalized','Position',[0.11 0.06 0.09 0.18], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapDisplayChanged);
+
+uicontrol(pMapDisp,'Style','text','String','Alpha max:', ...
+    'Units','normalized','Position',[0.23 0.08 0.08 0.16], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapModMax = uicontrol(pMapDisp,'Style','edit','String',num2str(S.mapModMax), ...
+    'Units','normalized','Position',[0.32 0.06 0.09 0.18], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapDisplayChanged);
+
+uicontrol(pMapDisp,'Style','text','String','Sigma:', ...
+    'Units','normalized','Position',[0.45 0.08 0.06 0.16], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapSigma = uicontrol(pMapDisp,'Style','edit','String',num2str(S.mapSigma), ...
+    'Units','normalized','Position',[0.52 0.06 0.08 0.18], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapDisplayChanged);
+
+uicontrol(pMapDisp,'Style','text','String','Caxis:', ...
+    'Units','normalized','Position',[0.64 0.08 0.06 0.16], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapCaxis = uicontrol(pMapDisp,'Style','edit','String',sprintf('%g %g',S.mapCaxis(1),S.mapCaxis(2)), ...
+    'Units','normalized','Position',[0.71 0.06 0.14 0.18], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapDisplayChanged);
+
+pMapPrev = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.115 0.96 0.725], ...
     'Title','Preview','BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
 
-uicontrol(pMapPrev,'Style','text','String','Preview bundle:', ...
-    'Units','normalized','Position',[0.02 0.93 0.11 0.05], ...
+uicontrol(pMapPrev,'Style','text','String','Preview', ...
+    'Units','normalized','Position',[0.02 0.945 0.070 0.040], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
     'HorizontalAlignment','left','FontWeight','bold');
 
 S.hMapPreviewPopup = uicontrol(pMapPrev,'Style','popupmenu', ...
     'String',{'No bundle rows'}, ...
-    'Units','normalized','Position',[0.13 0.935 0.34 0.05], ...
+    'Units','normalized','Position',[0.10 0.938 0.33 0.050], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapPreviewPopup, ...
     'UserData',[]);
 
-uicontrol(pMapPrev,'Style','text','String','PACAP side:', ...
-    'Units','normalized','Position',[0.50 0.93 0.10 0.05], ...
+S.hMapPreviewSideLabel = uicontrol(pMapPrev,'Style','text','String','Inj side:', ...
+    'Units','normalized','Position',[0.46 0.945 0.08 0.040], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',10);
 
 S.hMapPreviewSide = uicontrol(pMapPrev,'Style','popupmenu', ...
     'String',{'Unknown','Left','Right'}, ...
-    'Units','normalized','Position',[0.60 0.935 0.12 0.05], ...
+    'Units','normalized','Position',[0.55 0.938 0.10 0.050], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapPreviewSideChanged);
 
-uicontrol(pMapPrev,'Style','text','String','Reference PACAP side:', ...
-    'Units','normalized','Position',[0.75 0.93 0.16 0.05], ...
+S.hMapRefSideLabel = uicontrol(pMapPrev,'Style','text','String','Ref hemi:', ...
+    'Units','normalized','Position',[0.68 0.945 0.09 0.040], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',10);
 
 S.hMapRefSide = uicontrol(pMapPrev,'Style','popupmenu', ...
     'String',{'Left','Right'}, ...
-    'Units','normalized','Position',[0.91 0.935 0.07 0.05], ...
+    'Units','normalized','Position',[0.79 0.938 0.11 0.050], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapRefSideChanged);
 
-S.axMap1 = axes('Parent',pMapPrev,'Units','normalized','Position',[0.05 0.14 0.54 0.64]);
+S.axMap1 = axes('Parent',pMapPrev,'Units','normalized','Position',[0.03 0.14 0.49 0.74]);
 S.axMap2 = axes('Parent',pMapPrev,'Units','normalized','Position',[0.01 0.01 0.01 0.01], ...
     'Visible','off');
 
@@ -743,34 +757,120 @@ styleAxesMode(S.axMap2, 'Dark', false);
 axis(S.axMap1,'off');
 axis(S.axMap2,'off');
 
-S.hMapAlignLabel = uicontrol(pMapPrev, ...
-    'Style','text', ...
-    'String','Side alignment: Native sides', ...
-    'Units','normalized', ...
-    'Position',[0.05 0.07 0.54 0.05], ...
-    'BackgroundColor',bg2, ...
-    'ForegroundColor',C.muted, ...
+S.hMapUnderlayInfo = uicontrol(pMapPrev,'Style','text', ...
+    'String','Underlay: Bundle underlay', ...
+    'Units','normalized','Position',[0.03 0.045 0.56 0.035], ...
+    'BackgroundColor',bg2,'ForegroundColor',C.muted, ...
     'HorizontalAlignment','left', ...
+    'FontSize',10);
+
+S.hMapSideBox = uipanel(pMapPrev, ...
+    'Units','normalized', ...
+    'Position',[0.66 0.09 0.31 0.79], ...
+    'Title','Side assignment / Map options', ...
+    'BackgroundColor',bg2, ...
+    'ForegroundColor','w', ...
     'FontWeight','bold');
 
-uicontrol(pMapPrev,'Style','text','String','Side assignment', ...
-    'Units','normalized','Position',[0.69 0.68 0.24 0.05], ...
-    'BackgroundColor',bg2,'ForegroundColor','w', ...
+S.hMapAlignLabel = uicontrol(S.hMapSideBox,'Style','text', ...
+    'String','Side alignment: Native sides', ...
+    'Units','normalized','Position',[0.05 0.92 0.90 0.06], ...
+    'BackgroundColor',bg2,'ForegroundColor',C.muted, ...
     'HorizontalAlignment','left','FontWeight','bold');
 
-S.hMapSideTable = uitable(pMapPrev, ...
+S.hMapSideTable = uitable(S.hMapSideBox, ...
     'Units','normalized', ...
-    'Position',[0.69 0.40 0.27 0.25], ...
-    'Data',cell(0,5), ...
-    'ColumnName',{'Animal','Sess','Scan','PACAP side','Align'}, ...
-    'ColumnEditable',[false false false false false], ...
+    'Position',[0.04 0.60 0.92 0.18], ...
+    'Data',cell(0,4), ...
+    'ColumnName',{'Animal','Sess','Scan','Inj Side'}, ...
+    'ColumnEditable',[false false false false], ...
     'RowName',[], ...
     'BackgroundColor',[0.12 0.12 0.12; 0.10 0.10 0.10], ...
     'ForegroundColor',[1 1 1], ...
     'FontName','Consolas', ...
-    'FontSize',10);
+    'FontSize',9);
 
-S.hMapExportPNG = mkBtn(pMapPrev,'Export Group Map PNG',[0.71 0.31 0.23 0.055],C.btnSecondary,@onExportGroupMapPNG);
+S.hMapExportTable = mkBtn(S.hMapSideBox,'Export Table',[0.26 0.52 0.48 0.07],C.btnAction,@onExportMapSideTable);
+
+S.hMapUseGlobalWin = uicontrol(S.hMapSideBox, ...
+    'Style','checkbox', ...
+    'String','Use custom global baseline / signal windows', ...
+    'Units','normalized', ...
+    'Position',[0.05 0.44 0.90 0.05], ...
+    'Value',double(S.mapUseGlobalWindows), ...
+    'BackgroundColor',bg2, ...
+    'ForegroundColor','w', ...
+    'Callback',@onMapWindowChanged);
+
+S.hMapRecomputeNote = uicontrol(S.hMapSideBox,'Style','text', ...
+    'String','IMPORTANT: After changing baseline / signal windows, click "Compute Group Maps" again.', ...
+    'Units','normalized','Position',[0.05 0.36 0.90 0.07], ...
+    'BackgroundColor',bg2,'ForegroundColor',[1 0.35 0.35], ...
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',8);
+
+uicontrol(S.hMapSideBox,'Style','text','String','Base win (s):', ...
+    'Units','normalized','Position',[0.05 0.25 0.20 0.07], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapBase0 = uicontrol(S.hMapSideBox,'Style','edit', ...
+    'String',num2str(S.mapGlobalBaseSec(1)), ...
+    'Units','normalized','Position',[0.30 0.245 0.14 0.075], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapWindowChanged);
+
+S.hMapBase1 = uicontrol(S.hMapSideBox,'Style','edit', ...
+    'String',num2str(S.mapGlobalBaseSec(2)), ...
+    'Units','normalized','Position',[0.47 0.245 0.14 0.075], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapWindowChanged);
+
+uicontrol(S.hMapSideBox,'Style','text','String','Signal win (s):', ...
+    'Units','normalized','Position',[0.05 0.14 0.20 0.07], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapSig0 = uicontrol(S.hMapSideBox,'Style','edit', ...
+    'String',num2str(S.mapGlobalSigSec(1)), ...
+    'Units','normalized','Position',[0.30 0.135 0.14 0.075], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapWindowChanged);
+
+S.hMapSig1 = uicontrol(S.hMapSideBox,'Style','edit', ...
+    'String',num2str(S.mapGlobalSigSec(2)), ...
+    'Units','normalized','Position',[0.47 0.135 0.14 0.075], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapWindowChanged);
+
+uicontrol(S.hMapSideBox,'Style','text','String','Underlay:', ...
+    'Units','normalized','Position',[0.05 0.065 0.18 0.05], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hMapUnderlayMode = uicontrol(S.hMapSideBox,'Style','popupmenu', ...
+    'String',{'Bundle underlay','Loaded custom underlay'}, ...
+    'Units','normalized','Position',[0.23 0.058 0.72 0.065], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'Callback',@onMapUnderlayModeChanged);
+
+S.hMapLoadUnderlay = mkBtn(S.hMapSideBox,'Load Underlay',[0.24 0.005 0.52 0.045],C.btnSecondary,@onLoadCustomUnderlay);
+
+pMapBottom = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.015 0.96 0.085], ...
+    'Title','','BorderType','none','BackgroundColor',bg2,'ForegroundColor','w');
+
+S.hMapPreviewSel = mkBtn(pMapBottom,'Preview Only',[0.02 0.48 0.16 0.42],C.btnSecondary,@onPreviewSelectedBundle);
+S.hMapCompute    = mkBtn(pMapBottom,'Compute Group Maps',[0.20 0.48 0.24 0.42],C.btnPrimary,@onComputeGroupMaps);
+S.hMapExportPNG  = mkBtn(pMapBottom,'Export PNG',[0.66 0.48 0.14 0.42],C.btnAction,@onExportGroupMapPNG);
+S.hMapExportPPT  = mkBtn(pMapBottom,'Export PPT',[0.82 0.48 0.14 0.42],C.btnAction,@onExportGroupMapPPT);
+
+S.hMapExportStatus = uicontrol(pMapBottom,'Style','text', ...
+    'String','Ready.', ...
+    'Units','normalized','Position',[0.02 0.06 0.96 0.18], ...
+    'BackgroundColor',bg2,'ForegroundColor',C.muted, ...
+    'HorizontalAlignment','left', ...
+    'FontName','Consolas', ...
+    'FontSize',10);
 %%% =====================================================================
 %%% STATS TAB
 %%% =====================================================================
@@ -930,11 +1030,13 @@ S = guidata(hFig);
 
 stylePreviewPanels(S);
 syncUIFromState();
+updateMapGroupSideLabels();
 updateManualTabs();
 refreshTable();
 clearPreview();
 updateOutlierBox();
 updateMapAlignmentLabel();
+updateMapUnderlayInfoLabel();
 updateMapSideSummaryTable();
 drawnow;
 pause(0.05);
@@ -946,6 +1048,199 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
 %%% =====================================================================
 %%% NESTED CALLBACKS
 %%% =====================================================================
+  function D = buildGroupMapDisplayStructGA(S0, R)
+    dispUnderlay = R.commonUnderlay;
+
+    if strcmpi(S0.mapUnderlayMode,'Loaded custom underlay') && ~isempty(S0.mapLoadedUnderlay)
+        dispUnderlay = matchUnderlayToMap2D(S0.mapLoadedUnderlay, R.groupMap);
+    else
+        dispUnderlay = matchUnderlayToMap2D(dispUnderlay, R.groupMap);
+    end
+
+    if strcmpi(strtrimSafe(R.mapSummary),'Median')
+        ttl = sprintf('Group median map (n=%d)', R.n);
+    else
+        ttl = sprintf('Group mean map (n=%d)', R.n);
+    end
+
+    D = struct();
+    D.map      = R.groupMap;
+    D.underlay = dispUnderlay;
+    D.title    = ttl;
+    D.render   = makeMapRenderStruct(S0);
+end
+
+function [D, S0] = computeCurrentGroupMapDisplayGA(S0, forceRecompute)
+    if nargin < 2
+        forceRecompute = false;
+    end
+
+    needRecompute = forceRecompute;
+
+    if ~isfield(S0,'lastMAP') || isempty(fieldnames(S0.lastMAP))
+        needRecompute = true;
+    end
+
+    if ~needRecompute
+        if S0.mapUseGlobalWindows || strcmpi(S0.mapSource,'Recompute from exported PSC')
+            needRecompute = true;
+        end
+    end
+
+    if needRecompute
+        [mapIdx, mapMissingIdx] = findActiveBundleRowsGA(S0); %#ok<ASGLU>
+
+        if isempty(mapIdx)
+            error('No valid bundle rows available for group-map export.');
+        end
+
+        subjActive = S0.subj(mapIdx,:);
+        [Rtmp, cacheOut] = runPSCMapAnalysis(S0, subjActive, mapIdx, S0.cache);
+
+        S0.cache   = cacheOut;
+        S0.lastMAP = Rtmp;
+        guidata(hFig,S0);
+    else
+        Rtmp = S0.lastMAP;
+    end
+
+    D = buildGroupMapDisplayStructGA(S0, Rtmp);
+end
+    
+    function pushMapExportLog(msg, doReset)
+    if nargin < 2
+        doReset = false;
+    end
+
+    S0 = guidata(hFig);
+
+    msg = strtrimSafe(msg);
+    if isempty(msg)
+        return;
+    end
+
+    if isfield(S0,'hMapExportStatus') && ishghandle(S0.hMapExportStatus)
+        try
+            set(S0.hMapExportStatus,'String',msg);
+        catch
+        end
+    end
+
+    guidata(hFig,S0);
+    drawnow limitrate;
+end
+    
+    function onMapWindowChanged(~,~)
+    S0 = guidata(hFig);
+
+    S0.mapUseGlobalWindows = logical(get(S0.hMapUseGlobalWin,'Value'));
+
+    b0 = safeNum(get(S0.hMapBase0,'String'), S0.mapGlobalBaseSec(1));
+    b1 = safeNum(get(S0.hMapBase1,'String'), S0.mapGlobalBaseSec(2));
+    s0 = safeNum(get(S0.hMapSig0,'String'),  S0.mapGlobalSigSec(1));
+    s1 = safeNum(get(S0.hMapSig1,'String'),  S0.mapGlobalSigSec(2));
+
+    if b1 <= b0
+        b1 = b0 + 1;
+        set(S0.hMapBase1,'String',num2str(b1));
+    end
+    if s1 <= s0
+        s1 = s0 + 1;
+        set(S0.hMapSig1,'String',num2str(s1));
+    end
+
+    S0.mapGlobalBaseSec = [b0 b1];
+    S0.mapGlobalSigSec  = [s0 s1];
+
+    guidata(hFig,S0);
+
+    % Update selected-row preview immediately
+    if isfinite(S0.mapPreviewRow)
+        try
+            previewBundleRow(S0.mapPreviewRow);
+        catch
+        end
+    end
+
+    % Do NOT silently fake a new group computation
+    if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
+        setStatusText('Selected preview updated. Click "Compute Group Maps" to rebuild the group map with the new windows.');
+    else
+        setStatusText(sprintf('Preview windows set: baseline %.0f-%.0fs, signal %.0f-%.0fs.', b0,b1,s0,s1));
+    end
+end
+
+    function onMapUnderlayModeChanged(~,~)
+    S0 = guidata(hFig);
+
+    items = get(S0.hMapUnderlayMode,'String');
+    S0.mapUnderlayMode = items{get(S0.hMapUnderlayMode,'Value')};
+    guidata(hFig,S0);
+    updateMapUnderlayInfoLabel();
+
+    % Redraw current single preview immediately
+    if isfinite(S0.mapPreviewRow)
+        try
+            previewBundleRow(S0.mapPreviewRow);
+        catch
+        end
+    end
+
+    % Group map itself does not need recomputation for underlay-only changes
+    if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
+        updateMapTabPreview();
+    end
+
+    setStatusText(['Underlay mode: ' S0.mapUnderlayMode]);
+    end
+
+    function onLoadCustomUnderlay(~,~)
+    S0 = guidata(hFig);
+
+    startDir = getSmartBrowseDir(S0,'add');
+    [f,p] = uigetfile({'*.mat;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp', ...
+        'Underlay files (*.mat,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.bmp)'}, ...
+        'Select custom underlay', startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fp = fullfile(p,f);
+
+    try
+        U = loadGroupUnderlayFile(fp);
+        S0.mapLoadedUnderlay = U;
+        S0.mapCustomUnderlayFile = fp;
+        S0.mapUnderlayMode = 'Loaded custom underlay';
+
+        guidata(hFig,S0);
+
+        try
+            setPopupToString(S0.hMapUnderlayMode,'Loaded custom underlay');
+        catch
+        end
+        updateMapUnderlayInfoLabel();
+
+        % Immediate redraw of selected bundle preview
+        if isfinite(S0.mapPreviewRow)
+            try
+                previewBundleRow(S0.mapPreviewRow);
+            catch
+            end
+        end
+
+        % Immediate redraw of already computed group display
+        if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
+            updateMapTabPreview();
+        end
+
+        setStatusText(['Custom underlay loaded: ' shortPathForTable(fp,40)]);
+    catch ME
+        errordlg(ME.message,'Load custom underlay');
+        setStatusText(['Custom underlay load failed: ' ME.message]);
+    end
+    end
 
     function closeMe(src,~)
         S0 = guidata(src);
@@ -1031,14 +1326,17 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
     end
 
     function onQuickGroupChanged(src,~)
-        S0 = guidata(hFig);
-        g = getSelectedPopupString(src);
-        c = mapConditionFromGroup(S0, g);
-        if ~isempty(c)
-            setPopupToString(S0.hQuickCond, c);
-        end
-        guidata(hFig,S0);
+    S0 = guidata(hFig);
+    g = getSelectedPopupString(src);
+    c = mapConditionFromGroup(S0, g);
+    if ~isempty(c)
+        setPopupToString(S0.hQuickCond, c);
     end
+    guidata(hFig,S0);
+
+    updateMapGroupSideLabels();
+    try, updateMapSideSummaryTable(); catch, end
+end
 
     function onComputeGroupMaps(~,~)
         S0 = guidata(hFig);
@@ -1076,21 +1374,25 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
     end
 
     function onPreviewSelectedBundle(~,~)
-        S0 = guidata(hFig);
+    S0 = guidata(hFig);
 
-        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
-        if ~isempty(sel)
-            r = sel(1);
-        elseif isfinite(S0.mapPreviewRow)
-            r = S0.mapPreviewRow;
-        else
-            errordlg('Select one row first or choose one in the preview dropdown.','Group Maps');
-            return;
-        end
+    sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
+    r = [];
 
-        previewBundleRow(r);
-        refreshMapBundlePopup();
+    if ~isempty(sel)
+        r = resolvePreviewRowFromSelection(S0, sel(1));
+    elseif isfinite(S0.mapPreviewRow)
+        r = S0.mapPreviewRow;
     end
+
+    if isempty(r) || ~isfinite(r)
+        errordlg('Select one row first or choose one in the preview dropdown.','Group Maps');
+        return;
+    end
+
+    previewBundleRow(r);
+    refreshMapBundlePopup();
+end
 
     function onMapPreviewPopup(src,~)
         S0 = guidata(hFig);
@@ -1146,7 +1448,7 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
     previewBundleRow(r);
     updateMapSideSummaryTable();
 updateMapAlignmentLabel();
-setStatusText(sprintf('PACAP side "%s" applied to %d matching row(s).', newSide, nApplied));
+setStatusText(sprintf('%s side "%s" applied to %d matching row(s).', getMapInjectedGroupLabel(S0), newSide, nApplied));
 end
 
     function S0 = ensureRowPacapSideSize(S0)
@@ -1186,127 +1488,118 @@ end
     end
 
    function refreshMapBundlePopup()
-S0 = guidata(hFig);
-S0 = ensureRowPacapSideSize(S0);
+    S0 = guidata(hFig);
+    S0 = ensureRowPacapSideSize(S0);
 
-labels = {};
-rows = [];
+    rows = findBundleDisplayRowsGA(S0);
+    labels = {};
 
-for r = 1:size(S0.subj,1)
-    bf = strtrimSafe(S0.subj{r,8});
-    if isempty(bf)
-        try
-            bf = resolveGroupBundlePath(S0, S0.subj(r,:));
-        catch
-            bf = '';
+    if isempty(rows)
+        labels = {'No bundle rows'};
+        rows = NaN;
+    else
+        for i = 1:numel(rows)
+            r = rows(i);
+            info = extractRowMetaLight(S0.subj(r,:));
+            labels{end+1} = sprintf('Row %d | %s', ...
+                r, makeBundleDisplayTitle(info.animalID, info.session, info.scanID)); %#ok<AGROW>
         end
     end
 
-    if ~isempty(bf)
-        info = extractRowMetaLight(S0.subj(r,:));
-        labels{end+1} = sprintf('Row %d | %s', ...
-            r, makeBundleDisplayTitle(info.animalID, info.session, info.scanID)); %#ok<AGROW>
-        rows(end+1) = r; %#ok<AGROW>
+    set(S0.hMapPreviewPopup,'String',labels,'UserData',rows);
+
+    if isempty(S0.mapPreviewRow) || ~isfinite(S0.mapPreviewRow) || ~any(rows == S0.mapPreviewRow)
+        if all(isfinite(rows))
+            S0.mapPreviewRow = rows(1);
+        else
+            S0.mapPreviewRow = NaN;
+        end
     end
-end
 
-if isempty(rows)
-    labels = {'No bundle rows'};
-    rows = NaN;
-end
-
-set(S0.hMapPreviewPopup,'String',labels,'UserData',rows);
-
-if isempty(S0.mapPreviewRow) || ~isfinite(S0.mapPreviewRow) || ~any(rows == S0.mapPreviewRow)
     if all(isfinite(rows))
-        S0.mapPreviewRow = rows(1);
-    else
-        S0.mapPreviewRow = NaN;
+        v = find(rows == S0.mapPreviewRow, 1, 'first');
+        if isempty(v), v = 1; end
+        set(S0.hMapPreviewPopup,'Value',v);
+        syncMapPreviewSideUI(S0.mapPreviewRow);
     end
-end
 
-if all(isfinite(rows))
-    v = find(rows == S0.mapPreviewRow, 1, 'first');
-    if isempty(v), v = 1; end
-    set(S0.hMapPreviewPopup,'Value',v);
-    syncMapPreviewSideUI(S0.mapPreviewRow);
-end
-
-guidata(hFig,S0);
+    guidata(hFig,S0);
 end
 
     function previewBundleRow(r)
-S0 = guidata(hFig);
+    S0 = guidata(hFig);
 
-if isempty(r) || ~isfinite(r) || r < 1 || r > size(S0.subj,1)
-    return;
-end
+    if isempty(r) || ~isfinite(r) || r < 1 || r > size(S0.subj,1)
+        return;
+    end
 
-S0.activeTab = 'MAP';
-S0.mode = 'Group Maps';
-S0.mapPreviewRow = r;
-guidata(hFig,S0);
-
-updateManualTabs();
-try, set(S0.hMode,'Value',2); catch, end
-
-bundleFile = strtrimSafe(S0.subj{r,8});
-if isempty(bundleFile)
-    bundleFile = resolveGroupBundlePath(S0, S0.subj(r,:));
-end
-
-setStatusText(sprintf('Loading bundle preview (row %d)...', r));
-drawnow;
-
-try
-    [G, cacheOut] = getCachedGroupBundle(S0.cache, bundleFile);
-    S0.cache = cacheOut;
+    S0.activeTab = 'MAP';
+    S0.mode = 'Group Maps';
+    S0.mapPreviewRow = r;
     guidata(hFig,S0);
 
-    mapNow = squeezeBundleMap2D(G.scmMapAtlas);
+    updateManualTabs();
+    try, set(S0.hMode,'Value',2); catch, end
 
-    underlayNow = [];
-    if isfield(G,'underlayAtlas') && ~isempty(G.underlayAtlas)
-        underlayNow = squeezeBundleUnderlay2D(G.underlayAtlas);
+    bundleFile = strtrimSafe(S0.subj{r,8});
+    if isempty(bundleFile)
+        bundleFile = resolveGroupBundlePath(S0, S0.subj(r,:));
     end
 
-    try, deleteAllColorbars(S0.tabMAP); catch, end
-    cla(S0.axMap1);
-    cla(S0.axMap2);
+    setStatusText(sprintf('Loading bundle preview (row %d)...', r));
+    drawnow;
 
-    set(S0.axMap1,'Visible','on','Position',[0.08 0.12 0.76 0.72]);
+    try
+        [G, cacheOut] = getCachedGroupBundle(S0.cache, bundleFile);
+        S0.cache = cacheOut;
+        guidata(hFig,S0);
 
-    mapStyle = 'Dark';
-    [~,fg] = previewColors(mapStyle);
+        % --- IMPORTANT: preview must respect source/global-window settings
+        [mapNow, winInfoTxt] = buildPreviewMapFromBundle(S0, G);
 
-    renderPSCOverlay(S0.axMap1, underlayNow, mapNow, makeMapRenderStruct(S0), mapStyle);
-    recolorAxesText(S0.axMap1, mapStyle);
-    updateMapAlignmentLabel();
-    updateMapSideSummaryTable();
+        % --- IMPORTANT: preview underlay must use best bundle field or custom underlay
+        underlayNow = resolvePreviewUnderlay(S0, G, mapNow);
 
-    info = extractRowMetaLight(S0.subj(r,:));
+        try, deleteAllColorbars(S0.tabMAP); catch, end
+        cla(S0.axMap1);
+        cla(S0.axMap2);
 
-    animalTxt = strtrimSafe(info.animalID);
-    sessTxt   = strtrimSafe(info.session);
-    scanTxt   = displayScanID(info.scanID);
+        layoutMapPreviewMain(S0);
 
-    if isempty(animalTxt) || strcmpi(animalTxt,'N/A')
-        animalTxt = strtrimSafe(G.animalID);
-    end
-    if isempty(sessTxt) || strcmpi(sessTxt,'N/A')
-        sessTxt = strtrimSafe(G.session);
-    end
-    if isempty(scanTxt) || strcmpi(scanTxt,'N/A')
-        scanTxt = displayScanID(strtrimSafe(G.scanID));
-    end
+        mapStyle = 'Dark';
+        [~,fg] = previewColors(mapStyle);
 
-           mapTitle = makeBundleDisplayTitle(animalTxt, sessTxt, scanTxt);
+        renderPSCOverlay(S0.axMap1, underlayNow, mapNow, makeMapRenderStruct(S0), mapStyle);
+        recolorAxesText(S0.axMap1, mapStyle);
+        updateMapAlignmentLabel();
+        updateMapSideSummaryTable();
+
+        info = extractRowMetaLight(S0.subj(r,:));
+
+        animalTxt = strtrimSafe(info.animalID);
+        sessTxt   = strtrimSafe(info.session);
+        scanTxt   = displayScanID(info.scanID);
+
+        if isempty(animalTxt) || strcmpi(animalTxt,'N/A')
+            animalTxt = strtrimSafe(G.animalID);
+        end
+        if isempty(sessTxt) || strcmpi(sessTxt,'N/A')
+            sessTxt = strtrimSafe(G.session);
+        end
+        if isempty(scanTxt) || strcmpi(scanTxt,'N/A')
+            scanTxt = displayScanID(strtrimSafe(G.scanID));
+        end
+
+        mapTitle = makeBundleDisplayTitle(animalTxt, sessTxt, scanTxt);
+       % keep title clean; window info is no longer appended above the image
+% if ~isempty(winInfoTxt)
+%     mapTitle = sprintf('%s | %s', mapTitle, winInfoTxt);
+% end
 
         title(S0.axMap1, mapTitle, ...
             'Color',fg,'FontWeight','bold');
 
-        placeSingleMapColorbar(S0.axMap1,[0.61 0.14 0.018 0.64]);
-
+       placeSingleMapColorbar(S0.axMap1);
         S0.lastMapDisplay = struct();
         S0.lastMapDisplay.map = mapNow;
         S0.lastMapDisplay.underlay = underlayNow;
@@ -1315,10 +1608,10 @@ try
         guidata(hFig,S0);
 
         setStatusText('Selected bundle preview updated.');
-catch ME
-    setStatusText(['Bundle preview failed: ' ME.message]);
-    errordlg(ME.message,'Bundle preview failed');
-end
+    catch ME
+        setStatusText(['Bundle preview failed: ' ME.message]);
+        errordlg(ME.message,'Bundle preview failed');
+    end
 end
 
    function onMapRefSideChanged(src,~)
@@ -1354,29 +1647,20 @@ end
 
     cla(S0.axMap1);
     cla(S0.axMap2);
-
     layoutMapPreviewMain(S0);
 
-   renderPSCOverlay(S0.axMap1, R.commonUnderlay, R.groupMap, R.mapRender, mapStyle);
-recolorAxesText(S0.axMap1, mapStyle);
+    D = buildGroupMapDisplayStructGA(S0, R);
 
-ttl = sprintf('Group %s map (n=%d)', lower(R.mapSummary), R.n);
-if S0.mapNormalizeSide
-    ttl = sprintf('%s | aligned to %s', ttl, S0.mapRefPacapSide);
-end
+    renderPSCOverlay(S0.axMap1, D.underlay, D.map, D.render, mapStyle);
+    recolorAxesText(S0.axMap1, mapStyle);
+    title(S0.axMap1, D.title, 'Color', fg, 'FontWeight','bold');
+    placeSingleMapColorbar(S0.axMap1);
 
-title(S0.axMap1, ttl, 'Color', fg, 'FontWeight','bold');
-placeSingleMapColorbar(S0.axMap1,[0.61 0.14 0.018 0.64]);
+    S0.lastMapDisplay = D;
+    guidata(hFig,S0);
 
-S0.lastMapDisplay = struct();
-S0.lastMapDisplay.map = R.groupMap;
-S0.lastMapDisplay.underlay = R.commonUnderlay;
-S0.lastMapDisplay.title = ttl;
-S0.lastMapDisplay.render = R.mapRender;
-guidata(hFig,S0);
-
-updateMapAlignmentLabel();
-updateMapSideSummaryTable();
+    updateMapAlignmentLabel();
+    updateMapSideSummaryTable();
 end
 
     function onApplyGroup(~,~)
@@ -1786,7 +2070,10 @@ end
     function onLoadList(~,~)
         S0 = guidata(hFig);
 
-        startPath = getSmartBrowseDir(S0, 'save');
+        startPath = getPreferredPacapRootDir(S0);
+if isempty(startPath) || exist(startPath,'dir') ~= 7
+    startPath = getSmartBrowseDir(S0, 'save');
+end
         [f,p] = uigetfile({'*.mat','MAT list (*.mat)'}, 'Load subject list', startPath);
         if isequal(f,0)
             return;
@@ -1916,6 +2203,11 @@ S0.lastMAP = struct();
         case 'MAP'
             S0.mode = 'Group Maps';
             try, set(S0.hMode,'Value',2); catch, end
+            guidata(hFig,S0);
+
+            try, refreshMapBundlePopup(); catch, end
+            try, updateMapSideSummaryTable(); catch, end
+            try, updateMapAlignmentLabel(); catch, end
 
         case 'PREV'
             % ROI Preview should always show ROI results, not group maps
@@ -2176,10 +2468,30 @@ end
         items = get(S0.hMapSource,'String');
         S0.mapSource = items{get(S0.hMapSource,'Value')};
 
-        S0.mapUseBundleWindows = true;
-        S0.mapUnderlayMode = 'Bundle underlay';
-        S0.mapAlphaModOn = true;
-        S0.mapThreshold = 0;
+       S0.mapAlphaModOn = true;
+S0.mapThreshold  = 0;
+
+if isfield(S0,'hMapUseGlobalWin') && ishghandle(S0.hMapUseGlobalWin)
+    S0.mapUseGlobalWindows = logical(get(S0.hMapUseGlobalWin,'Value'));
+end
+
+if isfield(S0,'hMapBase0') && ishghandle(S0.hMapBase0)
+    S0.mapGlobalBaseSec(1) = safeNum(get(S0.hMapBase0,'String'), S0.mapGlobalBaseSec(1));
+end
+if isfield(S0,'hMapBase1') && ishghandle(S0.hMapBase1)
+    S0.mapGlobalBaseSec(2) = safeNum(get(S0.hMapBase1,'String'), S0.mapGlobalBaseSec(2));
+end
+if isfield(S0,'hMapSig0') && ishghandle(S0.hMapSig0)
+    S0.mapGlobalSigSec(1) = safeNum(get(S0.hMapSig0,'String'), S0.mapGlobalSigSec(1));
+end
+if isfield(S0,'hMapSig1') && ishghandle(S0.hMapSig1)
+    S0.mapGlobalSigSec(2) = safeNum(get(S0.hMapSig1,'String'), S0.mapGlobalSigSec(2));
+end
+
+if isfield(S0,'hMapUnderlayMode') && ishghandle(S0.hMapUnderlayMode)
+    itemsU = get(S0.hMapUnderlayMode,'String');
+    S0.mapUnderlayMode = itemsU{get(S0.hMapUnderlayMode,'Value')};
+end
 
         S0.mapSigma  = max(0, safeNum(get(S0.hMapSigma,'String'),  S0.mapSigma));
         S0.mapModMin = safeNum(get(S0.hMapModMin,'String'), S0.mapModMin);
@@ -2202,11 +2514,13 @@ end
             set(S0.hMapCaxis,'String',sprintf('%g %g',S0.mapCaxis(1),S0.mapCaxis(2)));
         end
 
-        S0.mapBlackBody     = logical(get(S0.hMapBlackBody,'Value'));
-        S0.mapNormalizeSide = logical(get(S0.hMapNormalizeSide,'Value'));
+        S0.mapBlackBody = logical(get(S0.hMapBlackBody,'Value'));
 
-        items = get(S0.hMapColormap,'String');
-        S0.mapColormap = items{get(S0.hMapColormap,'Value')};
+items = get(S0.hMapFlipMode,'String');
+S0.mapFlipMode = items{get(S0.hMapFlipMode,'Value')};
+
+items = get(S0.hMapColormap,'String');
+S0.mapColormap = items{get(S0.hMapColormap,'Value')};
 
         guidata(hFig,S0);
 
@@ -2221,6 +2535,20 @@ if isfield(S0,'lastROI') && ~isempty(fieldnames(S0.lastROI))
 end
 updateMapAlignmentLabel();
 updateMapSideSummaryTable();
+if isfinite(S0.mapPreviewRow)
+    try
+        previewBundleRow(S0.mapPreviewRow);
+    catch
+    end
+end
+
+if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
+    updateMapTabPreview();
+    if S0.mapUseGlobalWindows || strcmpi(S0.mapSource,'Recompute from exported PSC')
+        setStatusText('Selected preview updated. Click "Compute Group Maps" to rebuild the full group map with current settings.');
+    end
+end
+
     end
 
     function onStatsChanged(~,~)
@@ -2459,21 +2787,17 @@ end
     S0 = ensureRowPacapSideSize(S0);
     guidata(hFig,S0);
 
-    % IMPORTANT:
-    % Only refresh map-related widgets when the map tab is relevant.
-    if strcmpi(S0.activeTab,'MAP') || strcmpi(S0.mode,'Group Maps')
-        try
-            refreshMapBundlePopup();
-        catch
-        end
-        try
-            updateMapAlignmentLabel();
-        catch
-        end
-        try
-            updateMapSideSummaryTable();
-        catch
-        end
+      try
+        refreshMapBundlePopup();
+    catch
+    end
+    try
+        updateMapAlignmentLabel();
+    catch
+    end
+    try
+        updateMapSideSummaryTable();
+    catch
     end
 end
 
@@ -2961,10 +3285,22 @@ end
         if isfield(S0,'hMapModMax'), set(S0.hMapModMax,'String',num2str(S0.mapModMax)); end
         if isfield(S0,'hMapSigma'),  set(S0.hMapSigma,'String', num2str(S0.mapSigma)); end
         if isfield(S0,'hMapCaxis'),  set(S0.hMapCaxis,'String', sprintf('%g %g',S0.mapCaxis(1),S0.mapCaxis(2))); end
-
-        if isfield(S0,'hMapBlackBody'),     set(S0.hMapBlackBody,'Value',double(S0.mapBlackBody)); end
-        if isfield(S0,'hMapNormalizeSide'), set(S0.hMapNormalizeSide,'Value',double(S0.mapNormalizeSide)); end
-        if isfield(S0,'hMapColormap'),      setPopupToString(S0.hMapColormap, S0.mapColormap); end
+        if isfield(S0,'hMapUseGlobalWin'), set(S0.hMapUseGlobalWin,'Value',double(S0.mapUseGlobalWindows)); end
+if isfield(S0,'hMapBase0'), set(S0.hMapBase0,'String',num2str(S0.mapGlobalBaseSec(1))); end
+if isfield(S0,'hMapBase1'), set(S0.hMapBase1,'String',num2str(S0.mapGlobalBaseSec(2))); end
+if isfield(S0,'hMapSig0'),  set(S0.hMapSig0,'String', num2str(S0.mapGlobalSigSec(1))); end
+if isfield(S0,'hMapExportStatus') && ishghandle(S0.hMapExportStatus)
+    try
+        set(S0.hMapExportStatus,'String',S0.mapExportLog);
+    catch
+    end
+end
+if isfield(S0,'hMapSig1'),  set(S0.hMapSig1,'String', num2str(S0.mapGlobalSigSec(2))); end
+if isfield(S0,'hMapUnderlayMode'), setPopupToString(S0.hMapUnderlayMode, S0.mapUnderlayMode); end
+updateMapUnderlayInfoLabel();
+        if isfield(S0,'hMapBlackBody'), set(S0.hMapBlackBody,'Value',double(S0.mapBlackBody)); end
+if isfield(S0,'hMapFlipMode'),  setPopupToString(S0.hMapFlipMode, S0.mapFlipMode); end
+if isfield(S0,'hMapColormap'),  setPopupToString(S0.hMapColormap, S0.mapColormap); end
 
         set(S0.hTopAuto,'Value',double(S0.plotTop.auto));
         set(S0.hTopZero,'Value',double(S0.plotTop.forceZero));
@@ -3307,88 +3643,41 @@ end
 end
 
       function [idx, missingIdx] = findActiveBundleRowsGA(S)
-        idx = [];
-        missingIdx = [];
+    idx = [];
+    missingIdx = [];
 
-        seenKeys = {};
-        chosenRows = [];
+    dispRows = findBundleDisplayRowsGA(S);
 
-        for i = 1:size(S.subj,1)
-            if ~logicalCellValue(S.subj{i,1})
-                continue;
-            end
+    for i = 1:numel(dispRows)
+        r = dispRows(i);
+        key = makeBundleEntityKeyForRow(S, r);
 
-            bf = strtrimSafe(S.subj{i,8});
+        if isempty(key)
+            continue;
+        end
 
-            if isempty(bf)
-                try
-                    bf = resolveGroupBundlePath(S, S.subj(i,:));
-                catch
-                    bf = '';
-                end
-            end
+        if ~entityUseStateForKey(S, key)
+            continue;
+        end
 
-            if isempty(bf) || ~isScmGroupBundleFile(bf)
-                missingIdx(end+1) = i; %#ok<AGROW>
-                continue;
-            end
-
-            meta = extractMetaFromSources(S.subj{i,2}, S.subj{i,6}, S.subj{i,7}, bf);
-
-            if ~strcmpi(strtrimSafe(meta.animalID),'N/A')
-                key = lower([ ...
-                    strtrimSafe(meta.animalID) '|' ...
-                    strtrimSafe(meta.session)  '|' ...
-                    strtrimSafe(meta.scanID)]);
-            else
-                key = lower(strtrimSafe(bf));
-            end
-
-            hit = find(strcmp(seenKeys, key), 1, 'first');
-
-            if isempty(hit)
-                seenKeys{end+1} = key; %#ok<AGROW>
-                chosenRows(end+1) = i; %#ok<AGROW>
-            else
-                oldRow = chosenRows(hit);
-                if bundleRowScore(S, i) > bundleRowScore(S, oldRow)
-                    chosenRows(hit) = i;
-                end
+        bf = strtrimSafe(S.subj{r,8});
+        if isempty(bf)
+            try
+                bf = resolveGroupBundlePath(S, S.subj(r,:));
+            catch
+                bf = '';
             end
         end
 
-        idx = chosenRows;
-      end
-
-          function sc = bundleRowScore(S, r)
-        sc = 0;
-
-        try
-            side = 'Unknown';
-            if isfield(S,'rowPacapSide') && r >= 1 && r <= numel(S.rowPacapSide)
-                side = strtrimSafe(S.rowPacapSide{r});
-            end
-            if any(strcmpi(side, {'Left','Right','L','R'}))
-                sc = sc + 100;
-            end
-        catch
+        if isempty(bf) || ~isScmGroupBundleFile(bf)
+            missingIdx = [missingIdx getRowsForBundleEntityKey(S, key)]; %#ok<AGROW>
+        else
+            idx(end+1) = r; %#ok<AGROW>
         end
+    end
 
-        try
-            if isPacapRowGA(S.subj(r,:))
-                sc = sc + 10;
-            end
-        catch
-        end
-
-        try
-            if ~isempty(strtrimSafe(S.subj{r,8}))
-                sc = sc + 1;
-            end
-        catch
-        end
-          end
-
+    missingIdx = unique(missingIdx,'stable');
+end
 
 function col = colAsStr(C, j)
 col = cell(size(C,1),1);
@@ -3822,22 +4111,66 @@ end
 %%% =====================================================================
 %%% NESTED CALLBACKS CONTINUED
 %%% =====================================================================
+
+    function onExportMapSideTable(~,~)
+    S0 = guidata(hFig);
+
+    data = get(S0.hMapSideTable,'Data');
+    if isempty(data)
+        errordlg('No table data to export.','Export Table');
+        return;
+    end
+
+    startDir = getAnalysedBrowseDir(S0);
+    [f,p] = uiputfile({'*.csv','CSV (*.csv)'}, ...
+        'Save Side Assignment Table', ...
+        fullfile(startDir, 'GroupMap_SideAssignment.csv'));
+
+    if isequal(f,0)
+        return;
+    end
+
+    hdr = get(S0.hMapSideTable,'ColumnName');
+    C = [hdr; data];
+    outFile = fullfile(p,f);
+
+    setStatus(false);
+    setStatusText('Exporting side assignment table...');
+    drawnow;
+
+    try
+        writeCellCSV_UTF8(outFile, C);
+        setStatusText(['Side assignment table saved: ' outFile]);
+    catch ME
+        setStatusText(['Side assignment table export failed: ' ME.message]);
+        errordlg(ME.message,'Export Table');
+    end
+
+    setStatus(true);
+end
+    
   function onExportGroupMapPNG(~,~)
     S0 = guidata(hFig);
 
-    if ~isfield(S0,'lastMapDisplay') || isempty(fieldnames(S0.lastMapDisplay))
-        if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
-            updateMapTabPreview();
-            S0 = guidata(hFig);
-        else
-            errordlg('Preview or compute a group map first.','Export Group Map PNG');
-            return;
-        end
+    if ~isfield(S0,'lastMAP') || isempty(fieldnames(S0.lastMAP))
+        errordlg('Compute a group map first.','Export Group Map PNG');
+        return;
     end
 
     startDir = getAnalysedBrowseDir(S0);
 
-    defName = sanitizeFilename(S0.lastMapDisplay.title);
+    pushMapExportLog('Preparing current group-map PNG export...', true);
+
+    try
+        [D, S0] = computeCurrentGroupMapDisplayGA(S0, true);
+        guidata(hFig,S0);
+    catch ME
+        pushMapExportLog(['PNG export failed: ' ME.message], false);
+        errordlg(ME.message,'Export Group Map PNG');
+        return;
+    end
+
+    defName = sanitizeFilename(D.title);
     if isempty(defName)
         defName = ['GroupMap_' datestr(now,'yyyymmdd_HHMMSS')];
     end
@@ -3847,23 +4180,334 @@ end
         fullfile(startDir, [defName '.png']));
 
     if isequal(f,0)
+        pushMapExportLog('PNG export cancelled.', false);
         return;
     end
 
     outFile = fullfile(p,f);
 
+    setStatus(false);
+    setStatusText('Exporting group map PNG...');
+    drawnow;
+
     try
-        exportMapDisplayPNG(outFile, S0.lastMapDisplay, 'Dark');
+        exportMapDisplayPNG(outFile, D, 'Dark');
         S0.opt.startDir = p;
         guidata(hFig,S0);
+
+       pushMapExportLog(['Done saved: ' outFile], false);
         setStatusText(['Group map PNG saved: ' outFile]);
     catch ME
+        pushMapExportLog(['PNG export failed: ' ME.message], false);
         setStatusText(['Group map PNG export failed: ' ME.message]);
         errordlg(ME.message,'Export Group Map PNG');
     end
+
+    setStatus(true);
+end
+
+    function onExportGroupMapPPT(~,~)
+    S0 = guidata(hFig);
+
+    if ~canUsePptApiGA()
+        errordlg('PowerPoint export requires mlreportgen.ppt support in this MATLAB installation.','Export Group Map PPT');
+        return;
+    end
+
+    a = inputdlg({ ...
+        'Injection start (sec). Empty if unknown:', ...
+        'Window length (sec) (default 60):', ...
+        'Max minutes to export (empty = all available):'}, ...
+        'Export Group Map PPT / Series', 1, {'', '60', ''});
+
+    if isempty(a)
+        return;
+    end
+
+    injSec = str2double(strtrim(a{1}));
+    if ~isfinite(injSec)
+        injSec = NaN;
+    end
+
+    winLen = str2double(strtrim(a{2}));
+    if ~isfinite(winLen) || winLen <= 0
+        winLen = 60;
+    end
+
+    maxMin = str2double(strtrim(a{3}));
+    if ~isfinite(maxMin) || maxMin <= 0
+        maxMin = NaN;
+    end
+
+    startDir = getAnalysedBrowseDir(S0);
+    defName  = ['GroupMapSeries_' datestr(now,'yyyymmdd_HHMMSS') '.pptx'];
+
+    [f,p] = uiputfile({'*.pptx','PowerPoint (*.pptx)'}, ...
+        'Save Group Map PowerPoint Series', ...
+        fullfile(startDir, defName));
+
+    if isequal(f,0)
+        return;
+    end
+
+    outFile = fullfile(p,f);
+    stamp   = datestr(now,'yyyymmdd_HHMMSSFFF');
+    tmpRoot = fullfile(tempdir, ['GA_GroupMapSeries_' stamp]);
+
+    oldState   = struct();
+    tilePNGs   = {};
+    tileLBLs   = {};
+    slidePNGs  = {};
+    lastRender = struct();
+
+    setStatus(false);
+    setStatusText('Exporting group map PPT series...');
+    try
+        pushMapExportLog('Starting PPT export / series export...', true);
+    catch
+    end
+    drawnow;
+
+    try
+        if exist(tmpRoot,'dir') ~= 7
+            mkdir(tmpRoot);
+        end
+
+        oldState = captureMapSeriesExportStateGA();
+
+        % Force PSC recomputation mode for time-window export
+        forceMapSeriesExportStateGA();
+
+        % Make sure GUI is in map mode
+        S1 = guidata(hFig);
+        S1.mode = 'Group Maps';
+        S1.activeTab = 'MAP';
+        guidata(hFig,S1);
+        try, set(S1.hMode,'Value',2); catch, end
+        updateManualTabs();
+
+        totalSec = estimateGroupSeriesTotalSecGA(guidata(hFig));
+        if ~isfinite(totalSec) || totalSec <= 0
+            error('Could not determine available duration from exported PSC group bundles.');
+        end
+
+        exportEndSec = totalSec;
+        if isfinite(maxMin)
+            exportEndSec = min(exportEndSec, maxMin * 60);
+        end
+        if ~isfinite(exportEndSec) || exportEndSec <= 0
+            error('No valid export duration available.');
+        end
+
+        baseSec = getCurrentMapBaseWindowSecGA();
+
+        % Build all windows:
+        % 0-60, 60-120, ... and include a final partial window if needed.
+        starts = 0:winLen:max(0, exportEndSec - winLen);
+        if isempty(starts)
+            starts = 0;
+        end
+        if starts(end) < exportEndSec - 1e-9
+            if (starts(end) + winLen) < exportEndSec - 1e-9
+                starts(end+1) = starts(end) + winLen; %#ok<AGROW>
+            end
+        end
+        starts = unique(starts, 'stable');
+
+        % Safety: remove any starts at/after the export end
+        starts = starts(starts < exportEndSec);
+        if isempty(starts)
+            starts = 0;
+        end
+
+        nWin = numel(starts);
+
+        for wi = 1:nWin
+            s0 = starts(wi);
+            s1 = min(s0 + winLen, exportEndSec);
+
+            if s1 <= s0
+                continue;
+            end
+
+            % Update current export window in state/UI
+            S1 = guidata(hFig);
+            S1.mapUseGlobalWindows = true;
+            S1.mapGlobalBaseSec    = baseSec;
+            S1.mapGlobalSigSec     = [s0 s1];
+            guidata(hFig,S1);
+
+            syncMapWindowUiGA();
+
+            setStatusText(sprintf('Rendering window %d/%d (%.0f-%.0fs) ...', wi, nWin, s0, s1));
+            try
+                pushMapExportLog(sprintf('Rendering window %d/%d (%.0f-%.0fs) ...', wi, nWin, s0, s1), wi==1);
+            catch
+            end
+            drawnow;
+
+            % IMPORTANT:
+            % Recompute the GROUP MAP for THIS window.
+            % Do not only redraw the previous lastMAP.
+            S1 = guidata(hFig);
+            [mapIdxNow, ~] = findActiveBundleRowsGA(S1);
+
+            if isempty(mapIdxNow)
+                error('No valid bundle rows available for PPT export.');
+            end
+
+            subjNow = S1.subj(mapIdxNow,:);
+
+            [Rtmp, cacheOut] = runPSCMapAnalysis(S1, subjNow, mapIdxNow, S1.cache);
+
+            S1 = guidata(hFig);
+            S1.cache   = cacheOut;
+            S1.lastMAP = Rtmp;
+            guidata(hFig,S1);
+
+            updateMapTabPreview();
+            S2 = guidata(hFig);
+
+            if ~isfield(S2,'lastMapDisplay') || isempty(fieldnames(S2.lastMapDisplay)) || ...
+               ~isfield(S2.lastMapDisplay,'map') || isempty(S2.lastMapDisplay.map)
+                error('Could not build group-map display for window %.0f-%.0fs.', s0, s1);
+            end
+
+            phase = '';
+            if isfinite(injSec)
+                if s1 <= injSec
+                    phase = 'Baseline';
+                elseif s0 < injSec && s1 > injSec
+                    phase = 'Injection';
+                else
+                    pi = floor((s0 - injSec) / winLen) + 1;
+                    if pi < 1
+                        pi = 1;
+                    end
+                    phase = sprintf('%d min PI', pi);
+                end
+            end
+
+            minIdx = floor(s0 / winLen) + 1;
+            if isempty(phase)
+                lbl = sprintf('%.0f-%.0fs | %d min', s0, s1, minIdx);
+            else
+                lbl = sprintf('%.0f-%.0fs | %d min (%s)', s0, s1, minIdx, phase);
+            end
+
+            tileFile = fullfile(tmpRoot, sprintf('tile_%03d.png', wi));
+
+            % Export each tile without per-tile title and without per-tile colorbar
+            expOpt = struct();
+            expOpt.showTitle    = false;
+            expOpt.showColorbar = false;
+            expOpt.axPos        = [0.03 0.04 0.94 0.92];
+
+            exportMapDisplayPNG(tileFile, S2.lastMapDisplay, 'Dark', expOpt);
+
+            lastRender = S2.lastMapDisplay.render;
+            tilePNGs{end+1} = tileFile; %#ok<AGROW>
+            tileLBLs{end+1} = lbl; %#ok<AGROW>
+        end
+
+        if isempty(tilePNGs)
+            error('No group-map windows could be rendered.');
+        end
+
+        footerStr = sprintf('Base = %.0f-%.0fs | Window = %.0fs', ...
+            baseSec(1), baseSec(2), winLen);
+
+        % -----------------------------------------------------------------
+        % First slide: overview / side-assignment table
+        % -----------------------------------------------------------------
+        infoSlide = fullfile(tmpRoot, 'slide_00_info.png');
+        renderGroupMapInfoSlidePNG(infoSlide, guidata(hFig), footerStr, 220);
+        slidePNGs{end+1} = infoSlide; %#ok<AGROW>
+
+        % -----------------------------------------------------------------
+        % Montage slides
+        % -----------------------------------------------------------------
+        perSlide = 6;
+        nSlides  = ceil(numel(tilePNGs) / perSlide);
+
+        for si = 1:nSlides
+            i0 = (si - 1) * perSlide + 1;
+            i1 = min(si * perSlide, numel(tilePNGs));
+            idx = i0:i1;
+
+            setStatusText(sprintf('Building slide %d/%d ...', si, nSlides));
+            try
+                pushMapExportLog(sprintf('Building slide %d/%d ...', si, nSlides), false);
+            catch
+            end
+            drawnow;
+
+            outSlide = fullfile(tmpRoot, sprintf('slide_%02d.png', si));
+            renderGroupMapMontageSlidePNG( ...
+                outSlide, ...
+                tilePNGs(idx), ...
+                tileLBLs(idx), ...
+                'Group signal change maps', ...
+                footerStr, ...
+                220, ...
+                lastRender);
+
+            slidePNGs{end+1} = outSlide; %#ok<AGROW>
+        end
+
+        writePptFromSlidePNGsGA(outFile, slidePNGs);
+
+        try
+            pushMapExportLog(['Done saved: ' outFile], false);
+        catch
+        end
+        setStatusText(['Group map PPT series saved: ' outFile]);
+        drawnow;
+
+    catch ME
+        try
+            restoreMapSeriesExportStateGA(oldState);
+        catch
+        end
+
+        try
+            if exist(tmpRoot,'dir') == 7
+                rmdir(tmpRoot,'s');
+            end
+        catch
+        end
+
+        try
+            pushMapExportLog(['PPT export failed: ' ME.message], false);
+        catch
+        end
+        setStatusText(['Group map PPT export failed: ' ME.message]);
+        setStatus(true);
+        errordlg(ME.message,'Export Group Map PPT');
+        return;
+    end
+
+    try
+        restoreMapSeriesExportStateGA(oldState);
+    catch
+    end
+
+    try
+        if exist(tmpRoot,'dir') == 7
+            rmdir(tmpRoot,'s');
+        end
+    catch
+    end
+
+    setStatus(true);
 end
 
 function d = getAnalysedBrowseDir(S)
+    pref = getPreferredPacapRootDir(S);
+if ~isempty(pref) && exist(pref,'dir') == 7
+    d = pref;
+    return;
+end
 d = '';
 
 try
@@ -3888,9 +4532,24 @@ if isempty(d) || exist(d,'dir') ~= 7
 end
 end
 
-function exportMapDisplayPNG(outFile, D, styleName)
+    function exportMapDisplayPNG(outFile, D, styleName, opts)
 if nargin < 3 || isempty(styleName)
     styleName = 'Dark';
+end
+
+if nargin < 4 || isempty(opts)
+    opts = struct();
+end
+
+if ~isfield(opts,'showTitle'),    opts.showTitle = true; end
+if ~isfield(opts,'showColorbar'), opts.showColorbar = true; end
+
+if ~isfield(opts,'axPos') || isempty(opts.axPos)
+    if opts.showColorbar
+        opts.axPos = [0.08 0.10 0.72 0.78];
+    else
+        opts.axPos = [0.04 0.04 0.92 0.92];
+    end
 end
 
 [figBg,fg] = previewColors(styleName);
@@ -3905,23 +4564,130 @@ f = figure('Visible','off', ...
 
 set(f,'Position',[100 100 1500 950]);
 
-ax = axes('Parent',f,'Units','normalized','Position',[0.08 0.10 0.72 0.78]);
-renderPSCOverlay(ax, D.underlay, D.map, D.render, styleName);
-title(ax, D.title, 'Color', fg, 'FontWeight','bold');
-moveTitleUp(ax, titleYForStyle(styleName));
+ax = axes('Parent',f,'Units','normalized','Position',opts.axPos);
+
+cbPos = [];
+if opts.showColorbar
+    cbPos = [0.83 0.10 0.022 0.78];
+end
+
+renderPSCOverlay(ax, D.underlay, D.map, D.render, styleName, opts.showColorbar, cbPos);
 recolorAxesText(ax, styleName);
-placeSingleMapColorbar(ax,[0.83 0.10 0.022 0.78]);
+
+if opts.showTitle
+    title(ax, D.title, 'Color', fg, 'FontWeight','bold');
+    moveTitleUp(ax, titleYForStyle(styleName));
+else
+    title(ax,'');
+end
 
 set(f,'PaperPositionMode','auto');
 print(f, outFile, '-dpng', '-r250');
 close(f);
 end
     
+
+    function exportSingleGroupMapPPT(outFile, pngFile, slideTitle)
+    if ~ispc || exist('actxserver','file') ~= 2
+        error('PowerPoint export currently requires Windows MATLAB with COM support.');
+    end
+
+    ppt = [];
+    pres = [];
+
+    try
+        if exist(outFile,'file') == 2
+            delete(outFile);
+        end
+
+        ppt = actxserver('PowerPoint.Application');
+        set(ppt,'Visible',1);
+
+        presentations = get(ppt,'Presentations');
+        pres = invoke(presentations,'Add');
+
+        slides = get(pres,'Slides');
+        slide = invoke(slides,'Add',1,12);   % 12 = blank slide
+
+        pageW = get(pres.PageSetup,'SlideWidth');
+        pageH = get(pres.PageSetup,'SlideHeight');
+
+        try
+            set(slide,'FollowMasterBackground',0);
+            bgFill = get(slide.Background,'Fill');
+            invoke(bgFill,'Solid');
+            set(bgFill.ForeColor,'RGB',0);
+        catch
+        end
+
+        titleLeft = 18;
+        titleTop  = 8;
+        titleW    = pageW - 36;
+        titleH    = 30;
+
+        shapes = get(slide,'Shapes');
+
+        tb = invoke(shapes,'AddTextbox',1,titleLeft,titleTop,titleW,titleH);
+        tr = get(get(tb,'TextFrame'),'TextRange');
+        set(tr,'Text',slideTitle);
+        set(tr.Font,'Name','Arial');
+        set(tr.Font,'Size',22);
+        set(tr.Font,'Bold',1);
+        try
+            set(tr.Font.Color,'RGB',16777215);
+        catch
+        end
+
+        pic = invoke(shapes,'AddPicture',pngFile,0,1,0,0,-1,-1);
+
+        topMargin  = 46;
+        leftMargin = 18;
+        botMargin  = 18;
+        maxW = pageW - 2*leftMargin;
+        maxH = pageH - topMargin - botMargin;
+
+        pw = double(get(pic,'Width'));
+        ph = double(get(pic,'Height'));
+        sc = min(maxW / max(eps,pw), maxH / max(eps,ph));
+
+        set(pic,'Width', pw * sc);
+        set(pic,'Height', ph * sc);
+        set(pic,'Left', leftMargin + 0.5*(maxW - get(pic,'Width')));
+        set(pic,'Top',  topMargin + 0.5*(maxH - get(pic,'Height')));
+
+        invoke(pres,'SaveAs',outFile);
+        invoke(pres,'Close');
+        invoke(ppt,'Quit');
+        delete(ppt);
+
+    catch ME
+        try
+            if ~isempty(pres)
+                invoke(pres,'Close');
+            end
+        catch
+        end
+        try
+            if ~isempty(ppt)
+                invoke(ppt,'Quit');
+            end
+        catch
+        end
+        try
+            if ~isempty(ppt)
+                delete(ppt);
+            end
+        catch
+        end
+        rethrow(ME);
+    end
+end
+
     function onRun(~,~)
     syncSubjFromTable();
     S0 = guidata(hFig);
 
-     runTab = strtrimSafe(S0.activeTab);
+    runTab = strtrimSafe(S0.activeTab);
 
     if isempty(S0.subj)
         errordlg('Add subject files first.','Group Analysis');
@@ -3931,7 +4697,8 @@ end
     roiIdx = findActiveROIRowsGA(S0.subj);
     [mapIdx, mapMissingIdx] = findActiveBundleRowsGA(S0);
 
-        if strcmpi(runTab,'MAP')
+    % Decide whether maps are preferred based on current tab/mode
+    if strcmpi(runTab,'MAP')
         preferMaps = true;
     elseif strcmpi(runTab,'ROI') || strcmpi(runTab,'PREV')
         preferMaps = false;
@@ -3942,6 +4709,7 @@ end
     activeIdx = [];
     subjActive = {};
 
+    % Decide what analysis to run
     if preferMaps && ~isempty(mapIdx)
         S0.mode = 'Group Maps';
         try, set(S0.hMode,'Value',2); catch, end
@@ -4012,6 +4780,7 @@ end
             S0.cache = cacheOut;
             S0.lastROI = R;
 
+            % Keep current tab if run from STATS or PREV, otherwise go to PREVIEW
             if strcmpi(runTab,'STATS') || strcmpi(runTab,'PREV')
                 S0.activeTab = upper(runTab);
             else
@@ -4029,7 +4798,13 @@ end
             S0 = guidata(hFig);
             S0.cache = cacheOut;
             S0.lastMAP = R;
-            S0.activeTab = 'MAP';
+
+            % If run from STATS, stay there, otherwise show MAP tab
+            if strcmpi(runTab,'STATS')
+                S0.activeTab = 'STATS';
+            else
+                S0.activeTab = 'MAP';
+            end
 
             guidata(hFig,S0);
             updateManualTabs();
@@ -6798,6 +7573,26 @@ for i = 1:nAnimals
         error('Bundle is not atlas-warped: %s', bundleFile);
     end
 
+    if isfield(S,'mapUseGlobalWindows') && S.mapUseGlobalWindows
+    if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
+        error('Global windows require exported PSC series in bundle: %s', bundleFile);
+    end
+
+    b0 = S.mapGlobalBaseSec(1);
+    b1 = S.mapGlobalBaseSec(2);
+    s0 = S.mapGlobalSigSec(1);
+    s1 = S.mapGlobalSigSec(2);
+
+    mapNow = recomputeScmFromBundlePSC(G, [b0 b1], [s0 s1], S.mapSigma);
+
+    if isfield(G,'mask2DCurrentSlice') && ~isempty(G.mask2DCurrentSlice)
+        m2 = logical(G.mask2DCurrentSlice);
+        if isequal(size(m2), size(mapNow))
+            mapNow(~m2) = 0;
+        end
+    end
+
+else
     if strcmpi(S.mapSource,'Use exported SCM map')
         if ~isfield(G,'scmMapAtlas') || isempty(G.scmMapAtlas)
             error('Bundle has no exported SCM map: %s', bundleFile);
@@ -6827,14 +7622,13 @@ for i = 1:nAnimals
             end
         end
     end
+end
 
-    underlayNow = [];
-    if strcmpi(S.mapUnderlayMode,'Bundle underlay')
-        if isfield(G,'underlayAtlas') && ~isempty(G.underlayAtlas)
-            underlayNow = squeezeBundleUnderlay2D(G.underlayAtlas);
-        end
-    elseif strcmpi(S.mapUnderlayMode,'Loaded custom underlay')
-        underlayNow = S.mapLoadedUnderlay;
+       if strcmpi(S.mapUnderlayMode,'Loaded custom underlay') && ~isempty(S.mapLoadedUnderlay)
+        underlayNow = matchUnderlayToMap2D(S.mapLoadedUnderlay, mapNow);
+    else
+        underlayNow = getBestBundleUnderlay2D(G);
+        underlayNow = matchUnderlayToMap2D(underlayNow, mapNow);
     end
 
     pacapSide = getPacapSideForRow(S, activeIdx(i), G, subjActive(i,:));
@@ -6847,13 +7641,25 @@ for i = 1:nAnimals
     end
 
     needFlip = false;
-    if S.mapNormalizeSide
+flipMode = upper(strtrimSafe(S.mapFlipMode));
+
+switch flipMode
+    case 'FLIP RIGHT-INJECTED ANIMALS'
+        needFlip = strcmpi(pacapSide,'Right');
+
+    case 'FLIP LEFT-INJECTED ANIMALS'
+        needFlip = strcmpi(pacapSide,'Left');
+
+    case 'ALIGN TO REFERENCE HEMISPHERE'
         if refSide == 'L' && strcmpi(pacapSide,'Right')
             needFlip = true;
         elseif refSide == 'R' && strcmpi(pacapSide,'Left')
             needFlip = true;
         end
-    end
+
+    otherwise
+        needFlip = false;
+end
 
     if needFlip
         mapNow = flipLR_any(mapNow);
@@ -6909,7 +7715,15 @@ R.mapRender.modMax = S.mapModMax;
 R.mapRender.blackBody = S.mapBlackBody;
 R.mapRender.colormapName = S.mapColormap;
 R.mapRender.flipUDPreview = true;
-
+if isfield(S,'mapUseGlobalWindows') && S.mapUseGlobalWindows
+    R.windowSource = 'Global';
+    R.baseWindowSec = S.mapGlobalBaseSec;
+    R.sigWindowSec  = S.mapGlobalSigSec;
+else
+    R.windowSource = 'Per bundle';
+    R.baseWindowSec = [];
+    R.sigWindowSec  = [];
+end
 R.stats = struct('p',NaN,'alpha',S.alpha,'type','One-sample map t-test');
 end
 
@@ -6918,7 +7732,772 @@ end
 %%% =====================================================================
 %%% TAIL HELPERS / TABLE / JAVA UITABLE / BUNDLE / RENDER / EXPORT
 %%% =====================================================================
-function restyleUITableIfNeeded(hTable, C, styleKey)
+
+    
+    function st = captureMapSeriesExportStateGA()
+    S0 = guidata(hFig);
+    st = struct();
+
+    st.mapUseGlobalWindows = S0.mapUseGlobalWindows;
+    st.mapGlobalBaseSec    = S0.mapGlobalBaseSec;
+    st.mapGlobalSigSec     = S0.mapGlobalSigSec;
+
+    st.mapSourceString = '';
+    try
+        st.mapSourceString = getPopupStringSafeGA(S0.hMapSource);
+    catch
+    end
+end
+
+function restoreMapSeriesExportStateGA(st)
+    if nargin < 1 || isempty(st)
+        return;
+    end
+
+    S0 = guidata(hFig);
+
+    if isfield(st,'mapUseGlobalWindows')
+        S0.mapUseGlobalWindows = st.mapUseGlobalWindows;
+    end
+    if isfield(st,'mapGlobalBaseSec')
+        S0.mapGlobalBaseSec = st.mapGlobalBaseSec;
+    end
+    if isfield(st,'mapGlobalSigSec')
+        S0.mapGlobalSigSec = st.mapGlobalSigSec;
+    end
+
+    guidata(hFig,S0);
+
+    try
+        if isfield(st,'mapSourceString') && ~isempty(st.mapSourceString)
+            setPopupToString(S0.hMapSource, st.mapSourceString);
+        end
+    catch
+    end
+
+    syncMapWindowUiGA();
+    updateMapTabPreview();
+end
+
+function forceMapSeriesExportStateGA()
+    S0 = guidata(hFig);
+
+    S0.mapUseGlobalWindows = true;
+    guidata(hFig,S0);
+
+    try
+        set(S0.hMapUseGlobalWin,'Value',1);
+    catch
+    end
+
+    try
+        setPopupToString(S0.hMapSource,'Recompute from exported PSC');
+    catch
+    end
+
+    syncMapWindowUiGA();
+end
+
+function syncMapWindowUiGA()
+    S0 = guidata(hFig);
+
+    try
+        set(S0.hMapUseGlobalWin,'Value',double(S0.mapUseGlobalWindows));
+    catch
+    end
+    try
+        set(S0.hMapBase0,'String',num2str(S0.mapGlobalBaseSec(1)));
+        set(S0.hMapBase1,'String',num2str(S0.mapGlobalBaseSec(2)));
+    catch
+    end
+    try
+        set(S0.hMapSig0,'String',num2str(S0.mapGlobalSigSec(1)));
+        set(S0.hMapSig1,'String',num2str(S0.mapGlobalSigSec(2)));
+    catch
+    end
+end
+
+function s = getPopupStringSafeGA(hPop)
+    s = '';
+    try
+        items = get(hPop,'String');
+        v = get(hPop,'Value');
+        if iscell(items)
+            v = max(1,min(numel(items),v));
+            s = char(items{v});
+        else
+            v = max(1,min(size(items,1),v));
+            s = strtrim(items(v,:));
+        end
+    catch
+        s = '';
+    end
+end
+
+function baseSec = getCurrentMapBaseWindowSecGA()
+    S0 = guidata(hFig);
+
+    baseSec = [30 240];
+
+    try
+        b0 = str2double(strtrim(get(S0.hMapBase0,'String')));
+        b1 = str2double(strtrim(get(S0.hMapBase1,'String')));
+        if isfinite(b0) && isfinite(b1)
+            baseSec = [b0 b1];
+        elseif isfield(S0,'mapGlobalBaseSec') && numel(S0.mapGlobalBaseSec) == 2
+            baseSec = S0.mapGlobalBaseSec;
+        end
+    catch
+        try
+            if isfield(S0,'mapGlobalBaseSec') && numel(S0.mapGlobalBaseSec) == 2
+                baseSec = S0.mapGlobalBaseSec;
+            end
+        catch
+        end
+    end
+
+    if baseSec(2) < baseSec(1)
+        baseSec = fliplr(baseSec);
+    end
+end
+
+function totalSec = estimateGroupSeriesTotalSecGA(S0)
+    totalSec = 0;
+
+    try
+        dispRows = findBundleDisplayRowsGA(S0);
+    catch
+        dispRows = [];
+    end
+
+    if isempty(dispRows)
+        return;
+    end
+
+    secs = [];
+
+    for i = 1:numel(dispRows)
+        r = dispRows(i);
+        f = '';
+
+        try
+            f = strtrimSafe(S0.subj{r,8});
+        catch
+            f = '';
+        end
+
+        if isempty(f) || exist(f,'file') ~= 2
+            continue;
+        end
+
+        try
+            L = load(f,'G');
+            if ~isfield(L,'G') || isempty(L.G)
+                continue;
+            end
+            G = L.G;
+
+            if isfield(G,'tsec') && ~isempty(G.tsec)
+                secs(end+1) = double(G.tsec(end)); %#ok<AGROW>
+            elseif isfield(G,'TR') && isfield(G,'nT') && isfinite(G.TR) && isfinite(G.nT)
+                secs(end+1) = double((G.nT - 1) * G.TR); %#ok<AGROW>
+            elseif isfield(G,'pscAtlas4D') && isfield(G,'TR') && ~isempty(G.pscAtlas4D)
+                sz = size(G.pscAtlas4D);
+                secs(end+1) = double((sz(end) - 1) * G.TR); %#ok<AGROW>
+            end
+        catch
+        end
+    end
+
+    if ~isempty(secs)
+        totalSec = min(secs);
+    end
+end
+
+    function renderGroupMapMontageSlidePNG(outFile, pngList, lblList, titleStr, footerStr, dpiVal, renderInfo)
+if nargin < 7
+    renderInfo = struct();
+end
+
+figS = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
+set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]);
+set(figS,'PaperPositionMode','auto');
+
+annotation(figS,'textbox',[0.02 0.91 0.96 0.06], ...
+    'String',titleStr, ...
+    'Color','w', ...
+    'EdgeColor','none', ...
+    'FontName','Arial', ...
+    'FontSize',16, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','center', ...
+    'Interpreter','none');
+
+annotation(figS,'textbox',[0.02 0.01 0.96 0.04], ...
+    'String',footerStr, ...
+    'Color','w', ...
+    'EdgeColor','none', ...
+    'FontName','Arial', ...
+    'FontSize',10, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','right', ...
+    'Interpreter','none');
+
+% Shared colorbar on the LEFT for the whole slide
+drawSharedColorbarForMontage(figS, renderInfo);
+
+x0 = 0.11;
+x1 = 0.98;
+yBot = 0.08;
+yTop = 0.88;
+rowGap = 0.05;
+colGap = 0.02;
+
+cellH = ((yTop - yBot) - rowGap) / 2;
+cellW = (x1 - x0 - 2*colGap) / 3;
+
+for k = 1:min(6,numel(pngList))
+    if k <= 3
+        col = k;
+        x = x0 + (col-1)*(cellW+colGap);
+        y = yBot + cellH + rowGap;
+    else
+        col = k - 3;
+        x = x0 + (col-1)*(cellW+colGap);
+        y = yBot;
+    end
+
+    axI = axes('Parent',figS,'Position',[x y cellW cellH]);
+    imshow(imread(pngList{k}),'Parent',axI);
+    axis(axI,'off');
+
+    annotation(figS,'textbox',[x y+cellH+0.003 cellW 0.028], ...
+        'String',lblList{k}, ...
+        'Color','w', ...
+        'EdgeColor','none', ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','center', ...
+        'Interpreter','none');
+end
+
+print(figS,outFile,'-dpng',sprintf('-r%d',dpiVal),'-opengl');
+close(figS);
+    end
+function drawSharedColorbarForMontage(figS, renderInfo)
+cax = [0 100];
+cmName = 'blackbdy_iso';
+
+try
+    if isfield(renderInfo,'caxis') && numel(renderInfo.caxis) >= 2
+        cax = double(renderInfo.caxis(1:2));
+    end
+catch
+end
+
+try
+    if isfield(renderInfo,'colormapName') && ~isempty(renderInfo.colormapName)
+        cmName = char(renderInfo.colormapName);
+    end
+catch
+end
+
+axC = axes('Parent',figS,'Position',[0.045 0.19 0.020 0.56]);
+grad = linspace(cax(1), cax(2), 256)';
+imagesc(axC, [0 1], [cax(1) cax(2)], [grad grad]);
+set(axC,'Visible','off','YDir','normal');
+
+colormap(axC, getNamedCmapLocal(cmName, 256));
+caxis(axC, cax);
+
+cb = colorbar(axC,'Position',[0.055 0.19 0.016 0.56]);
+cb.Label.String = 'Signal change (%)';
+try
+    set(cb,'Color','w');
+    set(get(cb,'Label'),'Color','w');
+catch
+end
+end
+function renderGroupMapInfoSlidePNG(outFile, S0, footerStr, dpiVal)
+figS = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
+set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]);
+set(figS,'PaperPositionMode','auto');
+
+annotation(figS,'textbox',[0.02 0.91 0.96 0.06], ...
+    'String','Group map export overview', ...
+    'Color','w', ...
+    'EdgeColor','none', ...
+    'FontName','Arial', ...
+    'FontSize',18, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','center', ...
+    'Interpreter','none');
+
+winTxt = 'Per-bundle exported windows';
+try
+    if isfield(S0,'mapUseGlobalWindows') && S0.mapUseGlobalWindows
+        winTxt = sprintf('Global windows | base %.0f-%.0fs | signal %.0f-%.0fs', ...
+            S0.mapGlobalBaseSec(1), S0.mapGlobalBaseSec(2), ...
+            S0.mapGlobalSigSec(1),  S0.mapGlobalSigSec(2));
+    end
+catch
+end
+
+nUsed = 0;
+try
+    if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP)) && isfield(S0.lastMAP,'n')
+        nUsed = S0.lastMAP.n;
+    else
+        nUsed = numel(findBundleDisplayRowsGA(S0));
+    end
+catch
+end
+
+infoLines = { ...
+    sprintf('Animals used: %d', nUsed), ...
+    sprintf('Summary: %s', strtrimSafe(S0.mapSummary)), ...
+    sprintf('Source: %s', strtrimSafe(S0.mapSource)), ...
+    sprintf('Windows: %s', winTxt), ...
+    sprintf('Alpha modulation: min %.3g | max %.3g', S0.mapModMin, S0.mapModMax), ...
+    sprintf('Spatial smoothing sigma: %.3g', S0.mapSigma), ...
+    sprintf('C-axis: [%.3g %.3g]', S0.mapCaxis(1), S0.mapCaxis(2)), ...
+    sprintf('Flip mode: %s', strtrimSafe(S0.mapFlipMode)), ...
+    sprintf('Reference hemisphere: %s', strtrimSafe(S0.mapRefPacapSide)), ...
+    sprintf('Underlay: %s', strtrimSafe(S0.mapUnderlayMode)), ...
+    sprintf('Alignment: %s', mapAlignmentModeText(S0))};
+
+annotation(figS,'textbox',[0.05 0.66 0.90 0.18], ...
+    'String',infoLines, ...
+    'Color','w', ...
+    'EdgeColor',[0.40 0.40 0.40], ...
+    'BackgroundColor',[0.08 0.08 0.08], ...
+    'FontName','Consolas', ...
+    'FontSize',12, ...
+    'HorizontalAlignment','left', ...
+    'Interpreter','none');
+
+hdr = {'Animal','Sess','Scan','Inj Side'};
+tbl = cell(0,4);
+
+try
+    hdr = get(S0.hMapSideTable,'ColumnName');
+    tbl = get(S0.hMapSideTable,'Data');
+catch
+end
+
+tableLines = buildFixedWidthGroupMapInfoTable(hdr, tbl);
+
+annotation(figS,'textbox',[0.05 0.12 0.90 0.46], ...
+    'String',tableLines, ...
+    'Color','w', ...
+    'EdgeColor',[0.40 0.40 0.40], ...
+    'BackgroundColor',[0.06 0.06 0.06], ...
+    'FontName','Consolas', ...
+    'FontSize',13, ...
+    'HorizontalAlignment','left', ...
+    'Interpreter','none');
+
+annotation(figS,'textbox',[0.02 0.01 0.96 0.04], ...
+    'String',footerStr, ...
+    'Color','w', ...
+    'EdgeColor','none', ...
+    'FontName','Arial', ...
+    'FontSize',10, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','right', ...
+    'Interpreter','none');
+
+print(figS,outFile,'-dpng',sprintf('-r%d',dpiVal),'-opengl');
+close(figS);
+end
+function lines = buildFixedWidthGroupMapInfoTable(hdr, tbl)
+if isempty(hdr)
+    hdr = {'Animal','Sess','Scan','Inj Side'};
+end
+
+if isempty(tbl)
+    tbl = {'-','-','-','-'};
+end
+
+nCol = numel(hdr);
+widths = zeros(1,nCol);
+
+for c = 1:nCol
+    widths(c) = numel(strtrimSafe(hdr{c}));
+end
+
+for r = 1:size(tbl,1)
+    for c = 1:min(nCol,size(tbl,2))
+        widths(c) = max(widths(c), numel(strtrimSafe(tbl{r,c})));
+    end
+end
+
+for c = 1:nCol
+    widths(c) = widths(c) + 2;
+end
+
+fmt = '';
+for c = 1:nCol
+    fmt = [fmt '%-' num2str(widths(c)) 's']; %#ok<AGROW>
+end
+
+lines = cell(size(tbl,1)+2,1);
+lines{1} = sprintf(fmt, hdr{:});
+
+sep = '';
+for c = 1:nCol
+    sep = [sep repmat('-',1,widths(c))]; %#ok<AGROW>
+end
+lines{2} = sep;
+
+for r = 1:size(tbl,1)
+    row = cell(1,nCol);
+    for c = 1:nCol
+        if c <= size(tbl,2)
+            row{c} = strtrimSafe(tbl{r,c});
+        else
+            row{c} = '';
+        end
+    end
+    lines{r+2} = sprintf(fmt, row{:});
+end
+end
+
+
+function tf = canUsePptApiGA()
+    tf = false;
+    try
+        tf = ~isempty(which('mlreportgen.ppt.Presentation'));
+    catch
+        tf = false;
+    end
+end
+
+function writePptFromSlidePNGsGA(pptPath, slidePNGs)
+    import mlreportgen.ppt.*
+
+    if nargin < 2 || isempty(slidePNGs)
+        error('No slide PNGs were provided for PPT export.');
+    end
+
+    pptDir = fileparts(pptPath);
+    if ~isempty(pptDir) && exist(pptDir,'dir') ~= 7
+        mkdir(pptDir);
+    end
+
+    if exist(pptPath,'file') == 2
+        delete(pptPath);
+    end
+
+    ppt = [];
+    try
+        ppt = Presentation(pptPath);
+        open(ppt);
+
+        for i = 1:numel(slidePNGs)
+            imgFile = slidePNGs{i};
+            if exist(imgFile,'file') ~= 2
+                continue;
+            end
+
+            try
+                slide = add(ppt,'Blank');
+            catch
+                slide = add(ppt);
+            end
+
+            pic = Picture(imgFile);
+            pic.X = '0in';
+            pic.Y = '0in';
+            pic.Width  = '13.333in';
+            pic.Height = '7.5in';
+            add(slide,pic);
+        end
+
+        close(ppt);
+
+    catch ME
+        try
+            if ~isempty(ppt)
+                close(ppt);
+            end
+        catch
+        end
+        error('PowerPoint export failed: %s', ME.message);
+    end
+
+    pause(0.25);
+
+    if exist(pptPath,'file') ~= 2
+        error('PowerPoint file was not created: %s', pptPath);
+    end
+end
+    
+    function [mapNow, winInfoTxt] = buildPreviewMapFromBundle(S0, G)
+    winInfoTxt = '';
+
+    % Global windows always force recomputation from exported PSC
+    if isfield(S0,'mapUseGlobalWindows') && S0.mapUseGlobalWindows
+        if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
+            error('Global windows require exported PSC series in the bundle.');
+        end
+
+        bw = double(S0.mapGlobalBaseSec(:)).';
+        sw = double(S0.mapGlobalSigSec(:)).';
+
+        mapNow = recomputeScmFromBundlePSC(G, bw, sw, S0.mapSigma);
+        winInfoTxt = sprintf('base %.0f-%.0fs | sig %.0f-%.0fs', bw(1), bw(2), sw(1), sw(2));
+
+    else
+        % Otherwise use selected Source mode
+        if strcmpi(S0.mapSource,'Recompute from exported PSC')
+            if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
+                error('Bundle has no exported PSC series.');
+            end
+            if ~isfield(G,'baseWindowSec') || isempty(G.baseWindowSec) || ...
+               ~isfield(G,'sigWindowSec')  || isempty(G.sigWindowSec)
+                error('Bundle is missing exported baseline/signal windows.');
+            end
+
+            bw = double(G.baseWindowSec(:)).';
+            sw = double(G.sigWindowSec(:)).';
+
+            mapNow = recomputeScmFromBundlePSC(G, bw, sw, S0.mapSigma);
+            winInfoTxt = sprintf('bundle base %.0f-%.0fs | sig %.0f-%.0fs', bw(1), bw(2), sw(1), sw(2));
+
+        else
+            if ~isfield(G,'scmMapAtlas') || isempty(G.scmMapAtlas)
+                error('Bundle has no exported SCM map.');
+            end
+            mapNow = squeezeBundleMap2D(G.scmMapAtlas);
+            winInfoTxt = 'exported SCM';
+        end
+    end
+
+    if isfield(G,'mask2DCurrentSlice') && ~isempty(G.mask2DCurrentSlice)
+        m2 = logical(G.mask2DCurrentSlice);
+        if isequal(size(m2), size(mapNow))
+            mapNow(~m2) = 0;
+        end
+    end
+
+    mapNow(~isfinite(mapNow)) = 0;
+end
+    
+    function underlayNow = resolvePreviewUnderlay(S0, G, mapNow)
+    underlayNow = [];
+
+    if strcmpi(S0.mapUnderlayMode,'Loaded custom underlay') && ~isempty(S0.mapLoadedUnderlay)
+        underlayNow = matchUnderlayToMap2D(S0.mapLoadedUnderlay, mapNow);
+        return;
+    end
+
+    underlayNow = getBestBundleUnderlay2D(G);
+    underlayNow = matchUnderlayToMap2D(underlayNow, mapNow);
+    end
+
+function U = getBestBundleUnderlay2D(G)
+    U = [];
+
+    % Put the most likely "real display underlay" fields first
+    pref = { ...
+        'underlayDisplayRGB', ...
+        'displayUnderlayRGB', ...
+        'underlayRGB', ...
+        'histologyRGB', ...
+        'histologyAtlasRGB', ...
+        'atlasUnderlayRGB', ...
+        'underlayAtlasRGB', ...
+        'underlayDisplay', ...
+        'histologyDisplay', ...
+        'underlayAtlas', ...
+        'atlasUnderlay', ...
+        'brainImageAtlas', ...
+        'brainImage', ...
+        'underlay', ...
+        'bg'};
+
+    for i = 1:numel(pref)
+        fn = pref{i};
+        if isfield(G,fn) && ~isempty(G.(fn))
+            try
+                U = squeezeBundleUnderlay2D(G.(fn));
+                if ~isempty(U)
+                    return;
+                end
+            catch
+            end
+        end
+    end
+end
+
+
+
+    
+    function Uout = matchUnderlayToMap2D(Uin, mapRef)
+    Uout = Uin;
+
+    if isempty(Uin) || isempty(mapRef)
+        return;
+    end
+
+    tgt = size(mapRef);
+    tgt = tgt(1:2);
+
+    usz = size(Uin);
+    if numel(usz) >= 2 && isequal(usz(1:2), tgt)
+        return;
+    end
+
+    try
+        if ndims(Uin) == 3 && size(Uin,3) == 3
+            Uout = imresize(double(Uin), tgt, 'bilinear');
+            Uout = normalizeRgbLocal(Uout);
+        else
+            Uout = imresize(double(Uin), tgt, 'bilinear');
+        end
+    catch
+        yy = round(linspace(1, size(Uin,1), tgt(1)));
+        xx = round(linspace(1, size(Uin,2), tgt(2)));
+
+        if ndims(Uin) == 3 && size(Uin,3) == 3
+            Uout = double(Uin(yy,xx,:));
+            Uout = normalizeRgbLocal(Uout);
+        else
+            Uout = double(Uin(yy,xx));
+        end
+    end
+end
+    
+    function colors = buildMapSideTableColorsDisplayOnly(rows, mapRows)
+    n = size(rows,1);
+    colors = repmat([0.12 0.12 0.12], max(n,2), 1);
+
+    S0 = guidata(hFig);
+
+    for i = 1:n
+        if isempty(mapRows) || i > numel(mapRows) || ~isfinite(mapRows(i))
+            colors(i,:) = [0.12 0.12 0.12];
+            continue;
+        end
+
+        r = mapRows(i);
+        useVal = true;
+        try
+            useVal = logicalCellValue(S0.subj{r,1});
+        catch
+        end
+
+        if useVal
+            colors(i,:) = [0.12 0.30 0.16];
+        else
+            colors(i,:) = [0.35 0.12 0.12];
+        end
+    end
+end
+    
+   
+    
+    
+    function key = makeBundleEntityKeyForRow(S, r)
+    key = '';
+
+    if isempty(r) || ~isfinite(r) || r < 1 || r > size(S.subj,1)
+        return;
+    end
+
+    info = extractRowMetaLight(S.subj(r,:));
+
+    animalID = lower(strtrimSafe(info.animalID));
+    session  = lower(strtrimSafe(info.session));
+    scanID   = lower(strtrimSafe(info.scanID));
+
+    if ~isempty(animalID) && ~strcmpi(animalID,'n/a') && ...
+       ~isempty(session)  && ~strcmpi(session,'n/a')  && ...
+       ~isempty(scanID)   && ~strcmpi(scanID,'n/a')
+        key = [animalID '|' session '|' scanID];
+        return;
+    end
+
+    if ~isempty(animalID) && ~strcmpi(animalID,'n/a') && ...
+       ~isempty(session)  && ~strcmpi(session,'n/a')
+        key = [animalID '|' session];
+        return;
+    end
+
+    if ~isempty(animalID) && ~strcmpi(animalID,'n/a')
+        key = animalID;
+        return;
+    end
+
+    bf = strtrimSafe(S.subj{r,8});
+    if isempty(bf)
+        try
+            bf = resolveGroupBundlePath(S, S.subj(r,:));
+        catch
+            bf = '';
+        end
+    end
+
+    if ~isempty(bf)
+        key = lower(bf);
+    end
+end
+
+function rows = getRowsForBundleEntityKey(S, key)
+    rows = [];
+    if isempty(key), return; end
+
+    for r = 1:size(S.subj,1)
+        if strcmpi(makeBundleEntityKeyForRow(S, r), key)
+            rows(end+1) = r; %#ok<AGROW>
+        end
+    end
+end
+
+    function tf = entityUseStateForKey(S, key)
+    tf = false;
+
+    rows = getRowsForBundleEntityKey(S, key);
+    if isempty(rows)
+        return;
+    end
+
+    tf = true;
+    for i = 1:numel(rows)
+        if ~logicalCellValue(S.subj{rows(i),1})
+            tf = false;
+            return;
+        end
+    end
+end
+
+function rRep = representativeRowForBundleEntityKey(S, key)
+    rRep = [];
+    rows = getRowsForBundleEntityKey(S, key);
+    if isempty(rows), return; end
+
+    for i = 1:numel(rows)
+        r = rows(i);
+        bf = strtrimSafe(S.subj{r,8});
+        if isempty(bf)
+            try
+                bf = resolveGroupBundlePath(S, S.subj(r,:));
+            catch
+                bf = '';
+            end
+        end
+        if ~isempty(bf)
+            rRep = r;
+            return;
+        end
+    end
+
+    rRep = rows(1);
+end
+    
+    function restyleUITableIfNeeded(hTable, C, styleKey)
 if isempty(hTable) || ~ishandle(hTable)
     return;
 end
@@ -7245,8 +8824,19 @@ if ~isempty(animalID) && ~strcmpi(animalID,'N/A') && ...
     animalSessFolder = [animalID '_' sessionID];
 end
 
-if ~isempty(animalSessFolder) && ~isempty(scanID) && ~strcmpi(scanID,'N/A')
-    scanFolder = [animalSessFolder '_' upper(scanID)];
+rootPACAP = getPreferredPacapRootDir(S);
+if ~isempty(rootPACAP) && ~isempty(animalSessFolder) && ~isempty(scanFolder)
+    cands = { ...
+        fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles', 'SCM'), ...
+        fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles'), ...
+        fullfile(rootPACAP, animalSessFolder, scanFolder)};
+
+    for kk = 1:numel(cands)
+        if exist(cands{kk},'dir') == 7
+            d = cands{kk};
+            return;
+        end
+    end
 end
 
 % 1) Fastest route: use existing row file paths first
@@ -7499,37 +9089,59 @@ end
 
 
 
-function txt = mapAlignmentModeText(S)
-if isfield(S,'mapNormalizeSide') && S.mapNormalizeSide
-    txt = ['Side alignment: Aligned to ' strtrimSafe(S.mapRefPacapSide)];
-else
-    txt = 'Side alignment: Native sides';
-end
+    function txt = mapAlignmentModeText(S)
+    mode = upper(strtrimSafe(S.mapFlipMode));
+
+    switch mode
+        case 'FLIP RIGHT-INJECTED ANIMALS'
+            txt = 'Side alignment: Right-injected animals flipped';
+        case 'FLIP LEFT-INJECTED ANIMALS'
+            txt = 'Side alignment: Left-injected animals flipped';
+        case 'ALIGN TO REFERENCE HEMISPHERE'
+            txt = ['Side alignment: Aligned to ' strtrimSafe(S.mapRefPacapSide)];
+        otherwise
+            txt = 'Side alignment: Native sides';
+    end
 end
 
-function act = mapAlignmentActionText(S, pacapSide)
-pacapSide = strtrimSafe(pacapSide);
+    function act = mapAlignmentActionText(S, pacapSide)
+    pacapSide = strtrimSafe(pacapSide);
 
-if isempty(pacapSide) || strcmpi(pacapSide,'Unknown')
-    act = '?';
-    return;
-end
+    if isempty(pacapSide) || strcmpi(pacapSide,'Unknown')
+        act = '?';
+        return;
+    end
 
-if ~isfield(S,'mapNormalizeSide') || ~S.mapNormalizeSide
-    act = 'Native';
-    return;
-end
+    mode = upper(strtrimSafe(S.mapFlipMode));
 
-refSide = upper(strtrimSafe(S.mapRefPacapSide));
-if isempty(refSide)
-    refSide = 'LEFT';
-end
+    switch mode
+        case 'FLIP RIGHT-INJECTED ANIMALS'
+            if strcmpi(pacapSide,'Right')
+                act = 'Flip';
+            else
+                act = 'Keep';
+            end
 
-if strcmpi(pacapSide, refSide)
-    act = 'Keep';
-else
-    act = 'Flip';
-end
+        case 'FLIP LEFT-INJECTED ANIMALS'
+            if strcmpi(pacapSide,'Left')
+                act = 'Flip';
+            else
+                act = 'Keep';
+            end
+
+        case 'ALIGN TO REFERENCE HEMISPHERE'
+            refSide = upper(strtrimSafe(S.mapRefPacapSide));
+            if isempty(refSide), refSide = 'LEFT'; end
+
+            if strcmpi(pacapSide, refSide)
+                act = 'Keep';
+            else
+                act = 'Flip';
+            end
+
+        otherwise
+            act = 'Keep';
+    end
 end
 
 function updateMapAlignmentLabel()
@@ -7538,75 +9150,91 @@ if isfield(S0,'hMapAlignLabel') && ishghandle(S0.hMapAlignLabel)
     set(S0.hMapAlignLabel,'String',mapAlignmentModeText(S0));
 end
 end
-    function updateMapSideSummaryTable()
-S0 = guidata(hFig);
 
-if ~isfield(S0,'hMapSideTable') || ~ishghandle(S0.hMapSideTable)
-    return;
+
+    function updateMapUnderlayInfoLabel()
+    S0 = guidata(hFig);
+
+    if ~isfield(S0,'hMapUnderlayInfo') || ~ishghandle(S0.hMapUnderlayInfo)
+        return;
+    end
+
+    txt = 'Underlay: Bundle underlay';
+
+    if strcmpi(strtrimSafe(S0.mapUnderlayMode),'Loaded custom underlay')
+        if isfield(S0,'mapCustomUnderlayFile') && ~isempty(strtrimSafe(S0.mapCustomUnderlayFile))
+            txt = ['Underlay: ' shortPathForTable(S0.mapCustomUnderlayFile, 52)];
+        else
+            txt = 'Underlay: Loaded custom underlay';
+        end
+    end
+
+    set(S0.hMapUnderlayInfo,'String',txt);
 end
 
-S0 = ensureRowPacapSideSize(S0);
-guidata(hFig,S0);
+   function updateMapSideSummaryTable()
+    S0 = guidata(hFig);
 
-rows = {};
-rowCount = 0;
+    if ~isfield(S0,'hMapSideTable') || ~ishghandle(S0.hMapSideTable)
+        return;
+    end
 
-for r = 1:size(S0.subj,1)
-    bf = strtrimSafe(S0.subj{r,8});
-    if isempty(bf)
-        try
-            bf = resolveGroupBundlePath(S0, S0.subj(r,:));
-        catch
-            bf = '';
+    S0 = ensureRowPacapSideSize(S0);
+    guidata(hFig,S0);
+
+    dispRows = findBundleDisplayRowsGA(S0);
+
+    if isempty(dispRows)
+        rows = {'-','-','-','-'};
+        mapRows = NaN;
+    else
+        rows = cell(numel(dispRows),4);
+        mapRows = dispRows(:);
+
+        for i = 1:numel(dispRows)
+            r = dispRows(i);
+            info = extractRowMetaLight(S0.subj(r,:));
+
+            injSide = 'Unknown';
+            try
+                if r <= numel(S0.rowPacapSide)
+                    injSide = strtrimSafe(S0.rowPacapSide{r});
+                end
+            catch
+            end
+
+            if strcmpi(injSide,'L'), injSide = 'Left'; end
+            if strcmpi(injSide,'R'), injSide = 'Right'; end
+            if isempty(injSide), injSide = 'Unknown'; end
+
+            rows{i,1} = strtrimSafe(info.animalID);
+            rows{i,2} = strtrimSafe(info.session);
+            rows{i,3} = displayScanID(info.scanID);
+            rows{i,4} = injSide;
         end
     end
 
-    if isempty(bf)
-        continue;
-    end
+    set(S0.hMapSideTable, ...
+        'Data',rows, ...
+        'UserData',mapRows, ...
+        'ColumnName',{'Animal','Sess','Scan','Inj Side'}, ...
+        'BackgroundColor',buildMapSideTableColorsDisplayOnly(rows,mapRows), ...
+        'RowName',[], ...
+        'FontSize',9);
 
-    info = extractRowMetaLight(S0.subj(r,:));
-
-    pacapSide = 'Unknown';
     try
-        if r <= numel(S0.rowPacapSide)
-            pacapSide = strtrimSafe(S0.rowPacapSide{r});
-        end
+        set(S0.hMapSideTable,'ColumnWidth',{96 46 58 72});
     catch
     end
 
-    if strcmpi(pacapSide,'L'), pacapSide = 'Left'; end
-    if strcmpi(pacapSide,'R'), pacapSide = 'Right'; end
-    if isempty(pacapSide), pacapSide = 'Unknown'; end
+    drawnow;
+    pause(0.03);
 
-    rowCount = rowCount + 1;
-    rows(rowCount,1:5) = { ...
-        strtrimSafe(info.animalID), ...
-        strtrimSafe(info.session), ...
-        displayScanID(info.scanID), ...
-        pacapSide, ...
-        mapAlignmentActionText(S0, pacapSide)};
+    try
+        applyDarkUITableViewport(S0.hMapSideTable, S0.C);
+    catch
+    end
 end
-
-if isempty(rows)
-    rows = {'-','-','-','-','-'};
-end
-
-set(S0.hMapSideTable,'Data',rows);
-
-try
-    set(S0.hMapSideTable,'ColumnWidth',{88 48 68 78 56});
-catch
-end
-
-drawnow limitrate;
-try
-    styleKey = sprintf('MAPSIDE_%d', size(rows,1));
-    restyleUITableIfNeeded(S0.hMapSideTable, S0.C, styleKey);
-catch
-end
-end
-
 
 function s = displayScanID(scanID)
 s = strtrimSafe(scanID);
@@ -7994,8 +9622,26 @@ end
 
 meta = extractRowMetaLight(row);
 subKey = sanitizeFilename([meta.animalID '_' meta.session '_' meta.scanID]);
+animalSessFolder = '';
+scanFolder = '';
+
+if ~isempty(strtrimSafe(meta.animalID)) && ~strcmpi(strtrimSafe(meta.animalID),'N/A') && ...
+   ~isempty(strtrimSafe(meta.session))  && ~strcmpi(strtrimSafe(meta.session),'N/A')
+    animalSessFolder = [strtrimSafe(meta.animalID) '_' strtrimSafe(meta.session)];
+end
+
+if ~isempty(animalSessFolder) && ~isempty(strtrimSafe(meta.scanID)) && ~strcmpi(strtrimSafe(meta.scanID),'N/A')
+    scanFolder = [animalSessFolder '_' upper(strtrimSafe(meta.scanID))];
+end
 
 candDirs = {};
+
+rootPACAP = getPreferredPacapRootDir(S);
+if ~isempty(rootPACAP) && ~isempty(animalSessFolder) && ~isempty(scanFolder)
+    candDirs{end+1} = fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles', 'SCM');
+    candDirs{end+1} = fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles');
+    candDirs{end+1} = fullfile(rootPACAP, animalSessFolder, scanFolder);
+end
 
 try
     if isfield(S,'opt') && isfield(S.opt,'studio') && isstruct(S.opt.studio)
@@ -8081,44 +9727,175 @@ if isstruct(cache) && isfield(cache,'groupBundle') && isa(cache.groupBundle,'con
 end
 end
 
-function map2 = recomputeScmFromBundlePSC(G, baseWinSec, sigWinSec, sigma)
-if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
-    error('Bundle has no pscAtlas4D.');
-end
-if ~isfield(G,'TR') || isempty(G.TR)
-    error('Bundle has no TR.');
-end
+    function map2 = recomputeScmFromBundlePSC(G, baseWinSec, sigWinSec, sigma)
+% recomputeScmFromBundlePSC
+% Recompute SCM from exported bundle PSC exactly like SCM_gui:
+%   map = mean(signal window) - mean(baseline window)
+%   optional Gaussian smoothing
+%   optional masking
+%
+% INPUTS
+%   G           : exported bundle struct
+%   baseWinSec  : [startSec endSec]
+%   sigWinSec   : [startSec endSec]
+%   sigma       : smoothing sigma (set 0 for none)
+%
+% OUTPUT
+%   map2        : 2D SCM map
 
-PSC = double(G.pscAtlas4D);
-TR  = double(G.TR);
-
-if ndims(PSC) == 3
-    PSCz = PSC;
-elseif ndims(PSC) == 4
-    if isfield(G,'currentSlice') && isfinite(G.currentSlice)
-        zSel = max(1, min(size(PSC,3), round(G.currentSlice)));
-    else
-        zSel = max(1, round(size(PSC,3)/2));
+    if nargin < 4 || isempty(sigma) || ~isfinite(sigma)
+        sigma = 0;
     end
-    PSCz = squeeze(PSC(:,:,zSel,:));
-else
-    error('pscAtlas4D must be [Y X T] or [Y X Z T].');
+
+    if ~isstruct(G)
+        error('Input G must be a struct.');
+    end
+
+    if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
+        error('Bundle has no pscAtlas4D.');
+    end
+
+    if ~isfield(G,'TR') || isempty(G.TR) || ~isfinite(G.TR) || G.TR <= 0
+        error('Bundle has no valid TR.');
+    end
+
+    if numel(baseWinSec) ~= 2 || any(~isfinite(baseWinSec))
+        error('baseWinSec must be [startSec endSec].');
+    end
+
+    if numel(sigWinSec) ~= 2 || any(~isfinite(sigWinSec))
+        error('sigWinSec must be [startSec endSec].');
+    end
+
+    PSC = double(G.pscAtlas4D);
+    TR  = double(G.TR);
+
+    % -------------------------------------------------------------
+    % Select slice
+    % -------------------------------------------------------------
+    if ndims(PSC) == 3
+        % [Y X T]
+        PSCz = PSC;
+
+    elseif ndims(PSC) == 4
+        % [Y X Z T]
+        if isfield(G,'atlasSliceIndex') && ~isempty(G.atlasSliceIndex) && isfinite(G.atlasSliceIndex)
+            zSel = round(G.atlasSliceIndex);
+        elseif isfield(G,'currentSlice') && ~isempty(G.currentSlice) && isfinite(G.currentSlice)
+            zSel = round(G.currentSlice);
+        else
+            zSel = round(size(PSC,3) / 2);
+        end
+
+        zSel = max(1, min(size(PSC,3), zSel));
+        PSCz = squeeze(PSC(:,:,zSel,:));
+
+    else
+        error('pscAtlas4D must be [Y X T] or [Y X Z T].');
+    end
+
+    if ndims(PSCz) ~= 3
+        error('Selected PSC slice is not [Y X T].');
+    end
+
+    nT = size(PSCz, 3);
+
+    % -------------------------------------------------------------
+    % Convert seconds to indices exactly like SCM_gui
+    % -------------------------------------------------------------
+    b0i = max(1, min(nT, round(baseWinSec(1) / TR) + 1));
+    b1i = max(1, min(nT, round(baseWinSec(2) / TR) + 1));
+    s0i = max(1, min(nT, round(sigWinSec(1)  / TR) + 1));
+    s1i = max(1, min(nT, round(sigWinSec(2)  / TR) + 1));
+
+    if b1i < b0i
+        tmp = b0i; b0i = b1i; b1i = tmp;
+    end
+    if s1i < s0i
+        tmp = s0i; s0i = s1i; s1i = tmp;
+    end
+
+    % -------------------------------------------------------------
+    % SCM_gui-consistent computation:
+    % mean(signal) - mean(baseline)
+    % -------------------------------------------------------------
+    baseMap = mean(PSCz(:,:,b0i:b1i), 3);
+    sigMap  = mean(PSCz(:,:,s0i:s1i), 3);
+    map2    = sigMap - baseMap;
+
+    % -------------------------------------------------------------
+    % Optional smoothing
+    % -------------------------------------------------------------
+    if isfinite(sigma) && sigma > 0
+        map2 = smooth2D_gauss_local(map2, sigma);
+    end
+
+    % -------------------------------------------------------------
+    % Optional masking
+    % -------------------------------------------------------------
+    mask2D = extractBundleMask2D_local(G, size(map2));
+
+    if ~isempty(mask2D)
+        try
+            map2(~mask2D) = 0;
+        catch
+        end
+    end
+
+    map2(~isfinite(map2)) = 0;
 end
 
-T = size(PSCz,3);
-bIdx = secToIdx(baseWinSec(1), baseWinSec(2), TR, T);
-sIdx = secToIdx(sigWinSec(1),  sigWinSec(2),  TR, T);
 
-baseMap = mean(PSCz(:,:,bIdx), 3);
-sigMap  = mean(PSCz(:,:,sIdx), 3);
-map2    = sigMap - baseMap;
+function mask2D = extractBundleMask2D_local(G, szMap)
+% Return best available 2D mask matching current map size
 
-if nargin >= 4 && isfinite(sigma) && sigma > 0
-    map2 = smooth2D_gauss_local(map2, sigma);
+    mask2D = [];
+
+    try
+        if isfield(G,'mask2DCurrentSlice') && ~isempty(G.mask2DCurrentSlice)
+            M = logical(G.mask2DCurrentSlice);
+            if isequal(size(M), szMap)
+                mask2D = M;
+                return;
+            end
+        end
+    catch
+    end
+
+    try
+        if isfield(G,'maskAtlas') && ~isempty(G.maskAtlas)
+            M = logical(G.maskAtlas);
+
+            if ismatrix(M)
+                if isequal(size(M), szMap)
+                    mask2D = M;
+                    return;
+                end
+
+            elseif ndims(M) == 3
+                if isfield(G,'atlasSliceIndex') && ~isempty(G.atlasSliceIndex) && isfinite(G.atlasSliceIndex)
+                    zSel = round(G.atlasSliceIndex);
+                elseif isfield(G,'currentSlice') && ~isempty(G.currentSlice) && isfinite(G.currentSlice)
+                    zSel = round(G.currentSlice);
+                else
+                    zSel = round(size(M,3) / 2);
+                end
+
+                zSel = max(1, min(size(M,3), zSel));
+                M2 = M(:,:,zSel);
+
+                if isequal(size(M2), szMap)
+                    mask2D = M2;
+                    return;
+                end
+            end
+        end
+    catch
+    end
 end
 
-map2(~isfinite(map2)) = 0;
-end
+
+
 
 function M2 = squeezeBundleMap2D(M)
 M = double(M);
@@ -8296,7 +10073,14 @@ switch ext
 end
 end
 
-function renderPSCOverlay(ax, underlay, map, render, styleName)
+   function renderPSCOverlay(ax, underlay, map, render, styleName, showColorbar, cbPos)
+if nargin < 6 || isempty(showColorbar)
+    showColorbar = true;
+end
+if nargin < 7
+    cbPos = [];
+end
+
 cla(ax);
 styleAxesMode(ax, styleName, false);
 hold(ax,'on');
@@ -8309,6 +10093,7 @@ end
 
 map = double(map);
 map(~isfinite(map)) = 0;
+
 if isfield(render,'flipUDPreview') && render.flipUDPreview
     map = flipud_any(map);
     if ~isempty(underlay)
@@ -8327,17 +10112,24 @@ else
 end
 
 thr = 0;
-if isfield(render,'threshold'), thr = double(render.threshold); end
+if isfield(render,'threshold')
+    thr = double(render.threshold);
+end
 
 alphaMask = double(abs(map) >= thr);
-
 alpha = alphaMask;
+
 if isfield(render,'alphaModOn') && render.alphaModOn
     lo = thr;
     hi = max(abs(map(:)));
 
-    if isfield(render,'modMin'), lo = max(lo, double(render.modMin)); end
-    if isfield(render,'modMax'), hi = double(render.modMax); end
+    if isfield(render,'modMin')
+        lo = max(lo, double(render.modMin));
+    end
+    if isfield(render,'modMax')
+        hi = double(render.modMax);
+    end
+
     if ~isfinite(hi) || hi <= lo
         hi = lo + eps;
     end
@@ -8365,9 +10157,18 @@ axis(ax,'image');
 set(ax,'YDir','normal');
 axis(ax,'off');
 
-cb = colorbar(ax);
-cb.Label.String = 'Signal change (%)';
-styleColorbarMode(cb, styleName);
+if showColorbar
+    cb = colorbar(ax);
+    cb.Label.String = 'Signal change (%)';
+    styleColorbarMode(cb, styleName);
+
+    if ~isempty(cbPos)
+        try
+            set(cb,'Units','normalized','Position',cbPos);
+        catch
+        end
+    end
+end
 
 hold(ax,'off');
 end
@@ -8943,34 +10744,213 @@ end
 root = fullfile(rootBase, 'AnalysedData');
 safeMkdirIfNeeded(root);
 end
-function layoutMapPreviewMain(S)
-try
-    set(S.axMap1,'Visible','on','Position',[0.05 0.14 0.54 0.64]);
-catch
-end
-try
-    set(S.axMap2,'Visible','off','Position',[0.01 0.01 0.01 0.01]);
-    axis(S.axMap2,'off');
-catch
-end
+
+
+    function layoutMapPreviewMain(S)
+    try
+        set(S.axMap1,'Visible','on','Position',[0.03 0.14 0.53 0.74]);
+    catch
+    end
+    try
+        set(S.axMap2,'Visible','off','Position',[0.01 0.01 0.01 0.01]);
+        axis(S.axMap2,'off');
+    catch
+    end
 end
 
-function placeSingleMapColorbar(ax, pos)
-if nargin < 2 || isempty(pos)
-    pos = [0.61 0.14 0.018 0.64];
+    function placeSingleMapColorbar(ax, pos)
+    if nargin < 2
+        pos = [];
+    end
+
+    try
+        cb = colorbar(ax);
+        cb.Label.String = 'Signal change (%)';
+        styleColorbarMode(cb, 'Dark');
+
+        if isempty(pos)
+            axPos = get(ax,'Position');
+
+            gap = 0.018;
+            cbW = 0.012;
+            cbH = 0.64 * axPos(4);
+            cbY = axPos(2) + 0.18 * axPos(4);
+            cbX = axPos(1) + axPos(3) + gap;
+
+            pos = [cbX, cbY, cbW, cbH];
+        end
+
+        set(cb,'Units','normalized','Position',pos);
+    catch
+    end
 end
 
-try
-    cb = findall(ancestor(ax,'figure'),'Type','ColorBar');
-    if isempty(cb)
+function d = getPreferredPacapRootDir(S)
+    d = '';
+
+    cands = {'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData\AprilStayLeuven\PACAP'};
+
+    try
+        if isfield(S,'opt') && isfield(S.opt,'studio') && isstruct(S.opt.studio)
+            if isfield(S.opt.studio,'exportPath') && ~isempty(S.opt.studio.exportPath)
+                cands{end+1} = char(S.opt.studio.exportPath); %#ok<AGROW>
+            end
+            if isfield(S.opt.studio,'loadedPath') && ~isempty(S.opt.studio.loadedPath)
+                cands{end+1} = char(S.opt.studio.loadedPath); %#ok<AGROW>
+            end
+        end
+    catch
+    end
+
+    for i = 1:numel(cands)
+        cc = strtrimSafe(cands{i});
+        if ~isempty(cc) && exist(cc,'dir') == 7
+            d = cc;
+            return;
+        end
+    end
+end
+
+function g = getMapInjectedGroupLabel(S)
+    g = '';
+    try
+        g = getSelectedPopupString(S.hQuickGroup);
+    catch
+    end
+    g = strtrimSafe(g);
+    if isempty(g) && isfield(S,'defaultGroup')
+        g = strtrimSafe(S.defaultGroup);
+    end
+    if isempty(g)
+        g = 'Group';
+    end
+end
+
+    function updateMapGroupSideLabels()
+    S0 = guidata(hFig);
+
+    if isfield(S0,'hMapPreviewSideLabel') && ishghandle(S0.hMapPreviewSideLabel)
+        set(S0.hMapPreviewSideLabel,'String','Inj side:','FontSize',10);
+    end
+
+    if isfield(S0,'hMapRefSideLabel') && ishghandle(S0.hMapRefSideLabel)
+        set(S0.hMapRefSideLabel,'String','Ref hemi:','FontSize',10);
+    end
+end
+
+    function [S, nApplied] = applyUseStateToMatchingRows(S, rRef, useVal)
+    nApplied = 0;
+
+    rows = findMatchingRowsByMetaOrBundle(S, rRef);
+    if isempty(rows)
+        rows = rRef;
+    end
+
+    for i = 1:numel(rows)
+        rr = rows(i);
+        S.subj{rr,1} = logical(useVal);
+
+        if useVal
+            st = lower(strtrimSafe(S.subj{rr,9}));
+            if contains(st,'not used') || contains(st,'excluded')
+                S.subj{rr,9} = '';
+            end
+        else
+            S.subj{rr,9} = 'Not used';
+        end
+
+        nApplied = nApplied + 1;
+    end
+
+    S = sanitizeTableStruct(S);
+    S = ensureRowPacapSideSize(S);
+end
+
+    function rows = findBundleDisplayRowsGA(S)
+    rows = [];
+    keysSeen = {};
+
+    for r = 1:size(S.subj,1)
+        key = makeBundleEntityKeyForRow(S, r);
+        if isempty(key)
+            continue;
+        end
+
+        if any(strcmpi(keysSeen, key))
+            continue;
+        end
+
+        keysSeen{end+1} = key; %#ok<AGROW>
+        rows(end+1) = representativeRowForBundleEntityKey(S, key); %#ok<AGROW>
+    end
+end
+
+    function colors = buildMapSideTableColors(rows, mapRows)
+    n = size(rows,1);
+    colors = repmat([0.12 0.12 0.12], max(n,2), 1);
+
+    for i = 1:n
+        if isempty(mapRows) || i > numel(mapRows) || ~isfinite(mapRows(i))
+            colors(i,:) = [0.12 0.12 0.12];
+            continue;
+        end
+
+        if logicalCellValue(rows{i,1})
+            colors(i,:) = [0.12 0.30 0.16];
+        else
+            colors(i,:) = [0.35 0.12 0.12];
+        end
+    end
+end
+
+function rOut = resolvePreviewRowFromSelection(S, rSel)
+    rOut = [];
+
+    if isempty(rSel) || ~isfinite(rSel) || rSel < 1 || rSel > size(S.subj,1)
         return;
     end
-    cb = cb(1);
-    set(cb,'Units','normalized','Position',pos);
-catch
-end
+
+    keySel = makeBundleEntityKeyForRow(S, rSel);
+    if ~isempty(keySel)
+        dispRows = findBundleDisplayRowsGA(S);
+        for i = 1:numel(dispRows)
+            rr = dispRows(i);
+            if strcmpi(makeBundleEntityKeyForRow(S, rr), keySel)
+                rOut = rr;
+                return;
+            end
+        end
+    end
+
+    % fallback
+    bf = strtrimSafe(S.subj{rSel,8});
+    if isempty(bf)
+        try
+            bf = resolveGroupBundlePath(S, S.subj(rSel,:));
+        catch
+            bf = '';
+        end
+    end
+
+    if ~isempty(bf)
+        rOut = rSel;
+    end
 end
 
+function s = mapAlignmentShortTitle(S)
+    mode = upper(strtrimSafe(S.mapFlipMode));
+
+    switch mode
+        case 'FLIP RIGHT-INJECTED ANIMALS'
+            s = 'right injected flipped';
+        case 'FLIP LEFT-INJECTED ANIMALS'
+            s = 'left injected flipped';
+        case 'ALIGN TO REFERENCE HEMISPHERE'
+            s = ['aligned to ' strtrimSafe(S.mapRefPacapSide)];
+        otherwise
+            s = '';
+    end
+end
 function safeMkdirIfNeeded(d)
 if isempty(d), return; end
 if exist(d,'dir') ~= 7
