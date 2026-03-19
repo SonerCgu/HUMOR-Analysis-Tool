@@ -1,5 +1,5 @@
 function qc_fusi(data, meta, exportPath, opts)
-% qc_fusi — fUSI Studio QC engine (MATLAB 2017b)
+% qc_fusi â€” fUSI Studio QC engine (MATLAB 2017b)
 % ============================================================
 % Keeps existing QC plots and ADDS paper-style QC:
 %   - Burst error QC (ratio map + noisy voxels + coverage over time)
@@ -50,7 +50,7 @@ opts = setFlagDefault(opts,'burst',false);
 opts = setFlagDefault(opts,'cnr',false);
 opts = setFlagDefault(opts,'commonmode',false);
 
-% If user didn’t request burst/cnr/commonmode explicitly, tie them to temporal
+% If user didnâ€™t request burst/cnr/commonmode explicitly, tie them to temporal
 if ~isfield(opts,'burst') || isempty(opts.burst), opts.burst = opts.temporal; end
 if ~isfield(opts,'cnr') || isempty(opts.cnr), opts.cnr = opts.temporal; end
 if ~isfield(opts,'commonmode') || isempty(opts.commonmode), opts.commonmode = opts.temporal; end
@@ -220,12 +220,12 @@ if opts.frequency
     [f, Pxx] = psdSafe(g0, TR);
 
     fig = figure('Color','w','Position',[120 120 900 420]);
-    plotPSD(f, Pxx, [0 2], 'Frequency QC (0–2 Hz)');
+    plotPSD(f, Pxx, [0 2], 'Frequency QC (0â€“2 Hz)');
     saveas(fig, fullfile(pngDir,'QC_frequency.png'));
     close(fig);
 
     fig = figure('Color','w','Position',[140 140 900 420]);
-    plotPSD(f, Pxx, [0 0.1], 'Frequency QC (0–0.1 Hz)');
+    plotPSD(f, Pxx, [0 0.1], 'Frequency QC (0â€“0.1 Hz)');
     saveas(fig, fullfile(pngDir,'QC_frequency_0p1Hz.png'));
     close(fig);
 end
@@ -397,9 +397,9 @@ if opts.stability
                    'Rejected volumes: %.2f%%\n' ...
                    'Interpretation: %s'], thrL, thrU, rejPercent, interpretation);
 
- annotation(fig,'textbox',[0.63 0.18 0.32 0.22], ...
-    'String',txt,'FitBoxToText','on', ...
-    'BackgroundColor',[1 1 1],'EdgeColor',[0 0 0]);
+    annotation('textbox',[0.63 0.18 0.32 0.22], ...
+        'String',txt,'FitBoxToText','on', ...
+        'BackgroundColor',[1 1 1],'EdgeColor',[0 0 0]);
 
     saveas(fig, fullfile(pngDir,'QC_stability_trace.png'));
     close(fig);
@@ -571,21 +571,13 @@ if ~opts.commonmode
 end
 
 acceptAll = acceptBurst && acceptSNR && acceptCNR && acceptCM;
-
-fig = figure( ...
-    'Color','w', ...
-    'Position',[180 180 950 420], ...
-    'Visible','off');
-
-ax = axes( ...
-    'Parent',fig, ...
-    'Units','normalized', ...
-    'Position',[0.03 0.08 0.94 0.84]);
+   
+  
+fig = figure('Color','w','Position',[180 180 950 420],'Visible','off');
+ax  = axes('Parent',fig,'Position',[0 0 1 1]);
 
 axis(ax,'off');
-title(ax,'QC summary (trial-level acceptance)', ...
-    'FontWeight','bold', ...
-    'FontSize',14);
+title(ax,'QC summary (trial-level acceptance)','FontWeight','bold','FontSize',14);
 
 txt = {};
 txt{end+1} = sprintf('Burst:      ACCEPT=%d   (noisyFrac=%.3f, THnoisy=%.3f, THburst=%.2f)', ...
@@ -599,23 +591,15 @@ txt{end+1} = sprintf('CommonMode: ACCEPT=%d   (portion=%.3f, THCM=%.2f, THpor=%.
 txt{end+1} = ' ';
 txt{end+1} = sprintf('FINAL ACCEPT (all criteria) = %d', acceptAll);
 
-text(ax, 0.02, 0.92, txt, ...
-    'Units','normalized', ...
+text(ax, 0.02, 0.85, txt, ...
     'FontSize',12, ...
     'FontName','Courier New', ...
     'VerticalAlignment','top', ...
-    'Interpreter','none');
+    'Units','normalized');
 
 drawnow;
 saveas(fig, fullfile(pngDir,'QC_summary.png'));
 close(fig);
-
-try
-    save(fullfile(matDir,'qc_summary.mat'), ...
-        'acceptBurst','acceptSNR','acceptCNR','acceptCM','acceptAll', ...
-        'global_tSNR','globalCNR','cmPortion','burstNoisyFrac','-v7.3');
-catch
-end
 
 % ============================================================
 % 11) PCA QC (AUTO CLOSE; no CloseRequestFcn)
