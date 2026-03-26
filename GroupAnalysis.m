@@ -190,7 +190,7 @@ S.mapSummary          = 'Mean';
 % use explicit global windows and PSC recomputation from exported bundle PSC
 S.mapUseGlobalWindows = true;
 S.mapGlobalBaseSec    = [30 240];
-S.mapGlobalSigSec     = [600 900];
+S.mapGlobalSigSec     = [840 900];
 
 S.mapSource           = 'Recompute from exported PSC';
 S.mapUseBundleWindows = true;
@@ -759,7 +759,7 @@ axis(S.axMap2,'off');
 
 S.hMapUnderlayInfo = uicontrol(pMapPrev,'Style','text', ...
     'String','Underlay: Bundle underlay', ...
-    'Units','normalized','Position',[0.03 0.045 0.56 0.035], ...
+    'Units','normalized','Position',[0.03 0.055 0.58 0.030], ...
     'BackgroundColor',bg2,'ForegroundColor',C.muted, ...
     'HorizontalAlignment','left', ...
     'FontSize',10);
@@ -772,15 +772,18 @@ S.hMapSideBox = uipanel(pMapPrev, ...
     'ForegroundColor','w', ...
     'FontWeight','bold');
 
+
+%%% Assignment Table %%%
 S.hMapAlignLabel = uicontrol(S.hMapSideBox,'Style','text', ...
     'String','Side alignment: Native sides', ...
-    'Units','normalized','Position',[0.05 0.92 0.90 0.06], ...
+    'Units','normalized','Position',[0.05 0.905 0.90 0.085], ...
     'BackgroundColor',bg2,'ForegroundColor',C.muted, ...
-    'HorizontalAlignment','left','FontWeight','bold');
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',10);
 
 S.hMapSideTable = uitable(S.hMapSideBox, ...
     'Units','normalized', ...
-    'Position',[0.04 0.60 0.92 0.18], ...
+    'Position',[0.04 0.64 0.92 0.24], ...
     'Data',cell(0,4), ...
     'ColumnName',{'Animal','Sess','Scan','Inj Side'}, ...
     'ColumnEditable',[false false false false], ...
@@ -788,81 +791,88 @@ S.hMapSideTable = uitable(S.hMapSideBox, ...
     'BackgroundColor',[0.12 0.12 0.12; 0.10 0.10 0.10], ...
     'ForegroundColor',[1 1 1], ...
     'FontName','Consolas', ...
-    'FontSize',9);
+    'FontSize',10);
 
-S.hMapExportTable = mkBtn(S.hMapSideBox,'Export Table',[0.26 0.52 0.48 0.07],C.btnAction,@onExportMapSideTable);
+S.hMapExportTable = mkBtn(S.hMapSideBox,'Export Table',[0.24 0.55 0.52 0.075],C.btnAction,@onExportMapSideTable);
 
 S.hMapUseGlobalWin = uicontrol(S.hMapSideBox, ...
     'Style','checkbox', ...
     'String','Use custom global baseline / signal windows', ...
     'Units','normalized', ...
-    'Position',[0.05 0.44 0.90 0.05], ...
+    'Position',[0.05 0.47 0.90 0.05], ...
     'Value',double(S.mapUseGlobalWindows), ...
     'BackgroundColor',bg2, ...
     'ForegroundColor','w', ...
     'Callback',@onMapWindowChanged);
 
 S.hMapRecomputeNote = uicontrol(S.hMapSideBox,'Style','text', ...
-    'String','IMPORTANT: After changing baseline / signal windows, click "Compute Group Maps" again.', ...
-    'Units','normalized','Position',[0.05 0.36 0.90 0.07], ...
+    'String',{'IMPORTANT: After changing baseline / signal', ...
+              'windows, click "Compute Group Maps" again.'}, ...
+    'Units','normalized','Position',[0.05 0.375 0.90 0.085], ...
     'BackgroundColor',bg2,'ForegroundColor',[1 0.35 0.35], ...
     'HorizontalAlignment','left','FontWeight','bold', ...
-    'FontSize',8);
+    'FontSize',9);
 
-uicontrol(S.hMapSideBox,'Style','text','String','Base win (s):', ...
-    'Units','normalized','Position',[0.05 0.25 0.20 0.07], ...
+uicontrol(S.hMapSideBox,'Style','text','String','Base win(s):', ...
+    'Units','normalized','Position',[0.05 0.285 0.28 0.055], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',10);
 
 S.hMapBase0 = uicontrol(S.hMapSideBox,'Style','edit', ...
     'String',num2str(S.mapGlobalBaseSec(1)), ...
-    'Units','normalized','Position',[0.30 0.245 0.14 0.075], ...
+    'Units','normalized','Position',[0.40 0.278 0.15 0.080], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapWindowChanged);
 
 S.hMapBase1 = uicontrol(S.hMapSideBox,'Style','edit', ...
     'String',num2str(S.mapGlobalBaseSec(2)), ...
-    'Units','normalized','Position',[0.47 0.245 0.14 0.075], ...
+    'Units','normalized','Position',[0.59 0.278 0.15 0.080], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapWindowChanged);
 
-uicontrol(S.hMapSideBox,'Style','text','String','Signal win (s):', ...
-    'Units','normalized','Position',[0.05 0.14 0.20 0.07], ...
+uicontrol(S.hMapSideBox,'Style','text','String','Signal win(s):', ...
+    'Units','normalized','Position',[0.05 0.175 0.28 0.055], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',10);
 
 S.hMapSig0 = uicontrol(S.hMapSideBox,'Style','edit', ...
     'String',num2str(S.mapGlobalSigSec(1)), ...
-    'Units','normalized','Position',[0.30 0.135 0.14 0.075], ...
+    'Units','normalized','Position',[0.40 0.168 0.15 0.080], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapWindowChanged);
 
 S.hMapSig1 = uicontrol(S.hMapSideBox,'Style','edit', ...
     'String',num2str(S.mapGlobalSigSec(2)), ...
-    'Units','normalized','Position',[0.47 0.135 0.14 0.075], ...
+    'Units','normalized','Position',[0.59 0.168 0.15 0.080], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
     'Callback',@onMapWindowChanged);
 
 uicontrol(S.hMapSideBox,'Style','text','String','Underlay:', ...
-    'Units','normalized','Position',[0.05 0.065 0.18 0.05], ...
+    'Units','normalized','Position',[0.05 0.085 0.20 0.050], ...
     'BackgroundColor',bg2,'ForegroundColor','w', ...
-    'HorizontalAlignment','left','FontWeight','bold');
+    'HorizontalAlignment','left','FontWeight','bold', ...
+    'FontSize',10);
 
 S.hMapUnderlayMode = uicontrol(S.hMapSideBox,'Style','popupmenu', ...
     'String',{'Bundle underlay','Loaded custom underlay'}, ...
-    'Units','normalized','Position',[0.23 0.058 0.72 0.065], ...
+    'Units','normalized','Position',[0.28 0.078 0.64 0.060], ...
     'BackgroundColor',C.editBg,'ForegroundColor','w', ...
+    'FontSize',9, ...
     'Callback',@onMapUnderlayModeChanged);
 
-S.hMapLoadUnderlay = mkBtn(S.hMapSideBox,'Load Underlay',[0.24 0.005 0.52 0.045],C.btnSecondary,@onLoadCustomUnderlay);
+S.hMapLoadUnderlay = mkBtn(S.hMapSideBox,'Load Underlay',[0.22 0.010 0.56 0.060],C.btnAction,@onLoadCustomUnderlay);
+
 
 pMapBottom = uipanel(pMAPBG,'Units','normalized','Position',[0.02 0.015 0.96 0.085], ...
     'Title','','BorderType','none','BackgroundColor',bg2,'ForegroundColor','w');
 
-S.hMapPreviewSel = mkBtn(pMapBottom,'Preview Only',[0.02 0.48 0.16 0.42],C.btnSecondary,@onPreviewSelectedBundle);
-S.hMapCompute    = mkBtn(pMapBottom,'Compute Group Maps',[0.20 0.48 0.24 0.42],C.btnPrimary,@onComputeGroupMaps);
-S.hMapExportPNG  = mkBtn(pMapBottom,'Export PNG',[0.66 0.48 0.14 0.42],C.btnAction,@onExportGroupMapPNG);
-S.hMapExportPPT  = mkBtn(pMapBottom,'Export PPT',[0.82 0.48 0.14 0.42],C.btnAction,@onExportGroupMapPPT);
+S.hMapPreviewSel  = mkBtn(pMapBottom,'Preview Only',[0.02 0.48 0.16 0.42],C.btnSecondary,@onPreviewSelectedBundle);
+S.hMapCompute     = mkBtn(pMapBottom,'Compute Group Maps',[0.20 0.48 0.24 0.42],C.btnPrimary,@onComputeGroupMaps);
+S.hMapExportData  = mkBtn(pMapBottom,'Export Group Data',[0.50 0.48 0.14 0.42],C.btnAction,@onExportGroupMapData);
+S.hMapExportPNG   = mkBtn(pMapBottom,'Export PNG',[0.66 0.48 0.14 0.42],C.btnAction,@onExportGroupMapPNG);
+S.hMapExportPPT   = mkBtn(pMapBottom,'Export PPT',[0.82 0.48 0.14 0.42],C.btnAction,@onExportGroupMapPPT);
 
 S.hMapExportStatus = uicontrol(pMapBottom,'Style','text', ...
     'String','Ready.', ...
@@ -1048,7 +1058,63 @@ setStatusText('Ready. Preview redraw is clean and cached computations are enable
 %%% =====================================================================
 %%% NESTED CALLBACKS
 %%% =====================================================================
-  function D = buildGroupMapDisplayStructGA(S0, R)
+  function onExportGroupMapData(~,~)
+    S0 = guidata(hFig);
+
+    [mapIdx,~] = findActiveBundleRowsGA(S0);
+    if isempty(mapIdx)
+        errordlg('No valid bundle rows available for export.','Export Group Data');
+        return;
+    end
+
+    startDir = getAnalysedBrowseDir(S0);
+    defName  = ['GA_GroupVideoExport_' datestr(now,'yyyymmdd_HHMMSS') '.mat'];
+
+    [f,p] = uiputfile({'*.mat','MAT-file (*.mat)'}, ...
+        'Save Group Analysis Video Export', ...
+        fullfile(startDir, defName));
+
+    if isequal(f,0)
+        return;
+    end
+
+    outFile = fullfile(p,f);
+
+    setStatus(false);
+    setStatusText('Exporting group-analysis video bundle...');
+    drawnow;
+
+    try
+        E = buildGroupAnalysisVideoExportGA(S0, mapIdx);
+        GA = E;
+underlay2D  = E.underlay2D;
+brainImage  = E.underlay2D;
+overlay2D   = E.overlay2D;
+groupMap2D  = E.groupMap2D;
+functional4D = E.functional4D;
+psc4D       = E.psc4D;
+
+save(outFile, ...
+    'E','GA', ...
+    'underlay2D','brainImage', ...
+    'overlay2D','groupMap2D', ...
+    'functional4D','psc4D', ...
+    '-v7.3');
+
+        S0.opt.startDir = p;
+        guidata(hFig,S0);
+
+        setStatusText(['Group-analysis video bundle saved: ' outFile]);
+    catch ME
+        setStatusText(['Group-analysis video export failed: ' ME.message]);
+        errordlg(ME.message,'Export Group Data');
+    end
+
+    setStatus(true);
+end
+    
+    
+    function D = buildGroupMapDisplayStructGA(S0, R)
     dispUnderlay = R.commonUnderlay;
 
     if strcmpi(S0.mapUnderlayMode,'Loaded custom underlay') && ~isempty(S0.mapLoadedUnderlay)
@@ -1569,7 +1635,7 @@ end
         mapStyle = 'Dark';
         [~,fg] = previewColors(mapStyle);
 
-        renderPSCOverlay(S0.axMap1, underlayNow, mapNow, makeMapRenderStruct(S0), mapStyle);
+        renderPSCOverlay(S0.axMap1, underlayNow, mapNow, makeMapRenderStruct(S0), mapStyle, false);
         recolorAxesText(S0.axMap1, mapStyle);
         updateMapAlignmentLabel();
         updateMapSideSummaryTable();
@@ -1651,7 +1717,7 @@ end
 
     D = buildGroupMapDisplayStructGA(S0, R);
 
-    renderPSCOverlay(S0.axMap1, D.underlay, D.map, D.render, mapStyle);
+    renderPSCOverlay(S0.axMap1, D.underlay, D.map, D.render, mapStyle, false);
     recolorAxesText(S0.axMap1, mapStyle);
     title(S0.axMap1, D.title, 'Color', fg, 'FontWeight','bold');
     placeSingleMapColorbar(S0.axMap1);
@@ -1870,7 +1936,6 @@ end
 
     sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
 
-    % If user explicitly selected table rows, assign bundle(s) to those rows directly.
     if ~isempty(sel)
         nDirect = min(numel(sel), numel(f));
 
@@ -1878,53 +1943,52 @@ end
             fpNow = fullfile(p, f{ii});
             S0 = assignBundleToExplicitRow(S0, sel(ii), fpNow);
         end
-        guidata(hFig,S0);
 
-        % Any extra bundle files still use smart add logic
         for ii = (nDirect+1):numel(f)
-            addFileSmart(fullfile(p, f{ii}));
+            fpNow = fullfile(p, f{ii});
+            S0 = addBundleFileSmartLight(S0, fpNow);
         end
 
         msgTail = sprintf('%d selected row(s) assigned directly', nDirect);
     else
         for ii = 1:numel(f)
-            addFileSmart(fullfile(p, f{ii}));
+            fpNow = fullfile(p, f{ii});
+            S0 = addBundleFileSmartLight(S0, fpNow);
         end
-        msgTail = 'no explicit selection, used smart matching';
+        msgTail = 'no explicit selection, used lightweight smart matching';
     end
 
-    S0 = guidata(hFig);
+    % IMPORTANT: sanitize only once
+    S0 = sanitizeTableStruct(S0);
+    S0 = ensureRowPacapSideSize(S0);
     S0.opt.startDir = p;
+
     guidata(hFig,S0);
 
     refreshTable();
     setStatusText(sprintf('Added %d bundle file(s) (%s).', numel(f), msgTail));
-   end
+end
 
-function S0 = assignBundleToExplicitRow(S0, r, fp)
+    function S0 = assignBundleToExplicitRow(S0, r, fp)
     if isempty(r) || r < 1 || r > size(S0.subj,1)
         return;
     end
 
     metaIn = extractMetaFromSources('', '', '', fp);
 
-    % Force exact assignment to the selected row
     S0.subj{r,8} = fp;
     S0.subj{r,1} = true;
 
-    % Fill subject if missing
     if isempty(strtrimSafe(S0.subj{r,2})) || strcmpi(strtrimSafe(S0.subj{r,2}),'N/A')
         if ~strcmpi(strtrimSafe(metaIn.animalID),'N/A')
             S0.subj{r,2} = strtrimSafe(metaIn.animalID);
         end
     end
 
-    % Fill PairID if desired
     if get(S0.hAutoPair,'Value')==1 && isempty(strtrimSafe(S0.subj{r,5}))
         S0.subj{r,5} = strtrimSafe(S0.subj{r,2});
     end
 
-    % Ensure group / condition are not empty
     if isempty(strtrimSafe(S0.subj{r,3}))
         S0.subj{r,3} = S0.defaultGroup;
     end
@@ -1932,15 +1996,68 @@ function S0 = assignBundleToExplicitRow(S0, r, fp)
         S0.subj{r,4} = S0.defaultCond;
     end
 
-    % Clear stale red-status text so the row becomes OK again
     st = lower(strtrimSafe(S0.subj{r,9}));
     if contains(st,'excluded') || contains(st,'not used') || contains(st,'missing') || contains(st,'not set')
         S0.subj{r,9} = '';
     end
-
-    S0 = sanitizeTableStruct(S0);
-    S0 = ensureRowPacapSideSize(S0);
 end
+
+function S0 = addBundleFileSmartLight(S0, fp)
+    % IMPORTANT:
+    % This function does NOT load the MAT file.
+    % It only uses filename/path metadata and assigns the bundle path.
+
+    metaIn = extractMetaFromSources('', '', '', fp);
+
+    subj = strtrimSafe(metaIn.animalID);
+    if isempty(subj) || strcmpi(subj,'N/A')
+        subj = guessSubjectID(fp);
+    end
+
+    gdef = getSelectedPopupString(S0.hQuickGroup);
+    cdef = getSelectedPopupString(S0.hQuickCond);
+    if isempty(gdef), gdef = S0.defaultGroup; end
+    if isempty(cdef), cdef = S0.defaultCond;  end
+
+    rowIdx      = findSingleBundleTargetRow(S0, metaIn);
+    templateIdx = findTemplateRowByMeta(S0, metaIn);
+
+    if isempty(rowIdx)
+        newRow = makeEmptyGARow(subj, gdef, cdef, S0);
+
+        if ~isempty(templateIdx)
+            if ~isempty(strtrimSafe(S0.subj{templateIdx,3})), newRow{3} = strtrimSafe(S0.subj{templateIdx,3}); end
+            if ~isempty(strtrimSafe(S0.subj{templateIdx,4})), newRow{4} = strtrimSafe(S0.subj{templateIdx,4}); end
+            if ~isempty(strtrimSafe(S0.subj{templateIdx,6})), newRow{6} = strtrimSafe(S0.subj{templateIdx,6}); end
+            if ~isempty(strtrimSafe(S0.subj{templateIdx,7})), newRow{7} = strtrimSafe(S0.subj{templateIdx,7}); end
+        end
+
+        newRow{8} = fp;
+        S0.subj(end+1,:) = newRow;
+
+    else
+        S0.subj{rowIdx,8} = fp;
+        S0.subj{rowIdx,1} = true;
+
+        if isempty(strtrimSafe(S0.subj{rowIdx,2})) || strcmpi(strtrimSafe(S0.subj{rowIdx,2}),'N/A')
+            if ~isempty(subj) && ~strcmpi(subj,'N/A')
+                S0.subj{rowIdx,2} = subj;
+            end
+        end
+
+        if get(S0.hAutoPair,'Value') == 1 && isempty(strtrimSafe(S0.subj{rowIdx,5}))
+            S0.subj{rowIdx,5} = strtrimSafe(S0.subj{rowIdx,2});
+        end
+
+        if isempty(strtrimSafe(S0.subj{rowIdx,3}))
+            S0.subj{rowIdx,3} = gdef;
+        end
+        if isempty(strtrimSafe(S0.subj{rowIdx,4}))
+            S0.subj{rowIdx,4} = cdef;
+        end
+    end
+end
+
 
     function onAddFolder(~,~)
         syncSubjFromTable();
@@ -2215,7 +2332,9 @@ S0.lastMAP = struct();
             try, set(S0.hMode,'Value',1); catch, end
 
         case 'STATS'
-            % keep current mode
+            % Statistics / Export is ROI-only
+            S0.mode = 'ROI Timecourse';
+            try, set(S0.hMode,'Value',1); catch, end
     end
 
     S0.activeTab = tabName;
@@ -2462,8 +2581,17 @@ end
         end
   
 
+
+    
+   
+
     function onMapDisplayChanged(~,~)
-        S0 = guidata(hFig);
+       S0 = guidata(hFig);
+
+    % Do not trigger bundle preview / map refresh while user is in ROI-only workflow
+    if ~strcmpi(strtrimSafe(S0.activeTab),'MAP') && ~strcmpi(strtrimSafe(S0.mode),'Group Maps')
+        return;
+    end
 
         items = get(S0.hMapSource,'String');
         S0.mapSource = items{get(S0.hMapSource,'Value')};
@@ -2787,7 +2915,10 @@ end
     S0 = ensureRowPacapSideSize(S0);
     guidata(hFig,S0);
 
-      try
+  doMapRefresh = strcmpi(strtrimSafe(S0.activeTab),'MAP') || strcmpi(strtrimSafe(S0.mode),'Group Maps');
+
+if doMapRefresh
+    try
         refreshMapBundlePopup();
     catch
     end
@@ -2799,6 +2930,7 @@ end
         updateMapSideSummaryTable();
     catch
     end
+end
 end
 
 function addFileSmart(fp)
@@ -3806,31 +3938,34 @@ for i = 1:n
 end
 end
 
-    function s = deriveRowStatus(row)
-roi    = '';
-bundle = '';
-st     = '';
-use    = true;
+   function s = deriveRowStatus(row)
+    roi    = '';
+    bundle = '';
+    st     = '';
+    use    = true;
 
-try, roi    = strtrimSafe(row{7}); catch, end
-try, bundle = strtrimSafe(row{8}); catch, end
-try, st     = lower(strtrimSafe(row{9})); catch, end
-try, use    = logicalCellValue(row{1}); catch, end
+    try, roi    = strtrimSafe(row{7}); catch, end
+    try, bundle = strtrimSafe(row{8}); catch, end
+    try, st     = lower(strtrimSafe(row{9})); catch, end
+    try, use    = logicalCellValue(row{1}); catch, end
 
-roiOK    = ~isempty(roi)    && exist(roi,'file') == 2;
-bundleOK = ~isempty(bundle) && exist(bundle,'file') == 2;
+    % IMPORTANT:
+    % Do not call exist(...) on every redraw for network paths.
+    % Just treat non-empty paths as "set".
+    roiSet    = ~isempty(roi);
+    bundleSet = ~isempty(bundle);
 
-if contains(st,'excluded')
-    s = 'Excluded';
-elseif ~use
-    s = 'Not used';
-elseif roiOK || bundleOK
-    s = 'OK';
-elseif isempty(roi) && isempty(bundle)
-    s = 'Not set';
-else
-    s = 'Missing';
-end
+    if contains(st,'excluded')
+        s = 'Excluded';
+    elseif ~use
+        s = 'Not used';
+    elseif roiSet || bundleSet
+        s = 'OK';
+    elseif isempty(roi) && isempty(bundle)
+        s = 'Not set';
+    else
+        s = 'Missing';
+    end
 end
 
 
@@ -4683,11 +4818,11 @@ end
     end
 end
 
-    function onRun(~,~)
+  function onRun(~,~)
     syncSubjFromTable();
     S0 = guidata(hFig);
 
-    runTab = strtrimSafe(S0.activeTab);
+    runTab = upper(strtrimSafe(S0.activeTab));
 
     if isempty(S0.subj)
         errordlg('Add subject files first.','Group Analysis');
@@ -4695,22 +4830,196 @@ end
     end
 
     roiIdx = findActiveROIRowsGA(S0.subj);
-    [mapIdx, mapMissingIdx] = findActiveBundleRowsGA(S0);
+    [mapIdx, mapMissingIdx] = findActiveBundleRowsGA(S0); %#ok<ASGLU>
 
-    % Decide whether maps are preferred based on current tab/mode
-    if strcmpi(runTab,'MAP')
-        preferMaps = true;
-    elseif strcmpi(runTab,'ROI') || strcmpi(runTab,'PREV')
-        preferMaps = false;
-    else
-        preferMaps = strcmpi(S0.mode,'Group Maps');
+    % -------------------------------------------------------------
+    % Run button behavior:
+    %   MAP tab              -> Group Maps only
+    %   ROI / PREV / STATS   -> ROI Timecourse / metric analysis only
+    % -------------------------------------------------------------
+    preferMaps = strcmpi(runTab,'MAP');
+
+    % -------------------------------------------------------------
+    % Pull current UI values into S0 WITHOUT calling callbacks
+    % (important: avoid map preview/bundle resolution during ROI run)
+    % -------------------------------------------------------------
+
+    % ---- ROI settings ----
+    try, S0.tc_computePSC     = logical(get(S0.hTC_ComputePSC,'Value')); catch, end
+    try, S0.tc_baseMin0       = safeNum(get(S0.hBase0,'String'),    S0.tc_baseMin0); end
+    try, S0.tc_baseMin1       = safeNum(get(S0.hBase1,'String'),    S0.tc_baseMin1); end
+    try, S0.tc_injMin0        = safeNum(get(S0.hInj0,'String'),     S0.tc_injMin0); end
+    try, S0.tc_injMin1        = safeNum(get(S0.hInj1,'String'),     S0.tc_injMin1); end
+    try, S0.tc_peakSearchMin0 = safeNum(get(S0.hPkS0,'String'),     S0.tc_peakSearchMin0); end
+    try, S0.tc_peakSearchMin1 = safeNum(get(S0.hPkS1,'String'),     S0.tc_peakSearchMin1); end
+    try, S0.tc_plateauMin0    = safeNum(get(S0.hPlat0,'String'),    S0.tc_plateauMin0); end
+    try, S0.tc_plateauMin1    = safeNum(get(S0.hPlat1,'String'),    S0.tc_plateauMin1); end
+    try, S0.tc_peakWinMin     = safeNum(get(S0.hTC_PeakWin,'String'), S0.tc_peakWinMin); end
+    try, S0.tc_trimPct        = safeNum(get(S0.hTC_Trim,'String'),  S0.tc_trimPct); end
+
+    try
+        mt = get(S0.hTC_Metric,'String');
+        S0.tc_metric = mt{get(S0.hTC_Metric,'Value')};
+    catch
     end
 
+    % ---- style / preview settings ----
+    try
+        cm = get(S0.hColorMode,'String');
+        S0.colorMode = cm{get(S0.hColorMode,'Value')};
+    catch
+    end
+
+    try
+        sc = get(S0.hColorScheme,'String');
+        S0.colorScheme = sc{get(S0.hColorScheme,'Value')};
+    catch
+    end
+
+    try, S0.tc_showSEM = logical(get(S0.hShowSEM,'Value')); catch, end
+    try, S0.tc_showInjectionBox = logical(get(S0.hShowInjBox,'Value')); catch, end
+
+    try, S0.manualGroupA = getSelectedPopupString(S0.hManGroupA); catch, end
+    try, S0.manualGroupB = getSelectedPopupString(S0.hManGroupB); catch, end
+    try, S0.manualColorA = get(S0.hManColorA,'Value'); catch, end
+    try, S0.manualColorB = get(S0.hManColorB,'Value'); catch, end
+
+    % ---- y-axis scaling ----
+    try, S0.plotTop.auto      = logical(get(S0.hTopAuto,'Value')); catch, end
+    try, S0.plotTop.forceZero = logical(get(S0.hTopZero,'Value')); catch, end
+    try, S0.plotTop.step      = max(0, safeNum(get(S0.hTopStep,'String'), S0.plotTop.step)); catch, end
+    try, S0.plotTop.ymin      = safeNum(get(S0.hTopYmin,'String'), S0.plotTop.ymin); catch, end
+    try, S0.plotTop.ymax      = safeNum(get(S0.hTopYmax,'String'), S0.plotTop.ymax); catch, end
+
+    try, S0.plotBot.auto      = logical(get(S0.hBotAuto,'Value')); catch, end
+    try, S0.plotBot.forceZero = logical(get(S0.hBotZero,'Value')); catch, end
+    try, S0.plotBot.step      = max(0, safeNum(get(S0.hBotStep,'String'), S0.plotBot.step)); catch, end
+    try, S0.plotBot.ymin      = safeNum(get(S0.hBotYmin,'String'), S0.plotBot.ymin); catch, end
+    try, S0.plotBot.ymax      = safeNum(get(S0.hBotYmax,'String'), S0.plotBot.ymax); catch, end
+
+    try, set(S0.hTopStep,'String',num2str(S0.plotTop.step)); catch, end
+    try, set(S0.hTopYmin,'String',num2str(S0.plotTop.ymin)); catch, end
+    try, set(S0.hTopYmax,'String',num2str(S0.plotTop.ymax)); catch, end
+    try, set(S0.hBotStep,'String',num2str(S0.plotBot.step)); catch, end
+    try, set(S0.hBotYmin,'String',num2str(S0.plotBot.ymin)); catch, end
+    try, set(S0.hBotYmax,'String',num2str(S0.plotBot.ymax)); catch, end
+
+    % ---- stats settings ----
+    try
+        tt = get(S0.hTest,'String');
+        S0.testType = tt{get(S0.hTest,'Value')};
+    catch
+    end
+
+    try
+        a = str2double(get(S0.hAlpha,'String'));
+        if isfinite(a) && a > 0 && a < 1
+            S0.alpha = a;
+        else
+            set(S0.hAlpha,'String',num2str(S0.alpha));
+        end
+    catch
+    end
+
+    try
+        am = get(S0.hAnnotMode,'String');
+        S0.annotMode = am{get(S0.hAnnotMode,'Value')};
+    catch
+    end
+
+    try, S0.showPText = logical(get(S0.hShowPText,'Value')); catch, end
+
+    % ---- map settings: ONLY read these if actually running MAP analysis ----
+    if preferMaps
+        try
+            ms = get(S0.hMapSummary,'String');
+            S0.mapSummary = ms{get(S0.hMapSummary,'Value')};
+        catch
+        end
+
+        try
+            src = get(S0.hMapSource,'String');
+            S0.mapSource = src{get(S0.hMapSource,'Value')};
+        catch
+        end
+
+        try, S0.mapUseGlobalWindows = logical(get(S0.hMapUseGlobalWin,'Value')); catch, end
+        try, S0.mapGlobalBaseSec(1) = safeNum(get(S0.hMapBase0,'String'), S0.mapGlobalBaseSec(1)); catch, end
+        try, S0.mapGlobalBaseSec(2) = safeNum(get(S0.hMapBase1,'String'), S0.mapGlobalBaseSec(2)); catch, end
+        try, S0.mapGlobalSigSec(1)  = safeNum(get(S0.hMapSig0,'String'),  S0.mapGlobalSigSec(1));  catch, end
+        try, S0.mapGlobalSigSec(2)  = safeNum(get(S0.hMapSig1,'String'),  S0.mapGlobalSigSec(2));  catch, end
+
+        if S0.mapGlobalBaseSec(2) <= S0.mapGlobalBaseSec(1)
+            S0.mapGlobalBaseSec(2) = S0.mapGlobalBaseSec(1) + 1;
+            try, set(S0.hMapBase1,'String',num2str(S0.mapGlobalBaseSec(2))); catch, end
+        end
+        if S0.mapGlobalSigSec(2) <= S0.mapGlobalSigSec(1)
+            S0.mapGlobalSigSec(2) = S0.mapGlobalSigSec(1) + 1;
+            try, set(S0.hMapSig1,'String',num2str(S0.mapGlobalSigSec(2))); catch, end
+        end
+
+        try
+            um = get(S0.hMapUnderlayMode,'String');
+            S0.mapUnderlayMode = um{get(S0.hMapUnderlayMode,'Value')};
+        catch
+        end
+
+        try, S0.mapSigma  = max(0, safeNum(get(S0.hMapSigma,'String'),  S0.mapSigma)); catch, end
+        try, S0.mapModMin = safeNum(get(S0.hMapModMin,'String'), S0.mapModMin); catch, end
+        try, S0.mapModMax = safeNum(get(S0.hMapModMax,'String'), S0.mapModMax); catch, end
+
+        if ~isfinite(S0.mapModMin), S0.mapModMin = 0; end
+        if ~isfinite(S0.mapModMax) || S0.mapModMax <= S0.mapModMin
+            S0.mapModMax = S0.mapModMin + 1;
+            try, set(S0.hMapModMax,'String',num2str(S0.mapModMax)); catch, end
+        end
+
+        try
+            caxv = sscanf(get(S0.hMapCaxis,'String'), '%f');
+            if numel(caxv) >= 2 && all(isfinite(caxv(1:2))) && caxv(2) ~= caxv(1)
+                S0.mapCaxis = caxv(1:2).';
+                if S0.mapCaxis(2) < S0.mapCaxis(1)
+                    S0.mapCaxis = fliplr(S0.mapCaxis);
+                end
+            else
+                set(S0.hMapCaxis,'String',sprintf('%g %g',S0.mapCaxis(1),S0.mapCaxis(2)));
+            end
+        catch
+        end
+
+        try, S0.mapBlackBody = logical(get(S0.hMapBlackBody,'Value')); catch, end
+
+        try
+            fm = get(S0.hMapFlipMode,'String');
+            S0.mapFlipMode = fm{get(S0.hMapFlipMode,'Value')};
+        catch
+        end
+
+        try
+            cm2 = get(S0.hMapColormap,'String');
+            S0.mapColormap = cm2{get(S0.hMapColormap,'Value')};
+        catch
+        end
+
+        S0.mapAlphaModOn = true;
+        S0.mapThreshold  = 0;
+    end
+
+    % -------------------------------------------------------------
+    % Decide analysis type
+    % -------------------------------------------------------------
     activeIdx = [];
     subjActive = {};
 
-    % Decide what analysis to run
-    if preferMaps && ~isempty(mapIdx)
+    if preferMaps
+        if isempty(mapIdx)
+            errordlg([ ...
+                'No valid bundle rows found for group-map analysis.' newline ...
+                'Use "Compute Group Maps" in the Group Maps tab after adding valid bundle files.' ], ...
+                'Group Analysis');
+            return;
+        end
+
         S0.mode = 'Group Maps';
         try, set(S0.hMode,'Value',2); catch, end
 
@@ -4718,59 +5027,42 @@ end
         subjActive = S0.subj(activeIdx,:);
 
         if ~isempty(mapMissingIdx)
-            setStatusText(sprintf(['Computing group maps using %d valid bundle row(s). ' ...
-                'Skipping %d active row(s) without bundle.'], numel(mapIdx), numel(mapMissingIdx)));
+            setStatusText(sprintf([ ...
+                'Computing group maps using %d valid bundle row(s). ' ...
+                'Skipping %d active row(s) without bundle.' ], ...
+                numel(mapIdx), numel(mapMissingIdx)));
         else
             setStatusText('Computing group maps... please wait.');
         end
 
-    elseif ~isempty(roiIdx)
+    else
+        if isempty(roiIdx)
+            errordlg([ ...
+                'No valid ROI rows found.' newline ...
+                'Run Analysis in ROI / Preview / Statistics works only for ROI timecourse / metric analysis.' newline ...
+                'For maps, use "Compute Group Maps" in the Group Maps tab.' ], ...
+                'Group Analysis');
+            return;
+        end
+
         S0.mode = 'ROI Timecourse';
         try, set(S0.hMode,'Value',1); catch, end
 
         activeIdx = roiIdx;
         subjActive = S0.subj(activeIdx,:);
 
-        if preferMaps && isempty(mapIdx)
-            setStatusText('No valid bundle rows found. Falling back automatically to ROI Timecourse analysis.');
-        else
-            setStatusText(sprintf('Running ROI timecourse analysis using %d valid ROI row(s)...', numel(activeIdx)));
-        end
-
-    elseif ~isempty(mapIdx)
-        S0.mode = 'Group Maps';
-        try, set(S0.hMode,'Value',2); catch, end
-
-        activeIdx = mapIdx;
-        subjActive = S0.subj(activeIdx,:);
-
-        setStatusText(sprintf('No valid ROI rows found. Running Group Maps using %d valid bundle row(s)...', numel(activeIdx)));
-
-    else
-        errordlg(['No valid analysis rows found.' newline ...
-                  'Add ROI files for ROI Timecourse analysis or bundle files for Group Maps.'], ...
-                 'Group Analysis');
-        return;
+        setStatusText(sprintf('Running ROI timecourse analysis using %d valid ROI row(s)...', numel(activeIdx)));
     end
 
+    S0.outlierKeys = {};
+    S0.outlierInfo = {};
     guidata(hFig,S0);
+
+    updateOutlierBox();
     setStatus(false);
     drawnow;
 
     try
-        onStatsChanged([],[]);
-        onAnnotChanged([],[]);
-        onROIChanged([],[]);
-        onStyleChanged([],[]);
-        onPlotScaleChanged([],[]);
-        onMapDisplayChanged([],[]);
-
-        S0 = guidata(hFig);
-        S0.outlierKeys = {};
-        S0.outlierInfo = {};
-        guidata(hFig,S0);
-        updateOutlierBox();
-
         if strcmpi(S0.mode,'ROI Timecourse')
             [R, cacheOut] = runROITimecourseAnalysis(S0, subjActive, S0.cache);
             R.plotTop = S0.plotTop;
@@ -4780,16 +5072,22 @@ end
             S0.cache = cacheOut;
             S0.lastROI = R;
 
-            % Keep current tab if run from STATS or PREV, otherwise go to PREVIEW
-            if strcmpi(runTab,'STATS') || strcmpi(runTab,'PREV')
-                S0.activeTab = upper(runTab);
+            % ROI run:
+            %   STATS -> stay in STATS
+            %   ROI/PREV -> show PREVIEW
+            if strcmpi(runTab,'STATS')
+                S0.activeTab = 'STATS';
             else
                 S0.activeTab = 'PREV';
             end
 
             guidata(hFig,S0);
             updateManualTabs();
-            updatePreview();
+
+            if strcmpi(S0.activeTab,'PREV')
+                updatePreview();
+            end
+
             setStatusText(sprintf('ROI analysis complete (%d row(s)).', size(subjActive,1)));
 
         else
@@ -4798,13 +5096,7 @@ end
             S0 = guidata(hFig);
             S0.cache = cacheOut;
             S0.lastMAP = R;
-
-            % If run from STATS, stay there, otherwise show MAP tab
-            if strcmpi(runTab,'STATS')
-                S0.activeTab = 'STATS';
-            else
-                S0.activeTab = 'MAP';
-            end
+            S0.activeTab = 'MAP';
 
             guidata(hFig,S0);
             updateManualTabs();
@@ -4818,7 +5110,7 @@ end
     end
 
     setStatus(true);
-end
+  end
 
   function onExport(~,~)
     S0 = guidata(hFig);
@@ -5420,6 +5712,235 @@ for i = 1:numel(S.outlierKeys)
         'HorizontalAlignment','left', ...
         'VerticalAlignment','middle');
 end
+end
+
+function E = buildGroupAnalysisVideoExportGA(S0, activeIdx)
+    nA = numel(activeIdx);
+    if nA < 1
+        error('No active bundle rows available.');
+    end
+
+    allPSC   = cell(nA,1);
+    allUnder = cell(nA,1);
+    sideInfo = cell(nA,1);
+    trList   = nan(nA,1);
+    nTList   = nan(nA,1);
+
+    for i = 1:nA
+        r = activeIdx(i);
+
+        bundleFile = strtrimSafe(S0.subj{r,8});
+        if isempty(bundleFile)
+            bundleFile = resolveGroupBundlePath(S0, S0.subj(r,:));
+        end
+
+        [G, ~] = getCachedGroupBundle(S0.cache, bundleFile);
+
+        if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
+            error('Bundle has no exported PSC series: %s', bundleFile);
+        end
+        if ~isfield(G,'TR') || isempty(G.TR) || ~isfinite(G.TR) || G.TR <= 0
+            error('Bundle has no valid TR: %s', bundleFile);
+        end
+
+        psc4 = extractBundlePSC2DSeriesLocal(G);
+
+        % optional mask
+        if isfield(G,'mask2DCurrentSlice') && ~isempty(G.mask2DCurrentSlice)
+            m2 = logical(G.mask2DCurrentSlice);
+            if isequal(size(m2), size(psc4(:,:,1)))
+                for tt = 1:size(psc4,3)
+                    tmp = psc4(:,:,tt);
+                    tmp(~m2) = 0;
+                    psc4(:,:,tt) = tmp;
+                end
+            end
+        end
+
+        % optional smoothing
+        if isfield(S0,'mapSigma') && isfinite(S0.mapSigma) && S0.mapSigma > 0
+            for tt = 1:size(psc4,3)
+                psc4(:,:,tt) = smooth2D_gauss_local(psc4(:,:,tt), S0.mapSigma);
+            end
+        end
+
+        underlayNow = resolvePreviewUnderlay(S0, G, mean(psc4,3));
+
+        pacapSide = getPacapSideForRow(S0, r, G, S0.subj(r,:));
+        if strcmpi(pacapSide,'Unknown')
+            info = extractRowMetaLight(S0.subj(r,:));
+            error('Injection side unknown for %s | %s | %s. Set it first in Group Maps preview.', ...
+                info.animalID, info.session, info.scanID);
+        end
+
+        needFlip = shouldFlipForCurrentMapModeGA(S0, pacapSide);
+        if needFlip
+            psc4 = flipLR_3D_local(psc4);
+            if ~isempty(underlayNow)
+                underlayNow = flipLR_any(underlayNow);
+            end
+        end
+
+        psc4(~isfinite(psc4)) = 0;
+
+        allPSC{i}   = psc4;
+        allUnder{i} = underlayNow;
+        sideInfo{i} = pacapSide;
+        trList(i)   = double(G.TR);
+        nTList(i)   = size(psc4,3);
+    end
+
+    trGood = trList(isfinite(trList) & trList > 0);
+    if isempty(trGood)
+        error('No valid TR found across bundles.');
+    end
+    if max(trGood) - min(trGood) > 1e-9
+        error('Bundles do not share the same TR. Group video export requires the same TR.');
+    end
+    TR = trGood(1);
+
+    nT = min(nTList(isfinite(nTList) & nTList > 0));
+    if isempty(nT) || nT < 2
+        error('No valid shared time dimension found.');
+    end
+
+    for i = 1:nA
+        allPSC{i} = allPSC{i}(:,:,1:nT);
+    end
+
+    if strcmpi(S0.mapSummary,'Median')
+        groupPSC = medianCat(allPSC);
+    else
+        groupPSC = meanCat(allPSC);
+    end
+    groupPSC(~isfinite(groupPSC)) = 0;
+
+    validU = allUnder(~cellfun(@isempty,allUnder));
+    commonUnder = [];
+    if ~isempty(validU)
+        if ndims(validU{1}) == 3 && size(validU{1},3) == 3
+            commonUnder = meanRgbUnderlays(validU);
+        else
+            commonUnder = meanCat(validU);
+        end
+    end
+
+    % Use current GUI windows for exported preview map
+    baseSec = S0.mapGlobalBaseSec;
+    sigSec  = S0.mapGlobalSigSec;
+
+    groupMap = computeMapFromPSC4DGA(groupPSC, TR, baseSec, sigSec, S0.mapSigma);
+
+    E = struct();
+    E.kind            = 'GA_GROUP_VIDEO_EXPORT';
+    E.version         = 1;
+    E.createdAt       = datestr(now,30);
+
+    E.functional4D    = groupPSC;      % group-average PSC movie
+    E.psc4D           = groupPSC;      % same content, alternate field name
+    E.underlay2D      = commonUnder;
+    E.overlay2D       = groupMap;
+    E.groupMap2D      = groupMap;
+
+    E.TR              = TR;
+    E.nT              = nT;
+    E.tSec            = (0:nT-1) * TR;
+
+    E.baseWindowSec   = baseSec;
+    E.sigWindowSec    = sigSec;
+
+    E.render          = makeMapRenderStruct(S0);
+    E.mapSummary      = S0.mapSummary;
+    E.mapFlipMode     = S0.mapFlipMode;
+    E.mapRefPacapSide = S0.mapRefPacapSide;
+    E.mapColormap     = S0.mapColormap;
+    E.mapCaxis        = S0.mapCaxis;
+    E.mapModMin       = S0.mapModMin;
+    E.mapModMax       = S0.mapModMax;
+    E.mapSigma        = S0.mapSigma;
+
+    E.sideInfo        = sideInfo;
+    E.subjTable       = S0.subj(activeIdx,:);
+    E.activeIdx       = activeIdx;
+    E.nAnimals        = nA;
+end
+
+function P = extractBundlePSC2DSeriesLocal(G)
+    P = double(G.pscAtlas4D);
+
+    if ndims(P) == 3
+        % already [Y X T]
+    elseif ndims(P) == 4
+        if isfield(G,'atlasSliceIndex') && ~isempty(G.atlasSliceIndex) && isfinite(G.atlasSliceIndex)
+            zSel = round(G.atlasSliceIndex);
+        elseif isfield(G,'currentSlice') && ~isempty(G.currentSlice) && isfinite(G.currentSlice)
+            zSel = round(G.currentSlice);
+        else
+            zSel = round(size(P,3)/2);
+        end
+        zSel = max(1, min(size(P,3), zSel));
+        P = squeeze(P(:,:,zSel,:));
+    else
+        error('pscAtlas4D must be [Y X T] or [Y X Z T].');
+    end
+
+    if ndims(P) ~= 3
+        error('Could not extract 2D PSC movie from bundle.');
+    end
+
+    P(~isfinite(P)) = 0;
+end
+
+function M = computeMapFromPSC4DGA(P, TR, baseWinSec, sigWinSec, sigma)
+    nT = size(P,3);
+
+    b0 = max(1, min(nT, round(baseWinSec(1)/TR) + 1));
+    b1 = max(1, min(nT, round(baseWinSec(2)/TR) + 1));
+    s0 = max(1, min(nT, round(sigWinSec(1)/TR)  + 1));
+    s1 = max(1, min(nT, round(sigWinSec(2)/TR)  + 1));
+
+    if b1 < b0, tmp = b0; b0 = b1; b1 = tmp; end
+    if s1 < s0, tmp = s0; s0 = s1; s1 = tmp; end
+
+    M = mean(P(:,:,s0:s1),3) - mean(P(:,:,b0:b1),3);
+
+    if nargin >= 5 && isfinite(sigma) && sigma > 0
+        M = smooth2D_gauss_local(M, sigma);
+    end
+
+    M(~isfinite(M)) = 0;
+end
+
+function tf = shouldFlipForCurrentMapModeGA(S0, pacapSide)
+    tf = false;
+
+    mode = upper(strtrimSafe(S0.mapFlipMode));
+    refSide = upper(strtrimSafe(S0.mapRefPacapSide));
+    if isempty(refSide)
+        refSide = 'LEFT';
+    end
+
+    switch mode
+        case 'FLIP RIGHT-INJECTED ANIMALS'
+            tf = strcmpi(pacapSide,'Right');
+
+        case 'FLIP LEFT-INJECTED ANIMALS'
+            tf = strcmpi(pacapSide,'Left');
+
+        case 'ALIGN TO REFERENCE HEMISPHERE'
+            if strcmp(refSide(1),'L')
+                tf = strcmpi(pacapSide,'Right');
+            else
+                tf = strcmpi(pacapSide,'Left');
+            end
+
+        otherwise
+            tf = false;
+    end
+end
+
+function A = flipLR_3D_local(A)
+    A = A(:,end:-1:1,:);
 end
 
 function exportPreviewPNG(outFile, which, S)
@@ -7946,7 +8467,7 @@ annotation(figS,'textbox',[0.02 0.01 0.96 0.04], ...
 % Shared colorbar on the LEFT for the whole slide
 drawSharedColorbarForMontage(figS, renderInfo);
 
-x0 = 0.11;
+x0 = 0.13;
 x1 = 0.98;
 yBot = 0.08;
 yTop = 0.88;
@@ -7985,41 +8506,108 @@ end
 print(figS,outFile,'-dpng',sprintf('-r%d',dpiVal),'-opengl');
 close(figS);
     end
-function drawSharedColorbarForMontage(figS, renderInfo)
-cax = [0 100];
-cmName = 'blackbdy_iso';
 
-try
-    if isfield(renderInfo,'caxis') && numel(renderInfo.caxis) >= 2
-        cax = double(renderInfo.caxis(1:2));
+    
+  function drawSharedColorbarForMontage(figS, renderInfo)
+    cax = [0 100];
+
+    try
+        if isfield(renderInfo,'caxis') && numel(renderInfo.caxis) >= 2
+            cax = double(renderInfo.caxis(1:2));
+        end
+    catch
     end
-catch
-end
 
-try
-    if isfield(renderInfo,'colormapName') && ~isempty(renderInfo.colormapName)
-        cmName = char(renderInfo.colormapName);
+    % Force PPT colorbar to blackbdy
+    cm = getNamedCmapLocal('blackbdy_iso', 512);
+    if isempty(cm) || size(cm,2) ~= 3
+        cm = hot(512);
     end
-catch
+
+    % ---- exact tuning knobs ----
+    barX    = 0.045;
+barY    = 0.120;
+barW    = 0.018;
+barH    = 0.760;
+tickLen = 0.008;
+numGap  = 0.006;
+lblGap  = 0.045;   % was smaller
+    % ----------------------------
+
+    try
+        delete(findall(figS,'Type','ColorBar'));
+    catch
+    end
+
+    % Bar image only
+    axBar = axes('Parent',figS, ...
+        'Units','normalized', ...
+        'Position',[barX barY barW barH], ...
+        'Color','none', ...
+        'XColor','none', ...
+        'YColor','none', ...
+        'XTick',[], ...
+        'YTick',[], ...
+        'Visible','off');
+
+    image(axBar, [0 1], [cax(1) cax(2)], reshape(cm,[size(cm,1) 1 3]));
+    set(axBar,'YDir','normal');
+    axis(axBar,'tight');
+    axis(axBar,'off');
+
+    annotation(figS,'rectangle',[barX barY barW barH], ...
+        'Color','w', ...
+        'LineWidth',0.8);
+
+    ticks = linspace(cax(1), cax(2), 6);
+
+    for i = 1:numel(ticks)
+        tval = ticks(i);
+        ty = barY + barH * ((tval - cax(1)) / max(eps, diff(cax)));
+
+        annotation(figS,'line', ...
+            [barX + barW, barX + barW + tickLen], ...
+            [ty ty], ...
+            'Color','w', ...
+            'LineWidth',0.8);
+
+        annotation(figS,'textbox', ...
+            [barX + barW + tickLen + numGap, ty - 0.015, 0.040, 0.030], ...
+            'String',sprintf('%g', round(tval)), ...
+            'Color','w', ...
+            'EdgeColor','none', ...
+            'BackgroundColor','none', ...
+            'FontName','Arial', ...
+            'FontSize',12, ...
+            'HorizontalAlignment','left', ...
+            'VerticalAlignment','middle', ...
+            'Interpreter','none');
+    end
+
+    axLbl = axes('Parent',figS, ...
+        'Units','normalized', ...
+        'Position',[barX + barW + lblGap, barY, 0.060, barH], ...
+        'Color','none', ...
+        'XColor','none', ...
+        'YColor','none', ...
+        'XTick',[], ...
+        'YTick',[], ...
+        'Visible','off');
+
+    text(axLbl,0.40,0.5,'Signal change (%)', ...
+        'Color','w', ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'Rotation',90, ...
+        'HorizontalAlignment','center', ...
+        'VerticalAlignment','middle', ...
+        'Interpreter','none');
+
+    axis(axLbl,'off');
 end
 
-axC = axes('Parent',figS,'Position',[0.045 0.19 0.020 0.56]);
-grad = linspace(cax(1), cax(2), 256)';
-imagesc(axC, [0 1], [cax(1) cax(2)], [grad grad]);
-set(axC,'Visible','off','YDir','normal');
-
-colormap(axC, getNamedCmapLocal(cmName, 256));
-caxis(axC, cax);
-
-cb = colorbar(axC,'Position',[0.055 0.19 0.016 0.56]);
-cb.Label.String = 'Signal change (%)';
-try
-    set(cb,'Color','w');
-    set(get(cb,'Label'),'Color','w');
-catch
-end
-end
-function renderGroupMapInfoSlidePNG(outFile, S0, footerStr, dpiVal)
+    function renderGroupMapInfoSlidePNG(outFile, S0, footerStr, dpiVal)
 figS = figure('Visible','off','Color',[0 0 0],'InvertHardcopy','off');
 set(figS,'Units','inches','Position',[0.5 0.5 13.333 7.5]);
 set(figS,'PaperPositionMode','auto');
@@ -8044,18 +8632,11 @@ try
 catch
 end
 
-nUsed = 0;
-try
-    if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP)) && isfield(S0.lastMAP,'n')
-        nUsed = S0.lastMAP.n;
-    else
-        nUsed = numel(findBundleDisplayRowsGA(S0));
-    end
-catch
-end
+[hdr, tbl, nKept, nRemoved] = buildGroupMapExportOverviewTableGA(S0);
 
 infoLines = { ...
-    sprintf('Animals used: %d', nUsed), ...
+    sprintf('Animals kept for maps: %d', nKept), ...
+    sprintf('Animals removed / inactive: %d', nRemoved), ...
     sprintf('Summary: %s', strtrimSafe(S0.mapSummary)), ...
     sprintf('Source: %s', strtrimSafe(S0.mapSource)), ...
     sprintf('Windows: %s', winTxt), ...
@@ -8076,15 +8657,6 @@ annotation(figS,'textbox',[0.05 0.66 0.90 0.18], ...
     'FontSize',12, ...
     'HorizontalAlignment','left', ...
     'Interpreter','none');
-
-hdr = {'Animal','Sess','Scan','Inj Side'};
-tbl = cell(0,4);
-
-try
-    hdr = get(S0.hMapSideTable,'ColumnName');
-    tbl = get(S0.hMapSideTable,'Data');
-catch
-end
 
 tableLines = buildFixedWidthGroupMapInfoTable(hdr, tbl);
 
@@ -8111,58 +8683,62 @@ annotation(figS,'textbox',[0.02 0.01 0.96 0.04], ...
 print(figS,outFile,'-dpng',sprintf('-r%d',dpiVal),'-opengl');
 close(figS);
 end
+
+
 function lines = buildFixedWidthGroupMapInfoTable(hdr, tbl)
-if isempty(hdr)
-    hdr = {'Animal','Sess','Scan','Inj Side'};
-end
-
-if isempty(tbl)
-    tbl = {'-','-','-','-'};
-end
-
-nCol = numel(hdr);
-widths = zeros(1,nCol);
-
-for c = 1:nCol
-    widths(c) = numel(strtrimSafe(hdr{c}));
-end
-
-for r = 1:size(tbl,1)
-    for c = 1:min(nCol,size(tbl,2))
-        widths(c) = max(widths(c), numel(strtrimSafe(tbl{r,c})));
+    if nargin < 1 || isempty(hdr)
+        hdr = {'Animal','Sess','Scan','Inj Side','Action','Use'};
     end
-end
 
-for c = 1:nCol
-    widths(c) = widths(c) + 2;
-end
+    if nargin < 2 || isempty(tbl)
+        tbl = {'-','-','-','-','-','-'};
+    end
 
-fmt = '';
-for c = 1:nCol
-    fmt = [fmt '%-' num2str(widths(c)) 's']; %#ok<AGROW>
-end
+    nCol = numel(hdr);
+    widths = zeros(1,nCol);
 
-lines = cell(size(tbl,1)+2,1);
-lines{1} = sprintf(fmt, hdr{:});
-
-sep = '';
-for c = 1:nCol
-    sep = [sep repmat('-',1,widths(c))]; %#ok<AGROW>
-end
-lines{2} = sep;
-
-for r = 1:size(tbl,1)
-    row = cell(1,nCol);
+    % header widths
     for c = 1:nCol
-        if c <= size(tbl,2)
-            row{c} = strtrimSafe(tbl{r,c});
-        else
-            row{c} = '';
+        widths(c) = numel(strtrimSafe(hdr{c}));
+    end
+
+    % table widths
+    for r = 1:size(tbl,1)
+        for c = 1:min(nCol,size(tbl,2))
+            widths(c) = max(widths(c), numel(strtrimSafe(tbl{r,c})));
         end
     end
-    lines{r+2} = sprintf(fmt, row{:});
+
+    % a little padding
+    widths = widths + 2;
+
+    fmt = '';
+    for c = 1:nCol
+        fmt = [fmt '%-' num2str(widths(c)) 's']; %#ok<AGROW>
+    end
+
+    lines = cell(size(tbl,1)+2,1);
+    lines{1} = sprintf(fmt, hdr{:});
+
+    sep = '';
+    for c = 1:nCol
+        sep = [sep repmat('-',1,widths(c))]; %#ok<AGROW>
+    end
+    lines{2} = sep;
+
+    for r = 1:size(tbl,1)
+        row = cell(1,nCol);
+        for c = 1:nCol
+            if c <= size(tbl,2)
+                row{c} = strtrimSafe(tbl{r,c});
+            else
+                row{c} = '';
+            end
+        end
+        lines{r+2} = sprintf(fmt, row{:});
+    end
 end
-end
+
 
 
 function tf = canUsePptApiGA()
@@ -8233,6 +8809,59 @@ function writePptFromSlidePNGsGA(pptPath, slidePNGs)
         error('PowerPoint file was not created: %s', pptPath);
     end
 end
+
+function [hdr, tbl, nKept, nRemoved] = buildGroupMapExportOverviewTableGA(S0)
+hdr = {'Animal','Sess','Scan','Inj Side','Map Use'};
+tbl = cell(0,5);
+nKept = 0;
+nRemoved = 0;
+
+S0 = ensureRowPacapSideSize(S0);
+dispRows = findBundleDisplayRowsGA(S0);
+
+if isempty(dispRows)
+    tbl = {'-','-','-','-','-'};
+    return;
+end
+
+for i = 1:numel(dispRows)
+    r = dispRows(i);
+    info = extractRowMetaLight(S0.subj(r,:));
+
+    injSide = 'Unknown';
+    try
+        if r <= numel(S0.rowPacapSide)
+            injSide = strtrimSafe(S0.rowPacapSide{r});
+        end
+    catch
+    end
+
+    if strcmpi(injSide,'L'), injSide = 'Left';  end
+    if strcmpi(injSide,'R'), injSide = 'Right'; end
+    if isempty(injSide),     injSide = 'Unknown'; end
+
+    keepState = 'Removed';
+    try
+        key = makeBundleEntityKeyForRow(S0, r);
+        if entityUseStateForKey(S0, key)
+            keepState = 'Kept';
+            nKept = nKept + 1;
+        else
+            nRemoved = nRemoved + 1;
+        end
+    catch
+        nRemoved = nRemoved + 1;
+    end
+
+    tbl(end+1,1:5) = { ...
+        strtrimSafe(info.animalID), ...
+        strtrimSafe(info.session), ...
+        displayScanID(info.scanID), ...
+        injSide, ...
+        keepState}; %#ok<AGROW>
+end
+end
+
     
     function [mapNow, winInfoTxt] = buildPreviewMapFromBundle(S0, G)
     winInfoTxt = '';
@@ -8473,7 +9102,7 @@ end
     end
 end
 
-function rRep = representativeRowForBundleEntityKey(S, key)
+    function rRep = representativeRowForBundleEntityKey(S, key)
     rRep = [];
     rows = getRowsForBundleEntityKey(S, key);
     if isempty(rows), return; end
@@ -8481,13 +9110,6 @@ function rRep = representativeRowForBundleEntityKey(S, key)
     for i = 1:numel(rows)
         r = rows(i);
         bf = strtrimSafe(S.subj{r,8});
-        if isempty(bf)
-            try
-                bf = resolveGroupBundlePath(S, S.subj(r,:));
-            catch
-                bf = '';
-            end
-        end
         if ~isempty(bf)
             rRep = r;
             return;
@@ -8788,127 +9410,76 @@ end
 end
 
     function d = getBundleBrowseDir(S)
-d = '';
+    d = '';
 
-sel = clampSelRows(S.selectedRows, size(S.subj,1));
+    sel = clampSelRows(S.selectedRows, size(S.subj,1));
 
-% Strong preference: selected row -> exact scan folder
-if ~isempty(sel)
-    try
-        d = buildBundleBrowseDirFromRow(S, S.subj(sel(1),:));
-    catch
-        d = '';
+    % 1) Strongest preference: selected rows
+    candRows = sel(:).';
+
+    % 2) If nothing selected, try active USE rows
+    if isempty(candRows)
+        candRows = find(logicalCol(S.subj,1)).';
     end
-    if exist(d,'dir') == 7
-        return;
+
+    % 3) If still nothing, try all rows
+    if isempty(candRows)
+        candRows = 1:size(S.subj,1);
     end
-end
 
-% Fallback to older smart logic
-d = getSmartBrowseDir(S,'add');
-    end
-    function d = buildBundleBrowseDirFromRow(S, row)
-d = '';
-
-info = extractRowMetaLight(row);
-
-animalID  = strtrimSafe(info.animalID);
-sessionID = strtrimSafe(info.session);
-scanID    = strtrimSafe(info.scanID);
-
-animalSessFolder = '';
-scanFolder = '';
-
-if ~isempty(animalID) && ~strcmpi(animalID,'N/A') && ...
-   ~isempty(sessionID) && ~strcmpi(sessionID,'N/A')
-    animalSessFolder = [animalID '_' sessionID];
-end
-
-rootPACAP = getPreferredPacapRootDir(S);
-if ~isempty(rootPACAP) && ~isempty(animalSessFolder) && ~isempty(scanFolder)
-    cands = { ...
-        fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles', 'SCM'), ...
-        fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles'), ...
-        fullfile(rootPACAP, animalSessFolder, scanFolder)};
-
-    for kk = 1:numel(cands)
-        if exist(cands{kk},'dir') == 7
-            d = cands{kk};
-            return;
+    for k = 1:numel(candRows)
+        r = candRows(k);
+        try
+            d = buildBundleBrowseDirFromRow(S, S.subj(r,:));
+        catch
+            d = '';
         end
-    end
-end
-
-% 1) Fastest route: use existing row file paths first
-probeList = {info.bundleFile, info.dataFile, info.roiFile};
-
-for ii = 1:numel(probeList)
-    probe = strtrimSafe(probeList{ii});
-    if isempty(probe)
-        continue;
-    end
-
-    if exist(probe,'file') == 2 || exist(probe,'dir') == 7
-        if ~isempty(animalSessFolder) && ~isempty(scanFolder)
-            dTry = findBundleDirFromProbe(probe, animalSessFolder, scanFolder);
-            if exist(dTry,'dir') == 7
-                d = dTry;
-                return;
-            end
-        end
-
-        if exist(probe,'file') == 2
-            d = fileparts(probe);
-        else
-            d = probe;
-        end
-
         if exist(d,'dir') == 7
             return;
         end
     end
-end
 
-% 2) Try from stored roots, but do not do any expensive file loading
-rootList = {};
-
-try
-    if isfield(S,'opt') && isfield(S.opt,'startDir') && ~isempty(S.opt.startDir)
-        rootList{end+1} = char(S.opt.startDir); %#ok<AGROW>
-    end
-catch
-end
-
-try
-    if isfield(S,'opt') && isfield(S.opt,'studio') && isstruct(S.opt.studio)
-        if isfield(S.opt.studio,'loadedPath') && ~isempty(S.opt.studio.loadedPath)
-            rootList{end+1} = char(S.opt.studio.loadedPath); %#ok<AGROW>
-        end
-        if isfield(S.opt.studio,'exportPath') && ~isempty(S.opt.studio.exportPath)
-            rootList{end+1} = char(S.opt.studio.exportPath); %#ok<AGROW>
-        end
-    end
-catch
-end
-
-for ii = 1:numel(rootList)
-    base = rootList{ii};
-    if exist(base,'dir') ~= 7
-        continue;
+    % 4) Project root fallback
+    d = getPreferredPacapRootDir(S);
+    if exist(d,'dir') == 7
+        return;
     end
 
-    if ~isempty(animalSessFolder) && ~isempty(scanFolder)
-        dTry = findBundleDirFromProbe(base, animalSessFolder, scanFolder);
-        if exist(dTry,'dir') == 7
-            d = dTry;
-            return;
-        end
+    % 5) Generic fallback
+    d = getSmartBrowseDir(S,'add');
+    end
 
-        analysedRoot = guessAnalysedRoot(base);
+function d = buildBundleBrowseDirFromRow(S, row)
+    d = '';
+
+    info = extractRowMetaLight(row);
+
+    animalID  = strtrimSafe(info.animalID);
+    sessionID = strtrimSafe(info.session);
+    scanID    = upper(strtrimSafe(info.scanID));
+
+    animalSessFolder = '';
+    scanFolder = '';
+
+    if ~isempty(animalID) && ~strcmpi(animalID,'N/A') && ...
+       ~isempty(sessionID) && ~strcmpi(sessionID,'N/A')
+        animalSessFolder = [animalID '_' sessionID];
+    end
+
+    % THIS WAS THE MISSING PART IN YOUR CURRENT CODE
+    if ~isempty(animalSessFolder) && ~isempty(scanID) && ~strcmpi(scanID,'N/A')
+        scanFolder = [animalSessFolder '_' scanID];
+    end
+
+    % Fast exact path first
+    rootPACAP = getPreferredPacapRootDir(S);
+    if ~isempty(rootPACAP) && exist(rootPACAP,'dir') == 7 && ...
+       ~isempty(animalSessFolder) && ~isempty(scanFolder)
+
         cands = { ...
-            fullfile(analysedRoot, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles', 'SCM'), ...
-            fullfile(analysedRoot, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles'), ...
-            fullfile(analysedRoot, animalSessFolder, scanFolder)};
+            fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles', 'SCM'), ...
+            fullfile(rootPACAP, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles'), ...
+            fullfile(rootPACAP, animalSessFolder, scanFolder)};
 
         for kk = 1:numel(cands)
             if exist(cands{kk},'dir') == 7
@@ -8917,81 +9488,48 @@ for ii = 1:numel(rootList)
             end
         end
     end
-end
 
-% 3) Final fallback
-try
-    if isfield(S,'opt') && isfield(S.opt,'startDir') && ~isempty(S.opt.startDir) && exist(char(S.opt.startDir),'dir') == 7
-        d = char(S.opt.startDir);
-    end
-catch
-end
+    % Fallback: infer from already stored file paths
+    probeList = {info.bundleFile, info.dataFile, info.roiFile};
 
-if isempty(d) || exist(d,'dir') ~= 7
-    d = pwd;
-end
-end
-
-function d = findBundleDirFromProbe(probe, animalSessFolder, scanFolder)
-d = '';
-
-probe = strtrimSafe(probe);
-if isempty(probe)
-    return;
-end
-
-if exist(probe,'file') == 2
-    cur = fileparts(probe);
-elseif exist(probe,'dir') == 7
-    cur = probe;
-else
-    cur = fileparts(probe);
-    if isempty(cur)
-        return;
-    end
-end
-
-cur = strrep(cur,'/','\');
-
-animalEsc = regexptranslate('escape', animalSessFolder);
-scanEsc   = regexptranslate('escape', scanFolder);
-
-% If probe path already contains the scan folder, use that directly
-tok = regexpi(cur, ['^(.*\\' animalEsc '\\' scanEsc ')'], 'tokens', 'once');
-if ~isempty(tok)
-    scanRoot = tok{1};
-
-    cands = { ...
-        fullfile(scanRoot, 'GroupAnalysis', 'Bundles', 'SCM'), ...
-        fullfile(scanRoot, 'GroupAnalysis', 'Bundles'), ...
-        scanRoot};
-
-    for kk = 1:numel(cands)
-        if exist(cands{kk}, 'dir') == 7
-            d = cands{kk};
-            return;
+    for ii = 1:numel(probeList)
+        probe = strtrimSafe(probeList{ii});
+        if isempty(probe)
+            continue;
         end
-    end
-end
 
-% Otherwise walk upward and try to rebuild the exact desired structure
-prev = '';
-while ~isempty(cur) && ~strcmp(cur, prev)
-    cands = { ...
-        fullfile(cur, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles', 'SCM'), ...
-        fullfile(cur, animalSessFolder, scanFolder, 'GroupAnalysis', 'Bundles'), ...
-        fullfile(cur, animalSessFolder, scanFolder)};
+        if exist(probe,'file') == 2 || exist(probe,'dir') == 7
+            if ~isempty(animalSessFolder) && ~isempty(scanFolder)
+                dTry = findBundleDirFromProbe(probe, animalSessFolder, scanFolder);
+                if exist(dTry,'dir') == 7
+                    d = dTry;
+                    return;
+                end
+            end
 
-    for kk = 1:numel(cands)
-        if exist(cands{kk}, 'dir') == 7
-            d = cands{kk};
-            return;
+            if exist(probe,'file') == 2
+                d = fileparts(probe);
+            else
+                d = probe;
+            end
+
+            if exist(d,'dir') == 7
+                return;
+            end
         end
     end
 
-    prev = cur;
-    cur = fileparts(cur);
-end
+    % Last fallback
+    try
+        if isfield(S,'opt') && isfield(S.opt,'startDir') && ~isempty(S.opt.startDir) && exist(char(S.opt.startDir),'dir') == 7
+            d = char(S.opt.startDir);
+        end
+    catch
+    end
+
+    if isempty(d) || exist(d,'dir') ~= 7
+        d = pwd;
+    end
 end
 
 
@@ -9583,19 +10121,40 @@ catch
 end
 end
 
-function tf = isScmGroupBundleFile(fp)
-tf = false;
-if nargin < 1 || isempty(fp), return; end
-fp = strtrimSafe(fp);
-if exist(fp,'file') ~= 2, return; end
-try
-    L = load(fp,'G');
-    tf = isfield(L,'G') && isstruct(L.G) && ...
-         isfield(L.G,'kind') && strcmpi(strtrimSafe(L.G.kind),'SCM_GROUP_EXPORT');
-catch
+    function tf = isScmGroupBundleFile(fp)
     tf = false;
+
+    if nargin < 1 || isempty(fp)
+        return;
+    end
+
+    fp = strtrimSafe(fp);
+    if exist(fp,'file') ~= 2
+        return;
+    end
+
+    [~,nm,ext] = fileparts(fp);
+    if ~strcmpi(ext,'.mat')
+        return;
+    end
+
+    % Fast path: exported bundle naming convention
+    if ~isempty(regexpi(nm,'^SCM_GroupExport_','once'))
+        tf = true;
+        return;
+    end
+
+    % Lightweight file-variable inspection only
+    try
+        info = whos('-file', fp);
+        vars = {info.name};
+        tf = any(strcmp(vars,'G'));
+    catch
+        tf = false;
+    end
 end
-end
+
+
     function bundleFile = resolveGroupBundlePath(S, row)
 bundleFile = '';
 
@@ -10748,7 +11307,7 @@ end
 
     function layoutMapPreviewMain(S)
     try
-        set(S.axMap1,'Visible','on','Position',[0.03 0.14 0.53 0.74]);
+        set(S.axMap1,'Visible','on','Position',[0.03 0.17 0.56 0.77]);
     catch
     end
     try
@@ -10759,8 +11318,23 @@ end
 end
 
     function placeSingleMapColorbar(ax, pos)
-    if nargin < 2
-        pos = [];
+    if nargin < 2 || isempty(pos)
+        pb = getAxesPlotBoxPosNorm(ax);
+
+        % ---- exact tuning knobs ----
+        cbGap    = 0;   % smaller => more left
+        cbW      = 0.020;   % larger  => thicker
+        cbExtraH = 0.125;   % larger  => taller
+        % ----------------------------
+
+        y0 = max(0, pb(2) - 0.5*cbExtraH);
+        h0 = min(1 - y0, pb(4) + cbExtraH);
+
+        pos = [ ...
+            pb(1) + pb(3) + cbGap, ...
+            y0, ...
+            cbW, ...
+            h0];
     end
 
     try
@@ -10768,22 +11342,58 @@ end
         cb.Label.String = 'Signal change (%)';
         styleColorbarMode(cb, 'Dark');
 
-        if isempty(pos)
-            axPos = get(ax,'Position');
-
-            gap = 0.018;
-            cbW = 0.012;
-            cbH = 0.64 * axPos(4);
-            cbY = axPos(2) + 0.18 * axPos(4);
-            cbX = axPos(1) + axPos(3) + gap;
-
-            pos = [cbX, cbY, cbW, cbH];
-        end
-
         set(cb,'Units','normalized','Position',pos);
+
+        try, set(cb,'Color',[1 1 1]); catch, end
+        try, set(get(cb,'Label'),'Color',[1 1 1]); catch, end
+        try, set(cb,'LineWidth',0.75); catch, end
+        try, set(cb,'Box','off'); catch, end
     catch
     end
 end
+
+function pb = getAxesPlotBoxPosNorm(ax)
+    % Returns the actual plot box inside the axes, in normalized figure units.
+    % This is what you want for a colorbar that should match the image height,
+    % not the full axes rectangle.
+
+    oldUnits = get(ax,'Units');
+    set(ax,'Units','normalized');
+    axPos = get(ax,'Position');
+    set(ax,'Units',oldUnits);
+
+    pb = axPos;
+
+    try
+        xl = xlim(ax);
+        yl = ylim(ax);
+    catch
+        return;
+    end
+
+    dx = abs(diff(xl));
+    dy = abs(diff(yl));
+
+    if ~(isfinite(dx) && dx > 0 && isfinite(dy) && dy > 0)
+        return;
+    end
+
+    dataAR = dx / dy;              % displayed image aspect ratio
+    axAR   = axPos(3) / axPos(4);  % axes rectangle aspect ratio
+
+    if axAR > dataAR
+        % axes is wider than the image area -> empty left/right margins
+        pbW = axPos(4) * dataAR;
+        pb(1) = axPos(1) + 0.5 * (axPos(3) - pbW);
+        pb(3) = pbW;
+    else
+        % axes is taller than the image area -> empty top/bottom margins
+        pbH = axPos(3) / dataAR;
+        pb(2) = axPos(2) + 0.5 * (axPos(4) - pbH);
+        pb(4) = pbH;
+    end
+end
+
 
 function d = getPreferredPacapRootDir(S)
     d = '';
