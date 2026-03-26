@@ -151,15 +151,24 @@ function vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg)
         if cfg.pulsepal.enable
             localGuiLog(cfg, sprintf('Opening PulsePal on %s ...', cfg.pulsepal.com));
 
-            PulsePal(cfg.pulsepal.com);
-            pulsePalConnected = true;
+localOpenPulsePalRobust(cfg.pulsepal.com);
+pulsePalConnected = true;
 
-            if cfg.pulsepal.custom_train_id > 0
-                error(['CustomTrainID > 0 is not supported yet in this GUI, ' ...
-                       'because no custom pulse times/voltages are uploaded with SendCustomPulseTrain.']);
-            end
+if cfg.pulsepal.custom_train_id > 0
+    error(['CustomTrainID > 0 is not supported yet in this GUI, ' ...
+           'because no custom pulse times/voltages are uploaded with SendCustomPulseTrain.']);
+end
 
-            localProgramPulsePal(cfg);
+try
+    localProgramPulsePal(cfg);
+catch MEpp
+    localGuiLog(cfg, sprintf('PulsePal programming failed on first try, retrying: %s', MEpp.message));
+    localClosePulsePalRobust();
+    localKillCOMPortRobust(cfg.pulsepal.com);
+    pause(0.30);
+    localOpenPulsePalRobust(cfg.pulsepal.com);
+    localProgramPulsePal(cfg);
+end
 
             localGuiLog(cfg, sprintf(['PulsePal programmed: ch=%d | V1=%g V | d1=%g s | ' ...
                 'IPI=%g s | train=%g s | rest=%g V | biphasic=%d'], ...
@@ -317,7 +326,7 @@ function vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg)
     % =====================================================================
     % Cleanup
     % =====================================================================
-    function localCleanup()
+     function localCleanup()
         if cfg.motor.enable
             try
                 if ~isempty(motorAxis) && ~isnan(motorHomeMM) && cfg.motor.return_to_zero
@@ -357,17 +366,12 @@ function vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg)
         end
 
         if pulsePalConnected
-            try
-                AbortPulsePal;
-            catch
-            end
-            try
-                EndPulsePal;
-            catch
-            end
+            localClosePulsePalRobust();
         end
     end
+
 end
+
 
 % =========================================================================
 % Safe processRF bridge
@@ -1270,12 +1274,183 @@ function localGuiMotor(cfg, moveCount, total, absPosMM, frameIdx)
     end
 end
 
-% =========================================================================
-% PulsePal programming
-% =========================================================================
-function localProgramPulsePal(cfg)
+
+
+
+function localOpenPulsePalRobust(comName)
+    % Force-close any stale MATLAB PulsePal session first
+    localClosePulsePalRobust();
+    localKillCOMPortRobust(comName);
+    pause(0.30);
+
+    lastErr = '';
+
+    for k = 1:3
+        try
+            PulsePal(comName);
+            pause(0.50);
+
+            % If PulsePal opened without throwing an error,
+            % accept that as connected for this toolbox version.
+            try
+                PulsePalDisplay('MATLAB commanded');
+            catch
+            end
+            return;
+
+        catch ME
+            lastErr = ME.message;
+        end
+
+        localClosePulsePalRobust();
+        localKillCOMPortRobust(comName);
+        pause(0.40);
+    end
+
+    error('Could not initialize PulsePal on %s. Last error: %s', comName, lastErr);
+end
+
+function localKillCOMPortRobust(comName)
+    try
+        oldObj = instrfind('Port', comName);
+        if ~isempty(oldObj)
+            for i = 1:numel(oldObj)
+                try
+                    if strcmpi(get(oldObj(i), 'Status'), 'open')
+                        fclose(oldObj(i));
+                    end
+                catch
+                end
+                try
+                    delete(oldObj(i));
+                catch
+                end
+            end
+        end
+    catch
+    end
+
+    try
+        if exist('serialportfind', 'file') == 2 || exist('serialportfind', 'builtin') == 5
+            sp = serialportfind("Port", comName);
+            if ~isempty(sp)
+                for i = 1:numel(sp)
+                    try
+                        delete(sp(i));
+                    catch
+                    end
+                end
+            end
+        end
+    catch
+    end
+end
+
+
+function localBootstrapPulsePalDefaults()
+    S = [];
+
+    % First try if the example MAT is already on the MATLAB path
+    try
+        exFile = which('PulsePalProgram_Example.mat');
+    catch
+        exFile = '';
+    end
+
+    % If not on path, try PulsePal toolbox Programs folder
+    if isempty(exFile)
+        try
+            ppFile = which('PulsePal');
+            ppRoot = fileparts(ppFile);
+            exFile = fullfile(ppRoot, 'Programs', 'PulsePalProgram_Example.mat');
+            if ~exist(exFile, 'file')
+                exFile = '';
+            end
+        catch
+            exFile = '';
+        end
+    end
+
+    if isempty(exFile)
+        error(['Could not find PulsePalProgram_Example.mat. ' ...
+               'Add the PulsePal Programs folder to the MATLAB path, or place the MAT file on path.']);
+    end
+
+    S = load(exFile);
+
+    if ~isfield(S, 'ParameterMatrix')
+        error('PulsePalProgram_Example.mat does not contain ParameterMatrix.');
+    end
+
+    ProgramPulsePal(S.ParameterMatrix);
+    pause(0.10);
+end
+
+
+function tf = localIsPulsePalReady()
+    global PulsePalSystem
+    tf = false;
+
+    try
+        if isempty(PulsePalSystem)
+            return;
+        end
+    catch
+        return;
+    end
+
+    % Accept either classic struct-like API or object-like API
+    try
+        if isstruct(PulsePalSystem)
+            tf = isfield(PulsePalSystem, 'Params');
+            return;
+        end
+    catch
+    end
+
+    try
+        tf = isprop(PulsePalSystem, 'Params');
+        if tf
+            return;
+        end
+    catch
+    end
+
+    % Last fallback: if ProgramPulsePalParam exists, we can still try it
+    try
+        tf = (exist('ProgramPulsePalParam', 'file') == 2);
+    catch
+        tf = false;
+    end
+end
+
+function localClosePulsePalRobust()
     global PulsePalSystem
 
+    try
+        AbortPulsePal;
+    catch
+    end
+
+    try
+        EndPulsePal;
+    catch
+    end
+
+    pause(0.20);
+
+    try
+        clear global PulsePalSystem
+    catch
+    end
+
+    try
+        PulsePalSystem = [];
+    catch
+    end
+end
+
+function localProgramPulsePal(cfg)
     ch = round(cfg.pulsepal.channel);
 
     if ch < 1 || ch > 4
@@ -1287,60 +1462,73 @@ function localProgramPulsePal(cfg)
     catch
     end
 
-    % Safe baseline for all channels
-    PulsePalSystem.Params.IsBiphasic(:)         = 0;
-    PulsePalSystem.Params.Phase1Voltage(:)      = 0;
-    PulsePalSystem.Params.Phase2Voltage(:)      = 0;
-    PulsePalSystem.Params.RestingVoltage(:)     = 0;
-
-    PulsePalSystem.Params.Phase1Duration(:)     = 0.0001;
-    PulsePalSystem.Params.InterPhaseInterval(:) = 0.0001;
-    PulsePalSystem.Params.Phase2Duration(:)     = 0.0001;
-    PulsePalSystem.Params.InterPulseInterval(:) = 0.001;
-
-    PulsePalSystem.Params.BurstDuration(:)      = 0;
-    PulsePalSystem.Params.InterBurstInterval(:) = 0;
-    PulsePalSystem.Params.PulseTrainDuration(:) = 0.001;
-    PulsePalSystem.Params.PulseTrainDelay(:)    = 0;
-
-    PulsePalSystem.Params.LinkTriggerChannel1(:) = 0;
-    PulsePalSystem.Params.LinkTriggerChannel2(:) = 0;
-    PulsePalSystem.Params.CustomTrainID(:)       = 0;
-    PulsePalSystem.Params.CustomTrainTarget(:)   = 0;
-    PulsePalSystem.Params.CustomTrainLoop(:)     = 0;
-    PulsePalSystem.Params.TriggerMode(:)         = 0;
-
     % Selected output channel parameters
-    PulsePalSystem.Params.IsBiphasic(ch)         = double(logical(cfg.pulsepal.is_biphasic));
-    PulsePalSystem.Params.Phase1Voltage(ch)      = cfg.pulsepal.phase1_voltage;
-    PulsePalSystem.Params.Phase2Voltage(ch)      = cfg.pulsepal.phase2_voltage;
-    PulsePalSystem.Params.RestingVoltage(ch)     = cfg.pulsepal.resting_voltage;
+    localProgramPulsePalParamChecked(ch, 'IsBiphasic',         double(logical(cfg.pulsepal.is_biphasic)));
+    localProgramPulsePalParamChecked(ch, 'Phase1Voltage',      cfg.pulsepal.phase1_voltage);
+    localProgramPulsePalParamChecked(ch, 'Phase2Voltage',      cfg.pulsepal.phase2_voltage);
+    localProgramPulsePalParamChecked(ch, 'RestingVoltage',     cfg.pulsepal.resting_voltage);
 
-    PulsePalSystem.Params.Phase1Duration(ch)     = cfg.pulsepal.phase1_duration_s;
-    PulsePalSystem.Params.InterPhaseInterval(ch) = cfg.pulsepal.interphase_interval_s;
-    PulsePalSystem.Params.Phase2Duration(ch)     = cfg.pulsepal.phase2_duration_s;
-    PulsePalSystem.Params.InterPulseInterval(ch) = cfg.pulsepal.interpulse_interval_s;
+    localProgramPulsePalParamChecked(ch, 'Phase1Duration',     cfg.pulsepal.phase1_duration_s);
+    localProgramPulsePalParamChecked(ch, 'InterPhaseInterval', cfg.pulsepal.interphase_interval_s);
+    localProgramPulsePalParamChecked(ch, 'Phase2Duration',     cfg.pulsepal.phase2_duration_s);
+    localProgramPulsePalParamChecked(ch, 'InterPulseInterval', cfg.pulsepal.interpulse_interval_s);
 
-    PulsePalSystem.Params.BurstDuration(ch)      = cfg.pulsepal.burst_duration_s;
-    PulsePalSystem.Params.InterBurstInterval(ch) = cfg.pulsepal.interburst_interval_s;
-    PulsePalSystem.Params.PulseTrainDelay(ch)    = cfg.pulsepal.train_delay_s;
-    PulsePalSystem.Params.PulseTrainDuration(ch) = cfg.pulsepal.train_duration_s;
+    localProgramPulsePalParamChecked(ch, 'BurstDuration',      cfg.pulsepal.burst_duration_s);
+    localProgramPulsePalParamChecked(ch, 'InterBurstInterval', cfg.pulsepal.interburst_interval_s);
+    localProgramPulsePalParamChecked(ch, 'PulseTrainDelay',    cfg.pulsepal.train_delay_s);
+    localProgramPulsePalParamChecked(ch, 'PulseTrainDuration', cfg.pulsepal.train_duration_s);
 
-    % Keep these OFF in your current software-triggered workflow
-    PulsePalSystem.Params.CustomTrainID(ch)       = 0;
-    PulsePalSystem.Params.CustomTrainTarget(ch)   = 0;
-    PulsePalSystem.Params.CustomTrainLoop(ch)     = 0;
-    PulsePalSystem.Params.LinkTriggerChannel1(ch) = 0;
-    PulsePalSystem.Params.LinkTriggerChannel2(ch) = 0;
+    % Keep external/custom features OFF in current workflow
+    try, localProgramPulsePalParamChecked(ch, 'CustomTrainID', 0);       catch, end
+    try, localProgramPulsePalParamChecked(ch, 'CustomTrainTarget', 0);   catch, end
+    try, localProgramPulsePalParamChecked(ch, 'CustomTrainLoop', 0);     catch, end
+    try, localProgramPulsePalParamChecked(ch, 'LinkedToTriggerCH1', 0);  catch, end
+    try, localProgramPulsePalParamChecked(ch, 'LinkedToTriggerCH2', 0);  catch, end
 
-    % Trigger modes off
-    PulsePalSystem.Params.TriggerMode(1) = 0;
-    PulsePalSystem.Params.TriggerMode(2) = 0;
+    % Trigger channel modes off
+    try, localProgramPulsePalParamChecked(1, 'TriggerMode', 0); catch, end
+    try, localProgramPulsePalParamChecked(2, 'TriggerMode', 0); catch, end
 
-    SyncPulsePalParams;
-    SetContinuousPlay(ch, 0);
+    try
+        SyncPulsePalParams;
+    catch
+    end
+
+    try
+        SetContinuousPlay(ch, 0);
+    catch
+        try
+            SetContinuousLoop(ch, 0);
+        catch
+        end
+    end
+
+    try
+        PulsePalDisplay('MATLAB commanded');
+    catch
+    end
 end
 
+function localProgramPulsePalParamChecked(channel, paramName, value)
+    try
+        confirmBit = ProgramPulsePalParam(channel, paramName, value);
+    catch ME
+        error('ProgramPulsePalParam failed for %s on channel %d: %s', ...
+            paramName, channel, ME.message);
+    end
+
+    if isnumeric(confirmBit) && isscalar(confirmBit) && confirmBit == 0
+        error('PulsePal rejected parameter %s on channel %d.', paramName, channel);
+    end
+end
+
+function localPPSet(channelOrTrig, paramName, paramValue)
+    confirmBit = ProgramPulsePalParam(channelOrTrig, paramName, paramValue);
+
+    if isempty(confirmBit) || ~isequal(confirmBit, 1)
+        error('PulsePal failed while programming parameter "%s".', paramName);
+    end
+end
 % =========================================================================
 % Small utilities
 % =========================================================================
