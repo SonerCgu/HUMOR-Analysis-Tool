@@ -211,20 +211,21 @@ UbaseLabel = 'MIP (Z) of Mean(T)';
 S.dbLow  = -48;
 S.dbHigh = -7;
 
+% neutral startup display
 S.brightness = 0.00;
-S.contrast   = 1.00;
-S.gamma      = 1.00;
-S.sharpness  = 0.00;
+S.contrast   = 0.03;
+S.gamma      = 7;
+S.sharpness  = 150.0;
 S.globalScaling = false;
 S.pctLow  = 1;
 S.pctHigh = 99;
 S.cmapMode = 1;
 
 S.showOverlay = true;
-S.overlayAlpha = 0.30;
+S.overlayAlpha = 0.28;
 
 S.smoothSize = 8;
-S.brushR = 50;
+S.brushR = 90;
 S.brushShape = 2; % 1 round, 2 square, 3 pen, 4 diamond
 
 S.isPainting = false;
@@ -232,15 +233,15 @@ S.paintMode = '';
 S.lastRaw = [NaN NaN];
 S.activeTab = 1;
 
-% Restored advanced underlay controls
+% advanced underlay controls
 S.vesselEnable = false;
-S.vesselSigma = 1.25;
-S.vesselGain = 1.20;
-S.vesselThresh = 0.18;
+S.vesselSigma = 0.20;
+S.vesselGain = 0.50;
+S.vesselThresh = 0.80;
 S.vesselConnect = true;
 
-S.softToneEnable = false;
-S.softToneStrength = 0.45;
+S.softToneEnable = true;
+S.softToneStrength = 0.60;
 S.softToneMid = 0.48;
 S.softToneToe = 0.08;
 
@@ -643,11 +644,11 @@ h.slBright = makeSlider(pDisplay,[0.22 0.79 0.58 0.10],-0.6,0.6,S.brightness,@on
 h.txtBright = makeText(pDisplay,[0.82 0.76 0.15 0.12],sprintf('%.2f',S.brightness),C.text,11,'normal','right');
 
 h.lblCont = makeText(pDisplay,[0.03 0.51 0.18 0.12],'Contrast',C.text,11,'normal','left');
-h.slCont = makeSlider(pDisplay,[0.22 0.54 0.58 0.10],0.5,3.0,S.contrast,@onDisplayChange);
+h.slCont = makeSlider(pDisplay,[0.22 0.54 0.58 0.10],0,3.0,S.contrast,@onDisplayChange);
 h.txtCont = makeText(pDisplay,[0.82 0.51 0.15 0.12],sprintf('%.2f',S.contrast),C.text,11,'normal','right');
 
 h.lblGamma = makeText(pDisplay,[0.03 0.26 0.18 0.12],'Gamma',C.text,11,'normal','left');
-h.slGamma = makeSlider(pDisplay,[0.22 0.29 0.58 0.10],0.2,3.0,S.gamma,@onDisplayChange);
+h.slGamma = makeSlider(pDisplay,[0.22 0.29 0.58 0.10],0.2,10.0,S.gamma,@onDisplayChange);
 h.txtGamma = makeText(pDisplay,[0.82 0.26 0.15 0.12],sprintf('%.2f',S.gamma),C.text,11,'normal','right');
 
 h.lblSharp = makeText(pDisplay,[0.03 0.01 0.18 0.12],'Sharp',C.text,11,'normal','left');
@@ -681,7 +682,7 @@ h.chkVesselConnect = uicontrol('Style','checkbox','Parent',pAdv,'Units','normali
     'Callback',@onAdvancedUnderlayChange);
 
 h.lblVesselSigma = makeText(pAdv,[0.03 0.67 0.15 0.08],'Sigma',C.text,11,'normal','left');
-h.slVesselSigma = makeSlider(pAdv,[0.20 0.70 0.60 0.08],0.4,4.5,S.vesselSigma,@onAdvancedUnderlayChange);
+h.slVesselSigma = makeSlider(pAdv,[0.20 0.70 0.60 0.08],0,5,S.vesselSigma,@onAdvancedUnderlayChange);
 h.txtVesselSigma = makeText(pAdv,[0.82 0.67 0.15 0.08],sprintf('%.2f',S.vesselSigma),C.text,11,'normal','right');
 
 h.lblVesselGain = makeText(pAdv,[0.03 0.51 0.15 0.08],'Boost',C.text,11,'normal','left');
@@ -689,7 +690,7 @@ h.slVesselGain = makeSlider(pAdv,[0.20 0.54 0.60 0.08],0,3,S.vesselGain,@onAdvan
 h.txtVesselGain = makeText(pAdv,[0.82 0.51 0.15 0.08],sprintf('%.2f',S.vesselGain),C.text,11,'normal','right');
 
 h.lblVesselThresh = makeText(pAdv,[0.03 0.35 0.15 0.08],'Thresh',C.text,11,'normal','left');
-h.slVesselThresh = makeSlider(pAdv,[0.20 0.38 0.60 0.08],0.02,0.70,S.vesselThresh,@onAdvancedUnderlayChange);
+h.slVesselThresh = makeSlider(pAdv,[0.20 0.38 0.60 0.08],0,1,S.vesselThresh,@onAdvancedUnderlayChange);
 h.txtVesselThresh = makeText(pAdv,[0.82 0.35 0.15 0.08],sprintf('%.2f',S.vesselThresh),C.text,11,'normal','right');
 
 h.chkSoftTone = uicontrol('Style','checkbox','Parent',pAdv,'Units','normalized', ...
@@ -738,7 +739,141 @@ uiwait(fig);
 % =========================================================
 % ======================= NESTED FUNCS =====================
 % =========================================================
+          function startPath = resolveRegistration2DStartPath()
+        startPath = pwd;
 
+        regCand = {};
+        fallbackCand = {};
+
+        % -------- 1) studio.exportPath is usually the best source --------
+        if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && ischar(studio.exportPath)
+            ep = studio.exportPath;
+
+            regCand{end+1} = fullfile(ep,'Registration2D');
+
+            p1 = fileparts(ep);
+            if ~isempty(p1)
+                regCand{end+1} = fullfile(p1,'Registration2D');
+            end
+
+            p2 = fileparts(p1);
+            if ~isempty(p2)
+                regCand{end+1} = fullfile(p2,'Registration2D');
+            end
+
+            fallbackCand{end+1} = ep;
+            if ~isempty(p1), fallbackCand{end+1} = p1; end
+            if ~isempty(p2), fallbackCand{end+1} = p2; end
+        end
+
+        % -------- 2) studio.loadedPath may point to RawData --------
+        if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && ischar(studio.loadedPath)
+            lp = studio.loadedPath;
+
+            % original loadedPath branch
+            regCand{end+1} = fullfile(lp,'Registration2D');
+
+            p1 = fileparts(lp);
+            if ~isempty(p1)
+                regCand{end+1} = fullfile(p1,'Registration2D');
+            end
+
+            p2 = fileparts(p1);
+            if ~isempty(p2)
+                regCand{end+1} = fullfile(p2,'Registration2D');
+            end
+
+            fallbackCand{end+1} = lp;
+            if ~isempty(p1), fallbackCand{end+1} = p1; end
+            if ~isempty(p2), fallbackCand{end+1} = p2; end
+
+            % analysed-path version of loadedPath
+            lpAnalysed = strrep(lp, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+            if ~strcmp(lpAnalysed, lp)
+                regCand{end+1} = fullfile(lpAnalysed,'Registration2D');
+
+                p1a = fileparts(lpAnalysed);
+                if ~isempty(p1a)
+                    regCand{end+1} = fullfile(p1a,'Registration2D');
+                end
+
+                p2a = fileparts(p1a);
+                if ~isempty(p2a)
+                    regCand{end+1} = fullfile(p2a,'Registration2D');
+                end
+
+                fallbackCand{end+1} = lpAnalysed;
+                if ~isempty(p1a), fallbackCand{end+1} = p1a; end
+                if ~isempty(p2a), fallbackCand{end+1} = p2a; end
+            end
+        end
+
+        % -------- 3) studio.loadedFile if it is a full file path --------
+        if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile) && ischar(studio.loadedFile)
+            lf = studio.loadedFile;
+
+            if exist(lf,'file')
+                fp = fileparts(lf);
+
+                regCand{end+1} = fullfile(fp,'Registration2D');
+
+                p1 = fileparts(fp);
+                if ~isempty(p1)
+                    regCand{end+1} = fullfile(p1,'Registration2D');
+                end
+
+                p2 = fileparts(p1);
+                if ~isempty(p2)
+                    regCand{end+1} = fullfile(p2,'Registration2D');
+                end
+
+                fallbackCand{end+1} = fp;
+                if ~isempty(p1), fallbackCand{end+1} = p1; end
+                if ~isempty(p2), fallbackCand{end+1} = p2; end
+
+                fpAnalysed = strrep(fp, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                if ~strcmp(fpAnalysed, fp)
+                    regCand{end+1} = fullfile(fpAnalysed,'Registration2D');
+
+                    p1a = fileparts(fpAnalysed);
+                    if ~isempty(p1a)
+                        regCand{end+1} = fullfile(p1a,'Registration2D');
+                    end
+
+                    p2a = fileparts(p1a);
+                    if ~isempty(p2a)
+                        regCand{end+1} = fullfile(p2a,'Registration2D');
+                    end
+
+                    fallbackCand{end+1} = fpAnalysed;
+                    if ~isempty(p1a), fallbackCand{end+1} = p1a; end
+                    if ~isempty(p2a), fallbackCand{end+1} = p2a; end
+                end
+            end
+        end
+
+        % -------- 4) FIRST: try only Registration2D candidates --------
+        regCand = regCand(~cellfun('isempty',regCand));
+        regCand = unique(regCand,'stable');
+
+        for ii = 1:numel(regCand)
+            if exist(regCand{ii},'dir')
+                startPath = regCand{ii};
+                return;
+            end
+        end
+
+        % -------- 5) ONLY IF NONE EXISTS: use fallback folders --------
+        fallbackCand = fallbackCand(~cellfun('isempty',fallbackCand));
+        fallbackCand = unique(fallbackCand,'stable');
+
+        for ii = 1:numel(fallbackCand)
+            if exist(fallbackCand{ii},'dir')
+                startPath = fallbackCand{ii};
+                return;
+            end
+        end
+    end
 % -------------------- General UI --------------------
     function onToggleEditor(src,~)
         S.editorOn = logical(get(src,'Value'));
@@ -854,16 +989,18 @@ uiwait(fig);
         end
     end
 
-    function ok = loadExternalUnderlayInteractive()
+              function ok = loadExternalUnderlayInteractive()
         ok = false;
-        startPath = studio.exportPath;
-        if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-            startPath = studio.loadedPath;
-        end
 
-        [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.png;*.jpg;*.jpeg', ...
-                           'Underlay (*.mat,*.nii,*.nii.gz, images)'}, ...
-                           'Select external underlay', startPath);
+        startPath = resolveRegistration2DStartPath();
+
+        disp(['[mask] External underlay startPath = ' startPath]);
+
+        [f,p] = uigetfile( ...
+            {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.png;*.jpg;*.jpeg', ...
+             'Underlay (*.mat,*.nii,*.nii.gz, images)'}, ...
+            'Select external underlay', ...
+            fullfile(startPath,'*.*'));
 
         if isequal(f,0)
             return;
@@ -881,7 +1018,7 @@ uiwait(fig);
             UbaseLabel = ['External: ' nm ex];
 
             updateTitle();
-            updateStatus('External underlay loaded.');
+            updateStatus(['External underlay loaded from: ' p]);
             ok = true;
         catch ME
             errordlg(ME.message,'External underlay failed');
@@ -998,17 +1135,17 @@ uiwait(fig);
     end
 
     function onResetUnderlayFX(~,~)
-        S.vesselEnable = false;
-        S.vesselSigma = 1.25;
-        S.vesselGain = 1.20;
-        S.vesselThresh = 0.18;
-        S.vesselConnect = true;
-        S.softToneEnable = false;
-        S.softToneStrength = 0.45;
-        syncAdvancedControls();
-        updateAdvancedControlsEnabled();
-        renderNow();
-    end
+    S.vesselEnable = true;
+    S.vesselSigma = 0.20;
+    S.vesselGain = 0.50;
+    S.vesselThresh = 0.80;
+    S.vesselConnect = true;
+    S.softToneEnable = true;
+    S.softToneStrength = 0.20;
+    syncAdvancedControls();
+    updateAdvancedControlsEnabled();
+    renderNow();
+end
 
     function syncAdvancedControls()
         set(h.chkVessel,'Value',double(S.vesselEnable));
@@ -2301,9 +2438,9 @@ uiwait(fig);
             return;
         end
 
-        sig = max(0.4, double(S.vesselSigma));
-        gain = max(0, double(S.vesselGain));
-        thr = max(0.02, min(0.95, double(S.vesselThresh)));
+    sig = max(0, min(5, double(S.vesselSigma)));
+gain = max(0, double(S.vesselGain));
+thr = max(0, min(1, double(S.vesselThresh)));
 
         b1 = gaussBlur2D(U01, sig);
         b2 = gaussBlur2D(U01, max(sig*2.5, sig+0.35));

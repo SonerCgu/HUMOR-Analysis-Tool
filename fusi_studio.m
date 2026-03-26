@@ -582,7 +582,6 @@ end
         errordlg(ME.message,'Load Failure');
     end
 end
-
 %% =========================================================
 %  FULL QC
 % =========================================================
@@ -599,18 +598,28 @@ function runFullQCCallback(~,~)
     drawnow;
 
     opts = struct();
-    opts.frequency = true;
-    opts.spatial = true;
-    opts.temporal = true;
-    opts.motion = true;
-    opts.stability = true;
-    opts.framerate = true;
-    opts.pca = true;
-    opts.burst = true;
-    opts.cnr = true;
-    opts.commonmode = true;
-    opts.datasetTag = studio.activeDataset;
-    opts.useTimestampSubfolder = false;
+opts.frequency = true;
+opts.spatial = true;
+opts.temporal = true;
+opts.motion = true;
+opts.stability = true;
+opts.framerate = true;
+opts.pca = true;
+opts.burst = true;
+opts.cnr = true;
+opts.commonmode = true;
+
+% NEW QC modules
+opts.outlierframes = true;
+opts.reliability   = true;
+
+% optional settings
+opts.outlierReplace = false;
+opts.saveOutlierCorrectedData = false;
+opts.reliabilityThreshold = 0.60;
+
+opts.datasetTag = studio.activeDataset;
+opts.useTimestampSubfolder = false;
 
     data = getActiveData();
 
@@ -650,20 +659,27 @@ end
         return;
     end
 
-    opts = struct();
-    opts.frequency  = ismember(1, choice);
-    opts.spatial    = ismember(2, choice);
-    opts.temporal   = ismember(3, choice);
-    opts.motion     = ismember(4, choice);
-    opts.stability  = ismember(5, choice);
-    opts.framerate  = ismember(6, choice);
-    opts.pca        = ismember(7, choice);
-    opts.burst      = ismember(8, choice);
-    opts.cnr        = ismember(9, choice);
-    opts.commonmode = ismember(10, choice);
+opts = struct();
+opts.frequency    = ismember(1, choice);
+opts.spatial      = ismember(2, choice);
+opts.temporal     = ismember(3, choice);
+opts.motion       = ismember(4, choice);
+opts.stability    = ismember(5, choice);
+opts.framerate    = ismember(6, choice);
+opts.pca          = ismember(7, choice);
+opts.burst        = ismember(8, choice);
+opts.cnr          = ismember(9, choice);
+opts.commonmode   = ismember(10, choice);
+opts.outlierframes = ismember(11, choice);
+opts.reliability   = ismember(12, choice);
 
-    opts.datasetTag = studio.activeDataset;
-    opts.useTimestampSubfolder = false;
+% optional settings
+opts.outlierReplace = false;
+opts.saveOutlierCorrectedData = false;
+opts.reliabilityThreshold = 0.60;
+
+opts.datasetTag = studio.activeDataset;
+opts.useTimestampSubfolder = false;
 
     addLog('Running selected QC...');
     for ii = 1:numel(choiceNames)
@@ -693,18 +709,20 @@ end
     choice = [];
     choiceNames = {};
 
-    modules = { ...
-        'Frequency QC',      'Power spectrum: 0-2 Hz and 0-0.1 Hz',                 [0.20 0.75 1.00]; ...
-        'Spatial QC',        'Mean image, temporal CV, tSNR map and histogram',     [0.20 0.90 0.55]; ...
-        'Temporal QC',       'Global signal, rGS, DVARS, spike detection',          [1.00 0.80 0.25]; ...
-        'Motion QC',         'Center-of-mass drift over time',                       [1.00 0.50 0.30]; ...
-        'Stability QC',      'Intensity distribution and rejected volumes',          [0.95 0.35 0.75]; ...
-        'Frame-rate QC',     'Global rejection and interpolation stability',         [0.75 0.60 1.00]; ...
-        'PCA QC',            'Explained variance and PCA component overview',        [0.60 0.85 1.00]; ...
-        'Burst Error QC',    'Burst ratio, noisy voxels, burst coverage over time', [1.00 0.35 0.35]; ...
-        'CNR QC',            'Contrast-to-noise ratio map and histogram',            [0.35 0.90 0.90]; ...
-        'Common-Mode QC',    'Block-correlation common-mode artifact detection',     [0.85 0.85 0.35]  ...
-    };
+  modules = { ...
+    'Frequency QC',        'Power spectrum: 0-2 Hz and 0-0.1 Hz',                          [0.20 0.75 1.00]; ...
+    'Spatial QC',          'Mean image, temporal CV, tSNR map and histogram',              [0.20 0.90 0.55]; ...
+    'Temporal QC',         'Global signal, rGS, DVARS, spike detection',                   [1.00 0.80 0.25]; ...
+    'Motion QC',           'Center-of-mass drift over time',                                [1.00 0.50 0.30]; ...
+    'Stability QC',        'Intensity distribution and rejected volumes',                   [0.95 0.35 0.75]; ...
+    'Frame-rate QC',       'Global rejection and interpolation stability',                  [0.75 0.60 1.00]; ...
+    'PCA QC',              'Explained variance and PCA component overview',                 [0.60 0.85 1.00]; ...
+    'Burst Error QC',      'Burst ratio, noisy voxels, burst coverage over time',          [1.00 0.35 0.35]; ...
+    'CNR QC',              'Contrast-to-noise ratio map and histogram',                     [0.35 0.90 0.90]; ...
+    'Common-Mode QC',      'Block-correlation common-mode artifact detection',              [0.85 0.85 0.35]; ...
+    'Outlier Line/Frame QC','Line-wise abnormal frame detection and optional interpolation', [1.00 0.60 0.20]; ...
+    'Reliability QC',      'Finite/non-NaN voxel reliability map and region summary',       [0.45 0.75 1.00]  ...
+};
 
     n = size(modules,1);
 
@@ -869,7 +887,7 @@ end
     end
 
     function onCoreSet(~,~)
-        coreIdx = [1 2 3 4 5 8 9 10];
+        coreIdx = [1 2 3 4 5 8 9 10 11 12];
         for kk = 1:n
             if ishandle(cb(kk))
                 set(cb(kk),'Value',ismember(kk,coreIdx));
@@ -3619,7 +3637,188 @@ function addStudioIcon()
         disp(['Icon load failed: ' ME.message]);
     end
 end
+function [data, pickedName] = studio_force_internal_I_field(data, sourceFile, fallbackTR)
 
+    pickedName = '';
+
+    if nargin < 3 || isempty(fallbackTR) || ~isfinite(fallbackTR) || fallbackTR <= 0
+        fallbackTR = 0.32;
+    end
+
+    % Already in correct internal format
+    if isstruct(data) && isfield(data,'I') && isnumeric(data.I) && ~isempty(data.I)
+        return;
+    end
+
+    % Case 1: loader returned raw numeric array directly
+    if isnumeric(data) && ~isempty(data)
+        rawI = data;
+        data = struct();
+        data.I = single(rawI);
+        data.TR = fallbackTR;
+        data.nVols = size(rawI, ndims(rawI));
+        data.TotalTimeSec = data.nVols * data.TR;
+        pickedName = '<numeric array returned by loader>';
+        return;
+    end
+
+    % Case 2: loader returned struct, but main field is not called I
+    if isstruct(data)
+        [rawI, pickedName] = studio_find_best_numeric_volume(data);
+
+        if isempty(rawI)
+            error(['Could not find a valid fUSI volume in loaded MAT struct: ' sourceFile ...
+                   '. Expected a 3D or 4D numeric array.']);
+        end
+
+        data.I = single(rawI);
+
+        if ~isfield(data,'TR') || isempty(data.TR) || ~isfinite(data.TR) || data.TR <= 0
+            data.TR = fallbackTR;
+        end
+
+        if ~isfield(data,'nVols') || isempty(data.nVols) || ~isfinite(data.nVols)
+            data.nVols = size(data.I, ndims(data.I));
+        end
+
+        if ~isfield(data,'TotalTimeSec') || isempty(data.TotalTimeSec) || ~isfinite(data.TotalTimeSec)
+            data.TotalTimeSec = data.nVols * data.TR;
+        end
+
+        return;
+    end
+
+    error('Loaded dataset is neither a struct nor a numeric array.');
+end
+
+function [bestData, bestName] = studio_find_best_numeric_volume(S)
+
+    bestData = [];
+    bestName = '';
+
+    candidates = struct('name',{},'score',{},'value',{});
+    candidates = studio_collect_volume_candidates(S, '', 0, candidates);
+
+    if isempty(candidates)
+        return;
+    end
+
+    scores = zeros(1, numel(candidates));
+    for k = 1:numel(candidates)
+        scores(k) = candidates(k).score;
+    end
+
+    [~, idx] = max(scores);
+    bestData = candidates(idx).value;
+    bestName = candidates(idx).name;
+end
+
+function candidates = studio_collect_volume_candidates(v, pathStr, depth, candidates)
+
+    if depth > 2
+        return;
+    end
+
+    if isnumeric(v) && ~isempty(v)
+        sc = studio_score_volume_candidate(v, pathStr);
+        if isfinite(sc)
+            c.name = pathStr;
+            c.score = sc;
+            c.value = v;
+            candidates(end+1) = c; %#ok<AGROW>
+        end
+        return;
+    end
+
+    if iscell(v) && numel(v) == 1
+        candidates = studio_collect_volume_candidates(v{1}, [pathStr '{1}'], depth+1, candidates);
+        return;
+    end
+
+    if isstruct(v) && isscalar(v)
+        fn = fieldnames(v);
+        for ii = 1:numel(fn)
+            f = fn{ii};
+            if isempty(pathStr)
+                nextPath = f;
+            else
+                nextPath = [pathStr '.' f];
+            end
+            candidates = studio_collect_volume_candidates(v.(f), nextPath, depth+1, candidates);
+        end
+    end
+end
+
+function sc = studio_score_volume_candidate(v, nameStr)
+
+    sc = -Inf;
+
+    if isempty(v) || islogical(v) || isvector(v) || isscalar(v)
+        return;
+    end
+
+    nd = ndims(v);
+    sz = size(v);
+
+    % fUSI data should normally be Y x X x T or Y x X x Z x T
+    if nd < 3
+        return;
+    end
+
+    sc = 0;
+
+    % Prefer 3D/4D arrays
+    if nd == 3
+        sc = sc + 60;
+    elseif nd >= 4
+        sc = sc + 80;
+    end
+
+    % Prefer actual time dimension
+    if sz(end) > 1
+        sc = sc + 20;
+    end
+
+    % Prefer realistic image size
+    if numel(sz) >= 2 && sz(1) >= 16 && sz(2) >= 16
+        sc = sc + 10;
+    end
+
+    % Prefer common data types
+    if isa(v,'single') || isa(v,'double') || isa(v,'uint16') || isa(v,'int16')
+        sc = sc + 5;
+    end
+
+    lname = lower(nameStr);
+
+    goodKeys = {'i','data','img','image','stack','movie','frames','volume','vol','fus','doppler','power'};
+    badKeys  = {'tr','dt','time','mask','atlas','roi','label','coord','x','y','z','mean','median','std','var'};
+
+    for k = 1:numel(goodKeys)
+        if ~isempty(strfind(lname, goodKeys{k})) %#ok<STREMP>
+            sc = sc + 12;
+        end
+    end
+
+    for k = 1:numel(badKeys)
+        if ~isempty(strfind(lname, badKeys{k})) %#ok<STREMP>
+            sc = sc - 15;
+        end
+    end
+
+    % Penalize likely masks / binary arrays
+    try
+        samp = double(v(1:min(numel(v),5000)));
+        samp = samp(isfinite(samp));
+        if ~isempty(samp)
+            u = unique(samp(:));
+            if numel(u) <= 3
+                sc = sc - 25;
+            end
+        end
+    catch
+    end
+end
 %% =========================================================
 %  CLOSE HANDLER
 % =========================================================

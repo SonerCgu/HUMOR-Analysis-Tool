@@ -460,9 +460,10 @@ slVlv  = mkSlider(pUnder,0,MAX_CONLEV,uState.conectLev,@underSliderChanged);
 set(slVlv,'SliderStep',[1/max(1,MAX_CONLEV) 10/max(1,MAX_CONLEV)]);
 txtVlv = mkValBox(pUnder,sprintf('%d',uState.conectLev));
 
-btnLoadUnder = mkBtn(pUnder,'LOAD NEW UNDERLAY',@loadNewUnderlayCB,[0.20 0.38 0.62],12);
-btnWarpAtlas = mkBtn(pUnder,'WARP FUNCTIONAL TO ATLAS',@warpFunctionalToAtlasCB,[0.20 0.38 0.62],12);
-btnResetWarp = mkBtn(pUnder,'RESET TO NATIVE',@resetWarpToNativeCB,[0.28 0.28 0.30],12);
+btnLoadUnder   = mkBtn(pUnder,'LOAD NEW UNDERLAY',@loadNewUnderlayCB,[0.20 0.38 0.62],12);
+btnLoadGAVideo = mkBtn(pUnder,'LOAD GA VIDEO BUNDLE',@loadGroupVideoBundleCB,[0.55 0.33 0.15],12);
+btnWarpAtlas   = mkBtn(pUnder,'WARP FUNCTIONAL TO ATLAS',@warpFunctionalToAtlasCB,[0.20 0.38 0.62],12);
+btnResetWarp   = mkBtn(pUnder,'RESET TO NATIVE',@resetWarpToNativeCB,[0.28 0.28 0.30],12);
 
 % -----------------------------
 % OVERLAY TAB
@@ -789,9 +790,9 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
     fixed = fixed + 2*rowHc;
     fixed = fixed + 3*rowHc;
     fixed = fixed + 2*rowHc;
-    fixed = fixed + 3*36;
+    fixed = fixed + 4*36;   % 4 buttons now
 
-    nGaps = 10;
+    nGaps = 11;
     gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
     gapBig = gapc + 8;
 
@@ -833,13 +834,16 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
     set(btnLoadUnder,'Position',[xLabel y0 (w-2*pad) 36]);
     y0 = y0 - (36 + gapc);
 
+    set(btnLoadGAVideo,'Position',[xLabel y0 (w-2*pad) 36]);
+    y0 = y0 - (36 + gapc);
+
     set(btnWarpAtlas,'Position',[xLabel y0 (w-2*pad) 36]);
     y0 = y0 - (36 + gapc);
 
     set(btnResetWarp,'Position',[xLabel y0 (w-2*pad) 36]);
 
     updateUnderlayEnable();
-end
+   end
 
     function layoutOverlayTab(w, h)
         xLabel = pad;
@@ -1068,6 +1072,226 @@ end
 % =========================================================
 % VIDEO TAB CALLBACKS
 % =========================================================
+   function loadGroupVideoBundleCB(~,~)
+    startPath = getStartPath();
+
+    [f,p] = uigetfile({'*.mat','GA group video bundle (*.mat)'}, ...
+        'Select Group Analysis video export', startPath);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fullf = fullfile(p,f);
+
+    try
+        S = load(fullf);
+        E = extractGroupVideoBundleStruct(S);
+
+        if ~isfield(E,'psc4D') || isempty(E.psc4D) || ...
+                ~(isnumeric(E.psc4D) || islogical(E.psc4D))
+            error('GA bundle has no usable psc4D field.');
+        end
+
+        if ~isfield(E,'functional4D') || isempty(E.functional4D) || ...
+                ~(isnumeric(E.functional4D) || islogical(E.functional4D))
+            error('GA bundle has no usable functional4D field.');
+        end
+
+        if isfield(E,'underlay2D') && ~isempty(E.underlay2D) && ...
+                (isnumeric(E.underlay2D) || islogical(E.underlay2D))
+            bgNew = double(E.underlay2D);
+        elseif isfield(E,'groupMap2D') && ~isempty(E.groupMap2D) && ...
+                (isnumeric(E.groupMap2D) || islogical(E.groupMap2D))
+            bgNew = double(E.groupMap2D);
+        else
+            error('GA bundle has no usable underlay2D or groupMap2D field.');
+        end
+
+        % Stop playback first
+        playing = false;
+        if ishandle(playBtn)
+            set(playBtn,'Value',0,'String','Play');
+        end
+        try
+            if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
+                stop(playTimer);
+            end
+        catch
+        end
+
+        % Replace actual video data
+        I        = double(E.functional4D);
+        I_interp = double(E.functional4D);
+        PSC      = double(E.psc4D);
+        bgDefaultFull = double(bgNew);
+
+        % Metadata
+        if isfield(E,'TR') && ~isempty(E.TR) && isfinite(E.TR)
+            TR = double(E.TR);
+        end
+
+        if ~isstruct(baseline) || isempty(baseline)
+            baseline = struct();
+        end
+        if ~isfield(baseline,'start') || isempty(baseline.start), baseline.start = 0; end
+        if ~isfield(baseline,'end')   || isempty(baseline.end),   baseline.end   = 0; end
+        if ~isfield(baseline,'mode')  || isempty(baseline.mode),  baseline.mode  = 'sec'; end
+
+        if isfield(E,'baseWindowSec') && numel(E.baseWindowSec) >= 2
+            baseline.start = double(E.baseWindowSec(1));
+            baseline.end   = double(E.baseWindowSec(2));
+            baseline.mode  = 'sec';
+        end
+
+        if isfield(E,'mapCaxis') && numel(E.mapCaxis) == 2 && all(isfinite(E.mapCaxis))
+            par.previewCaxis = double(E.mapCaxis(:)).';
+        else
+            par.previewCaxis = [0 50];
+        end
+
+        par.interpol = 1;
+
+        if isfield(E,'mapSigma') && ~isempty(E.mapSigma) && isfinite(E.mapSigma)
+            overlaySmoothSigma = max(0, min(overlaySmoothMax, double(E.mapSigma)));
+        end
+
+        if isfield(E,'mapModMin') && ~isempty(E.mapModMin) && isfinite(E.mapModMin)
+            modMinAbs = double(E.mapModMin);
+        end
+
+        if isfield(E,'mapModMax') && ~isempty(E.mapModMax) && isfinite(E.mapModMax)
+            modMaxAbs = double(E.mapModMax);
+        end
+
+        if isfield(E,'render') && isstruct(E.render)
+            if isfield(E.render,'alphaModEnable') && ~isempty(E.render.alphaModEnable)
+                alphaModEnable = logical(E.render.alphaModEnable);
+            end
+            if isfield(E.render,'alphaPct') && ~isempty(E.render.alphaPct) && isfinite(E.render.alphaPct)
+                alphaPct = max(0, min(100, double(E.render.alphaPct)));
+            end
+            if isfield(E.render,'overlayCmapName') && ~isempty(E.render.overlayCmapName)
+                overlayCmapName = safeStr(E.render.overlayCmapName);
+                idxMap = find(strcmp(cmapNames, overlayCmapName), 1, 'first');
+                if isempty(idxMap)
+                    overlayCmapName = 'blackbdy_iso';
+                    idxMap = find(strcmp(cmapNames, overlayCmapName), 1, 'first');
+                end
+                if ~isempty(idxMap) && ishandle(popMap)
+                    set(popMap,'Value',idxMap);
+                end
+                mapA = getCmap(overlayCmapName, Nc);
+                try
+                    colormap(ax, mapA);
+                catch
+                end
+            end
+        end
+
+        % IMPORTANT: derive nVols from PSC BEFORE resetting masks/geometry
+        switch ndims(PSC)
+            case 4
+                nVols = size(PSC,4);
+            case 3
+                nVols = size(PSC,3);
+            otherwise
+                nVols = 1;
+        end
+
+        Tmax = max(0, (nVols - 1) * TR);
+
+        % Reset atlas state
+        state.isAtlasWarped = false;
+        state.atlasTransformFile = '';
+        state.lastAtlasTransformFile = '';
+
+        % New "native/original" state becomes this GA bundle
+        origI             = I;
+        origI_interp      = I_interp;
+        origPSC           = PSC;
+        origBgDefaultFull = bgDefaultFull;
+
+        % Reset underlay source
+        underSrc = 1;
+        underSrcLabel = 'Default(bg)';
+        if ishandle(popUSrc)
+            set(popUSrc,'Value',1);
+        end
+
+        % Clear masks for GA view
+        mask = [];
+        maskIsInclude = true;
+        origMask = [];
+        origMaskIsInclude = true;
+
+        if ishandle(popIncExc)
+            set(popIncExc,'Value',1);
+        end
+
+        % Reset dimensions / frame / volume
+        volume = 1;
+        frame  = 1;
+        sliceIdx = 1;
+
+        applyUnderlayMeta(defaultUnderlayMeta(), bgDefaultFull);
+
+        resetAfterDataSpaceChange(true);
+
+        % UI sync
+        if ishandle(slVol)
+            set(slVol,'Min',1,'Max',max(1,nVols),'Value',1);
+        end
+        if ishandle(txtVol)
+            set(txtVol,'String',sprintf('%d / %d',1,nVols));
+        end
+        if ishandle(edRange)
+            set(edRange,'String',sprintf('%.6g %.6g', ...
+                par.previewCaxis(1), par.previewCaxis(2)));
+        end
+        if ishandle(slSmooth)
+            set(slSmooth,'Value',overlaySmoothSigma);
+        end
+        if ishandle(edSmooth)
+            set(edSmooth,'String',sprintf('%.2f',overlaySmoothSigma));
+        end
+        if ishandle(chkAlphaMod)
+            set(chkAlphaMod,'Value',double(alphaModEnable));
+        end
+        if ishandle(slAlpha)
+            set(slAlpha,'Value',alphaPct);
+        end
+        if ishandle(txtAlpha)
+            set(txtAlpha,'String',sprintf('%.0f',alphaPct));
+        end
+        if ishandle(edModMin)
+            set(edModMin,'String',sprintf('%.3g',modMinAbs));
+        end
+        if ishandle(edModMax)
+            set(edModMax,'String',sprintf('%.3g',modMaxAbs));
+        end
+
+        updateOverlayEnable();
+
+        try
+            caxis(ax, par.previewCaxis);
+            set(cbar,'Limits',par.previewCaxis);
+        catch
+        end
+
+        fileLabel = ['GA Group Video: ' f];
+        if ishandle(txtTitle)
+            set(txtTitle,'String',fileLabel);
+        end
+
+        statusLine = ['Loaded GA group video bundle: ' fullf];
+        render();
+
+    catch ME
+        errordlg(ME.message,'Load GA group video bundle failed');
+    end
+end
+    
     function fpsSliderChanged(src,~)
         setFPS(get(src,'Value'));
     end
@@ -2397,6 +2621,28 @@ end
 % =========================================================
 % SMALL HELPERS
 % =========================================================
+    function E = extractGroupVideoBundleStruct(S)
+    if isfield(S,'E') && isstruct(S.E) && isfield(S.E,'kind') && ...
+            strcmpi(safeStr(S.E.kind),'GA_GROUP_VIDEO_EXPORT')
+        E = S.E;
+        return;
+    end
+
+    if isfield(S,'GA') && isstruct(S.GA) && isfield(S.GA,'kind') && ...
+            strcmpi(safeStr(S.GA.kind),'GA_GROUP_VIDEO_EXPORT')
+        E = S.GA;
+        return;
+    end
+
+    if isstruct(S) && isfield(S,'kind') && ...
+            strcmpi(safeStr(S.kind),'GA_GROUP_VIDEO_EXPORT')
+        E = S;
+        return;
+    end
+
+    error('Selected MAT file is not a GA_GROUP_VIDEO_EXPORT bundle.');
+end
+    
     function s = onoff(tf)
         if tf
             s = 'on';
@@ -3047,7 +3293,7 @@ function resetWarpToNativeCB(~,~)
     end
 end
 
-function resetAfterDataSpaceChange(clearMaskNow)
+    function resetAfterDataSpaceChange(clearMaskNow)
     if nargin < 1
         clearMaskNow = false;
     end
@@ -3060,13 +3306,16 @@ function resetAfterDataSpaceChange(clearMaskNow)
     switch ndPSC
         case 4
             [ny, nx, nZ, nFrames] = size(PSC);
+            nVols = size(PSC,4);
         case 3
             [ny, nx, nFrames] = size(PSC);
             nZ = 1;
+            nVols = size(PSC,3);
         case 2
             [ny, nx] = size(PSC);
             nZ = 1;
             nFrames = 1;
+            nVols = 1;
         otherwise
             error('PSC must be 2D, 3D or 4D after space change.');
     end
@@ -3085,7 +3334,7 @@ function resetAfterDataSpaceChange(clearMaskNow)
     end
 
     try
-        set(slVol,'Max',nVols,'Value',volume);
+        set(slVol,'Min',1,'Max',max(1,nVols),'Value',volume);
         set(txtVol,'String',sprintf('%d / %d',volume,nVols));
     catch
     end
@@ -3656,9 +3905,29 @@ function meta = defaultUnderlayMeta()
     meta.atlasMode = '';
 end
 
-function [U, meta] = extractUnderlayFromMatStruct(S)
+    function [U, meta] = extractUnderlayFromMatStruct(S)
     meta = defaultUnderlayMeta();
 
+    % =====================================================
+    % 1) DIRECT support for Group Analysis video export MAT
+    %    saved as: save(...,'E','-v7.3')
+    % =====================================================
+    if isfield(S,'E') && isstruct(S.E)
+        [ok,U,meta] = tryExtractSpecialUnderlayStruct(S.E, meta);
+        if ok
+            return;
+        end
+    end
+
+    % Also support files saved directly as struct fields (no E wrapper)
+    [ok,U,meta] = tryExtractSpecialUnderlayStruct(S, meta);
+    if ok
+        return;
+    end
+
+    % =====================================================
+    % 2) Existing atlas/regions logic
+    % =====================================================
     if isfield(S,'atlasMode') && ~isempty(S.atlasMode)
         try
             meta.atlasMode = char(S.atlasMode);
@@ -3694,18 +3963,35 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
         return;
     end
 
-    pref = {'atlasUnderlayRGB','underlay','bg','brainImage','img','I','atlasUnderlay','vascular','histology','regions','Data'};
+    % =====================================================
+    % 3) Generic preferred fields
+    % =====================================================
+    pref = { ...
+        'underlay2D', ...
+        'brainImage', ...
+        'atlasUnderlayRGB', ...
+        'underlay', ...
+        'bg', ...
+        'img', ...
+        'I', ...
+        'atlasUnderlay', ...
+        'vascular', ...
+        'histology', ...
+        'regions', ...
+        'Data'};
 
     for ii = 1:numel(pref)
-        if isfield(S,pref{ii})
-            v = S.(pref{ii});
-            if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data)
+        fn = pref{ii};
+        if isfield(S,fn)
+            v = S.(fn);
+
+            if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
                 U = double(v.Data);
                 if ndims(U) == 3 && size(U,3) == 3
                     meta.isColor = true;
                 end
                 return;
-            elseif isnumeric(v) || islogical(v)
+            elseif (isnumeric(v) || islogical(v)) && ~isempty(v)
                 U = double(v);
                 if ndims(U) == 3 && size(U,3) == 3
                     meta.isColor = true;
@@ -3715,16 +4001,22 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
         end
     end
 
+    % =====================================================
+    % 4) Last fallback: first usable numeric field
+    % =====================================================
     fn = fieldnames(S);
     for ii = 1:numel(fn)
         v = S.(fn{ii});
-        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data)
-            U = double(v.Data);
-            if ndims(U) == 3 && size(U,3) == 3
-                meta.isColor = true;
+
+        if isstruct(v)
+            if isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+                U = double(v.Data);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                return;
             end
-            return;
-        elseif isnumeric(v) || islogical(v)
+        elseif (isnumeric(v) || islogical(v)) && ~isempty(v)
             U = double(v);
             if ndims(U) == 3 && size(U,3) == 3
                 meta.isColor = true;
@@ -3734,7 +4026,80 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
     end
 
     error('MAT underlay file has no usable numeric variable.');
+    end
+
+function [ok, U, meta] = tryExtractSpecialUnderlayStruct(X, meta)
+    ok = false;
+    U = [];
+
+    if ~isstruct(X)
+        return;
+    end
+
+    % -----------------------------------------------
+    % Group Analysis video export bundle
+    % -----------------------------------------------
+   if isfield(X,'kind') && strcmpi(strtrim(safeStr(X.kind)),'GA_GROUP_VIDEO_EXPORT')
+        % Preferred underlay
+        if isfield(X,'underlay2D') && ~isempty(X.underlay2D) && ...
+                (isnumeric(X.underlay2D) || islogical(X.underlay2D))
+            U = double(X.underlay2D);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            meta.atlasMode = 'ga_group_video_export';
+            ok = true;
+            return;
+        end
+
+        % Fallbacks just in case
+        if isfield(X,'brainImage') && ~isempty(X.brainImage) && ...
+                (isnumeric(X.brainImage) || islogical(X.brainImage))
+            U = double(X.brainImage);
+            if ndims(U) == 3 && size(U,3) == 3
+                meta.isColor = true;
+            end
+            meta.atlasMode = 'ga_group_video_export';
+            ok = true;
+            return;
+        end
+
+        if isfield(X,'groupMap2D') && ~isempty(X.groupMap2D) && ...
+                (isnumeric(X.groupMap2D) || islogical(X.groupMap2D))
+            U = double(X.groupMap2D);
+            meta.atlasMode = 'ga_group_video_export';
+            ok = true;
+            return;
+        end
+    end
+
+    % -----------------------------------------------
+    % Generic nested struct with useful underlay names
+    % -----------------------------------------------
+    cand = {'underlay2D','brainImage','atlasUnderlayRGB','underlay','bg','img','I','Data'};
+    for k = 1:numel(cand)
+        fn = cand{k};
+        if isfield(X,fn)
+            v = X.(fn);
+            if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+                U = double(v.Data);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                ok = true;
+                return;
+            elseif (isnumeric(v) || islogical(v)) && ~isempty(v)
+                U = double(v);
+                if ndims(U) == 3 && size(U,3) == 3
+                    meta.isColor = true;
+                end
+                ok = true;
+                return;
+            end
+        end
+    end
 end
+
 
 function Uout = warpUnderlayForCurrentDisplay(Uin, T, zSel)
     A = double(T.warpA);
