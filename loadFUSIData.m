@@ -48,11 +48,15 @@ switch extKey
         % -------------------------------------------------
         % RAW METADATA PASS-THROUGH
         % -------------------------------------------------
-        meta.rawMetadata = struct();
+meta.rawMetadata = struct();
 
-        if isfield(S,'metadata') && isstruct(S.metadata)
-            meta.rawMetadata = S.metadata;
-        end
+if isfield(S,'metadata') && isstruct(S.metadata)
+    meta.rawMetadata.metadata = S.metadata;
+end
+
+if isfield(S,'md') && isstruct(S.md)
+    meta.rawMetadata.md = S.md;
+end
 
         geomFields = {'imageDim','imageSize','voxelSize','imageType','origin','t0'};
         for iF = 1:numel(geomFields)
@@ -80,7 +84,84 @@ switch extKey
 
         I = single(I);
         meta.rawMetadata.loadedVarName = pickedVarName;
+% -------------------------------------------------
+% THEO / PYFUS GEOMETRY RECONSTRUCTION
+% Rebuild data using md.size / md.imageSize first,
+% then standardize to [DV LR AP T] for downstream use.
+% -------------------------------------------------
+meta.rawMetadata.sizeBeforeTheoFix = size(I);
 
+if isfield(S, 'md') && isstruct(S.md)
+
+    meta.rawMetadata.md = S.md;
+
+    spatialSize = [];
+    if isfield(S.md, 'size') && isnumeric(S.md.size) && numel(S.md.size) >= 3
+        spatialSize = double(S.md.size(:))';
+        meta.rawMetadata.sourceSpatialField = 'md.size';
+    elseif isfield(S.md, 'imageSize') && isnumeric(S.md.imageSize) && numel(S.md.imageSize) >= 3
+        spatialSize = double(S.md.imageSize(:))';
+        meta.rawMetadata.sourceSpatialField = 'md.imageSize';
+    end
+
+    dirStr = '';
+    if isfield(S.md, 'Direction') && ~isempty(S.md.Direction)
+        try
+            dirStr = upper(strrep(char(S.md.Direction), ' ', ''));
+        catch
+            dirStr = '';
+        end
+    end
+    meta.rawMetadata.Direction = dirStr;
+
+    if ~isempty(spatialSize)
+        spatialSize = round(spatialSize(1:3));
+        meta.rawMetadata.targetSpatialSizeTheo = spatialSize;
+
+        % -------------------------------------------------
+        % CASE A:
+        % Theo flattened storage, e.g. I is [DV x (AP*LR) x T]
+        % Python does:
+        %   size_ = [size(1) size(3) size(2)]
+        %   reshape(I, [size_ T])
+        % -------------------------------------------------
+        if ndims(I) == 3
+            nTraw = size(I, 3);
+            theoShape = [spatialSize(1) spatialSize(3) spatialSize(2) nTraw];
+
+            if numel(I) == prod(theoShape)
+                I = reshape(I, theoShape);
+                meta.rawMetadata.theoFixApplied = 'reshape_to_[DV_LR_AP_T]';
+                meta.rawMetadata.reshapeApplied = theoShape;
+            end
+        end
+
+        % -------------------------------------------------
+        % CASE B:
+        % Already 4D, but maybe still ordered as [DV AP LR T]
+        % Convert to [DV LR AP T]
+        % -------------------------------------------------
+        if ndims(I) == 4
+            szI = size(I);
+
+            if numel(szI) >= 4
+                if isequal(szI(1:3), spatialSize(1:3))
+                    % [DV AP LR T] -> [DV LR AP T]
+                    I = permute(I, [1 3 2 4]);
+                    meta.rawMetadata.theoFixApplied = 'permute_[1_3_2_4]';
+                    meta.rawMetadata.permuteApplied = [1 3 2 4];
+
+                elseif isequal(szI(1:3), spatialSize([1 3 2]))
+                    % already [DV LR AP T]
+                    meta.rawMetadata.theoFixApplied = 'already_[DV_LR_AP_T]';
+                    meta.rawMetadata.permuteApplied = [1 2 3 4];
+                end
+            end
+        end
+    end
+end
+
+meta.rawMetadata.sizeAfterTheoFix = size(I);
         % -------------------------------------------------
         % TR / TOTAL TIME DETECTION
         % -------------------------------------------------
@@ -114,10 +195,15 @@ switch extKey
         end
 
         if isempty(TR) || ~isfinite(TR) || TR <= 0
-            warning('loadFUSIData:FallbackTR', ...
-                'TR not found - using fallback TR = %.3f s', fallbackTR);
-            TR = fallbackTR;
-        end
+    warning('loadFUSIData:FallbackTR', ...
+        'TR not found - using fallback TR = %.3f s', fallbackTR);
+    TR = fallbackTR;
+elseif TR > 1.0
+    warning('loadFUSIData:SuspiciousTR', ...
+        'Suspicious TR = %.3f s found in file. Using fallback TR = %.3f s instead.', ...
+        TR, fallbackTR);
+    TR = fallbackTR;
+end
 
         if isempty(TotalTimeSec) || ~isfinite(TotalTimeSec) || TotalTimeSec <= 0
             TotalTimeSec = size(I, ndims(I)) * TR;
@@ -524,7 +610,11 @@ end
 end
 
 
-function out = searchByNames(v, names, depth, mode)
+function out = searchByNames(v, names, depth, mode, matchedContext)
+
+if nargin < 5
+    matchedContext = false;
+end
 
 out = [];
 
@@ -532,7 +622,13 @@ if depth > 5
     return;
 end
 
+% Only accept raw numeric values if we are already inside
+% a field whose NAME matched one of the requested names.
 if isnumeric(v) && ~isempty(v)
+    if ~matchedContext
+        return;
+    end
+
     if strcmp(mode,'scalar')
         if isscalar(v) && isfinite(v) && v > 0
             out = double(v);
@@ -554,7 +650,7 @@ if iscell(v) && ~isempty(v)
     nMax = min(numel(v), 24);
     for ii = 1:nMax
         try
-            out = searchByNames(v{ii}, names, depth+1, mode);
+            out = searchByNames(v{ii}, names, depth+1, mode, matchedContext);
             if ~isempty(out), return; end
         catch
         end
@@ -634,6 +730,7 @@ for k = 1:numel(names)
 end
 
 if matched
+    % direct hit: field name itself matches
     if strcmp(mode,'scalar')
         if isnumeric(val) && isscalar(val) && isfinite(val) && val > 0
             out = double(val);
@@ -649,8 +746,14 @@ if matched
             end
         end
     end
+
+    % if the matched field contains nested data, allow searching inside it
+    out = searchByNames(val, names, depth+1, mode, true);
+    return;
 end
 
-out = searchByNames(val, names, depth+1, mode);
+% field name did not match -> continue searching,
+% but DO NOT allow arbitrary numerics to be accepted
+out = searchByNames(val, names, depth+1, mode, false);
 
 end

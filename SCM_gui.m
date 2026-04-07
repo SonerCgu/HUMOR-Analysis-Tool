@@ -1293,27 +1293,43 @@ function updateView(~,~)
     ov = get(hOV, 'CData');
 
     baseMask = double(mask2D);
-    thrMask  = double(abs(ov) >= thr);
 
-    if ~state.alphaModOn
-        alpha = (a/100) .* thrMask .* baseMask;
-    else
-        effLo = max(state.modMin, thr);
-        effHi = state.modMax;
+% show only positive SCM values
+showMask = (ov > 0);
 
-        if ~isfinite(effHi) || effHi <= effLo
-            effHi = max(abs(ov(:)));
-        end
-        if ~isfinite(effHi) || effHi <= effLo
+% threshold still based on absolute magnitude, but only for positive values
+thrMask = double((abs(ov) >= thr) & showMask);
+
+if ~state.alphaModOn
+    alpha = (a/100) .* thrMask .* baseMask;
+else
+    effLo = max(state.modMin, thr);
+    effHi = state.modMax;
+
+    ovAbsPos = abs(ov);
+    ovAbsPos(~showMask) = NaN;
+
+    if ~isfinite(effHi) || effHi <= effLo
+        tmp = ovAbsPos(isfinite(ovAbsPos));
+        if isempty(tmp)
             effHi = effLo + eps;
+        else
+            effHi = max(tmp);
         end
-
-        mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-        mod(~isfinite(mod)) = 0;
-        mod = min(max(mod, 0), 1);
-
-        alpha = (a/100) .* mod .* thrMask .* baseMask;
     end
+    if ~isfinite(effHi) || effHi <= effLo
+        effHi = effLo + eps;
+    end
+
+    mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
+    mod(~isfinite(mod)) = 0;
+    mod = min(max(mod, 0), 1);
+
+    % never show negative values
+    mod(~showMask) = 0;
+
+    alpha = (a/100) .* mod .* thrMask .* baseMask;
+end
 
     set(hOV, 'AlphaData', alpha);
     caxis(ax, state.cax);
@@ -2018,27 +2034,41 @@ function alpha = alphaFromCurrentSettings(ov)
     end
 
     baseMask = double(mask2D);
-    thrMask  = double(abs(ov) >= thr);
 
-    if ~state.alphaModOn
-        alpha = (a/100) .* thrMask .* baseMask;
-    else
-        effLo = max(mMin, thr);
-        effHi = mMax;
+% show only positive SCM values
+showMask = (ov > 0);
 
-        if ~isfinite(effHi) || effHi <= effLo
-            effHi = max(abs(ov(:)));
-        end
-        if ~isfinite(effHi) || effHi <= effLo
+thrMask = double((abs(ov) >= thr) & showMask);
+
+if ~state.alphaModOn
+    alpha = (a/100) .* thrMask .* baseMask;
+else
+    effLo = max(mMin, thr);
+    effHi = mMax;
+
+    ovAbsPos = abs(ov);
+    ovAbsPos(~showMask) = NaN;
+
+    if ~isfinite(effHi) || effHi <= effLo
+        tmp = ovAbsPos(isfinite(ovAbsPos));
+        if isempty(tmp)
             effHi = effLo + eps;
+        else
+            effHi = max(tmp);
         end
-
-        mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-        mod(~isfinite(mod)) = 0;
-        mod = min(max(mod, 0), 1);
-
-        alpha = (a/100) .* mod .* thrMask .* baseMask;
     end
+    if ~isfinite(effHi) || effHi <= effLo
+        effHi = effLo + eps;
+    end
+
+    mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
+    mod(~isfinite(mod)) = 0;
+    mod = min(max(mod, 0), 1);
+
+    mod(~showMask) = 0;
+
+    alpha = (a/100) .* mod .* thrMask .* baseMask;
+end
 end
 
 %% ==========================================================

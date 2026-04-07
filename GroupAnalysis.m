@@ -3260,62 +3260,62 @@ end
     end
 
         function idx = findSingleBundleTargetRow(S0, metaIn)
-        idx = [];
+    idx = [];
 
-        sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
+    sel = clampSelRows(S0.selectedRows, size(S0.subj,1));
 
-        % 1) Explicit user selection: prefer first selected row with empty bundle
-        for r = sel(:)'
-            if isempty(strtrimSafe(S0.subj{r,8}))
-                idx = r;
-                return;
-            end
-        end
-
-        % 2) If exactly one row is selected, allow overwrite
-        if numel(sel) == 1
-            idx = sel(1);
+    % 1) Explicit user selection: prefer first selected row with empty bundle
+    for r = sel(:)'
+        if isempty(strtrimSafe(S0.subj{r,8}))
+            idx = r;
             return;
         end
+    end
 
-        % 3) Prefer metadata-matching PACAP / CondA row with empty bundle
-        idx = findBestMetaBundleRow(S0, metaIn, true, true);
-        if ~isempty(idx), return; end
+    % 2) If exactly one row is selected, allow overwrite
+    if numel(sel) == 1
+        idx = sel(1);
+        return;
+    end
 
-        % 4) Otherwise any metadata-matching row with empty bundle
-        idx = findBestMetaBundleRow(S0, metaIn, false, true);
-        if ~isempty(idx), return; end
+    % 3) Prefer strict metadata-matching PACAP/CondA row with empty bundle
+    idx = findBestMetaBundleRow(S0, metaIn, true, true);
+    if ~isempty(idx), return; end
 
-        % 5) Then metadata-matching PACAP / CondA row even if already filled
-        idx = findBestMetaBundleRow(S0, metaIn, true, false);
-        if ~isempty(idx), return; end
+    % 4) Otherwise any strict metadata-matching row with empty bundle
+    idx = findBestMetaBundleRow(S0, metaIn, false, true);
+    if ~isempty(idx), return; end
 
-        % 6) Then any metadata-matching row
-        idx = findBestMetaBundleRow(S0, metaIn, false, false);
-        if ~isempty(idx), return; end
+    % 5) Then strict metadata-matching PACAP/CondA row even if already filled
+    idx = findBestMetaBundleRow(S0, metaIn, true, false);
+    if ~isempty(idx), return; end
 
-        % 7) Fallback: active USE PACAP / CondA row with empty bundle
-        useRows = find(logicalCol(S0.subj,1));
-        for r = useRows(:)'
-            if isempty(strtrimSafe(S0.subj{r,8})) && isPacapRowGA(S0.subj(r,:))
-                idx = r;
-                return;
-            end
-        end
+    % 6) Then any strict metadata-matching row
+    idx = findBestMetaBundleRow(S0, metaIn, false, false);
+    if ~isempty(idx), return; end
 
-        % 8) Fallback: any active USE row with empty bundle
-        for r = useRows(:)'
-            if isempty(strtrimSafe(S0.subj{r,8}))
-                idx = r;
-                return;
-            end
-        end
-
-        % 9) If exactly one USE row exists, allow overwrite
-        if numel(useRows) == 1
-            idx = useRows(1);
+    % 7) SAFE fallback only if there is exactly one active USE row with empty bundle
+    useRows = find(logicalCol(S0.subj,1));
+    emptyUse = [];
+    for r = useRows(:)'
+        if isempty(strtrimSafe(S0.subj{r,8}))
+            emptyUse(end+1) = r; %#ok<AGROW>
         end
     end
+
+    if numel(emptyUse) == 1
+        idx = emptyUse(1);
+        return;
+    end
+
+    % 8) If exactly one USE row exists, allow overwrite
+    if numel(useRows) == 1
+        idx = useRows(1);
+        return;
+    end
+
+    % otherwise leave empty -> caller will create a new row
+end
 
     function idx = findBestMetaBundleRow(S0, metaIn, preferPacap, requireEmptyBundle)
         idx = [];
@@ -3381,95 +3381,28 @@ end
         tf = sessOK && scanOK;
     end
 
-    function tf = metaLooseFieldMatch(a, b)
-        a = strtrimSafe(a);
-        b = strtrimSafe(b);
+   function tf = metaLooseFieldMatch(a, b)
+    a = strtrimSafe(a);
+    b = strtrimSafe(b);
 
-        if isempty(a) || isempty(b) || strcmpi(a,'N/A') || strcmpi(b,'N/A')
-            tf = true;
-        else
-            tf = strcmpi(a, b);
-        end
+    aUnknown = isempty(a) || strcmpi(a,'N/A');
+    bUnknown = isempty(b) || strcmpi(b,'N/A');
+
+    % both unknown -> okay, treat as equal
+    if aUnknown && bUnknown
+        tf = true;
+        return;
     end
 
-    function syncUIFromState()
-        S0 = guidata(hFig);
-
-        set(S0.hTC_ComputePSC,'Value',double(S0.tc_computePSC));
-        set(S0.hBase0,'String',num2str(S0.tc_baseMin0));
-        set(S0.hBase1,'String',num2str(S0.tc_baseMin1));
-        set(S0.hInj0,'String',num2str(S0.tc_injMin0));
-        set(S0.hInj1,'String',num2str(S0.tc_injMin1));
-        set(S0.hPkS0,'String',num2str(S0.tc_peakSearchMin0));
-        set(S0.hPkS1,'String',num2str(S0.tc_peakSearchMin1));
-        set(S0.hPlat0,'String',num2str(S0.tc_plateauMin0));
-        set(S0.hPlat1,'String',num2str(S0.tc_plateauMin1));
-        set(S0.hTC_PeakWin,'String',num2str(S0.tc_peakWinMin));
-        set(S0.hTC_Trim,'String',num2str(S0.tc_trimPct));
-        set(S0.hShowSEM,'Value',double(S0.tc_showSEM));
-        set(S0.hShowInjBox,'Value',double(S0.tc_showInjectionBox));
-        set(S0.hOutEdit,'String',S0.outDir);
-
-        setPopupToString(S0.hMapSummary, S0.mapSummary);
-        setPopupToString(S0.hMapSource, S0.mapSource);
-
-        if isfield(S0,'hMapModMin'), set(S0.hMapModMin,'String',num2str(S0.mapModMin)); end
-        if isfield(S0,'hMapModMax'), set(S0.hMapModMax,'String',num2str(S0.mapModMax)); end
-        if isfield(S0,'hMapSigma'),  set(S0.hMapSigma,'String', num2str(S0.mapSigma)); end
-        if isfield(S0,'hMapCaxis'),  set(S0.hMapCaxis,'String', sprintf('%g %g',S0.mapCaxis(1),S0.mapCaxis(2))); end
-        if isfield(S0,'hMapUseGlobalWin'), set(S0.hMapUseGlobalWin,'Value',double(S0.mapUseGlobalWindows)); end
-if isfield(S0,'hMapBase0'), set(S0.hMapBase0,'String',num2str(S0.mapGlobalBaseSec(1))); end
-if isfield(S0,'hMapBase1'), set(S0.hMapBase1,'String',num2str(S0.mapGlobalBaseSec(2))); end
-if isfield(S0,'hMapSig0'),  set(S0.hMapSig0,'String', num2str(S0.mapGlobalSigSec(1))); end
-if isfield(S0,'hMapExportStatus') && ishghandle(S0.hMapExportStatus)
-    try
-        set(S0.hMapExportStatus,'String',S0.mapExportLog);
-    catch
+    % one known and one unknown -> NOT a match
+    if aUnknown || bUnknown
+        tf = false;
+        return;
     end
+
+    % both known -> exact match only
+    tf = strcmpi(a, b);
 end
-if isfield(S0,'hMapSig1'),  set(S0.hMapSig1,'String', num2str(S0.mapGlobalSigSec(2))); end
-if isfield(S0,'hMapUnderlayMode'), setPopupToString(S0.hMapUnderlayMode, S0.mapUnderlayMode); end
-updateMapUnderlayInfoLabel();
-        if isfield(S0,'hMapBlackBody'), set(S0.hMapBlackBody,'Value',double(S0.mapBlackBody)); end
-if isfield(S0,'hMapFlipMode'),  setPopupToString(S0.hMapFlipMode, S0.mapFlipMode); end
-if isfield(S0,'hMapColormap'),  setPopupToString(S0.hMapColormap, S0.mapColormap); end
-
-        set(S0.hTopAuto,'Value',double(S0.plotTop.auto));
-        set(S0.hTopZero,'Value',double(S0.plotTop.forceZero));
-        set(S0.hTopStep,'String',num2str(S0.plotTop.step));
-        set(S0.hTopYmin,'String',num2str(S0.plotTop.ymin));
-        set(S0.hTopYmax,'String',num2str(S0.plotTop.ymax));
-
-        set(S0.hBotAuto,'Value',double(S0.plotBot.auto));
-        set(S0.hBotZero,'Value',double(S0.plotBot.forceZero));
-        set(S0.hBotStep,'String',num2str(S0.plotBot.step));
-        set(S0.hBotYmin,'String',num2str(S0.plotBot.ymin));
-        set(S0.hBotYmax,'String',num2str(S0.plotBot.ymax));
-
-        setPopupToString(S0.hColorMode, S0.colorMode);
-        setPopupToString(S0.hColorScheme, S0.colorScheme);
-        setPopupToString(S0.hManGroupA, S0.manualGroupA);
-        setPopupToString(S0.hManGroupB, S0.manualGroupB);
-
-        try, set(S0.hManColorA,'Value',S0.manualColorA); catch, end
-        try, set(S0.hManColorB,'Value',S0.manualColorB); catch, end
-        try, set(S0.hSmoothEnable,'Value',double(S0.tc_previewSmooth)); catch, end
-        try, set(S0.hSmoothWin,'String',num2str(S0.tc_previewSmoothWinSec)); catch, end
-
-        setPopupToString(S0.hTest, S0.testType);
-        set(S0.hAlpha,'String',num2str(S0.alpha));
-        setPopupToString(S0.hAnnotMode, S0.annotMode);
-        set(S0.hShowPText,'Value',double(S0.showPText));
-
-        setPopupToString(S0.hPrevStyle, S0.previewStyle);
-        set(S0.hPrevGrid,'Value',double(S0.previewShowGrid));
-
-        if strcmpi(S0.tc_metric,'Robust Peak')
-            set(S0.hTC_Metric,'Value',2);
-        else
-            set(S0.hTC_Metric,'Value',1);
-        end
-    end
 
     function setPopupToString(h, desired)
         items = get(h,'String');
@@ -5282,10 +5215,10 @@ R = S0.lastROI;
             lineCol = col;
             fillCol = col;
 
-            if strcmpi(S0.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
-                lineCol = [0.10 0.10 0.10];
-                fillCol = [0.65 0.65 0.65];
-            end
+           if strcmpi(S0.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
+    lineCol = [0.40 0.40 0.40];
+    fillCol = [0.78 0.78 0.78];
+end
 
             if R.showSEM
                 [hLine, ~] = shadedLineColored(S0.ax1, t, mu, se, lineCol, fillCol, S0.displaySemAlpha);
@@ -5943,26 +5876,180 @@ function A = flipLR_3D_local(A)
     A = A(:,end:-1:1,:);
 end
 
+
+
 function exportPreviewPNG(outFile, which, S)
 [figBg,~] = previewColors(S.previewStyle);
-f = figure('Visible','off','Color',figBg,'InvertHardcopy','off', ...
-    'MenuBar','none','ToolBar','none','NumberTitle','off','Renderer','opengl');
-set(f,'Position',[100 100 1400 820]);
 
-ax = axes('Parent',f,'Units','normalized','Position',[0.09 0.12 0.86 0.62]);
+% Export-only geometry
+if which == 1
+    % Top plot: make wider again
+    figPos = [100 100 1320 620];
+   axPos  = [0.10 0.36 0.96 0.34];
+    boxAsp = [2.00 1 1];
+else
+    % Bottom plot: keep mostly as before, only slightly broader
+    figPos = [100 100 980 620];
+    axPos  = [0.25 0.24 0.44 0.28];
+    boxAsp = [0.92 1 1];
+end
+
+f = figure( ...
+    'Visible','off', ...
+    'Color',figBg, ...
+    'InvertHardcopy','off', ...
+    'MenuBar','none', ...
+    'ToolBar','none', ...
+    'NumberTitle','off', ...
+    'Renderer','opengl');
+
+set(f,'Position',figPos);
+
+ax = axes( ...
+    'Parent',f, ...
+    'Units','normalized', ...
+    'Position',axPos);
+
 styleAxesMode(ax, S.previewStyle, S.previewShowGrid);
 recolorAxesText(ax, S.previewStyle);
 
+try, set(ax,'LineWidth',1.0); catch, end
+try, set(ax,'TickDir','out'); catch, end
+try, set(ax,'TickLength',[0.012 0.012]); catch, end
+try, set(ax,'ActivePositionProperty','position'); catch, end
+
 exportOnePreview(ax, which, S, S.previewStyle);
 
-set(f,'InvertHardcopy','off');
+% Apply aspect after plotting
+try, pbaspect(ax, boxAsp); catch, end
+
+if which == 2
+    % Slight extra headroom for stats annotation
+    try
+        yl = ylim(ax);
+        dy = yl(2) - yl(1);
+        if isfinite(dy) && dy > 0
+            ylim(ax, [yl(1) yl(2) + 0.12*dy]);
+        end
+    catch
+    end
+
+    % Remove bottom export title
+    try
+        title(ax,'');
+    catch
+    end
+
+    % Move p-text / stars slightly upward and to the right
+    moveExportStatsForExport(ax, 0, -0.08);
+end
+
 set(f,'PaperPositionMode','auto');
-print(f, outFile, '-dpng', '-r250');
+print(f, outFile, '-dpng', '-r300');
 close(f);
 end
 
+   function moveExportStatsForExport(ax, xFracRight, pGapBelowStar)
+if nargin < 2 || isempty(xFracRight)
+    xFracRight = 0.06;
+end
+if nargin < 3 || isempty(pGapBelowStar)
+    pGapBelowStar = 0.05;
+end
 
-function y = tern(cond,a,b)
+if isempty(ax) || ~ishandle(ax)
+    return;
+end
+
+try
+    xl = xlim(ax);
+    yl = ylim(ax);
+catch
+    return;
+end
+
+dx = xl(2) - xl(1);
+dy = yl(2) - yl(1);
+
+if ~isfinite(dx) || dx <= 0 || ~isfinite(dy) || dy <= 0
+    return;
+end
+
+txts = findall(ax,'Type','text');
+if isempty(txts)
+    return;
+end
+
+hP = [];
+hStar = [];
+
+for k = 1:numel(txts)
+    h = txts(k);
+
+    try
+        s = get(h,'String');
+    catch
+        continue;
+    end
+
+    if iscell(s)
+        try
+            s = strjoin(s,' ');
+        catch
+            s = '';
+        end
+    end
+
+    s = strtrimSafe(s);
+    sLow = lower(s);
+    sNoSpace = strrep(sLow,' ','');
+
+    isPText = contains(sNoSpace,'p=');
+    isStar  = strcmp(s,'*') || strcmp(s,'**') || strcmp(s,'***') || strcmpi(s,'n.s.');
+
+    if isPText
+        hP = h;
+    elseif isStar
+        hStar = h;
+    end
+end
+
+if isempty(hP) || ~ishandle(hP)
+    return;
+end
+
+try
+    posP = get(hP,'Position');
+catch
+    return;
+end
+
+if ~isempty(hStar) && ishandle(hStar)
+    try
+        posS = get(hStar,'Position');
+
+        % place p-text slightly to the right of the star center
+        posP(1) = min(xl(2) - 0.05*dx, posS(1) + xFracRight*dx);
+
+        % place p-text BELOW the star by a fixed gap
+        posP(2) = max(yl(1) + 0.03*dy, posS(2) - pGapBelowStar*dy);
+    catch
+    end
+else
+    % fallback if no star text found
+    posP(1) = min(xl(2) - 0.05*dx, posP(1) + xFracRight*dx);
+end
+
+try
+    set(hP,'Position',posP);
+    set(hP,'HorizontalAlignment','center');
+    set(hP,'VerticalAlignment','top');
+    set(hP,'FontSize',9);   % smaller p-value text
+catch
+end
+end
+
+function y = tern(cond, a, b)
 if cond
     y = a;
 else
@@ -7796,11 +7883,11 @@ if gN >= 2 && isTwo
     text(ax, (x1+x2)/2, yBar + 0.02*ySpan, stars, ...
         'Color',fg,'FontSize',16,'FontWeight','bold', ...
         'HorizontalAlignment','center','VerticalAlignment','bottom');
-    if S.showPText
-        text(ax, (x1+x2)/2, yBar - 0.06*ySpan, sprintf('p=%.3g (alpha=%.3g)', p, alpha), ...
-            'Color',fg,'FontSize',11, ...
-            'HorizontalAlignment','center','VerticalAlignment','top');
-    end
+   if S.showPText
+    text(ax, (x1+x2)/2, yBar - 0.06*ySpan, sprintf('p = %.3g', p), ...
+        'Color',fg,'FontSize',11, ...
+        'HorizontalAlignment','center','VerticalAlignment','top');
+end
 else
     txt = sprintf('%s | p=%.3g', shortType(tType), p);
     text(ax, mean(xlim(ax)), yl(2)-0.04*ySpan, txt, ...
@@ -9027,9 +9114,7 @@ end
 end
     
    
-    
-    
-    function key = makeBundleEntityKeyForRow(S, r)
+ function key = makeBundleEntityKeyForRow(S, r)
     key = '';
 
     if isempty(r) || ~isfinite(r) || r < 1 || r > size(S.subj,1)
@@ -9042,36 +9127,18 @@ end
     session  = lower(strtrimSafe(info.session));
     scanID   = lower(strtrimSafe(info.scanID));
 
-    if ~isempty(animalID) && ~strcmpi(animalID,'n/a') && ...
-       ~isempty(session)  && ~strcmpi(session,'n/a')  && ...
-       ~isempty(scanID)   && ~strcmpi(scanID,'n/a')
+    haveAnimal = ~isempty(animalID) && ~strcmpi(animalID,'n/a');
+    haveSess   = ~isempty(session)  && ~strcmpi(session,'n/a');
+    haveScan   = ~isempty(scanID)   && ~strcmpi(scanID,'n/a');
+
+    % Only collapse rows when full identity is known
+    if haveAnimal && haveSess && haveScan
         key = [animalID '|' session '|' scanID];
         return;
     end
 
-    if ~isempty(animalID) && ~strcmpi(animalID,'n/a') && ...
-       ~isempty(session)  && ~strcmpi(session,'n/a')
-        key = [animalID '|' session];
-        return;
-    end
-
-    if ~isempty(animalID) && ~strcmpi(animalID,'n/a')
-        key = animalID;
-        return;
-    end
-
-    bf = strtrimSafe(S.subj{r,8});
-    if isempty(bf)
-        try
-            bf = resolveGroupBundlePath(S, S.subj(r,:));
-        catch
-            bf = '';
-        end
-    end
-
-    if ~isempty(bf)
-        key = lower(bf);
-    end
+    % Otherwise keep row unique to avoid accidental merging
+    key = sprintf('row_%d', r);
 end
 
 function rows = getRowsForBundleEntityKey(S, key)
@@ -10978,10 +11045,10 @@ if which == 1
 
         lineCol = col;
         fillCol = col;
-        if strcmpi(S.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
-            lineCol = [0 0 0];
-            fillCol = [0.65 0.65 0.65];
-        end
+       if strcmpi(S.colorScheme,'PACAP/Vehicle') && strcmpi(displayNames{g},'Vehicle')
+    lineCol = [0.40 0.40 0.40];
+    fillCol = [0.78 0.78 0.78];
+end
 
         if R.showSEM
             [hLine,~] = shadedLineColored(ax, t, mu, se, lineCol, fillCol, S.exportSemAlpha);
@@ -11044,10 +11111,9 @@ else
         allBot = [allBot; y(:)]; %#ok<AGROW>
     end
 
-    set(ax,'XLim',[0.5 numel(gNames)+0.5], 'XTick',xTicks, 'XTickLabel',displayNames);
-    ylabel(ax, tern(R.unitsPercent,'Signal change (%)','Metric (a.u.)'), 'Color',fg);
-    title(ax, ['Metric: ' R.metricName], 'Color', fg);
-    moveTitleUp(ax, titleYForStyle(style));
+ set(ax,'XLim',[0.5 numel(gNames)+0.5], 'XTick',xTicks, 'XTickLabel',displayNames);
+ylabel(ax, tern(R.unitsPercent,'Signal change (%)','Metric (a.u.)'), 'Color',fg);
+title(ax, '', 'Color', fg);
 
     applyYLim(ax, allBot, S.plotBot);
 
