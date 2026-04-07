@@ -284,9 +284,11 @@ end
             end
 
             [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPositionsAbsMM, motorHomeMM, iTrial);
-            save(nameFile, 'I', 'md', '-v6');
+        save(nameFile, 'I', 'md', '-v6');
 
-            FS.writeJournal(localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHomeMM, iTrial));
+localWriteScanInfoText(nameFile, cfg, iTrial);
+
+FS.writeJournal(localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHomeMM, iTrial));
 
             localGuiLog(cfg, sprintf('Saved file: %s', nameFile));
             localGuiLog(cfg, sprintf('Saved folder: %s', fileparts(nameFile)));
@@ -392,7 +394,7 @@ function cfg = localApplyDefaults(cfg)
     end
 
     if ~isfield(cfg, 'n_frames') || isempty(cfg.n_frames)
-        cfg.n_frames = 500;
+        cfg.n_frames = 9000;
     end
 
     if ~isfield(cfg, 'nblocksImage') || isempty(cfg.nblocksImage)
@@ -437,19 +439,19 @@ function cfg = localApplyDefaults(cfg)
     end
 
     if ~isfield(cfg.stimbox, 'start_frame') || isempty(cfg.stimbox.start_frame)
-        cfg.stimbox.start_frame = 100;
+        cfg.stimbox.start_frame = 20;
     end
 
     if ~isfield(cfg.stimbox, 'frame_duration') || isempty(cfg.stimbox.frame_duration)
-        cfg.stimbox.frame_duration = 50;
+        cfg.stimbox.frame_duration = 10;
     end
 
     if ~isfield(cfg.stimbox, 'repeat_enable') || isempty(cfg.stimbox.repeat_enable)
-        cfg.stimbox.repeat_enable = false;
+        cfg.stimbox.repeat_enable = true;
     end
 
     if ~isfield(cfg.stimbox, 'repeat_interval_frames') || isempty(cfg.stimbox.repeat_interval_frames)
-        cfg.stimbox.repeat_interval_frames = 10;
+        cfg.stimbox.repeat_interval_frames = 50;
     end
 
     if ~isfield(cfg.stimbox, 'd3_enable') || isempty(cfg.stimbox.d3_enable)
@@ -486,7 +488,7 @@ function cfg = localApplyDefaults(cfg)
     end
 
     if ~isfield(cfg.pulsepal, 'com') || isempty(cfg.pulsepal.com)
-        cfg.pulsepal.com = 'COM13';
+        cfg.pulsepal.com = 'COM14';
     end
 
     if ~isfield(cfg.pulsepal, 'channel') || isempty(cfg.pulsepal.channel)
@@ -1091,26 +1093,200 @@ end
 % =========================================================================
 % Save names and journal text
 % =========================================================================
-function [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPositionsAbsMM, motorHomeMM, iTrial)
-    motorTag = localMotorTag(cfg, motorPositionsAbsMM, motorHomeMM);
+function [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPositionsAbsMM, motorHomeMM, iTrial) %#ok<INUSD>
+    % Save path:
+    %   Data\<save_owner>\<xp_name>\<xp_name>_scanN[_StimBox][_ElectricalStim][_Motor].mat
+    %
+    % IMPORTANT:
+    % scan number is global within the experiment folder, independent of suffix.
 
-    fileSpec = sprintf('%s\\Session_%s\\fUS_%s_%s_T%03d.mat', ...
-        cfg.xp_name, sessionTag, sessionTag, motorTag, iTrial);
+    if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
+        cfg.save_owner = 'Soner';
+    end
 
-    [nameFile, nameShort] = FS.newName(fileSpec);
+    baseFolder = fullfile('Data', cfg.save_owner, cfg.xp_name);
+
+    if ~exist(baseFolder, 'dir')
+        mkdir(baseFolder);
+    end
+
+    deviceSuffix = localBuildDeviceSuffix(cfg);
+    scanIdx = localGetNextScanIndex(baseFolder, cfg.xp_name);
+
+    if isempty(deviceSuffix)
+        nameShort = sprintf('%s_scan%d.mat', cfg.xp_name, scanIdx);
+    else
+        nameShort = sprintf('%s_scan%d%s.mat', cfg.xp_name, scanIdx, deviceSuffix);
+    end
+
+    nameFile = fullfile(baseFolder, nameShort);
+end
+
+function suffix = localBuildDeviceSuffix(cfg)
+    parts = {};
+
+    if isfield(cfg, 'stimbox') && isstruct(cfg.stimbox) && isfield(cfg.stimbox, 'enable') && logical(cfg.stimbox.enable)
+        parts{end+1} = 'SB'; %#ok<AGROW>
+    end
+
+    if isfield(cfg, 'pulsepal') && isstruct(cfg.pulsepal) && isfield(cfg.pulsepal, 'enable') && logical(cfg.pulsepal.enable)
+        parts{end+1} = 'ES'; %#ok<AGROW>
+    end
+
+    if isfield(cfg, 'motor') && isstruct(cfg.motor) && isfield(cfg.motor, 'enable') && logical(cfg.motor.enable)
+        parts{end+1} = 'M'; %#ok<AGROW>
+    end
+
+    if isempty(parts)
+        suffix = '';
+    else
+        suffix = ['_' strjoin(parts, '_')];
+    end
+end
+
+function scanIdx = localGetNextScanIndex(folderPath, expName)
+    % IMPORTANT:
+    % Use one common scan counter across ALL scan files in this experiment folder,
+    % regardless of device suffix such as _Motor, _StimBox, _SB_M, etc.
+
+    d = dir(fullfile(folderPath, [expName '_scan*.mat']));
+    scanNums = [];
+
+    expr = ['^' regexptranslate('escape', expName) '_scan(\d+)(?:_.*)?\.mat$'];
+
+    for i = 1:numel(d)
+        thisName = d(i).name;
+        tok = regexp(thisName, expr, 'tokens', 'once');
+
+        if ~isempty(tok)
+            n = str2double(tok{1});
+            if ~isnan(n)
+                scanNums(end+1) = n; %#ok<AGROW>
+            end
+        end
+    end
+
+    if isempty(scanNums)
+        scanIdx = 1;
+    else
+        scanIdx = max(scanNums) + 1;
+    end
 end
 
 function txt = localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHomeMM, iTrial)
     motorTag = localMotorTag(cfg, motorPositionsAbsMM, motorHomeMM);
+    deviceSuffix = localBuildDeviceSuffix(cfg);
 
-    txt = sprintf('* %s (Trial=%d, Frames=%d, MotorMode=%s, MotorTag=%s, StimBox=%d, PulsePal=%d)', ...
+    txt = sprintf('* %s (Trial=%d, Frames=%d, Devices=%s, MotorMode=%s, MotorTag=%s, StimBox=%d, PulsePal=%d, Motor=%d)', ...
         nameShort, ...
         iTrial, ...
         cfg.n_frames, ...
+        deviceSuffix, ...
         cfg.motor.mode, ...
         motorTag, ...
         logical(cfg.stimbox.enable), ...
-        logical(cfg.pulsepal.enable));
+        logical(cfg.pulsepal.enable), ...
+        logical(cfg.motor.enable));
+end
+
+
+function localWriteScanInfoText(nameFile, cfg, iTrial)
+    [folderPath, baseName, ~] = fileparts(nameFile);
+    txtFile = fullfile(folderPath, [baseName '.txt']);
+
+    fid = fopen(txtFile, 'w');
+    if fid < 0
+        warning('Could not create scan info txt file: %s', txtFile);
+        return;
+    end
+
+    c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+    trSec = localCalcTRSec(cfg.nblocksImage);
+
+    fprintf(fid, 'Scan information\n');
+    fprintf(fid, '================\n\n');
+
+    fprintf(fid, 'Saved on: %s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS'));
+    fprintf(fid, 'MAT file: %s\n', nameFile);
+    fprintf(fid, 'Trial number: %d\n\n', iTrial);
+
+    fprintf(fid, '[Acquisition]\n');
+    fprintf(fid, 'Save owner: %s\n', localSafeText(localGetFieldIfExists(cfg, 'save_owner', 'NA')));
+    fprintf(fid, 'Experiment name: %s\n', localSafeText(localGetFieldIfExists(cfg, 'xp_name', 'NA')));
+    fprintf(fid, 'Frames per trial: %s\n', localNumToStr(cfg.n_frames));
+    fprintf(fid, 'Number of trials: %s\n', localNumToStr(cfg.n_trials));
+    fprintf(fid, 'nblocksImage: %s\n', localNumToStr(cfg.nblocksImage));
+    fprintf(fid, 'TR (s): %s\n', localNumToStr(trSec));
+    fprintf(fid, 'Frame rate (Hz): %s\n', localNumToStr(1 / trSec));
+    fprintf(fid, 'Pause between trials (s): %s\n', localNumToStr(cfg.time_pause));
+
+    fprintf(fid, '\n[StimBox]\n');
+    fprintf(fid, 'Enabled: %s\n', localOnOff(cfg.stimbox.enable));
+    fprintf(fid, 'COM: %s\n', localSafeText(cfg.stimbox.com));
+    fprintf(fid, 'Baud: %s\n', localNumToStr(cfg.stimbox.baud));
+    fprintf(fid, 'Frame start: %s\n', localNumToStr(cfg.stimbox.start_frame));
+    fprintf(fid, 'Frames active: %s\n', localNumToStr(cfg.stimbox.frame_duration));
+    fprintf(fid, 'Repeat enabled: %s\n', localOnOff(cfg.stimbox.repeat_enable));
+    fprintf(fid, 'Repeat every frames: %s\n', localNumToStr(cfg.stimbox.repeat_interval_frames));
+    fprintf(fid, 'D3 enabled: %s\n', localOnOff(cfg.stimbox.d3_enable));
+    fprintf(fid, 'D5 enabled: %s\n', localOnOff(cfg.stimbox.d5_enable));
+    fprintf(fid, 'D6 enabled: %s\n', localOnOff(cfg.stimbox.d6_enable));
+    fprintf(fid, 'Verbose log: %s\n', localOnOff(cfg.stimbox.verbose));
+
+    fprintf(fid, '\n[Electrical Stimulation / PulsePal]\n');
+    fprintf(fid, 'Enabled: %s\n', localOnOff(cfg.pulsepal.enable));
+    fprintf(fid, 'COM: %s\n', localSafeText(cfg.pulsepal.com));
+    fprintf(fid, 'Channel: %s\n', localNumToStr(cfg.pulsepal.channel));
+    fprintf(fid, 'Frame start: %s\n', localNumToStr(cfg.pulsepal.start_frame));
+    fprintf(fid, 'Frames active: %s\n', localNumToStr(cfg.pulsepal.frame_duration));
+    fprintf(fid, 'Repeat enabled: %s\n', localOnOff(cfg.pulsepal.repeat_enable));
+    fprintf(fid, 'Repeat every frames: %s\n', localNumToStr(cfg.pulsepal.repeat_interval_frames));
+    fprintf(fid, 'Biphasic: %s\n', localOnOff(cfg.pulsepal.is_biphasic));
+    fprintf(fid, 'Phase1 voltage (V): %s\n', localNumToStr(cfg.pulsepal.phase1_voltage));
+    fprintf(fid, 'Phase1 duration (s): %s\n', localNumToStr(cfg.pulsepal.phase1_duration_s));
+    fprintf(fid, 'Interphase interval (s): %s\n', localNumToStr(cfg.pulsepal.interphase_interval_s));
+    fprintf(fid, 'Phase2 voltage (V): %s\n', localNumToStr(cfg.pulsepal.phase2_voltage));
+    fprintf(fid, 'Phase2 duration (s): %s\n', localNumToStr(cfg.pulsepal.phase2_duration_s));
+    fprintf(fid, 'Resting voltage (V): %s\n', localNumToStr(cfg.pulsepal.resting_voltage));
+    fprintf(fid, 'Interpulse interval (s): %s\n', localNumToStr(cfg.pulsepal.interpulse_interval_s));
+    fprintf(fid, 'Burst duration (s): %s\n', localNumToStr(cfg.pulsepal.burst_duration_s));
+    fprintf(fid, 'Interburst interval (s): %s\n', localNumToStr(cfg.pulsepal.interburst_interval_s));
+    fprintf(fid, 'Train delay (s): %s\n', localNumToStr(cfg.pulsepal.train_delay_s));
+    fprintf(fid, 'Train duration (s): %s\n', localNumToStr(cfg.pulsepal.train_duration_s));
+
+    fprintf(fid, '\n[Step Motor]\n');
+    fprintf(fid, 'Enabled: %s\n', localOnOff(cfg.motor.enable));
+    fprintf(fid, 'COM: %s\n', localSafeText(cfg.motor.com));
+    fprintf(fid, 'Mode: %s\n', localSafeText(cfg.motor.mode));
+    fprintf(fid, 'Active from frame: %s\n', localNumToStr(cfg.motor.frame_start));
+    fprintf(fid, 'Active for frames: %s\n', localNumToStr(cfg.motor.frame_duration));
+    fprintf(fid, 'Repeat enabled: %s\n', localOnOff(cfg.motor.repeat_enable));
+    fprintf(fid, 'Repeat every frames: %s\n', localNumToStr(cfg.motor.repeat_interval_frames));
+    fprintf(fid, 'Start position (mm): %s\n', localNumToStr(cfg.motor.start_mm));
+    fprintf(fid, 'End position (mm): %s\n', localNumToStr(cfg.motor.end_mm));
+    fprintf(fid, 'Step size (mm): %s\n', localNumToStr(cfg.motor.step_mm));
+    fprintf(fid, 'Frames per position: %s\n', localNumToStr(cfg.motor.frames_per_position));
+    fprintf(fid, 'Periodic: %s\n', localOnOff(cfg.motor.periodic));
+    fprintf(fid, 'Return home: %s\n', localOnOff(cfg.motor.return_to_zero));
+    fprintf(fid, 'Settle pause (s): %s\n', localNumToStr(cfg.motor.settle_pause_s));
+
+   fprintf(fid, '\n[User Journal Note]\n');
+userNote = localGetFieldIfExists(cfg, 'journal_note', '');
+
+if isempty(userNote)
+    fprintf(fid, 'NA\n');
+else
+    userNote = localNormalizeJournalNote(userNote);
+
+    if isempty(strtrim(userNote))
+        fprintf(fid, 'NA\n');
+    else
+        fprintf(fid, '%s\n', userNote);
+    end
+end
+
+    localGuiLog(cfg, sprintf('Saved scan info txt: %s', txtFile));
 end
 
 function s = localMotorTag(cfg, motorPositionsAbsMM, motorHomeMM)
@@ -1661,6 +1837,62 @@ function txt = localStimBoxSummaryText(cfg, stimboxFrames)
         localNumToStr(cfg.stimbox.repeat_interval_frames), ...
         nTotal, activeTxt);
 end
+
+function txt = localNormalizeJournalNote(noteIn)
+    if isempty(noteIn)
+        txt = '';
+        return;
+    end
+
+    if isstring(noteIn)
+        noteIn = char(noteIn);
+    end
+
+    if ischar(noteIn)
+        % If noteIn is a multi-row char array, convert each row into a line
+        if size(noteIn, 1) > 1
+            rows = cellstr(noteIn);
+            rows = rows(:)';
+            txt = strjoin(rows, newline);
+        else
+            txt = noteIn;
+        end
+    else
+        txt = '';
+    end
+end
+
+function s = localOnOff(tf)
+    if isempty(tf) || ~logical(tf)
+        s = 'OFF';
+    else
+        s = 'ON';
+    end
+end
+
+function s = localSafeText(v)
+    if isempty(v)
+        s = 'NA';
+        return;
+    end
+
+    if ischar(v)
+        s = v;
+    elseif isstring(v)
+        s = char(v);
+    else
+        s = 'NA';
+    end
+end
+
+function v = localGetFieldIfExists(S, fieldName, defaultVal)
+    if isstruct(S) && isfield(S, fieldName) && ~isempty(S.(fieldName))
+        v = S.(fieldName);
+    else
+        v = defaultVal;
+    end
+end
+
 
 function txt = localPulsePalSummaryText(cfg, pulsepalFrames)
     txt = sprintf('PulsePal summary: start=%s, repeat=%d, repeatEvery=%s, trigger count=%d, channel=%d', ...

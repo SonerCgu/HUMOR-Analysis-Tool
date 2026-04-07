@@ -2,7 +2,7 @@ function fusi_studio
 clc;
 
 %% =========================================================
-%  SECTION A - INTERNAL STATE & GUI CONSTRUCTION
+%  SECTION A - INTERNAL STATE & GUI CONSTRUCTION - Update
 % =========================================================
 studio = struct();
 studio.datasets = struct();

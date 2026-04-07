@@ -241,13 +241,48 @@ y7 = 0.06;
 % ------------------------------------------------------------------
 % Acquisition panel
 % ------------------------------------------------------------------
+
+% ------------------------------------------------------------------
+% Save location selector (above folder warning)
+% ------------------------------------------------------------------
+uicontrol(pAcq, 'Style', 'text', ...
+    'Units', 'normalized', ...
+    'Position', [0.05 0.922 0.22 0.050], ...
+    'String', 'Save under', ...
+    'HorizontalAlignment', 'left', ...
+    'FontSize', 13, ...
+    'FontWeight', 'bold', ...
+    'ForegroundColor', C.text, ...
+    'BackgroundColor', C.panel);
+
+
+% For adding other folder destination names change here
+H.pSaveOwner = uicontrol(pAcq, 'Style', 'popupmenu', ...
+    'Units', 'normalized', ...
+    'Position', [0.28 0.920 0.55 0.050], ...
+    'String', {'Soner','Yan'}, ...
+    'Value', 1, ...
+    'FontSize', 13, ...
+    'BackgroundColor', C.editbg, ...
+    'ForegroundColor', [0 0 0]);
+
+uicontrol(pAcq, 'Style', 'text', ...
+    'Units', 'normalized', ...
+    'Position', [0.05 0.86 0.78 0.05], ...
+    'String', 'Care: Change Folder Name!', ...
+    'HorizontalAlignment', 'left', ...
+    'FontSize', 11, ...
+    'FontWeight', 'bold', ...
+    'ForegroundColor', [1 0.2 0.2], ...
+    'BackgroundColor', C.panel);
+
 H.eXpName = localMakeLabeledEdit(pAcq, ...
     'Exp. Name', [xLlbl y1 0.18 0.055], [xLedt y1-0.008 0.65 0.075], ...
-    'Data_w_Triggers', C, panelFs, C.panel);
+    'RGRO_yymmdd_1024_MM_B6J_ID', C, panelFs, C.panel);
 
 H.eNFrames = localMakeLabeledEdit(pAcq, ...
     'Frames / trial', [xLlbl y2 0.18 0.055], [xLedt y2-0.008 wLedt 0.075], ...
-    '500', C, panelFs, C.panel);
+    '9000', C, panelFs, C.panel);
 
 H.eNTrials = localMakeLabeledEdit(pAcq, ...
     'Trials', [xRlbl y2 0.16 0.055], [xRedt y2-0.008 wRedt 0.075], ...
@@ -326,7 +361,7 @@ H.cStimEnable = uicontrol(pStimBox, 'Style', 'checkbox', ...
     'Units', 'normalized', ...
     'Position', [0.05 0.89 0.34 0.06], ...
     'String', 'Enable StimBox', ...
-    'Value', 1, ...
+    'Value', 0, ...
     'FontSize', 11, ...
     'FontWeight', 'bold', ...
     'ForegroundColor', C.titleStim, ...
@@ -343,11 +378,11 @@ H.eStimBaud = localMakeLabeledEdit(pStimBox, ...
 
 H.eStimStart = localMakeLabeledEdit(pStimBox, ...
     'Frame start', [xLlbl y2 0.18 0.055], [xLedt y2-0.008 wLedt 0.075], ...
-    '100', C, panelFs, C.panel);
+    '20', C, panelFs, C.panel);
 
 H.eStimDur = localMakeLabeledEdit(pStimBox, ...
     'Frames active', [xRlbl y2 0.20 0.055], [xRedt y2-0.008 wRedt 0.075], ...
-    '50', C, panelFs, C.panel);
+    '10', C, panelFs, C.panel);
 
 H.cD3 = uicontrol(pStimBox, 'Style', 'checkbox', ...
     'Units', 'normalized', ...
@@ -393,7 +428,7 @@ H.cStimRepeat = uicontrol(pStimBox, 'Style', 'checkbox', ...
     'Units', 'normalized', ...
     'Position', [xLlbl y6 0.18 0.06], ...
     'String', 'Repeat', ...
-    'Value', 0, ...
+    'Value', 1, ...
     'FontSize', panelFs, ...
     'FontWeight', 'bold', ...
     'ForegroundColor', C.titleStim, ...
@@ -402,7 +437,7 @@ H.cStimRepeat = uicontrol(pStimBox, 'Style', 'checkbox', ...
 
 H.eStimRepeatEvery = localMakeLabeledEdit(pStimBox, ...
     'Every', [xRlbl y6 0.12 0.055], [xRedt y6-0.008 wRedt 0.075], ...
-    '100', C, panelFs, C.repeatBg);
+    '50', C, panelFs, C.repeatBg);
 
 H.hStimSummary = uicontrol(pStimBox, 'Style', 'text', ...
     'Units', 'normalized', ...
@@ -467,7 +502,7 @@ H.ppAdvPanel = uipanel(pPulsePal, ...
 % Standard tab
 H.ePPCom = localMakeLabeledEdit(H.ppStdPanel, ...
     'COM', [xLlbl y1 0.15 0.055], [xLedt y1-0.008 wLedt 0.075], ...
-    'COM13', CPP, panelFs, CPP.panel);
+    'COM14', CPP, panelFs, CPP.panel);
 
 H.ePPChan = localMakeLabeledEdit(H.ppStdPanel, ...
     'Channel', [xRlbl y1 0.18 0.055], [xRedt y1-0.008 wRedt 0.075], ...
@@ -625,7 +660,7 @@ H.cMotorEnable = uicontrol(pMotor, 'Style', 'checkbox', ...
     'Units', 'normalized', ...
     'Position', [0.05 0.89 0.32 0.06], ...
     'String', 'Enable motor', ...
-    'Value', 1, ...
+    'Value', 0, ...
     'FontSize', 11, ...
     'FontWeight', 'bold', ...
     'ForegroundColor', C.titleMotor, ...
@@ -681,7 +716,7 @@ H.eMotorFrameStart = localMakeLabeledEdit(pMotor, ...
 
 H.eMotorFrameDur = localMakeLabeledEdit(pMotor, ...
     'Active for frames', [xRlbl y2 0.20 0.055], [xRedt y2-0.008 wRedt 0.075], ...
-    '500', C, panelFs, C.panel);
+    '9000', C, panelFs, C.panel);
 
 H.eMStart = localMakeLabeledEdit(pMotor, ...
     'Start pos (mm)', [xLlbl y3 0.18 0.055], [xLedt y3-0.008 wLedt 0.075], ...
@@ -830,11 +865,23 @@ H.bStop = uicontrol(fig, 'Style', 'pushbutton', ...
         'BackgroundColor', C.redBtn, ...
         'Callback', @(src, evt)localOnClose(fig));
 
+    
+    %Journal Button
+H.bJournalNote = uicontrol(fig, 'Style', 'pushbutton', ...
+    'Units', 'normalized', ...
+    'Position', [0.355 0.445 0.290 0.036], ...
+    'String', 'JOURNAL NOTE (SET BEFORE SCAN)', ...
+    'FontSize', 12, ...
+    'FontWeight', 'bold', ...
+    'ForegroundColor', [1 1 1], ...
+    'BackgroundColor', [0.85 0.45 0.10], ...
+    'Callback', @(src, evt)localEditJournalNote(fig));
     % ------------------------------------------------------------------
     % Input handles
     % ------------------------------------------------------------------
     H.inputHandles = [ ...
-        H.eXpName H.eNFrames H.eNTrials H.eNBlocks H.ePause ...
+         H.bJournalNote ...
+        H.pSaveOwner H.eXpName H.eNFrames H.eNTrials H.eNBlocks H.ePause ...
         H.eCalcSec H.eCalcFrames H.bSecToFrames H.bFramesToSec ...
         H.cStimEnable H.eStimCom H.eStimBaud H.eStimStart H.eStimDur H.cStimRepeat H.eStimRepeatEvery H.cD3 H.cD5 H.cD6 H.cStimVerbose ...
         H.cPPEnable H.ppStdBtn H.ppAdvBtn H.ePPCom H.ePPChan H.ePPStart H.ePPDurFrames H.cPPRepeat H.ePPRepeatEvery ...
@@ -876,14 +923,16 @@ set(H.ePPDur1, 'Callback', @(src,evt)localRefreshPulsePalPanel(fig));
     setappdata(fig, 'isRunning', false);
     setappdata(fig, 'motorCurrentPosAbsMM', NaN);
     setappdata(fig, 'PulsePalTab', 'std');
-
+setappdata(fig, 'journalNote', '');
     localSetStatus(fig, 'Idle', 'idle');
     localSetReady(fig, true);
     localSetFrame(fig, 0);
     localSetTrial(fig, 0, 0);
     localSetMotor(fig, 0, 0, NaN, 0);
     localSetCurrentPos(fig, NaN);
+        localUpdateJournalNoteButton(fig);
     localAppendLog(fig, 'GUI opened.');
+
 
     localLoadDefaults(fig);
     localRestorePulsePalTab(fig);
@@ -1557,16 +1606,22 @@ function localOnStart(fig)
     cfg.gui.stopRequestedFcn = @()localSafeStopRequested(fig);
     cfg.gui.frameUpdateEvery = 10;
 
-    try
-        vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg);
+  try
+    vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg);
 
     if ishandle(fig)
-    setappdata(fig, 'stopRequested', false);
-    localSetStatus(fig, 'Ready for next run', 'idle');
-    localSetReady(fig, true);
-end
+        setappdata(fig, 'stopRequested', false);
 
-    catch ME
+        % Clear journal note after a completed run so next scan starts fresh
+        setappdata(fig, 'journalNote', '');
+        localUpdateJournalNoteButton(fig);
+
+        localSetStatus(fig, 'Ready for next run', 'idle');
+        localSetReady(fig, true);
+        localAppendLog(fig, 'Journal note cleared after completed scan run.');
+    end
+
+catch ME
         if ishandle(fig)
             localSetStatus(fig, ['Error: ' ME.message], 'error');
             localSetReady(fig, false);
@@ -1619,20 +1674,22 @@ end
 function localLoadDefaults(fig)
     H = guidata(fig);
 
-    set(H.eXpName, 'String', 'Data_w_Triggers');
-    set(H.eNFrames, 'String', '500');
+    
+    set(H.pSaveOwner, 'Value', 1);   % 1 = Soner, 2 = Yan
+    set(H.eXpName, 'String', 'RGRO_yymmdd_1024_MM_B6J_ID');
+    set(H.eNFrames, 'String', '9000');
     set(H.eNTrials, 'String', '1');
     set(H.eNBlocks, 'String', '16');
     set(H.ePause, 'String', '1');
 
     % StimBox
-    set(H.cStimEnable, 'Value', 1);
+    set(H.cStimEnable, 'Value', 0);
     set(H.eStimCom, 'String', 'COM9');
     set(H.eStimBaud, 'String', '9600');
-    set(H.eStimStart, 'String', '100');
-    set(H.eStimDur, 'String', '50');
-    set(H.cStimRepeat, 'Value', 0);
-    set(H.eStimRepeatEvery, 'String', '100');
+    set(H.eStimStart, 'String', '20');
+set(H.eStimDur, 'String', '10');
+set(H.cStimRepeat, 'Value', 1);
+set(H.eStimRepeatEvery, 'String', '50');
     set(H.cD3, 'Value', 0);
     set(H.cD5, 'Value', 1);
     set(H.cD6, 'Value', 0);
@@ -1642,7 +1699,7 @@ function localLoadDefaults(fig)
     % These defaults are a paper-like starter example:
     % pulse width = 0.5 ms, frequency = 4 Hz, low starting voltage
     set(H.cPPEnable, 'Value', 0);
-    set(H.ePPCom, 'String', 'COM13');
+    set(H.ePPCom, 'String', 'COM14');
     set(H.ePPChan, 'String', '1');
     set(H.ePPStart, 'String', '100');
     set(H.ePPDurFrames, 'String', '1');
@@ -1650,7 +1707,7 @@ function localLoadDefaults(fig)
     set(H.ePPRepeatEvery, 'String', '100');
 
     % Monophasic starter defaults
-    set(H.ePPVolt1, 'String', '1.0');       % start low; actual current depends on load impedance
+    set(H.ePPVolt1, 'String', '5.0');       % start low; actual current depends on load impedance
     set(H.ePPDur1, 'String', '0.0005');     % 0.5 ms pulse width
     set(H.ePPIPI, 'String', '0.25');        % 4 Hz = 0.25 s interpulse interval
     set(H.ePPTrainDur, 'String', '1.0');    % total train duration after one trigger
@@ -1659,7 +1716,7 @@ function localLoadDefaults(fig)
 
     % Biphasic-only / advanced defaults
     set(H.ePPInterPhase, 'String', '0.0001');
-    set(H.ePPVolt2, 'String', '-1.0');
+    set(H.ePPVolt2, 'String', '-5.0');
     set(H.ePPDur2, 'String', '0.0005');
     set(H.ePPBurstDur, 'String', '0');
     set(H.ePPInterBurst, 'String', '0.100');
@@ -1675,11 +1732,11 @@ function localLoadDefaults(fig)
     set(H.pPPTrigMode2, 'Value', 1);
 
     % Motor
-    set(H.cMotorEnable, 'Value', 1);
+    set(H.cMotorEnable, 'Value', 0);
     set(H.pMotorMode, 'Value', 2);
     set(H.eMotorCom, 'String', 'COM8');
     set(H.eMotorFrameStart, 'String', '1');
-    set(H.eMotorFrameDur, 'String', '500');
+    set(H.eMotorFrameDur, 'String', '9000');
     set(H.cMotorRepeat, 'Value', 0);
     set(H.eMotorRepeatEvery, 'String', '100');
     set(H.eMStart, 'String', '0');
@@ -1712,8 +1769,17 @@ function cfg = localCollectCfg(fig)
     H = guidata(fig);
 
     cfg = struct();
+    
+    if isappdata(fig, 'journalNote')
+    cfg.journal_note = getappdata(fig, 'journalNote');
+else
+    cfg.journal_note = '';
+end
+% Acquisition
+saveOwners = get(H.pSaveOwner, 'String');
+saveOwnerIdx = get(H.pSaveOwner, 'Value');
+cfg.save_owner = strtrim(saveOwners{saveOwnerIdx});
 
-    % Acquisition
     cfg.xp_name      = strtrim(get(H.eXpName, 'String'));
     cfg.n_frames     = localParseNumeric(get(H.eNFrames, 'String'), 'Frames / trial');
     cfg.n_trials     = localParseNumeric(get(H.eNTrials, 'String'), 'Trials');
@@ -2138,6 +2204,85 @@ end
 % =========================================================================
 % Small helpers
 % =========================================================================
+function localEditJournalNote(fig)
+    if ~ishandle(fig)
+        return;
+    end
+
+    prevNote = '';
+    if isappdata(fig, 'journalNote')
+        prevNote = getappdata(fig, 'journalNote');
+    end
+
+    defaultTemplate = sprintf([ ...
+        'Experimental Scheme: Baseline 5 min, Injection 10 min, Post-injection 30 min\n' ...
+        'Left: (µM, µL, µL/min)\n' ...
+        'Right: (µM, µL, µL/min)\n' ...
+        'Notes: ']);
+
+    if isempty(strtrim(prevNote))
+        startNote = defaultTemplate;
+    else
+        startNote = prevNote;
+    end
+
+    answer = inputdlg( ...
+        {'Journal note for per-scan txt file (set before scan):'}, ...
+        'Journal Note', ...
+        [10 90], ...
+        {startNote});
+
+    if isempty(answer)
+        return;
+    end
+
+    noteTxt = answer{1};
+
+    if ischar(noteTxt) && size(noteTxt, 1) > 1
+        noteTxt = strjoin(cellstr(noteTxt), sprintf('\n'));
+    end
+
+    noteTxt = strtrim(noteTxt);
+
+    setappdata(fig, 'journalNote', noteTxt);
+    localUpdateJournalNoteButton(fig);
+
+    if isempty(noteTxt)
+        localAppendLog(fig, 'Journal note cleared.');
+    else
+        localAppendLog(fig, 'Journal note updated.');
+    end
+end
+
+function localUpdateJournalNoteButton(fig)
+    if ~ishandle(fig)
+        return;
+    end
+
+    H = guidata(fig);
+    if isempty(H) || ~isfield(H, 'bJournalNote') || ~ishandle(H.bJournalNote)
+        return;
+    end
+
+    noteTxt = '';
+    if isappdata(fig, 'journalNote')
+        noteTxt = getappdata(fig, 'journalNote');
+    end
+
+    if isempty(strtrim(noteTxt))
+        set(H.bJournalNote, ...
+            'String', 'JOURNAL NOTE (SET BEFORE SCAN)', ...
+            'BackgroundColor', [0.85 0.45 0.10], ...
+            'ForegroundColor', [1 1 1]);
+    else
+        set(H.bJournalNote, ...
+            'String', 'JOURNAL NOTE SET (BEFORE SCAN)', ...
+            'BackgroundColor', [0.15 0.40 0.82], ...
+            'ForegroundColor', [1 1 1]);
+    end
+end
+
+
 function s = localNum2Str(v)
     if isempty(v) || ~isnumeric(v) || isnan(v)
         s = 'NA';
