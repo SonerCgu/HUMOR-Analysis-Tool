@@ -87,8 +87,12 @@ state = struct();
 state.isAtlasWarped      = false;
 state.atlasTransformFile = '';
 state.lastAtlasTransformFile = '';
-
-state.isColorUnderlay     = (ndims(bgDefaultFull) == 3 && size(bgDefaultFull,3) == 3);
+state.isColorUnderlay = false;
+if (nZ == 1) && ndims(bgDefaultFull) == 3 && size(bgDefaultFull,3) == 3
+    state.isColorUnderlay = true;   % true RGB image for single-slice data
+elseif ndims(bgDefaultFull) == 4 && size(bgDefaultFull,3) == 3
+    state.isColorUnderlay = true;   % RGB stack [Y X 3 Z]
+end
 state.regionLabelUnderlay = [];
 state.regionColorLUT      = [];
 state.regionInfo          = struct();
@@ -989,31 +993,53 @@ end
             bgRGB = bgRGB .* (show3 + dimFactor*(~show3));
         end
 
-        thr = maskThreshold;
-        thrMask = double(abs(A) >= thr);
+    thr = maskThreshold;
+a   = max(0, min(100, alphaPct));
 
-        a = max(0, min(100, alphaPct));
-        if ~alphaModEnable
-            alphaMap = (a/100) .* thrMask .* baseMaskOverlay;
+ov = A;
+baseMask = double(baseMaskOverlay);
+
+% SAME behavior as SCM_gui:
+% only show positive values
+showMask = (ov > 0);
+
+% threshold only applied to positive values
+thrMask = double((abs(ov) >= thr) & showMask);
+
+if ~alphaModEnable
+    alphaMap = (a/100) .* thrMask .* baseMask;
+else
+    effLo = max(modMinAbs, thr);
+    effHi = modMaxAbs;
+
+    ovAbsPos = abs(ov);
+    ovAbsPos(~showMask) = NaN;
+
+    if ~isfinite(effHi) || effHi <= effLo
+        tmp = ovAbsPos(isfinite(ovAbsPos));
+        if isempty(tmp)
+            effHi = effLo + eps;
         else
-            effLo = max(modMinAbs, thr);
-            effHi = modMaxAbs;
-
-            if ~isfinite(effHi) || effHi <= effLo
-                effHi = max(abs(A(:)));
-            end
-            if ~isfinite(effHi) || effHi <= effLo
-                effHi = effLo + eps;
-            end
-
-            modv = (abs(A) - effLo) ./ max(eps, (effHi - effLo));
-            modv(~isfinite(modv)) = 0;
-            modv = min(max(modv,0),1);
-
-            alphaMap = (a/100) .* modv .* thrMask .* baseMaskOverlay;
+            effHi = max(tmp);
         end
-        alphaMap(~isfinite(alphaMap)) = 0;
-        alphaMap = min(max(alphaMap,0),1);
+    end
+
+    if ~isfinite(effHi) || effHi <= effLo
+        effHi = effLo + eps;
+    end
+
+    modv = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
+    modv(~isfinite(modv)) = 0;
+    modv = min(max(modv,0),1);
+
+    % never show non-positive values
+    modv(~showMask) = 0;
+
+    alphaMap = (a/100) .* modv .* thrMask .* baseMask;
+end
+
+alphaMap(~isfinite(alphaMap)) = 0;
+alphaMap = min(max(alphaMap,0),1);
 
         a3 = repmat(alphaMap,[1 1 3]);
         baseRGB = (1-a3).*bgRGB + a3.*pscRGB;
@@ -1634,34 +1660,46 @@ end
 % =========================================================
 % SCROLL SLICE
 % =========================================================
-    function mouseScrollSlice(~,evt)
-        if nZ <= 1 || playing
-            return;
-        end
-
-        hobj = hittest(fig);
-        if isempty(hobj)
-            return;
-        end
-        axHit = ancestor(hobj,'axes');
-        if isempty(axHit) || axHit ~= ax
-            return;
-        end
-
-        dz = -sign(evt.VerticalScrollCount);
-        if dz == 0
-            return;
-        end
-
-        newZ = max(1, min(nZ, sliceIdx + dz));
-        if newZ == sliceIdx
-            return;
-        end
-
-        sliceIdx = newZ;
-        render();
+   function mouseScrollSlice(~,evt)
+    if nZ <= 1 || playing
+        return;
     end
 
+    if ~isPointerOverImageAxis()
+        return;
+    end
+
+    % same direction logic as SCM_gui
+    dz = sign(evt.VerticalScrollCount);
+    if dz == 0
+        return;
+    end
+
+    newZ = max(1, min(nZ, sliceIdx + dz));
+    if newZ == sliceIdx
+        return;
+    end
+
+    sliceIdx = newZ;
+    render();
+end
+
+function tf = isPointerOverImageAxis()
+    tf = false;
+
+    try
+        cpFig = get(fig, 'CurrentPoint');          % figure coordinates
+        axPos = getpixelposition(ax, true);        % [x y w h] in figure coordinates
+
+        x = cpFig(1);
+        y = cpFig(2);
+
+        tf = x >= axPos(1) && x <= (axPos(1) + axPos(3)) && ...
+             y >= axPos(2) && y <= (axPos(2) + axPos(4));
+    catch
+        tf = false;
+    end
+end
 % =========================================================
 % OPEN SCM
 % =========================================================
@@ -1697,110 +1735,125 @@ end
 % =========================================================
 % SAVE MP4
 % =========================================================
-    function saveVideo(~,~)
-        txt = [];
-        vid = [];
-        oldVolume  = volume;
-        oldPlaying = playing;
+   function saveVideo(~,~)
+    txt = [];
+    vid = [];
 
+    oldVolume   = volume;
+    oldPlaying  = playing;
+    oldSliceIdx = sliceIdx;
+
+    try
+        analysedRoot = '';
+
+        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath)
+            analysedRoot = char(par.exportPath);
+        elseif isstruct(par) && isfield(par,'savePath') && ~isempty(par.savePath)
+            analysedRoot = char(par.savePath);
+        elseif isstruct(par) && isfield(par,'outPath') && ~isempty(par.outPath)
+            analysedRoot = char(par.outPath);
+        else
+            analysedRoot = pwd;
+        end
+
+        analysedRoot = strtrim(analysedRoot);
+        analysedRoot = strrep(analysedRoot,'"','');
+
+        if isempty(analysedRoot) || ~exist(analysedRoot,'dir')
+            analysedRoot = pwd;
+        end
+
+        videosDir = fullfile(analysedRoot, 'Videos');
+        if ~exist(videosDir,'dir')
+            [ok,msg] = mkdir(videosDir);
+            if ~ok
+                error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
+            end
+        end
+
+        rawLabel = lower(safeStr(fileLabel));
+        if isempty(rawLabel)
+            rawLabel = '';
+        end
+
+        tags = {};
+        if contains(rawLabel,'raw'), tags{end+1} = 'raw'; end
+        if contains(rawLabel,'gabriel'), tags{end+1} = 'gab'; end
+        if contains(rawLabel,'median'), tags{end+1} = 'median'; end
+        if contains(rawLabel,'mean'), tags{end+1} = 'mean'; end
+        if contains(rawLabel,'pca'), tags{end+1} = 'pca'; end
+        if contains(rawLabel,'despike') || contains(rawLabel,'despiked')
+            tags{end+1} = 'despike';
+        end
+        if contains(rawLabel,'smooth') || contains(rawLabel,'smoothed')
+            tags{end+1} = 'smooth';
+        end
+        if contains(rawLabel,'interp') || contains(rawLabel,'interpol')
+            tags{end+1} = 'interp';
+        end
+        if contains(rawLabel,'psc'), tags{end+1} = 'psc'; end
+        if contains(rawLabel,'brainonly'), tags{end+1} = 'brain'; end
+
+        if isempty(tags)
+            shortLabel = 'video';
+        else
+            shortLabel = strjoin(tags,'_');
+        end
+
+        timeTag = datestr(now,'yyyymmdd_HHMMSS');
+
+        exportFPS = fps;
+        if ~isfinite(exportFPS) || exportFPS <= 0
+            exportFPS = 4;
+        end
+
+        playing = false;
+        if ishandle(playBtn)
+            set(playBtn,'Value',0,'String','Play');
+        end
         try
-            analysedRoot = '';
+            if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
+                stop(playTimer);
+            end
+        catch
+        end
 
-            if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath)
-                analysedRoot = char(par.exportPath);
-            elseif isstruct(par) && isfield(par,'savePath') && ~isempty(par.savePath)
-                analysedRoot = char(par.savePath);
-            elseif isstruct(par) && isfield(par,'outPath') && ~isempty(par.outPath)
-                analysedRoot = char(par.outPath);
-            else
-                analysedRoot = pwd;
+        txt = text(ax, 0.02, 0.98, '', ...
+            'Units','normalized', ...
+            'Color','w', ...
+            'FontName','Courier New', ...
+            'FontSize',40, ...
+            'FontWeight','bold', ...
+            'VerticalAlignment','top', ...
+            'HorizontalAlignment','left', ...
+            'BackgroundColor','k', ...
+            'Margin',8, ...
+            'Interpreter','none');
+
+        for zz = 1:max(1,nZ)
+            sliceIdx = zz;
+            volume = 1;
+            frame = 1;
+
+            if ishandle(slVol)
+                set(slVol,'Value',1);
             end
 
-            analysedRoot = strtrim(analysedRoot);
-            analysedRoot = strrep(analysedRoot,'"','');
+            render();
+            drawnow;
 
-            if isempty(analysedRoot) || ~exist(analysedRoot,'dir')
-                analysedRoot = pwd;
-            end
-
-            videosDir = fullfile(analysedRoot, 'Videos');
-            if ~exist(videosDir,'dir')
-                [ok,msg] = mkdir(videosDir);
-                if ~ok
-                    error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
-                end
-            end
-
-            rawLabel = lower(safeStr(fileLabel));
-            if isempty(rawLabel)
-                rawLabel = '';
-            end
-
-            tags = {};
-            if contains(rawLabel,'raw'), tags{end+1} = 'raw'; end
-            if contains(rawLabel,'gabriel'), tags{end+1} = 'gab'; end
-            if contains(rawLabel,'median'), tags{end+1} = 'median'; end
-            if contains(rawLabel,'mean'), tags{end+1} = 'mean'; end
-            if contains(rawLabel,'pca'), tags{end+1} = 'pca'; end
-            if contains(rawLabel,'despike') || contains(rawLabel,'despiked')
-                tags{end+1} = 'despike';
-            end
-            if contains(rawLabel,'smooth') || contains(rawLabel,'smoothed')
-                tags{end+1} = 'smooth';
-            end
-            if contains(rawLabel,'interp') || contains(rawLabel,'interpol')
-                tags{end+1} = 'interp';
-            end
-            if contains(rawLabel,'psc'), tags{end+1} = 'psc'; end
-            if contains(rawLabel,'brainonly'), tags{end+1} = 'brain'; end
-
-            if isempty(tags)
-                shortLabel = 'video';
-            else
-                shortLabel = strjoin(tags,'_');
-            end
-
-            timeTag = datestr(now,'yyyymmdd_HHMMSS');
-            outFile = fullfile(videosDir, ['video_' shortLabel '_' timeTag '.mp4']);
+            outFile = fullfile(videosDir, sprintf('video_%s_z%02d_%s.mp4', shortLabel, zz, timeTag));
 
             disp('--- SAVE VIDEO DEBUG ---');
-            disp(['analysedRoot = ' analysedRoot]);
-            disp(['videosDir    = ' videosDir]);
-            disp(['outFile      = ' outFile]);
-            disp(['path length  = ' num2str(numel(outFile))]);
-
-            exportFPS = fps;
-            if ~isfinite(exportFPS) || exportFPS <= 0
-                exportFPS = 4;
-            end
+            disp(['slice       = ' num2str(zz)]);
+            disp(['videosDir   = ' videosDir]);
+            disp(['outFile     = ' outFile]);
+            disp(['path length = ' num2str(numel(outFile))]);
 
             vid = VideoWriter(outFile, 'MPEG-4');
             vid.FrameRate = exportFPS;
             vid.Quality   = 95;
             open(vid);
-
-            txt = text(ax, 0.02, 0.98, '', ...
-                'Units','normalized', ...
-                'Color','w', ...
-                'FontName','Courier New', ...
-                'FontSize',40, ...
-                'FontWeight','bold', ...
-                'VerticalAlignment','top', ...
-                'HorizontalAlignment','left', ...
-                'BackgroundColor','k', ...
-                'Margin',8, ...
-                'Interpreter','none');
-
-            playing = false;
-            if ishandle(playBtn)
-                set(playBtn,'Value',0,'String','Play');
-            end
-            try
-                if exist('playTimer','var') && isa(playTimer,'timer') && isvalid(playTimer)
-                    stop(playTimer);
-                end
-            catch
-            end
 
             for v = 1:nVols
                 volume = v;
@@ -1814,7 +1867,8 @@ end
                 render();
 
                 t = (v - 1) * TR;
-                set(txt,'String',sprintf('t = %.1f / %.1f s | Volume %d / %d', t, Tmax, v, nVols));
+                set(txt,'String',sprintf('Slice %d / %d | t = %.1f / %.1f s | Volume %d / %d', ...
+                    zz, nZ, t, Tmax, v, nVols));
 
                 drawnow;
                 fr = getframe(ax);
@@ -1825,63 +1879,64 @@ end
                 end
             end
 
+            close(vid);
+            vid = [];
+        end
+
+        if ~isempty(txt) && isgraphics(txt)
+            delete(txt);
+            txt = [];
+        end
+
+        volume   = oldVolume;
+        playing  = oldPlaying;
+        sliceIdx = oldSliceIdx;
+
+        if ishandle(slVol)
+            set(slVol,'Value',volume);
+        end
+
+        frame = (volume - 1) * par.interpol + 1;
+        frame = max(1, min(nFrames, round(frame)));
+        render();
+
+        statusLine = sprintf('Videos saved for all %d slice(s) in: %s', max(1,nZ), videosDir);
+        render();
+
+    catch ME
+        try
             if ~isempty(txt) && isgraphics(txt)
                 delete(txt);
-                txt = [];
             end
+        catch
+        end
 
+        try
             if ~isempty(vid)
                 close(vid);
-                vid = [];
             end
+        catch
+        end
 
-            volume  = oldVolume;
-            playing = oldPlaying;
+        volume   = oldVolume;
+        playing  = oldPlaying;
+        sliceIdx = oldSliceIdx;
 
+        try
             if ishandle(slVol)
                 set(slVol,'Value',volume);
             end
-
             frame = (volume - 1) * par.interpol + 1;
             frame = max(1, min(nFrames, round(frame)));
             render();
-
-            statusLine = ['Video saved: ' outFile];
-            render();
-
-        catch ME
-            try
-                if ~isempty(txt) && isgraphics(txt)
-                    delete(txt);
-                end
-            catch
-            end
-            try
-                if ~isempty(vid)
-                    close(vid);
-                end
-            catch
-            end
-
-            volume  = oldVolume;
-            playing = oldPlaying;
-
-            try
-                if ishandle(slVol)
-                    set(slVol,'Value',volume);
-                end
-                frame = (volume - 1) * par.interpol + 1;
-                frame = max(1, min(nFrames, round(frame)));
-                render();
-            catch
-            end
-
-            statusLine = ['Video save failed: ' ME.message];
-            render();
-            errordlg(sprintf('MP4 export failed:\n\n%s', ME.message), 'Save MP4 failed');
+        catch
         end
-    end
 
+        statusLine = ['Video save failed: ' ME.message];
+        render();
+        errordlg(sprintf('MP4 export failed:\n\n%s', ME.message), 'Save MP4 failed');
+    end
+end
 % =========================================================
 % SAVE MASK
 % =========================================================
@@ -2307,30 +2362,34 @@ end
     end
 
     function bg2 = getBg2DForSlice(bgIn, z)
-    if ndims(bgIn) == 3 && size(bgIn,3) == 3
-        bg2 = bgIn;
-        return;
-    end
-
     if ndims(bgIn) == 2
         bg2 = bgIn;
         return;
     end
 
     if ndims(bgIn) == 3
+        % IMPORTANT:
+        % Treat [Y X 3] as RGB ONLY for single-slice datasets.
+        if (nZ == 1) && (size(bgIn,3) == 3)
+            bg2 = bgIn;
+            return;
+        end
+
         z = max(1, min(size(bgIn,3), z));
         bg2 = bgIn(:,:,z);
         return;
     end
 
     if ndims(bgIn) == 4
-        if size(bgIn,3) == 3 && size(bgIn,4) >= 1
+        % RGB stack: [Y X 3 Z]
+        if size(bgIn,3) == 3
             z = max(1, min(size(bgIn,4), z));
             bg2 = squeeze(bgIn(:,:,:,z));
             return;
         end
 
-        tmp = mean(bgIn,4);
+        % grayscale 4D -> mean over 4th dim, then slice
+        tmp = mean(bgIn, 4);
         z = max(1, min(size(tmp,3), z));
         bg2 = tmp(:,:,z);
         return;
@@ -2886,8 +2945,15 @@ end
 
             maskOut = expandMaskToVideoSize(M, ny0, nx0, nZ0, nVols0, slice0);
 
-            % Keep current underlay unchanged when loading a mask / bundle.
-bgOut = bgIn;
+        bgOut = bgIn;
+
+if isfield(S,'anatomical_reference') && ~isempty(S.anatomical_reference) && isnumeric(S.anatomical_reference)
+    bgOut = fitBundleUnderlayToVideo(double(S.anatomical_reference), bgIn, ny0, nx0, nZ0);
+elseif isfield(S,'brainImage') && ~isempty(S.brainImage) && isnumeric(S.brainImage)
+    bgOut = fitBundleUnderlayToVideo(double(S.brainImage), bgIn, ny0, nx0, nZ0);
+elseif isfield(S,'anatomical_reference_raw') && ~isempty(S.anatomical_reference_raw) && isnumeric(S.anatomical_reference_raw)
+    bgOut = fitBundleUnderlayToVideo(double(S.anatomical_reference_raw), bgIn, ny0, nx0, nZ0);
+end
 
             note = ['Loaded bundle mask: ' pickedField];
             return;
@@ -2995,7 +3061,7 @@ bgOut = bgIn;
         end
     end
 
-  function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
+ function bgOut = fitBundleUnderlayToVideo(Uin, bgFallback, ny0, nx0, nZ0)
     bgOut = bgFallback;
 
     if isempty(Uin) || ~isnumeric(Uin)
@@ -3004,24 +3070,7 @@ bgOut = bgIn;
 
     U = double(Uin);
 
-    % preserve RGB underlays
-    if ndims(U) == 3 && size(U,3) == 3
-        if size(U,1) == ny0 && size(U,2) == nx0
-            bgOut = U;
-        else
-            try
-                tmp = zeros(ny0, nx0, 3);
-                for cc = 1:3
-                    tmp(:,:,cc) = imresize(U(:,:,cc), [ny0 nx0], 'bilinear');
-                end
-                bgOut = tmp;
-            catch
-                bgOut = bgFallback;
-            end
-        end
-        return;
-    end
-
+    % ---------------- 2D ----------------
     if ndims(U) == 2
         if size(U,1) == ny0 && size(U,2) == nx0
             bgOut = U;
@@ -3035,10 +3084,29 @@ bgOut = bgIn;
         return;
     end
 
+    % ---------------- 3D ----------------
     if ndims(U) == 3
+        % single-slice RGB ONLY if nZ0 == 1
+        if nZ0 == 1 && size(U,3) == 3
+            if size(U,1) == ny0 && size(U,2) == nx0
+                bgOut = U;
+            else
+                try
+                    tmp = zeros(ny0, nx0, 3);
+                    for cc = 1:3
+                        tmp(:,:,cc) = imresize(U(:,:,cc), [ny0 nx0], 'bilinear');
+                    end
+                    bgOut = tmp;
+                catch
+                    bgOut = bgFallback;
+                end
+            end
+            return;
+        end
+
+        % grayscale stack [Y X Z]
         n3 = size(U,3);
         tmp = zeros(ny0, nx0, n3);
-
         for kk = 1:n3
             if size(U,1) == ny0 && size(U,2) == nx0
                 tmp(:,:,kk) = U(:,:,kk);
@@ -3054,7 +3122,7 @@ bgOut = bgIn;
         if nZ0 > 1 && n3 == nZ0
             bgOut = tmp;
         elseif nZ0 == 1
-            bgOut = mean(tmp, 3);
+            bgOut = tmp(:,:,1);
         else
             idx = round(linspace(1, n3, nZ0));
             idx = max(1, min(n3, idx));
@@ -3062,7 +3130,42 @@ bgOut = bgIn;
         end
         return;
     end
-end
+
+    % ---------------- 4D RGB stack [Y X 3 Z] ----------------
+    if ndims(U) == 4 && size(U,3) == 3
+        n4 = size(U,4);
+        tmp = zeros(ny0, nx0, 3, n4);
+        for zz = 1:n4
+            for cc = 1:3
+                if size(U,1) == ny0 && size(U,2) == nx0
+                    tmp(:,:,cc,zz) = U(:,:,cc,zz);
+                else
+                    try
+                        tmp(:,:,cc,zz) = imresize(U(:,:,cc,zz), [ny0 nx0], 'bilinear');
+                    catch
+                        tmp(:,:,cc,zz) = 0;
+                    end
+                end
+            end
+        end
+
+        if nZ0 == 1
+            bgOut = squeeze(tmp(:,:,:,1));
+        else
+            if n4 == nZ0
+                bgOut = tmp;
+            elseif n4 == 1
+                bgOut = repmat(tmp, [1 1 1 nZ0]);
+            else
+                idx = round(linspace(1, n4, nZ0));
+                idx = max(1, min(n4, idx));
+                bgOut = tmp(:,:,:,idx);
+            end
+        end
+        return;
+    end
+ end
+
     function M = readMaskFileForVideo(f)
         if ~exist(f,'file')
             error('Mask file not found: %s', f);
@@ -3765,11 +3868,13 @@ end
         end
     end
 
-    if nargin >= 2 && ~state.isColorUnderlay
-        if ndims(U) == 3 && size(U,3) == 3
-            state.isColorUnderlay = true;
-        end
+if nargin >= 2 && ~state.isColorUnderlay
+    if (nZ == 1) && ndims(U) == 3 && size(U,3) == 3
+        state.isColorUnderlay = true;   % single-slice RGB
+    elseif ndims(U) == 4 && size(U,3) == 3
+        state.isColorUnderlay = true;   % RGB stack [Y X 3 Z]
     end
+end
 end
 
 function tf = doesUnderlayMatchTransformOutput(U, T)
@@ -4171,10 +4276,13 @@ function tf = doesUnderlayMatchOriginalDisplay(U)
     end
 end
 
-function rgb = renderUnderlayRGB(Uin)
+ function rgb = renderUnderlayRGB(Uin)
     ensureUnderlayStateFields();
 
-    if state.isColorUnderlay
+    isRgbImage = (ndims(Uin) == 3 && size(Uin,3) == 3);
+    isRegionLabel = ~isempty(state.regionLabelUnderlay) && ismatrix(Uin);
+
+    if isRgbImage || isRegionLabel
         rgb = convertUnderlayToColorRGB(Uin);
     else
         rgb = toRGB(processUnderlay(Uin));

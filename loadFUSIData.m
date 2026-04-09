@@ -28,7 +28,9 @@ function [data, meta] = loadFUSIData(dataFile, fallbackTR)
 % ------------------------------------------------------------
 
 if nargin < 2 || isempty(fallbackTR) || ~isfinite(fallbackTR) || fallbackTR <= 0
-    fallbackTR = 0.3;
+    fallbackTR = [];
+else
+    fallbackTR = double(fallbackTR);
 end
 
 meta = struct( ...
@@ -162,6 +164,21 @@ if isfield(S, 'md') && isstruct(S.md)
 end
 
 meta.rawMetadata.sizeAfterTheoFix = size(I);
+% -------------------------------------------------
+% AUTO PROBE DETECTION / DEFAULT TR
+% -------------------------------------------------
+[probeTypeAuto, probeDefaultTR] = inferProbeTypeFromLoadedArray(I, meta.rawMetadata);
+
+meta.rawMetadata.probeTypeAutoDetected = probeTypeAuto;
+meta.rawMetadata.probeDefaultTRSec = probeDefaultTR;
+
+if isempty(fallbackTR)
+    fallbackTR_eff = probeDefaultTR;
+else
+    fallbackTR_eff = fallbackTR;
+end
+
+meta.rawMetadata.fallbackTREffectiveSec = fallbackTR_eff;
         % -------------------------------------------------
         % TR / TOTAL TIME DETECTION
         % -------------------------------------------------
@@ -194,16 +211,25 @@ meta.rawMetadata.sizeAfterTheoFix = size(I);
             end
         end
 
-        if isempty(TR) || ~isfinite(TR) || TR <= 0
+       TRWasImputed = false;
+
+if isempty(TR) || ~isfinite(TR) || TR <= 0
     warning('loadFUSIData:FallbackTR', ...
-        'TR not found - using fallback TR = %.3f s', fallbackTR);
-    TR = fallbackTR;
+        'TR not found - using default TR = %.3f s for %s', ...
+        fallbackTR_eff, probeTypeAuto);
+    TR = fallbackTR_eff;
+    TRWasImputed = true;
+
 elseif TR > 1.0
     warning('loadFUSIData:SuspiciousTR', ...
-        'Suspicious TR = %.3f s found in file. Using fallback TR = %.3f s instead.', ...
-        TR, fallbackTR);
-    TR = fallbackTR;
+        'Suspicious TR = %.3f s found in file. Using default TR = %.3f s for %s instead.', ...
+        TR, fallbackTR_eff, probeTypeAuto);
+    TR = fallbackTR_eff;
+    TRWasImputed = true;
 end
+
+meta.rawMetadata.TRWasImputed = TRWasImputed;
+meta.rawMetadata.TRBeforeUserChoiceSec = TR;
 
         if isempty(TotalTimeSec) || ~isfinite(TotalTimeSec) || TotalTimeSec <= 0
             TotalTimeSec = size(I, ndims(I)) * TR;
@@ -276,27 +302,34 @@ end
 % VOLUME CONSISTENCY
 % -----------------------------------------------------
 nVols_data = size(I, ndims(I));
-nVols_req  = round(TotalTimeSec / TR);
 
-if nVols_req <= 0 || abs(nVols_req - nVols_data) > 1
+if TRWasImputed
+    % If TR was guessed/defaulted, do NOT trim/pad volumes here.
+    % Keep raw volume count and let Studio ask the user for final TR.
     nVols = nVols_data;
 else
-    nVols = nVols_req;
+    nVols_req = round(TotalTimeSec / TR);
 
-    if nVols_data > nVols
-        subs = repmat({':'}, 1, ndims(I));
-        subs{end} = 1:nVols;
-        I = I(subs{:});
+    if nVols_req <= 0 || abs(nVols_req - nVols_data) > 1
+        nVols = nVols_data;
+    else
+        nVols = nVols_req;
 
-    elseif nVols_data < nVols
-        subsLast = repmat({':'}, 1, ndims(I));
-        subsLast{end} = nVols_data;
-        lastVol = I(subsLast{:});
+        if nVols_data > nVols
+            subs = repmat({':'}, 1, ndims(I));
+            subs{end} = 1:nVols;
+            I = I(subs{:});
 
-        reps = ones(1, ndims(I));
-        reps(end) = nVols - nVols_data;
+        elseif nVols_data < nVols
+            subsLast = repmat({':'}, 1, ndims(I));
+            subsLast{end} = nVols_data;
+            lastVol = I(subsLast{:});
 
-        I = cat(ndims(I), I, repmat(lastVol, reps));
+            reps = ones(1, ndims(I));
+            reps(end) = nVols - nVols_data;
+
+            I = cat(ndims(I), I, repmat(lastVol, reps));
+        end
     end
 end
 
@@ -716,7 +749,54 @@ end
 
 end
 
+function [probeType, defaultTR] = inferProbeTypeFromLoadedArray(I, rawMeta)
 
+probeType = '2D Probe';
+defaultTR = 0.320;
+
+is3D = false;
+
+try
+    if ndims(I) >= 4 && size(I,3) > 1
+        is3D = true;
+    end
+catch
+end
+
+if ~is3D && nargin >= 2 && isstruct(rawMeta)
+    try
+        if isfield(rawMeta,'md') && isstruct(rawMeta.md)
+            md = rawMeta.md;
+
+            if isfield(md,'size') && isnumeric(md.size) && numel(md.size) >= 3
+                if double(md.size(3)) > 1
+                    is3D = true;
+                end
+            elseif isfield(md,'imageSize') && isnumeric(md.imageSize) && numel(md.imageSize) >= 3
+                if double(md.imageSize(3)) > 1
+                    is3D = true;
+                end
+            end
+        end
+    catch
+    end
+
+    try
+        if ~is3D && isfield(rawMeta,'imageDim') && isnumeric(rawMeta.imageDim) && numel(rawMeta.imageDim) >= 3
+            if double(rawMeta.imageDim(3)) > 1
+                is3D = true;
+            end
+        end
+    catch
+    end
+end
+
+if is3D
+    probeType = 'Matrix (3D) Probe';
+    defaultTR = 0.480;
+end
+
+end
 function out = tryFieldValue(val, fieldName, names, depth, mode)
 
 out = [];

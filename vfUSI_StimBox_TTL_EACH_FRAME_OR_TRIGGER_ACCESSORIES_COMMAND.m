@@ -284,10 +284,51 @@ end
             end
 
             [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPositionsAbsMM, motorHomeMM, iTrial);
-        save(nameFile, 'I', 'md', '-v6');
+
+[saveFolder, saveBase, saveExt] = fileparts(nameFile);
+tmpFile = fullfile(saveFolder, [saveBase '__tmp' saveExt]);
+
+if exist(tmpFile, 'file')
+    try
+        delete(tmpFile);
+    catch
+    end
+end
+
+infoI = whos('I');
+localGuiLog(cfg, sprintf('Saving I: class=%s | size=%s | %.2f MB', ...
+    infoI.class, mat2str(size(I)), infoI.bytes/1024/1024));
+
+try
+    save(tmpFile, 'I', 'md', '-v7.3');
+
+    if ~exist(tmpFile, 'file')
+        error('Temporary MAT file was not created.');
+    end
+
+    varsInTmp = whos('-file', tmpFile);
+    varNames = {varsInTmp.name};
+
+    if ~ismember('I', varNames)
+        error('Temporary MAT file created, but variable I is missing.');
+    end
+
+    [ok, msg] = movefile(tmpFile, nameFile, 'f');
+    if ~ok
+        error('Could not move temp MAT file into final location: %s', msg);
+    end
+
+catch ME
+    try
+        if exist(tmpFile, 'file')
+            delete(tmpFile);
+        end
+    catch
+    end
+    rethrow(ME);
+end
 
 localWriteScanInfoText(nameFile, cfg, iTrial);
-
 FS.writeJournal(localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHomeMM, iTrial));
 
             localGuiLog(cfg, sprintf('Saved file: %s', nameFile));
