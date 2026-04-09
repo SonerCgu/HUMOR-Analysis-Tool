@@ -444,11 +444,31 @@ function loadDataCallback(~,~)
 
     guidata(fig, studio);
 
-    fallbackTR = 0.32;
-
     try
-        fullInputFile = fullfile(path,file);
-        [data, meta] = loadFUSIData(fullInputFile, fallbackTR);
+    fullInputFile = fullfile(path,file);
+    [data, meta] = loadFUSIData(fullInputFile, []);
+
+    [chosenTR, probeType, defaultTR, wasCancelled] = promptTRAfterLoad(data, meta);
+
+    if wasCancelled
+        addLog('Load cancelled during TR selection.');
+        setProgramStatus(true);
+        return;
+    end
+
+    data.TR = chosenTR;
+    data.nVols = size(data.I, ndims(data.I));
+    data.TotalTimeSec = data.nVols * data.TR;
+    data.TotalTimeMin = data.TotalTimeSec / 60;
+    data.totalTime = data.TotalTimeSec;
+    data.totalTimeMin = data.TotalTimeMin;
+
+    if ~isfield(meta,'rawMetadata') || isempty(meta.rawMetadata)
+        meta.rawMetadata = struct();
+    end
+    meta.rawMetadata.probeTypeUserConfirmed = probeType;
+    meta.rawMetadata.defaultTRUserPromptSec = defaultTR;
+    meta.rawMetadata.selectedTRUserSec = chosenTR;
 
         rawRoot = 'Z:\fUS\Project_PACAP_AVATAR_SC\RawData';
         analysedRoot = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData';
@@ -546,33 +566,33 @@ end
 
         unlockAllButtons();
         refreshDatasetDropdown();
+dims = size(data.I);
 
-        dims = size(data.I);
-        nz = 1;
-        try
-            if isfield(meta,'rawMetadata') && isfield(meta.rawMetadata,'imageDim')
-                if numel(meta.rawMetadata.imageDim) == 3
-                    nz = meta.rawMetadata.imageDim(3);
-                end
-            end
-        catch
-        end
+addLog('---------------------------------------');
+addLog('DATASET LOADED SUCCESSFULLY');
+addLog(['Input file: ' fullInputFile]);
+addLog(['Loaded name: ' datasetName]);
+addLog(['Dataset folder: ' datasetFolder]);
 
-        probeType = iff(nz > 1, 'Matrix (3D) Probe', '2D Probe');
+if ndims(data.I) == 3
+    addLog(sprintf('Dimensions: %d x %d | Volumes: %d', ...
+        dims(1), dims(2), dims(3)));
+elseif ndims(data.I) >= 4
+    addLog(sprintf('Dimensions: %d x %d x %d | Volumes: %d', ...
+        dims(1), dims(2), dims(3), dims(4)));
+else
+    addLog(['Dimensions: ' mat2str(dims)]);
+    addLog(sprintf('Volumes: %d', data.nVols));
+end
 
-        addLog('---------------------------------------');
-        addLog('DATASET LOADED SUCCESSFULLY');
-        addLog(['Input file: ' fullInputFile]);
-        addLog(['Loaded name: ' datasetName]);
-        addLog(['Dataset folder: ' datasetFolder]);
-        addLog(sprintf('Dimensions: %d x %d x %d', dims(1), dims(2), nz));
-        addLog(sprintf('Volumes: %d', data.nVols));
-        addLog(['Probe: ' probeType]);
-        addLog(sprintf('TR: %.3f sec', data.TR));
-        if isfield(data,'TotalTimeSec')
-            addLog(sprintf('Total time: %.2f sec', data.TotalTimeSec));
-        end
-        addLog('---------------------------------------');
+addLog(['Probe: ' probeType]);
+addLog(sprintf('TR: %.0f ms (%.3f sec)', data.TR*1000, data.TR));
+addLog(sprintf('Preset default TR for detected probe: %.0f ms', defaultTR*1000));
+
+if isfield(data,'TotalTimeSec')
+    addLog(sprintf('Total time: %.2f sec', data.TotalTimeSec));
+end
+addLog('---------------------------------------');
 
         setProgramStatus(true);
 
@@ -2915,7 +2935,101 @@ end
 %% =========================================================
 %  SMALL HELPER
 % =========================================================
-function out = iff(cond, a, b)
+function [TR, probeType, defaultTR, wasCancelled] = promptTRAfterLoad(data, meta)
+
+TR = [];
+wasCancelled = false;
+
+[probeType, defaultTR] = detectProbeTypeFromMeta(data, meta);
+
+detectedTR = [];
+try
+    if isfield(data,'TR') && ~isempty(data.TR) && isfinite(data.TR) && data.TR > 0
+        detectedTR = double(data.TR);
+    end
+catch
+end
+
+msg = sprintf([ ...
+    'Detected probe type: %s\n\n' ...
+    'Preset default TR: %.0f ms (%.3f s)\n'], ...
+    probeType, defaultTR*1000, defaultTR);
+
+if ~isempty(detectedTR)
+    msg = [msg sprintf('\nLoader/file TR before user choice: %.0f ms (%.3f s)\n', ...
+        detectedTR*1000, detectedTR)];
+end
+
+msg = [msg sprintf('\nChoose "Use Default" or "Custom TR".')];
+
+choice = questdlg(msg, 'TR Selection', ...
+    'Use Default', 'Custom TR', 'Cancel', 'Use Default');
+
+if isempty(choice) || strcmpi(choice,'Cancel')
+    wasCancelled = true;
+    return;
+end
+
+if strcmpi(choice,'Use Default')
+    TR = defaultTR;
+    return;
+end
+
+while true
+    answ = inputdlg( ...
+        {sprintf('Enter TR in ms for %s:', probeType)}, ...
+        'Custom TR', 1, {sprintf('%.0f', defaultTR*1000)});
+
+    if isempty(answ)
+        wasCancelled = true;
+        return;
+    end
+
+    trMs = str2double(answ{1});
+    if isfinite(trMs) && trMs > 0
+        TR = trMs / 1000;
+        return;
+    end
+
+    uiwait(errordlg('Please enter a positive numeric TR in milliseconds.', ...
+        'Invalid TR', 'modal'));
+end
+
+end
+
+
+function [probeType, defaultTR] = detectProbeTypeFromMeta(data, meta)
+
+probeType = '2D Probe';
+defaultTR = 0.320;
+
+try
+    if isfield(meta,'rawMetadata') && isfield(meta.rawMetadata,'probeTypeAutoDetected') ...
+            && ~isempty(meta.rawMetadata.probeTypeAutoDetected)
+
+        probeType = meta.rawMetadata.probeTypeAutoDetected;
+
+        if strcmpi(probeType, 'Matrix (3D) Probe')
+            defaultTR = 0.480;
+        else
+            defaultTR = 0.320;
+        end
+        return;
+    end
+catch
+end
+
+try
+    if ndims(data.I) >= 4 && size(data.I,3) > 1
+        probeType = 'Matrix (3D) Probe';
+        defaultTR = 0.480;
+    end
+catch
+end
+
+end
+    
+    function out = iff(cond, a, b)
     if cond
         out = a;
     else

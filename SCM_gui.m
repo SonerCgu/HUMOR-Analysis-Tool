@@ -194,6 +194,15 @@ cb.Label.FontWeight = 'bold';
 cb.FontSize = 12;
 
 hold(ax, 'off');
+txtSliceOverlay = text(ax, 0.985, 0.985, '', ...
+    'Units', 'normalized', ...
+    'Color', [0.86 0.93 1.00], ...
+    'FontSize', 12, ...
+    'FontWeight', 'bold', ...
+    'HorizontalAlignment', 'right', ...
+    'VerticalAlignment', 'top', ...
+    'Interpreter', 'none', ...
+    'Visible', 'off');
 
 txtTitle = uicontrol(fig, 'Style', 'text', 'String', makeFullTitle(fileLabel), ...
     'Units', 'pixels', ...
@@ -276,24 +285,21 @@ slZ = uicontrol(fig, 'Style', 'slider', ...
     'Units', 'pixels', ...
     'Min', 1, ...
     'Max', max(1, nZ), ...
-    'Value', min(max(1, state.z), max(1, nZ)), ...
+    'Value', nZ - state.z + 1, ...
     'SliderStep', [1/max(1, nZ-1) 5/max(1, nZ-1)], ...
-    'Callback', @sliceChanged);
+    'Callback', @sliceChanged, ...
+    'Visible', 'off', ...
+    'Enable', 'off');
 
 txtZ = uicontrol(fig, 'Style', 'text', ...
     'Units', 'pixels', ...
-    'String', sprintf('Slice: %d / %d', state.z, nZ), ...
+    'String', '', ...
     'ForegroundColor', [0.85 0.9 1], ...
     'BackgroundColor', get(fig, 'Color'), ...
     'HorizontalAlignment', 'left', ...
     'FontWeight', 'bold', ...
-    'FontSize', 13);
-
-if nZ <= 1
-    set(slZ, 'Visible', 'off', 'Enable', 'off');
-    set(txtZ, 'Visible', 'off');
-end
-
+    'FontSize', 13, ...
+    'Visible', 'off');
 %% ---------------- MASK INIT ----------------
 if isempty(passedMask)
     passedMask = deriveMaskFromUnderlay(bg, nY, nX, nZ, nT);
@@ -617,6 +623,7 @@ alphaModToggled();
 updateUnderlayControlsEnable();
 updateInfoLines();
 layoutUI();
+updateSliceIndicators();
 computeSCM();
 redrawROIsForCurrentSlice();
 
@@ -697,17 +704,24 @@ end
     set(btnHelp,  'Position', [panelX yHelp halfW btnH]);
     set(btnClose, 'Position', [panelX + halfW + 14 yClose halfW btnH]);
 
-    leftW = max(520, panelX - leftM - gapX);
-
-tcH = min(238, max(180, round(0.22 * Hh)));
+    tcH = min(238, max(180, round(0.22 * Hh)));
 axH = max(360, Hh - botM - tcH - gapY - topM);
 
-    axX = leftM;
-    axY = botM + tcH + gapY;
-    set(ax,   'Position', [axX axY leftW axH]);
+sliderW = 18;
+sliderGap = 10;
+
+axX = leftM;
+
+leftW = max(420, panelX - axX - gapX);
+
+axY = botM + tcH + gapY;
+set(ax, 'Position', [axX axY leftW axH]);
 
 tcLeftPad = 8;
 set(axTC, 'Position', [axX + tcLeftPad botM leftW - tcLeftPad tcH]);
+
+set(slZ, 'Visible', 'off', 'Enable', 'off');
+set(txtZ, 'Visible', 'off');
 
 set(txtTitle, ...
     'Position', [axX axY + axH + 10 leftW 28], ...
@@ -891,14 +905,12 @@ function onWindowEdited(~,~)
 end
 
 function sliceChanged(~,~)
-    zNew = round(get(slZ, 'Value'));
-    zNew = max(1, min(nZ, zNew));
-    state.z = zNew;
-    set(slZ, 'Value', state.z);
+   zNew = round(nZ - get(slZ, 'Value') + 1);
+zNew = max(1, min(nZ, zNew));
+state.z = zNew;
+set(slZ, 'Value', nZ - state.z + 1);
 
-    if ~isempty(txtZ) && isgraphics(txtZ)
-        set(txtZ, 'String', sprintf('Slice: %d / %d', state.z, nZ));
-    end
+ updateSliceIndicators();
 
     if ~isempty(passedMask)
         mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
@@ -1120,14 +1132,11 @@ function mouseScroll(~,evt)
     if nZ <= 1, return; end
     if ~isPointerOverImageAxis(), return; end
 
-    dz = -sign(evt.VerticalScrollCount);
+dz = sign(evt.VerticalScrollCount);
     if dz == 0, return; end
 
     state.z = max(1, min(nZ, state.z+dz));
-    if ~isempty(slZ) && isgraphics(slZ), set(slZ, 'Value', state.z); end
-    if ~isempty(txtZ) && isgraphics(txtZ)
-        set(txtZ, 'String', sprintf('Slice: %d / %d', state.z, nZ));
-    end
+   updateSliceIndicators();
 
     if ~isempty(passedMask)
         mask2D = collapseMaskForSlice(passedMask, nY, nX, state.z, nZ);
@@ -1369,6 +1378,30 @@ function updateUnderlayControlsEnable()
     set(txtVsz, 'Enable', onoff(isVessel));
     set(slVlv, 'Enable', onoff(isVessel));
     set(txtVlv, 'Enable', onoff(isVessel));
+end
+
+function updateSliceIndicators()
+    if nZ > 1
+       if isgraphics(slZ)
+    set(slZ, 'Value', nZ - state.z + 1);
+end
+
+        if isgraphics(txtZ)
+    set(txtZ, 'String', '', 'Visible', 'off');
+end
+
+        if isgraphics(txtSliceOverlay)
+            set(txtSliceOverlay, 'String', sprintf('Slice %d / %d', state.z, nZ), ...
+                'Visible', 'on');
+        end
+    else
+        if isgraphics(txtZ)
+            set(txtZ, 'String', '', 'Visible', 'off');
+        end
+        if isgraphics(txtSliceOverlay)
+            set(txtSliceOverlay, 'String', '', 'Visible', 'off');
+        end
+    end
 end
 
 function updateInfoLines()
@@ -1750,13 +1783,13 @@ function exportScmSeries1minCB(~,~)
         if ~isfinite(doPPT), doPPT = 1; end
         doPPT  = (doPPT ~= 0);
 
-       P = getSimpleExportPaths();
-rootScm = P.scmSeriesDir;
-safeMkdirIfNeeded(rootScm);
+        P = getSimpleExportPaths();
+        rootScm = P.scmSeriesDir;
+        safeMkdirIfNeeded(rootScm);
 
-stamp = datestr(now, 'yyyymmdd_HHMMSS');
-outDir = fullfile(rootScm, ['SCM_series_' stamp]);
-safeMkdirIfNeeded(outDir);
+        stamp = datestr(now, 'yyyymmdd_HHMMSS');
+        outDir = fullfile(rootScm, ['SCM_series_' stamp]);
+        safeMkdirIfNeeded(outDir);
 
         dirPNG = fullfile(outDir, 'tiles_png');
         dirTIF = fullfile(outDir, 'tiles_tif');
@@ -1787,12 +1820,12 @@ safeMkdirIfNeeded(outDir);
             b0i = clamp(round(b0), 1, nT);
             b1i = clamp(round(b1), 1, nT);
         end
-        if b1i < b0i, tmp = b0i; b0i = b1i; b1i = tmp; end
+        if b1i < b0i
+            tmp = b0i;
+            b0i = b1i;
+            b1i = tmp;
+        end
 
-        PSCz = getPSCForSlice(state.z);
-        baseMap = mean(PSCz(:,:,b0i:b1i), 3);
-
-        bgRGB = get(hBG, 'CData');
         cm    = colormap(ax);
         caxV  = state.cax;
 
@@ -1803,7 +1836,10 @@ safeMkdirIfNeeded(outDir);
         caxStr  = strtrim(getStr(ebCax));
         baseStr = strtrim(getStr(ebBase));
         aStr    = sprintf('Alpha=%s%%', strtrim(getStr(txtAlpha)));
-        modStr  = sprintf('AlphaMod=%d [%s..%s]', double(state.alphaModOn), strtrim(getStr(ebModMin)), strtrim(getStr(ebModMax)));
+        modStr  = sprintf('AlphaMod=%d [%s..%s]', ...
+            double(state.alphaModOn), ...
+            strtrim(getStr(ebModMin)), ...
+            strtrim(getStr(ebModMax)));
         sigStr  = sprintf('Sigma=%g', sigma);
 
         footerInfo = sprintf('Thr=%s | CAX=%s | Base=%s | %s | %s | %s', ...
@@ -1824,86 +1860,196 @@ safeMkdirIfNeeded(outDir);
         axis(axT, 'off');
         set(axT, 'YDir', 'reverse');
         hold(axT, 'on');
-        image(axT, bgRGB);
-        hT = imagesc(axT, zeros(nY, nX));
+
+        hBgT = image(axT, zeros(nY, nX, 3));
+        hT   = imagesc(axT, zeros(nY, nX));
         set(hT, 'AlphaData', zeros(nY, nX));
         colormap(axT, cm);
         caxis(axT, caxV);
         hold(axT, 'off');
         set(figT, 'PaperPositionMode', 'auto');
 
-        tilePNG = {};
-        tileLBL = {};
-        nSaved = 0;
+        nSavedTotal = 0;
 
-        for wi = 1:numel(starts)
-            s0 = starts(wi);
-            s1 = s0 + winLen;
+        for zSel = 1:nZ
 
-            idxSig = find(tsec >= s0 & tsec < s1);
-            if isempty(idxSig), continue; end
+            PSCz = getPSCForSlice(zSel);
+            baseMap = mean(PSCz(:,:,b0i:b1i), 3);
 
-            sigMap = mean(PSCz(:,:,idxSig), 3);
-            map = sigMap - baseMap;
-
-            if sigma > 0
-                map = smooth2D_gauss(map, sigma);
+            if ~isempty(passedMask)
+                maskLocal = collapseMaskForSlice(passedMask, nY, nX, zSel, nZ);
+                if ~passedMaskIsInclude
+                    maskLocal = ~maskLocal;
+                end
+            else
+                maskLocal = true(nY, nX);
             end
-            map(~mask2D) = 0;
 
-            alpha = alphaFromCurrentSettings(map);
+            bgRGB = renderUnderlayRGB(getBg2DForSlice(zSel));
+            set(hBgT, 'CData', bgRGB);
 
-            minIdx = floor(s0 / winLen) + 1;
+            tilePNG = {};
+            tileLBL = {};
+            nSavedThisSlice = 0;
 
-            phase = '';
-            if isfinite(injSec)
-                if s1 <= injSec
-                    phase = 'Baseline';
-                elseif s0 < injSec && s1 > injSec
-                    phase = 'Injection';
+            for wi = 1:numel(starts)
+                s0 = starts(wi);
+                s1 = s0 + winLen;
+
+                idxSig = find(tsec >= s0 & tsec < s1);
+                if isempty(idxSig)
+                    continue;
+                end
+
+                sigMap = mean(PSCz(:,:,idxSig), 3);
+                map = sigMap - baseMap;
+
+                if sigma > 0
+                    map = smooth2D_gauss(map, sigma);
+                end
+                map(~maskLocal) = 0;
+
+                % ----- alpha from current settings, but for this slice mask -----
+                aVal = get(slAlpha, 'Value');
+                thr = str2double(getStr(ebThr));
+                if ~isfinite(thr), thr = 0; end
+
+                mMin = str2double(getStr(ebModMin));
+                if ~isfinite(mMin), mMin = state.modMin; end
+                mMax = str2double(getStr(ebModMax));
+                if ~isfinite(mMax), mMax = state.modMax; end
+                if mMax < mMin
+                    tmp = mMin;
+                    mMin = mMax;
+                    mMax = tmp;
+                end
+
+                baseMask = double(maskLocal);
+                showMask = (map > 0);
+                thrMask  = double((abs(map) >= thr) & showMask);
+
+                if ~state.alphaModOn
+                    alpha = (aVal/100) .* thrMask .* baseMask;
                 else
-                    pi = floor((s0 - injSec)/winLen) + 1;
-                    if pi < 1, pi = 1; end
-                    phase = sprintf('%d min PI', pi);
+                    effLo = max(mMin, thr);
+                    effHi = mMax;
+
+                    ovAbsPos = abs(map);
+                    ovAbsPos(~showMask) = NaN;
+
+                    if ~isfinite(effHi) || effHi <= effLo
+                        tmp = ovAbsPos(isfinite(ovAbsPos));
+                        if isempty(tmp)
+                            effHi = effLo + eps;
+                        else
+                            effHi = max(tmp);
+                        end
+                    end
+                    if ~isfinite(effHi) || effHi <= effLo
+                        effHi = effLo + eps;
+                    end
+
+                    modA = (abs(map) - effLo) ./ max(eps, (effHi - effLo));
+                    modA(~isfinite(modA)) = 0;
+                    modA = min(max(modA, 0), 1);
+                    modA(~showMask) = 0;
+
+                    alpha = (aVal/100) .* modA .* thrMask .* baseMask;
+                end
+                % ---------------------------------------------------------------
+
+                minIdx = floor(s0 / winLen) + 1;
+
+                phase = '';
+                if isfinite(injSec)
+                    if s1 <= injSec
+                        phase = 'Baseline';
+                    elseif s0 < injSec && s1 > injSec
+                        phase = 'Injection';
+                    else
+                        pi = floor((s0 - injSec)/winLen) + 1;
+                        if pi < 1, pi = 1; end
+                        phase = sprintf('%d min PI', pi);
+                    end
+                end
+
+                if isempty(phase)
+                    lbl = sprintf('z=%d/%d | %.0f-%.0fs | %d min', zSel, nZ, s0, s1, minIdx);
+                else
+                    lbl = sprintf('z=%d/%d | %.0f-%.0fs | %d min (%s)', zSel, nZ, s0, s1, minIdx, phase);
+                end
+
+                baseName = sprintf('SCM_z%02d_w%03d_%0.0f-%0.0fs', zSel, minIdx, s0, s1);
+
+                outPng = fullfile(dirPNG, [baseName '.png']);
+                outTif = fullfile(dirTIF, [baseName '.tif']);
+                outJpg = fullfile(dirJPG, [baseName '.jpg']);
+
+                set(hT, 'CData', map);
+                set(hT, 'AlphaData', alpha);
+                colormap(axT, cm);
+                caxis(axT, caxV);
+
+                print(figT, outPng, '-dpng',  sprintf('-r%d', EXPORT_DPI_TILES), '-opengl');
+                if SAVE_TIF
+                    print(figT, outTif, '-dtiff', sprintf('-r%d', EXPORT_DPI_TILES), '-opengl');
+                end
+                if SAVE_JPG
+                    print(figT, outJpg, '-djpeg', sprintf('-r%d', EXPORT_DPI_TILES), '-opengl');
+                end
+
+                nSavedThisSlice = nSavedThisSlice + 1;
+                nSavedTotal     = nSavedTotal + 1;
+
+                tilePNG{end+1} = outPng; %#ok<AGROW>
+                tileLBL{end+1} = lbl; %#ok<AGROW>
+
+                try
+                    set(info1, 'String', sprintf('Exporting tiles... slice %d/%d | %d total | %s', ...
+                        zSel, nZ, nSavedTotal, shortenPath(outDir,55)));
+                    set(info1, 'TooltipString', outDir);
+                    drawnow limitrate;
+                catch
                 end
             end
 
-            if isempty(phase)
-                lbl = sprintf('%.0f-%.0fs | %d min', s0, s1, minIdx);
-            else
-                lbl = sprintf('%.0f-%.0fs | %d min (%s)', s0, s1, minIdx, phase);
+            if isempty(tilePNG)
+                continue;
             end
 
-           baseName = sprintf('SCM_z%02d_w%03d_%0.0f-%0.0fs', ...
-    state.z, minIdx, s0, s1);
+            perSlide = 6;
+            nSlides = ceil(numel(tilePNG) / perSlide);
 
-            outPng = fullfile(dirPNG, [baseName '.png']);
-            outTif = fullfile(dirTIF, [baseName '.tif']);
-            outJpg = fullfile(dirJPG, [baseName '.jpg']);
+            fullTitle  = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), zSel, nZ);
+            shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel), zSel, nZ);
 
-            set(hT, 'CData', map);
-            set(hT, 'AlphaData', alpha);
-            colormap(axT, cm);
-            caxis(axT, caxV);
+            for si = 1:nSlides
+                i0 = (si-1)*perSlide + 1;
+                i1 = min(si*perSlide, numel(tilePNG));
+                idx = i0:i1;
 
-            print(figT, outPng, '-dpng',  sprintf('-r%d', EXPORT_DPI_TILES), '-opengl');
-            if SAVE_TIF
-                print(figT, outTif, '-dtiff', sprintf('-r%d', EXPORT_DPI_TILES), '-opengl');
-            end
-            if SAVE_JPG
-                print(figT, outJpg, '-djpeg', sprintf('-r%d', EXPORT_DPI_TILES), '-opengl');
-            end
+                outSlide = fullfile(tmpSLD, sprintf('slide_z%02d_%02d.png', zSel, si));
+                if si == 1
+                    tStr = fullTitle;
+                else
+                    tStr = shortTitle;
+                end
 
-            nSaved = nSaved + 1;
-            tilePNG{end+1} = outPng; %#ok<AGROW>
-            tileLBL{end+1} = lbl; %#ok<AGROW>
+                renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
 
-            try
-                set(info1, 'String', sprintf('Exporting tiles... %d / %d  |  %s', ...
-                    nSaved, numel(starts), shortenPath(outDir,55)));
-                set(info1, 'TooltipString', outDir);
-                drawnow limitrate;
-            catch
+                if exist(outSlide, 'file') ~= 2
+                    error('Failed to create slide PNG: %s', outSlide);
+                end
+
+                slidePNGs{end+1} = outSlide; %#ok<AGROW>
+
+                try
+                    set(info1, 'String', sprintf('Building slide PNGs... slice %d/%d | slide %d/%d', ...
+                        zSel, nZ, si, nSlides));
+                    set(info1, 'TooltipString', outDir);
+                    drawnow limitrate;
+                catch
+                end
             end
         end
 
@@ -1912,44 +2058,9 @@ safeMkdirIfNeeded(outDir);
             figT = [];
         end
 
-        if isempty(tilePNG)
+        if isempty(slidePNGs)
             errordlg('No windows exported (maybe too short recording or window settings).', 'SCM series');
             return;
-        end
-
-        perSlide = 6;
-        nSlides = ceil(numel(tilePNG) / perSlide);
-
-        fullTitle  = sprintf('%s | z=%d/%d', makeFullTitle(fileLabel), state.z, nZ);
-        shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel),   state.z, nZ);
-
-        for si = 1:nSlides
-            i0 = (si-1)*perSlide + 1;
-            i1 = min(si*perSlide, numel(tilePNG));
-            idx = i0:i1;
-
-            outSlide = fullfile(tmpSLD, sprintf('slide_%02d.png', si));
-            if si == 1
-                tStr = fullTitle;
-            else
-                tStr = shortTitle;
-            end
-
-            renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
-
-            if exist(outSlide, 'file') ~= 2
-                error('Failed to create slide PNG: %s', outSlide);
-            end
-
-            slidePNGs{end+1} = outSlide; %#ok<AGROW>
-
-            try
-                set(info1, 'String', sprintf('Building slide PNGs... %d / %d  |  %s', ...
-                    si, nSlides, shortenPath(outDir,55)));
-                set(info1, 'TooltipString', outDir);
-                drawnow limitrate;
-            catch
-            end
         end
 
         pptPath = '';
@@ -2071,6 +2182,53 @@ else
 end
 end
 
+function alpha = alphaFromCurrentSettingsWithMask(ov, maskLocal)
+    a = get(slAlpha, 'Value');
+    thr = str2double(getStr(ebThr));
+    if ~isfinite(thr), thr = 0; end
+
+    mMin = str2double(getStr(ebModMin));
+    if ~isfinite(mMin), mMin = state.modMin; end
+    mMax = str2double(getStr(ebModMax));
+    if ~isfinite(mMax), mMax = state.modMax; end
+    if mMax < mMin
+        tmp = mMin; mMin = mMax; mMax = tmp;
+    end
+
+    baseMask = double(maskLocal);
+
+    showMask = (ov > 0);
+    thrMask = double((abs(ov) >= thr) & showMask);
+
+    if ~state.alphaModOn
+        alpha = (a/100) .* thrMask .* baseMask;
+    else
+        effLo = max(mMin, thr);
+        effHi = mMax;
+
+        ovAbsPos = abs(ov);
+        ovAbsPos(~showMask) = NaN;
+
+        if ~isfinite(effHi) || effHi <= effLo
+            tmp = ovAbsPos(isfinite(ovAbsPos));
+            if isempty(tmp)
+                effHi = effLo + eps;
+            else
+                effHi = max(tmp);
+            end
+        end
+        if ~isfinite(effHi) || effHi <= effLo
+            effHi = effLo + eps;
+        end
+
+        mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
+        mod(~isfinite(mod)) = 0;
+        mod = min(max(mod, 0), 1);
+        mod(~showMask) = 0;
+
+        alpha = (a/100) .* mod .* thrMask .* baseMask;
+    end
+end
 %% ==========================================================
 % Time-course PNG export
 %% ==========================================================
@@ -2938,27 +3096,37 @@ function loadMaskCB(~,~)
                 error('No usable overlay or brain mask found in MAT bundle.');
             end
 
-            if ~isempty(B.brainImage)
-                U = squeeze(B.brainImage);
+          if ~isempty(B.brainImage)
+    U = squeeze(B.brainImage);
 
-                if ndims(U) == 2
-                    if size(U,1) == nY && size(U,2) == nX
-                        bg = double(U);
-                        state.isColorUnderlay = false;
-                    end
+    if ndims(U) == 2
+        if size(U,1) == nY && size(U,2) == nX
+            bg = double(U);
+            state.isColorUnderlay = false;
+        end
 
-                elseif ndims(U) == 3
-                    if size(U,1) == nY && size(U,2) == nX
-                        if size(U,3) == 3
-                            bg = double(U);
-                            state.isColorUnderlay = true;
-                        else
-                            bg = double(U);
-                            state.isColorUnderlay = false;
-                        end
-                    end
-                end
+    elseif ndims(U) == 3
+        if size(U,1) == nY && size(U,2) == nX
+
+            % IMPORTANT:
+            % If current SCM has multiple slices and U(:,:,3) matches nZ,
+            % then this is a grayscale slice stack, NOT RGB.
+            if nZ > 1 && size(U,3) == nZ
+                bg = double(U);
+                state.isColorUnderlay = false;
+
+            % Only treat [Y X 3] as RGB when SCM itself is 2D
+            elseif nZ == 1 && size(U,3) == 3
+                bg = double(U);
+                state.isColorUnderlay = true;
+
+            else
+                bg = double(U);
+                state.isColorUnderlay = false;
             end
+        end
+    end
+end
 
         else
             [passedMask, passedMaskIsInclude] = readMask(fullf, 'overlayPreferred');
@@ -3354,27 +3522,21 @@ function resetRoisAndRefreshAfterDataChange()
         end
     end
 
-    if isgraphics(slZ)
-        if nZ > 1
-            set(slZ, ...
-                'Min', 1, ...
-                'Max', nZ, ...
-                'Value', state.z, ...
-                'SliderStep', [1/max(1,nZ-1) 5/max(1,nZ-1)], ...
-                'Visible', 'on', ...
-                'Enable', 'on');
-            set(txtZ, 'String', sprintf('Slice: %d / %d', state.z, nZ), 'Visible', 'on');
-        else
-            set(slZ, ...
-                'Min', 1, ...
-                'Max', 1, ...
-                'Value', 1, ...
-                'SliderStep', [1 1], ...
-                'Visible', 'off', ...
-                'Enable', 'off');
-            set(txtZ, 'String', '', 'Visible', 'off');
-        end
-    end
+ if isgraphics(slZ)
+    set(slZ, ...
+        'Min', 1, ...
+        'Max', max(1,nZ), ...
+        'Value', nZ - state.z + 1, ...
+        'SliderStep', [1/max(1,max(1,nZ-1)) 5/max(1,max(1,nZ-1))], ...
+        'Visible', 'off', ...
+        'Enable', 'off');
+end
+
+if isgraphics(txtZ)
+    set(txtZ, 'String', '', 'Visible', 'off');
+end
+
+updateSliceIndicators();
 
     set(hLiveRect, 'Visible', 'off');
     set(hLivePSC , 'XData', state.tminHover, 'YData', nan(1, numel(state.tminHover)), 'Visible', 'off');
@@ -3715,11 +3877,13 @@ function applyUnderlayMeta(meta, U)
         end
     end
 
-    if nargin >= 2 && ~state.isColorUnderlay
-        if ndims(U) == 3 && size(U,3) == 3
-            state.isColorUnderlay = true;
-        end
+   if nargin >= 2 && ~state.isColorUnderlay
+    % Auto-detect RGB only for true 2D SCM case.
+    % For 3D motor data with nZ == 3, [Y X 3] is usually a slice stack.
+    if ndims(U) == 3 && size(U,3) == 3 && nZ == 1
+        state.isColorUnderlay = true;
     end
+end
 end
 
 function tf = doesUnderlayMatchTransformOutput(U, T)
@@ -4583,11 +4747,10 @@ function PSCz = getPSCForSlice(z)
     end
 end
 
-function bg2 = getBg2DForSlice(z)
-    if ndims(bg) == 3 && size(bg,3) == 3
-        bg2 = bg;
-        return;
-    end
+    function bg2 = getBg2DForSlice(z)
+    ensureUnderlayStateFields();
+
+    z = max(1, min(nZ, z));
 
     if ndims(bg) == 2
         bg2 = bg;
@@ -4595,31 +4758,62 @@ function bg2 = getBg2DForSlice(z)
     end
 
     if ndims(bg) == 3
-        if size(bg,3) == nT && nZ == 1
-            bg2 = mean(bg, 3);
-        else
-            z = max(1, min(size(bg,3), z));
-            bg2 = bg(:,:,z);
+        % IMPORTANT:
+        % [Y X 3] is ambiguous:
+        %   - RGB underlay for 2D data
+        %   - 3-slice grayscale stack for motor/3D data
+        %
+        % Only treat it as RGB if:
+        %   1) it was explicitly marked as color, or
+        %   2) current SCM is truly 2D (nZ == 1)
+
+        if size(bg,3) == 3 && (state.isColorUnderlay || nZ == 1)
+            bg2 = bg;
+            return;
         end
+
+        % true grayscale Z-stack
+        if nZ > 1 && size(bg,3) == nZ
+            bg2 = bg(:,:,z);
+            return;
+        end
+
+        % 2D case where bg is actually [Y X T]
+        if nZ == 1 && size(bg,3) == nT
+            bg2 = mean(bg, 3);
+            return;
+        end
+
+        % fallback
+        bg2 = bg(:,:,max(1, min(size(bg,3), z)));
         return;
     end
 
     if ndims(bg) == 4
-        if size(bg,3) == 3 && size(bg,4) >= 1
+        % explicit color underlay stack: [Y X 3 Z]
+        if size(bg,3) == 3 && (state.isColorUnderlay || nZ == 1) && size(bg,4) >= 1
             z = max(1, min(size(bg,4), z));
             bg2 = squeeze(bg(:,:,:,z));
             return;
         end
 
+        % grayscale volume over time or similar
         tmp = mean(bg, 4);
-        z = max(1, min(size(tmp,3), z));
-        bg2 = tmp(:,:,z);
+
+        if ndims(tmp) == 3
+            z = max(1, min(size(tmp,3), z));
+            bg2 = tmp(:,:,z);
+        else
+            bg2 = squeeze(tmp(:,:,1));
+        end
         return;
     end
 
-    bg2 = bg(:,:,1);
+    bg2 = squeeze(bg);
+    if ndims(bg2) > 2
+        bg2 = bg2(:,:,1);
+    end
 end
-
 function B = readScmBundleFile(fullf)
     if ~exist(fullf, 'file')
         error('File not found: %s', fullf);
@@ -4786,7 +4980,7 @@ end
 function [a,b] = parseRangeSafe(s, da, db)
     if nargin < 2, da = 0; end
     if nargin < 3, db = da; end
-    s = strrep(char(s), '–', '-');
+    s = strrep(char(s), 'Â–', '-');
     v = sscanf(s, '%f-%f');
     if numel(v) ~= 2 || any(~isfinite(v))
         a = da;

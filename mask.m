@@ -148,7 +148,25 @@ else
     out = struct('cancelled',true);
     return;
 end
+% Detect motor-reconstructed dataset from name/key
+isMotorData = false;
 
+try
+    s1 = '';
+    s2 = '';
+
+    if exist('datasetLabel','var') && ~isempty(datasetLabel)
+        s1 = lower(char(datasetLabel));
+    end
+
+    if isstruct(studio) && isfield(studio,'activeDataset') && ~isempty(studio.activeDataset)
+        s2 = lower(char(studio.activeDataset));
+    end
+
+    isMotorData = ~isempty(strfind(s1,'motor')) || ~isempty(strfind(s2,'motor'));
+catch
+    isMotorData = false;
+end
 % =========================================================
 % 2) Theme
 % =========================================================
@@ -204,9 +222,16 @@ S.editTarget = 1;
 % 4 Max(T) [linear]
 % 5 External file
 % 6 imregdemons Mean (dB)
-S.underlayMode = 1;
+
+if isMotorData
+    S.underlayMode = 3;
+    UbaseLabel = 'Median (T) [linear]';
+else
+    S.underlayMode = 1;
+    UbaseLabel = 'MIP (Z) of Mean(T)';
+end
+
 S.externalFile = '';
-UbaseLabel = 'MIP (Z) of Mean(T)';
 
 S.dbLow  = -48;
 S.dbHigh = -7;
@@ -223,7 +248,12 @@ S.cmapMode = 1;
 
 S.showOverlay = true;
 S.overlayAlpha = 0.28;
-
+% per-slice display state
+S.brightnessByZ   = repmat(S.brightness,   1, nZ);
+S.contrastByZ     = repmat(S.contrast,     1, nZ);
+S.gammaByZ        = repmat(S.gamma,        1, nZ);
+S.sharpnessByZ    = repmat(S.sharpness,    1, nZ);
+S.overlayAlphaByZ = repmat(S.overlayAlpha, 1, nZ);
 S.smoothSize = 8;
 S.brushR = 90;
 S.brushShape = 2; % 1 round, 2 square, 3 pen, 4 diamond
@@ -516,7 +546,28 @@ pBottom = uipanel('Parent',panel,'Units','normalized', ...
 % 8) Controls
 % =========================================================
 h = struct();
+% -------- left vertical slice UI (similar to SCM) --------
+h.txtSliceSide = [];
+h.slSliceSide  = [];
 
+if nZ > 1
+    h.txtSliceSide = uicontrol('Style','text','Parent',fig,'Units','normalized', ...
+        'Position',[0.004 0.915 0.055 0.030], ...
+        'String',sprintf('z=%d/%d',S.z,nZ), ...
+        'BackgroundColor',C.fig, ...
+        'ForegroundColor',[0.86 0.93 1.00], ...
+        'FontName',UI.fontName, ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    h.slSliceSide = uicontrol('Style','slider','Parent',fig,'Units','normalized', ...
+        'Position',[0.006 0.16 0.014 0.70], ...
+        'Min',1,'Max',nZ,'Value',zToSliderVal(S.z), ...
+        'Callback',@onSliceChange);
+
+    set(h.slSliceSide,'SliderStep',[1/max(1,nZ-1) 5/max(1,nZ-1)]);
+end
 h.btnTabMask = uicontrol('Style','pushbutton','Parent',pTabs,'Units','normalized', ...
     'Position',[0.00 0.02 0.49 0.96], ...
     'String','MASK', ...
@@ -630,7 +681,7 @@ h.edDbHigh = uicontrol('Style','edit','Parent',pUnder,'Units','normalized', ...
     'Callback',@onDbEdit);
 
 if nZ > 1
-    h.slSlice = makeSlider(pUnder,[0.03 0.05 0.72 0.10],1,nZ,S.z,@onSliceChange);
+    h.slSlice = makeSlider(pUnder,[0.03 0.05 0.72 0.10],1,nZ,zToSliderVal(S.z),@onSliceChange);
     set(h.slSlice,'SliderStep',[1/max(1,nZ-1) 5/max(1,nZ-1)]);
     h.txtSliceVal = makeText(pUnder,[0.76 0.05 0.20 0.08],sprintf('z=%d/%d',S.z,nZ),C.text,11,'normal','right');
 else
@@ -731,6 +782,10 @@ updateTabUI();
 updateDbControlsEnabled();
 syncAdvancedControls();
 updateAdvancedControlsEnabled();
+
+loadSliceDisplayState(S.z);
+syncSliceUI();
+
 updateStatus('Ready. Left drag = add. Right drag = erase. Press F to fill current slice.');
 renderNow();
 
@@ -948,8 +1003,9 @@ uiwait(fig);
         renderNow();
     end
 
-    function onOverlayAlphaChange(~,~)
+        function onOverlayAlphaChange(~,~)
         S.overlayAlpha = get(h.slOverlayAlpha,'Value');
+        S.overlayAlphaByZ(S.z) = S.overlayAlpha;
         set(h.txtOverlayAlpha,'String',sprintf('%.2f',S.overlayAlpha));
         renderNow();
     end
@@ -1066,45 +1122,50 @@ uiwait(fig);
         end
     end
 
-    function onSliceChange(src,~)
-        S.z = max(1, min(nZ, round(get(src,'Value'))));
-        if ~isempty(h.txtSliceVal) && isgraphics(h.txtSliceVal)
-            set(h.txtSliceVal,'String',sprintf('z=%d/%d',S.z,nZ));
-        end
-        renderNow();
+       function onSliceChange(src,~)
+    oldZ = S.z;
+    storeSliceDisplayState(oldZ);
+
+    S.z = sliderValToZ(get(src,'Value'));
+
+    loadSliceDisplayState(S.z);
+    syncSliceUI();
+    renderNow();
+end
+
+       function onScrollWheel(~,evt)
+    if nZ <= 1
+        return;
+    end
+    if ~isCursorOverAxes()
+        return;
     end
 
-    function onScrollWheel(~,evt)
-        if nZ <= 1
-            return;
-        end
-        if ~isCursorOverAxes()
-            return;
-        end
-
-        dz = -sign(evt.VerticalScrollCount);
-        if dz == 0
-            return;
-        end
-
-        S.z = max(1, min(nZ, S.z + dz));
-
-        if ~isempty(h.slSlice) && isgraphics(h.slSlice)
-            set(h.slSlice,'Value',S.z);
-        end
-        if ~isempty(h.txtSliceVal) && isgraphics(h.txtSliceVal)
-            set(h.txtSliceVal,'String',sprintf('z=%d/%d',S.z,nZ));
-        end
-
-        renderNow();
+    dz = sign(evt.VerticalScrollCount);
+    if dz == 0
+        return;
     end
 
+    oldZ = S.z;
+    storeSliceDisplayState(oldZ);
+
+    S.z = max(1, min(nZ, S.z + dz));
+
+    loadSliceDisplayState(S.z);
+    syncSliceUI();
+    renderNow();
+end
 % -------------------- Display controls --------------------
-    function onDisplayChange(~,~)
+      function onDisplayChange(~,~)
         S.brightness = get(h.slBright,'Value');
         S.contrast   = get(h.slCont,'Value');
         S.gamma      = get(h.slGamma,'Value');
         S.sharpness  = get(h.slSharp,'Value');
+
+        S.brightnessByZ(S.z) = S.brightness;
+        S.contrastByZ(S.z)   = S.contrast;
+        S.gammaByZ(S.z)      = S.gamma;
+        S.sharpnessByZ(S.z)  = S.sharpness;
 
         set(h.txtBright,'String',sprintf('%.2f',S.brightness));
         set(h.txtCont,'String',sprintf('%.2f',S.contrast));
@@ -1113,7 +1174,6 @@ uiwait(fig);
 
         renderNow();
     end
-
     function onCmapChange(src,~)
         S.cmapMode = get(src,'Value');
         renderNow();
@@ -1330,11 +1390,18 @@ end
             signalMask = overlayMask;
         end
 
-        if brainHas
-            brainImage = buildBrainImageForSave_native();
-        else
-            brainImage = [];
-        end
+       % ALWAYS export a real underlay volume, even if only overlay mask was drawn.
+% Otherwise SCM / Video may fall back to loading a mask field as underlay.
+anatomical_reference_raw = getNativePerSliceUnderlayForSave();
+brainImage = anatomical_reference_raw;
+anatomical_reference = anatomical_reference_raw;
+
+% Extra aliases for robust loading in SCM / Video / future tools
+underlay = anatomical_reference_raw;
+bg = anatomical_reference_raw;
+
+fprintf('[MASK SAVE] anatomical_reference_raw size = %s\n', mat2str(size(anatomical_reference_raw)));
+fprintf('[MASK SAVE] brainImage size = %s\n', mat2str(size(brainImage)));
 
         switch lower(mode)
             case 'brain'
@@ -1386,6 +1453,11 @@ end
         maskEditorInfo.cmapMode = S.cmapMode;
         maskEditorInfo.showOverlay = S.showOverlay;
         maskEditorInfo.overlayAlpha = S.overlayAlpha;
+                maskEditorInfo.brightnessByZ = S.brightnessByZ;
+        maskEditorInfo.contrastByZ = S.contrastByZ;
+        maskEditorInfo.gammaByZ = S.gammaByZ;
+        maskEditorInfo.sharpnessByZ = S.sharpnessByZ;
+        maskEditorInfo.overlayAlphaByZ = S.overlayAlphaByZ;
         maskEditorInfo.flipUD_display = S.flipUD_display;
         maskEditorInfo.maskIsInclude = maskIsInclude;
         maskEditorInfo.loadedMaskIsInclude = loadedMaskIsInclude;
@@ -1400,6 +1472,10 @@ end
 
         maskBundle = struct();
         maskBundle.brainImage = brainImage;
+maskBundle.anatomical_reference_raw = anatomical_reference_raw;
+maskBundle.anatomical_reference = anatomical_reference;
+maskBundle.underlay = underlay;
+maskBundle.bg = bg;
         maskBundle.brainMask = brainMask;
         maskBundle.underlayMask = underlayMask;
         maskBundle.overlayMask = overlayMask;
@@ -1415,21 +1491,25 @@ end
         outFile = fullfile(visDir, sprintf('%s_%s_%s.mat', filePrefix, safeFileStem(datasetLabel), ts));
 
         try
-            save(outFile, ...
-                'brainImage', ...
-                'brainMask', ...
-                'underlayMask', ...
-                'overlayMask', ...
-                'signalMask', ...
-                'mask', ...
-                'activeMask', ...
-                'loadedMask', ...
-                'maskIsInclude', ...
-                'loadedMaskIsInclude', ...
-                'overlayMaskIsInclude', ...
-                'maskBundle', ...
-                'maskEditorInfo', ...
-                '-v7.3');
+                     save(outFile, ...
+    'brainImage', ...
+    'anatomical_reference_raw', ...
+    'anatomical_reference', ...
+    'underlay', ...
+    'bg', ...
+    'brainMask', ...
+    'underlayMask', ...
+    'overlayMask', ...
+    'signalMask', ...
+    'mask', ...
+    'activeMask', ...
+    'loadedMask', ...
+    'maskIsInclude', ...
+    'loadedMaskIsInclude', ...
+    'overlayMaskIsInclude', ...
+    'maskBundle', ...
+    'maskEditorInfo', ...
+    '-v7.3');
         catch ME
             errordlg(ME.message,'Save failed');
             return;
@@ -1448,10 +1528,44 @@ end
         if brainHas
             out.brainImage = brainImage;
         end
-
-        updateStatus(['Saved: ' outFile]);
+pushCurrentStateToStudio(out);
+       updateStatus(['Saved: ' outFile ' | editor kept open']);
+drawnow;
+return;
     end
 
+function pushCurrentStateToStudio(snapshot)
+    if nargin < 1 || ~isstruct(snapshot)
+        return;
+    end
+
+    % Store latest snapshot on Studio figure appdata
+    try
+        if isfield(studio,'figure') && ~isempty(studio.figure) && ishghandle(studio.figure)
+            setappdata(studio.figure, 'maskEditorLatestOutput', snapshot);
+            setappdata(studio.figure, 'maskEditorOpen', true);
+            setappdata(studio.figure, 'maskEditorState', 'updated');
+        end
+    catch
+    end
+
+    % Preferred live-update callback
+    try
+        if isfield(studio,'onMaskEditorChanged') && isa(studio.onMaskEditorChanged,'function_handle')
+            feval(studio.onMaskEditorChanged, snapshot);
+            return;
+        end
+    catch
+    end
+
+    % Fallback: reuse close callback if no live-update callback exists
+    try
+        if isfield(studio,'onMaskEditorClosed') && isa(studio.onMaskEditorClosed,'function_handle')
+            feval(studio.onMaskEditorClosed, snapshot);
+        end
+    catch
+    end
+end
 % -------------------- Help / close --------------------
     function onKey(~,evt)
         if ~isfield(evt,'Key')
@@ -1544,34 +1658,55 @@ end
             'Callback',@(src,evt) delete(helpFig));
     end
 
-    function onCloseReturn(~,~)
-        out.cancelled = false;
-        out.mask = logical(brainMaskVol);
-        out.brainMask = logical(brainMaskVol);
-        out.underlayMask = logical(brainMaskVol);
-        out.overlayMask = logical(overlayMaskVol);
-        out.signalMask = logical(overlayMaskVol);
-        out.anatomical_reference_raw = double(Ubase);
-        out.anatomical_reference = double(Ubase);
+   function onCloseReturn(~,~)
+    out.cancelled = false;
 
-        try
-            if any(brainMaskVol(:))
-                out.brainImage = buildBrainImageForSave_native();
-            end
-        catch
-        end
+    out.brainMask    = logical(brainMaskVol);
+    out.underlayMask = logical(brainMaskVol);
+    out.overlayMask  = logical(overlayMaskVol);
+    out.signalMask   = logical(overlayMaskVol);
 
-        notifyStudioReady();
-
-        try
-            uiresume(fig);
-        catch
-        end
-        try
-            delete(fig);
-        catch
-        end
+    % For playback / SCM / Video compatibility:
+    % prefer overlay mask if present, otherwise brain mask
+    if any(overlayMaskVol(:))
+        out.mask       = logical(overlayMaskVol);
+        out.loadedMask = logical(overlayMaskVol);
+    else
+        out.mask       = logical(brainMaskVol);
+        out.loadedMask = logical(brainMaskVol);
     end
+
+    out.maskIsInclude = true;
+    out.loadedMaskIsInclude = true;
+    out.overlayMaskIsInclude = true;
+
+   % TRUE raw per-slice underlay volume
+out.anatomical_reference_raw = getNativePerSliceUnderlayForSave();
+out.brainImage = out.anatomical_reference_raw;
+out.anatomical_reference = out.anatomical_reference_raw;
+
+% Extra aliases for robust downstream loading
+out.underlay = out.anatomical_reference_raw;
+out.bg = out.anatomical_reference_raw;
+catch
+    out.brainImage = [];
+    out.anatomical_reference = out.anatomical_reference_raw;
+end
+pushCurrentStateToStudio(out);
+    notifyStudioReady();
+
+    try
+        uiresume(fig);
+    catch
+    end
+
+    try
+        if ishghandle(fig)
+            delete(fig);
+        end
+    catch
+    end
+end
 
     function notifyStudioReady()
         try
@@ -1713,7 +1848,7 @@ end
             Osl = Osl_raw;
         end
 
-        U01 = buildDisplayUnderlay(Usl);
+        U01 = buildDisplayUnderlay(Usl, z);
         RGB = mapToRGB(U01, S.cmapMode);
 
         if S.previewMasked
@@ -1776,7 +1911,17 @@ end
         end
     end
 
-    function U01 = buildDisplayUnderlay(Usl)
+      function U01 = buildDisplayUnderlay(Usl, zIdx)
+        if nargin < 2 || isempty(zIdx)
+            zIdx = S.z;
+        end
+        zIdx = max(1,min(nZ,zIdx));
+
+        bright = S.brightnessByZ(zIdx);
+        cont   = S.contrastByZ(zIdx);
+        gam    = S.gammaByZ(zIdx);
+        sharp  = S.sharpnessByZ(zIdx);
+
         if S.underlayMode == 6
             U01 = scaleFixed(Usl, S.dbLow, S.dbHigh);
         else
@@ -1784,28 +1929,88 @@ end
         end
 
         U01 = applyVesselEnhanceMaybe(U01);
-        U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
+        U01 = applyDisplayAdjust(U01, bright, cont, gam, sharp);
         U01 = applySoftToneMaybe(U01);
         U01 = min(max(U01,0),1);
     end
 
-    function brainImage = buildBrainImageForSave_native()
-        brainImage = zeros(nY,nX,nZ,'single');
+   function brainImage = buildBrainImageForSave_native()
+    brainImage = zeros(nY,nX,nZ,'single');
 
-        for zz = 1:nZ
-            Usl = Ubase(:,:,zz);
-            Msl = brainMaskVol(:,:,zz);
+    % Always build from a true per-slice source volume
+    Utrue = getNativePerSliceUnderlayForSave();
 
-            U01 = buildDisplayUnderlay(Usl);
-            U01(~Msl) = 0;
-            brainImage(:,:,zz) = single(U01);
-        end
+    for zz = 1:nZ
+        Usl = Utrue(:,:,zz);
+        Msl = brainMaskVol(:,:,zz);
 
-        if nZ == 1
-            brainImage = brainImage(:,:,1);
-        end
+        U01 = buildDisplayUnderlay(Usl, zz);
+        U01(~Msl) = 0;
+        brainImage(:,:,zz) = single(U01);
     end
 
+    if nZ == 1
+        brainImage = brainImage(:,:,1);
+    end
+end
+
+function Utrue = getNativePerSliceUnderlayForSave()
+    % This function returns a TRUE slice-wise underlay volume for saving,
+    % so later SCM / Video / atlas registration work per slice correctly.
+
+    if nZ == 1
+        if ndims(I) == 3
+            Utrue = mean(double(I),3);
+        else
+            Utrue = double(I(:,:,1,1));
+        end
+        Utrue = reshape(Utrue,[nY nX 1]);
+        return;
+    end
+
+    switch S.underlayMode
+        case 2
+            % Mean(T) per slice
+            Utrue = underlayMeanLinear(I);
+
+        case 3
+            % Median(T) per slice
+            Utrue = underlayMedianLinear(I);
+
+        case 4
+            % Max(T) per slice
+            Utrue = underlayMaxLinear(I);
+
+        case 5
+            % External underlay, already fitted to dims
+            if ~isempty(Ucache.external)
+                Utrue = double(Ucache.external);
+            else
+                Utrue = underlayMeanLinear(I);
+            end
+
+        case 6
+            % dB mean per slice
+            Utrue = underlayImregdemonsMeanDB(I);
+
+        otherwise
+            % IMPORTANT:
+            % for save/export do NOT use MIP replicated across slices.
+            % Instead fall back to a true per-slice mean(T) volume.
+            Utrue = underlayMeanLinear(I);
+    end
+
+    Utrue = double(Utrue);
+    Utrue(~isfinite(Utrue)) = 0;
+
+    if ndims(Utrue) == 2
+        Utrue = reshape(Utrue,[nY nX 1]);
+    end
+
+    if size(Utrue,1) ~= nY || size(Utrue,2) ~= nX || size(Utrue,3) ~= nZ
+        Utrue = fitUnderlayToDims(Utrue, nY, nX, nZ);
+    end
+end
     function updateTitle()
         set(titleText,'String',sprintf('Mask Editor - %s - %s', shortenLabel(datasetLabel,55), shortenLabel(UbaseLabel,70)));
         set(h.txtUnderlayLabel,'String',['Underlay: ' UbaseLabel]);
@@ -1850,6 +2055,61 @@ end
             s = ['FX=' strjoin(parts,'+')];
         end
     end
+
+    function storeSliceDisplayState(z)
+        z = max(1,min(nZ,z));
+        S.brightnessByZ(z)   = S.brightness;
+        S.contrastByZ(z)     = S.contrast;
+        S.gammaByZ(z)        = S.gamma;
+        S.sharpnessByZ(z)    = S.sharpness;
+        S.overlayAlphaByZ(z) = S.overlayAlpha;
+    end
+
+    function loadSliceDisplayState(z)
+        z = max(1,min(nZ,z));
+
+        S.brightness   = S.brightnessByZ(z);
+        S.contrast     = S.contrastByZ(z);
+        S.gamma        = S.gammaByZ(z);
+        S.sharpness    = S.sharpnessByZ(z);
+        S.overlayAlpha = S.overlayAlphaByZ(z);
+
+        if isgraphics(h.slBright),       set(h.slBright,'Value',S.brightness); end
+        if isgraphics(h.slCont),         set(h.slCont,'Value',S.contrast); end
+        if isgraphics(h.slGamma),        set(h.slGamma,'Value',S.gamma); end
+        if isgraphics(h.slSharp),        set(h.slSharp,'Value',S.sharpness); end
+        if isgraphics(h.slOverlayAlpha), set(h.slOverlayAlpha,'Value',S.overlayAlpha); end
+
+        if isgraphics(h.txtBright),       set(h.txtBright,'String',sprintf('%.2f',S.brightness)); end
+        if isgraphics(h.txtCont),         set(h.txtCont,'String',sprintf('%.2f',S.contrast)); end
+        if isgraphics(h.txtGamma),        set(h.txtGamma,'String',sprintf('%.2f',S.gamma)); end
+        if isgraphics(h.txtSharp),        set(h.txtSharp,'String',sprintf('%.2f',S.sharpness)); end
+        if isgraphics(h.txtOverlayAlpha), set(h.txtOverlayAlpha,'String',sprintf('%.2f',S.overlayAlpha)); end
+    end
+
+  function syncSliceUI()
+    if nZ <= 1
+        return;
+    end
+
+    if ~isempty(h.slSlice) && isgraphics(h.slSlice)
+        set(h.slSlice,'Value',zToSliderVal(S.z));
+    end
+    if ~isempty(h.txtSliceVal) && isgraphics(h.txtSliceVal)
+        set(h.txtSliceVal,'String',sprintf('z=%d/%d',S.z,nZ));
+    end
+
+    if isfield(h,'slSliceSide') && ~isempty(h.slSliceSide) && isgraphics(h.slSliceSide)
+        set(h.slSliceSide,'Value',zToSliderVal(S.z));
+    end
+    if isfield(h,'txtSliceSide') && ~isempty(h.txtSliceSide) && isgraphics(h.txtSliceSide)
+        set(h.txtSliceSide,'String',sprintf('z=%d/%d',S.z,nZ));
+    end
+
+    if isgraphics(txtSlice)
+        set(txtSlice,'String',sprintf('Slice %d / %d',S.z,nZ));
+    end
+end
 
 % -------------------- Brush preview --------------------
     function renderBrushPreview()
@@ -2594,6 +2854,38 @@ thr = max(0, min(1, double(S.vesselThresh)));
         end
     end
 
+function U = maskEditorChooseExportUnderlay(processedUnderlay, rawUnderlay, nZ)
+
+    U = [];
+
+    % First preference: processed underlay, but only if it is truly full-stack
+    if nargin >= 1 && ~isempty(processedUnderlay)
+        P = processedUnderlay;
+
+        if nZ <= 1
+            U = P;
+            return;
+        end
+
+        if ndims(P) == 3 && size(P,3) == nZ
+            U = P;
+            return;
+        end
+
+        if ndims(P) == 4 && size(P,3) == 3 && size(P,4) == nZ
+            U = P;
+            return;
+        end
+    end
+
+    % Fallback: raw full underlay
+    if nargin >= 2 && ~isempty(rawUnderlay)
+        U = rawUnderlay;
+        return;
+    end
+end
+
+
     function name = brushShapeName(v)
         switch v
             case 1
@@ -2794,4 +3086,23 @@ thr = max(0, min(1, double(S.vesselThresh)));
             stem = stem(1:40);
         end
     end
+
+
+    function sv = zToSliderVal(z)
+    if nZ <= 1
+        sv = 1;
+    else
+        sv = z;
+    end
 end
+
+function z = sliderValToZ(sv)
+    if nZ <= 1
+        z = 1;
+    else
+        z = round(sv);
+    end
+    z = max(1, min(nZ, z));
+end
+
+   end
