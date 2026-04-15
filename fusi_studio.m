@@ -2393,12 +2393,23 @@ function maskEditorCallback(~,~)
             return;
         end
 
-        if isfield(out,'mask') && ~isempty(out.mask)
-            studio.mask = logical(out.mask);
-            studio.brainMask = studio.mask;
-            studio.maskIsInclude = true;
-            addLog('Mask stored in Studio (studio.mask).');
-        end
+     if isfield(out,'mask') && ~isempty(out.mask)
+    studio.mask = logical(out.mask);
+    studio.maskIsInclude = true;
+    addLog('Mask stored in Studio (studio.mask).');
+end
+
+if isfield(out,'brainMask') && ~isempty(out.brainMask)
+    studio.brainMask = logical(out.brainMask);
+end
+
+if isfield(out,'underlayMask') && ~isempty(out.underlayMask)
+    studio.underlayMask = logical(out.underlayMask);
+end
+
+if isfield(out,'overlayMask') && ~isempty(out.overlayMask)
+    studio.overlayMask = logical(out.overlayMask);
+end
 
         if isfield(out,'anatomical_reference_raw') && ~isempty(out.anatomical_reference_raw)
             studio.anatomicalReferenceRaw = out.anatomical_reference_raw;
@@ -3335,14 +3346,14 @@ function U = loadUnderlayFile(f)
             return;
         end
 
-        if strcmpi(ext,'.mat')
-            S = load(f);
-            U = pickNumericFromMat(S);
-            U = double(U);
-            U = squeezeTo2Dor3D(U);
-            U = toGray(U);
-            return;
-        end
+      if strcmpi(ext,'.mat')
+    S = load(f);
+    U = studio_pickUnderlayFromMat(S);
+    U = double(U);
+    U = squeezeTo2Dor3D(U);
+    U = toGray(U);
+    return;
+end
 
         A = imread(f);
         U = double(A);
@@ -3355,29 +3366,160 @@ function U = loadUnderlayFile(f)
     end
 end
 
-function U = pickNumericFromMat(S)
+    function U = studio_pickUnderlayFromMat(S)
 
-    if isstruct(S)
-        fn = fieldnames(S);
+    hasBundle = isfield(S,'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle);
 
-        for k = 1:numel(fn)
-            v = S.(fn{k});
-            if isstruct(v) && isfield(v,'I') && isnumeric(v.I)
-                U = v.I;
-                return;
-            end
-        end
+    if hasBundle
+        B = S.maskBundle;
+    else
+        B = S;
+    end
 
-        for k = 1:numel(fn)
-            v = S.(fn{k});
-            if isnumeric(v)
-                U = v;
-                return;
-            end
+    pref = { ...
+        'savedUnderlayDisplay', ...
+        'brainImage', ...
+        'anatomical_reference_raw', ...
+        'savedUnderlayForReload', ...
+        'underlay', ...
+        'bg', ...
+        'anatomical_reference', ...
+        'atlasUnderlayRGB', ...
+        'atlasUnderlay', ...
+        'img', ...
+        'I', ...
+        'Data'};
+
+    [ok,U] = studio_findPreferredNumericField(B, pref);
+    if ok
+        return;
+    end
+
+    if hasBundle
+        [ok,U] = studio_findPreferredNumericField(S, pref);
+        if ok
+            return;
         end
     end
 
-    error('No numeric underlay found in MAT file.');
+    skip = { ...
+        'mask', ...
+        'loadedMask', ...
+        'activeMask', ...
+        'brainMask', ...
+        'underlayMask', ...
+        'overlayMask', ...
+        'signalMask', ...
+        'maskIsInclude', ...
+        'loadedMaskIsInclude', ...
+        'overlayMaskIsInclude'};
+
+    [ok,U] = studio_findAnyNonMaskNumericField(B, skip);
+    if ok
+        return;
+    end
+
+    if hasBundle
+        [ok,U] = studio_findAnyNonMaskNumericField(S, skip);
+        if ok
+            return;
+        end
+    end
+
+    error('No usable underlay variable found in MAT file.');
+end
+
+function [ok,U] = studio_findPreferredNumericField(Sx, names)
+    ok = false;
+    U = [];
+
+    for ii = 1:numel(names)
+        fn = names{ii};
+        if ~isfield(Sx, fn)
+            continue;
+        end
+
+        [ok1, val] = studio_unwrapNumericCandidate(Sx.(fn));
+        if ok1
+            ok = true;
+            U = val;
+            return;
+        end
+    end
+end
+
+function [ok,U] = studio_findAnyNonMaskNumericField(Sx, skip)
+    ok = false;
+    U = [];
+
+    fn = fieldnames(Sx);
+    for ii = 1:numel(fn)
+        name = fn{ii};
+
+        if any(strcmpi(name, skip))
+            continue;
+        end
+
+        [ok1, val] = studio_unwrapNumericCandidate(Sx.(name));
+        if ~ok1
+            continue;
+        end
+
+        if studio_looksLikeMaskArray(val)
+            continue;
+        end
+
+        ok = true;
+        U = val;
+        return;
+    end
+end
+
+function [ok,U] = studio_unwrapNumericCandidate(v)
+    ok = false;
+    U = [];
+
+    if isstruct(v)
+        if isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+            ok = true;
+            U = v.Data;
+            return;
+        end
+        if isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
+            ok = true;
+            U = v.I;
+            return;
+        end
+        return;
+    end
+
+    if isnumeric(v) && ~isempty(v)
+        ok = true;
+        U = v;
+    end
+end
+
+function tf = studio_looksLikeMaskArray(A)
+    tf = false;
+
+    try
+        A = double(A);
+        A = A(isfinite(A));
+
+        if isempty(A)
+            tf = true;
+            return;
+        end
+
+        u = unique(A);
+
+        if numel(u) <= 2 && all(ismember(u, [0 1]))
+            tf = true;
+            return;
+        end
+    catch
+        tf = false;
+    end
 end
 
 function X = squeezeTo2Dor3D(X)
