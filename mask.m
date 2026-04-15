@@ -1454,7 +1454,8 @@ end
         else
             brainImage = [];
         end
-
+anatomical_reference_raw = double(Ubase);
+anatomical_reference = buildProcessedUnderlayForSave_native();
         switch lower(mode)
             case 'brain'
                 mask = brainMask;
@@ -1522,6 +1523,8 @@ end
 
         maskBundle = struct();
         maskBundle.brainImage = brainImage;
+        maskBundle.anatomical_reference_raw = anatomical_reference_raw;
+maskBundle.anatomical_reference = anatomical_reference;
         maskBundle.brainMask = brainMask;
         maskBundle.underlayMask = underlayMask;
         maskBundle.overlayMask = overlayMask;
@@ -1537,21 +1540,23 @@ end
         outFile = fullfile(visDir, sprintf('%s_%s_%s.mat', filePrefix, safeFileStem(datasetLabel), ts));
 
         try
-            save(outFile, ...
-                'brainImage', ...
-                'brainMask', ...
-                'underlayMask', ...
-                'overlayMask', ...
-                'signalMask', ...
-                'mask', ...
-                'activeMask', ...
-                'loadedMask', ...
-                'maskIsInclude', ...
-                'loadedMaskIsInclude', ...
-                'overlayMaskIsInclude', ...
-                'maskBundle', ...
-                'maskEditorInfo', ...
-                '-v7.3');
+     save(outFile, ...
+    'brainImage', ...
+    'anatomical_reference_raw', ...
+    'anatomical_reference', ...
+    'brainMask', ...
+    'underlayMask', ...
+    'overlayMask', ...
+    'signalMask', ...
+    'mask', ...
+    'activeMask', ...
+    'loadedMask', ...
+    'maskIsInclude', ...
+    'loadedMaskIsInclude', ...
+    'overlayMaskIsInclude', ...
+    'maskBundle', ...
+    'maskEditorInfo', ...
+    '-v7.3');
         catch ME
             errordlg(ME.message,'Save failed');
             return;
@@ -1570,7 +1575,8 @@ end
         if brainHas
             out.brainImage = brainImage;
         end
-
+out.anatomical_reference_raw = anatomical_reference_raw;
+out.anatomical_reference = anatomical_reference;
         updateStatus(['Saved: ' outFile]);
     end
 
@@ -1673,8 +1679,8 @@ end
         out.underlayMask = logical(brainMaskVol);
         out.overlayMask = logical(overlayMaskVol);
         out.signalMask = logical(overlayMaskVol);
-        out.anatomical_reference_raw = double(Ubase);
-        out.anatomical_reference = double(Ubase);
+     out.anatomical_reference_raw = double(Ubase);
+out.anatomical_reference = buildProcessedUnderlayForSave_native();
 
         try
             if any(brainMaskVol(:))
@@ -2562,27 +2568,64 @@ end
         end
     end
 
-    function U = pickNumericFromMat(Sx)
-        fn = fieldnames(Sx);
+ function U = pickNumericFromMat(Sx)
 
-        for kk = 1:numel(fn)
-            v = Sx.(fn{kk});
-            if isstruct(v) && isfield(v,'I') && isnumeric(v.I)
-                U = v.I;
-                return;
-            end
-        end
-
-        for kk = 1:numel(fn)
-            v = Sx.(fn{kk});
-            if isnumeric(v)
-                U = v;
-                return;
-            end
-        end
-
-        error('No numeric variable found in MAT.');
+if isfield(Sx,'maskBundle') && isstruct(Sx.maskBundle)
+    try
+        U = pickNumericFromMat(Sx.maskBundle);
+        return;
+    catch
     end
+end
+
+pref = { ...
+    'anatomical_reference', ...
+    'brainImage', ...
+    'anatomical_reference_raw', ...
+    'underlay2D', ...
+    'underlay', ...
+    'bg', ...
+    'img', ...
+    'I', ...
+    'Data'};
+
+for kk = 1:numel(pref)
+    fn = pref{kk};
+    if isfield(Sx,fn)
+        v = Sx.(fn);
+
+        if isnumeric(v) && ~isempty(v)
+            U = v;
+            return;
+        end
+
+        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+            U = v.Data;
+            return;
+        end
+    end
+end
+
+fn = fieldnames(Sx);
+
+for kk = 1:numel(fn)
+    v = Sx.(fn{kk});
+    if isstruct(v) && isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
+        U = v.I;
+        return;
+    end
+end
+
+for kk = 1:numel(fn)
+    v = Sx.(fn{kk});
+    if isnumeric(v) && ~isempty(v)
+        U = v;
+        return;
+    end
+end
+
+error('No usable numeric underlay found in MAT.');
+end
 
 % -------------------- Display utils --------------------
     function U01 = scale01(U, globalFlag)
@@ -2991,6 +3034,17 @@ thr = max(0, min(1, double(S.vesselThresh)));
         end
     end
 
+function anatomicalRef = buildProcessedUnderlayForSave_native()
+    anatomicalRef = zeros(nY,nX,nZ,'single');
+
+    for zz = 1:nZ
+        anatomicalRef(:,:,zz) = single(buildDisplayUnderlay(Ubase(:,:,zz)));
+    end
+
+    if nZ == 1
+        anatomicalRef = anatomicalRef(:,:,1);
+    end
+end
 % -------------------- String helpers --------------------
     function s = shortenLabel(s, maxLen)
         if isempty(s)
