@@ -2152,7 +2152,7 @@ function scmCallback(~,~)
     % -----------------------------------------------------
     % Launch setup popup: baseline + underlay selection
     % -----------------------------------------------------
-    launchCfg = showScmVideoSetupDialog('SCM GUI', 30, 240, 5, data.I);
+    launchCfg = showScmVideoSetupDialog('SCM GUI', 30, 240, 5, studio, data.I);
     if isempty(launchCfg) || ~isstruct(launchCfg) || ...
             ~isfield(launchCfg,'cancelled') || launchCfg.cancelled
         addLog('SCM cancelled.');
@@ -2292,7 +2292,7 @@ function videoGUICallback(~,~)
 
     addLog(['Opening Video GUI (Dataset: ' studio.activeDataset ')']);
 
-launchCfg = showScmVideoSetupDialog('Video GUI', 30, 240, 5, data.I);
+launchCfg = showScmVideoSetupDialog('Video GUI', 30, 240, 5, studio, data.I);
 if launchCfg.cancelled
     addLog('Video GUI cancelled.');
     return;

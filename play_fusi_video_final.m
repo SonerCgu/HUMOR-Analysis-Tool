@@ -2545,26 +2545,58 @@ end
         end
     end
 
-    function U = pickNumericFromMat(S)
-        if isstruct(S)
-            fn = fieldnames(S);
-            for k = 1:numel(fn)
-                v = S.(fn{k});
-                if isstruct(v) && isfield(v,'I') && isnumeric(v.I)
-                    U = v.I;
-                    return;
-                end
+  function U = pickNumericFromMat(Sx)
+
+    pref = { ...
+        'anatomical_reference', ...
+        'anatomical_reference_raw', ...
+        'brainImage', ...
+        'underlay2D', ...
+        'underlay', ...
+        'bg', ...
+        'img', ...
+        'I', ...
+        'Data'};
+
+    for kk = 1:numel(pref)
+        fn = pref{kk};
+        if isfield(Sx,fn)
+            v = Sx.(fn);
+
+            if isstruct(v) && isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
+                U = v.I;
+                return;
             end
-            for k = 1:numel(fn)
-                v = S.(fn{k});
-                if isnumeric(v)
-                    U = v;
-                    return;
-                end
+
+            if isnumeric(v) && ~isempty(v)
+                U = v;
+                return;
             end
         end
-        error('No numeric variable found in MAT file.');
     end
+
+    fn = fieldnames(Sx);
+    for kk = 1:numel(fn)
+        nameLow = lower(fn{kk});
+        if ~isempty(strfind(nameLow,'mask'))
+            continue;
+        end
+
+        v = Sx.(fn{kk});
+
+        if isstruct(v) && isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
+            U = v.I;
+            return;
+        end
+
+        if isnumeric(v) && ~isempty(v)
+            U = v;
+            return;
+        end
+    end
+
+    error('No usable underlay variable found in MAT.');
+end
 
     function X = squeezeTo2Dor3D(X)
         while ndims(X) > 3

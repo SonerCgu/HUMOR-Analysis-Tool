@@ -1,5 +1,6 @@
 function cfg = showScmVideoSetupDialog(modeName, defaultBaseStart, defaultBaseEnd, defaultUnderlayIdx, varargin)
-
+ctx = pickInputContext(varargin{:});
+externalStartPath = resolveSetupUnderlayStartPath(ctx);
 if nargin < 1 || isempty(modeName),           modeName = 'SCM / Video'; end
 if nargin < 2 || isempty(defaultBaseStart),   defaultBaseStart = 30; end
 if nargin < 3 || isempty(defaultBaseEnd),     defaultBaseEnd = 240; end
@@ -283,10 +284,11 @@ waitfor(dlg);
                 cfg.requiresExternalFile = true;
                 cfg.underlayLabel = 'External underlay';
 
-                [f,p] = uigetfile( ...
-                    {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.png;*.jpg;*.jpeg', ...
-                     'Underlay (*.mat,*.nii,*.nii.gz, images)'}, ...
-                    'Select external underlay');
+       [f,p] = uigetfile( ...
+    {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.png;*.jpg;*.jpeg', ...
+     'Underlay (*.mat,*.nii,*.nii.gz, images)'}, ...
+    'Select external underlay', ...
+    externalStartPath);
 
                 if isequal(f,0)
                     cfg.cancelled = true;
@@ -297,7 +299,14 @@ waitfor(dlg);
                 end
 
                 cfg.externalFile = fullfile(p,f);
-
+if ~isempty(I)
+    U = loadUnderlayAny(cfg.externalFile);
+    U = fitUnderlayToVolumeDims(U, I);
+    cfg.precomputedUnderlay = U;
+    cfg.precomputedUnderlayDisplay = U;
+    cfg.precomputedUnderlayMode = 5;
+    cfg.precomputedDisplaySettings = struct();
+end
             case 5
                 if isempty(I)
                     errordlg('No active dataset was passed into showScmVideoSetupDialog, so the recommended underlay cannot be computed. Call it with ..., I.','Setup');
@@ -743,7 +752,263 @@ end
 
 end
 
+function ctx = pickInputContext(varargin)
 
+ctx = struct();
+
+for k = 1:numel(varargin)
+    a = varargin{k};
+    if isstruct(a)
+        if isfield(a,'exportPath') || isfield(a,'loadedPath') || isfield(a,'loadedFile')
+            ctx = a;
+            return;
+        end
+    end
+end
+
+end
+function startPath = resolveSetupUnderlayStartPath(ctx)
+
+startPath = pwd;
+cand = {};
+
+    function addCand(d)
+        if isempty(d)
+            return;
+        end
+        if exist(d,'dir') == 7
+            cand{end+1} = d; %#ok<AGROW>
+        end
+    end
+
+if isstruct(ctx)
+
+    % -------------------------------------------------
+    % 1) exportPath: prefer Visualization first
+    % -------------------------------------------------
+    if isfield(ctx,'exportPath') && ~isempty(ctx.exportPath) && exist(ctx.exportPath,'dir') == 7
+        ep = char(ctx.exportPath);
+        [~,lastName] = fileparts(ep);
+
+        if strcmpi(lastName,'Visualization')
+            addCand(ep);
+        else
+            addCand(fullfile(ep,'Visualization'));
+            addCand(ep);
+        end
+    end
+
+    % -------------------------------------------------
+    % 2) loadedPath: convert RawData -> AnalysedData
+    % -------------------------------------------------
+    if isfield(ctx,'loadedPath') && ~isempty(ctx.loadedPath) && exist(ctx.loadedPath,'dir') == 7
+        lp = char(ctx.loadedPath);
+
+        lpAnalysed = strrep(lp, ...
+            [filesep 'RawData' filesep], ...
+            [filesep 'AnalysedData' filesep]);
+
+        addCand(fullfile(lpAnalysed,'Visualization'));
+        addCand(lpAnalysed);
+        addCand(fullfile(lp,'Visualization'));
+        addCand(lp);
+    end
+
+    % -------------------------------------------------
+    % 3) loadedFile: use its folder and AnalysedData sibling
+    % -------------------------------------------------
+    if isfield(ctx,'loadedFile') && ~isempty(ctx.loadedFile) && exist(ctx.loadedFile,'file') == 2
+        fp = fileparts(char(ctx.loadedFile));
+
+        fpAnalysed = strrep(fp, ...
+            [filesep 'RawData' filesep], ...
+            [filesep 'AnalysedData' filesep]);
+
+        addCand(fullfile(fpAnalysed,'Visualization'));
+        addCand(fpAnalysed);
+        addCand(fullfile(fp,'Visualization'));
+        addCand(fp);
+    end
+end
+
+cand = unique(cand,'stable');
+
+if ~isempty(cand)
+    startPath = cand{1};
+end
+
+end
+
+function U = loadUnderlayAny(fullFile)
+
+if ~exist(fullFile,'file')
+    error('Underlay not found: %s', fullFile);
+end
+
+if numel(fullFile) >= 7 && strcmpi(fullFile(end-6:end), '.nii.gz')
+    tmpDir = tempname;
+    mkdir(tmpDir);
+    gunzip(fullFile, tmpDir);
+    d = dir(fullfile(tmpDir,'*.nii'));
+    if isempty(d)
+        error('gunzip failed');
+    end
+    niiFile = fullfile(tmpDir, d(1).name);
+    U = double(niftiread(niiFile));
+    try, rmdir(tmpDir,'s'); catch, end
+    U = squeezeTo2Dor3D(U);
+    return;
+end
+
+[~,~,ext] = fileparts(fullFile);
+
+if strcmpi(ext,'.nii')
+    U = double(niftiread(fullFile));
+    U = squeezeTo2Dor3D(U);
+    return;
+end
+
+if strcmpi(ext,'.mat')
+    Sx = load(fullFile);
+    U = pickNumericFromMat(Sx);
+    U = double(U);
+    U = squeezeTo2Dor3D(U);
+    return;
+end
+
+A = imread(fullFile);
+A = double(A);
+if ndims(A)==3 && size(A,3)==3
+    A = 0.2989*A(:,:,1) + 0.5870*A(:,:,2) + 0.1140*A(:,:,3);
+end
+U = squeezeTo2Dor3D(A);
+
+end
+function U = squeezeTo2Dor3D(U)
+while ndims(U) > 3
+    U = mean(U, ndims(U));
+end
+if ndims(U)==2
+    U = reshape(U,[size(U,1) size(U,2) 1]);
+end
+end
+function U = fitUnderlayToVolumeDims(U, I)
+
+ny = size(I,1);
+nx = size(I,2);
+
+if ndims(I) == 3
+    nz = 1;
+else
+    nz = size(I,3);
+end
+
+U = fitUnderlayToDimsLocal(U, ny, nx, nz);
+
+end
+function U = fitUnderlayToDimsLocal(U, ny, nx, nz)
+
+U = double(U);
+U(~isfinite(U)) = 0;
+
+if ndims(U)==2
+    U2 = resize2DLocal(U, ny, nx);
+    if nz > 1
+        U = repmat(U2,[1 1 nz]);
+    else
+        U = reshape(U2,[ny nx 1]);
+    end
+    return;
+end
+
+if ndims(U)==3
+    zIn = size(U,3);
+    if zIn ~= nz
+        zIdx = round(linspace(1,zIn,nz));
+        zIdx = max(1,min(zIn,zIdx));
+        U = U(:,:,zIdx);
+    end
+    outVol = zeros(ny,nx,nz);
+    for zz = 1:nz
+        outVol(:,:,zz) = resize2DLocal(U(:,:,zz), ny, nx);
+    end
+    U = outVol;
+end
+
+end
+function A = resize2DLocal(A, ny, nx)
+if size(A,1)==ny && size(A,2)==nx
+    return;
+end
+try
+    A = imresize(A,[ny nx],'bilinear');
+catch
+    [yy,xx] = ndgrid(linspace(1,size(A,1),ny), linspace(1,size(A,2),nx));
+    A = interp2(A, xx, yy, 'linear', 0);
+end
+end
+
+function U = pickNumericFromMat(Sx)
+
+% If wrapped bundle exists, prefer searching inside it first
+if isfield(Sx,'maskBundle') && isstruct(Sx.maskBundle)
+    try
+        U = pickNumericFromMat(Sx.maskBundle);
+        return;
+    catch
+    end
+end
+
+% Strong preference for actual underlay/anatomy fields
+pref = { ...
+    'anatomical_reference', ...
+    'brainImage', ...
+    'anatomical_reference_raw', ...
+    'underlay2D', ...
+    'underlay', ...
+    'bg', ...
+    'img', ...
+    'I', ...
+    'Data'};
+
+for kk = 1:numel(pref)
+    fn = pref{kk};
+    if isfield(Sx,fn)
+        v = Sx.(fn);
+
+        if isnumeric(v) && ~isempty(v)
+            U = v;
+            return;
+        end
+
+        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
+            U = v.Data;
+            return;
+        end
+    end
+end
+
+% fallback: nested struct with .I
+fn = fieldnames(Sx);
+for kk = 1:numel(fn)
+    v = Sx.(fn{kk});
+    if isstruct(v) && isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
+        U = v.I;
+        return;
+    end
+end
+
+% last fallback: first numeric field
+for kk = 1:numel(fn)
+    v = Sx.(fn{kk});
+    if isnumeric(v) && ~isempty(v)
+        U = v;
+        return;
+    end
+end
+
+error('No usable numeric underlay found in MAT file.');
+end
 % =========================================================================
 % Median subsampling helper
 % =========================================================================
