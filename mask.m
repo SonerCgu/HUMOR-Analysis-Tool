@@ -198,23 +198,29 @@ S.previewMasked = false;
 S.editTarget = 1;
 
 % Underlay modes:
-% 1 MIP(Z) of Mean(T) [default]
+% 1 MIP(Z) of Mean(T)
 % 2 Mean(T) [linear]
 % 3 Median(T) [linear]
 % 4 Max(T) [linear]
 % 5 External file
 % 6 imregdemons Mean (dB)
-S.underlayMode = 1;
+% 7 Standardized Doppler equalized [recommended default]
+S.underlayMode = 7;
 S.externalFile = '';
-UbaseLabel = 'MIP (Z) of Mean(T)';
+UbaseLabel = 'Standardized Doppler equalized';
 
 S.dbLow  = -48;
 S.dbHigh = -7;
 
-% neutral startup display
-S.brightness = 0.00;
-S.contrast   = 0.03;
-S.gamma      = 7;
+% fixed standardized display window for equalized mode
+S.stdLow  = 0.40;
+S.stdHigh = 0.80;
+S.stdGain = 2.0;   % 0..5, collaborator said exact value is not critical
+
+% startup display
+S.brightness = 0.10;
+S.contrast   = 0.50;
+S.gamma      = 1.10;
 S.sharpness  = 150.0;
 S.globalScaling = false;
 S.pctLow  = 1;
@@ -232,6 +238,41 @@ S.isPainting = false;
 S.paintMode = '';
 S.lastRaw = [NaN NaN];
 S.activeTab = 1;
+S.displayPreset = cell(1,7);
+
+for ii = 1:7
+    S.displayPreset{ii} = struct( ...
+        'brightness', 0.00, ...
+        'contrast',   1.00, ...
+        'gamma',      1.00, ...
+        'sharpness',  0.0, ...
+        'globalScaling', false, ...
+        'vesselEnable', false, ...
+        'vesselSigma', 0.20, ...
+        'vesselGain', 0.50, ...
+        'vesselThresh', 0.80, ...
+        'vesselConnect', true, ...
+        'softToneEnable', false, ...
+        'softToneStrength', 0.20, ...
+        'cmapMode', 1 );
+end
+
+% Preset for MIP
+S.displayPreset{1}.brightness = 0.00;
+S.displayPreset{1}.contrast   = 1.00;
+S.displayPreset{1}.gamma      = 1.00;
+S.displayPreset{1}.sharpness  = 0.0;
+S.displayPreset{1}.globalScaling = false;
+
+% Preset for Standardized mode
+S.displayPreset{7}.brightness = 0.10;
+S.displayPreset{7}.contrast   = 0.50;
+S.displayPreset{7}.gamma      = 1.10;
+S.displayPreset{7}.sharpness  = 150.0;
+S.displayPreset{7}.globalScaling = false;
+S.displayPreset{7}.vesselEnable = false;
+S.displayPreset{7}.softToneEnable = true;
+S.displayPreset{7}.softToneStrength = 0.40;
 
 % advanced underlay controls
 S.vesselEnable = false;
@@ -241,7 +282,7 @@ S.vesselThresh = 0.80;
 S.vesselConnect = true;
 
 S.softToneEnable = true;
-S.softToneStrength = 0.60;
+S.softToneStrength = 0.40;
 S.softToneMid = 0.48;
 S.softToneToe = 0.08;
 
@@ -264,6 +305,7 @@ Ucache.median   = [];
 Ucache.max      = [];
 Ucache.imregd   = [];
 Ucache.external = [];
+Ucache.stdEq    = [];
 
 try
     Ucache.mip = underlayMIP_Z_ofMeanT(I);
@@ -590,12 +632,13 @@ h.btnClearMask = makeButton(pTools,[0.03 0.24 0.94 0.11],'Clear Active Mask',C.r
 % -------------------- Underlay Source --------------------
 h.popUnderlay = uicontrol('Style','popupmenu','Parent',pUnder,'Units','normalized', ...
     'Position',[0.03 0.81 0.94 0.10], ...
-    'String',{'MIP (Z) of Mean(T) [default]', ...
-              'Mean (T) [linear]', ...
-              'Median (T) [linear]', ...
-              'Max (T) [linear]', ...
-              'External file...', ...
-              'imregdemons Mean (dB)'}, ...
+    'String',{'MIP (Z) of Mean(T)', ...
+          'Mean (T) [linear]', ...
+          'Median (T) [linear]', ...
+          'Max (T) [linear]', ...
+          'External file...', ...
+          'imregdemons Mean (dB)', ...
+          'Standardized Doppler equalized [recommended]'}, ...
     'Value',S.underlayMode, ...
     'BackgroundColor',C.panel2,'ForegroundColor','w', ...
     'FontName',UI.fontName,'FontSize',11, ...
@@ -956,28 +999,36 @@ uiwait(fig);
 
 % -------------------- Underlay controls --------------------
     function onUnderlayMode(src,~)
-        oldMode = S.underlayMode;
-        newMode = get(src,'Value');
+    oldMode = S.underlayMode;
+    newMode = get(src,'Value');
 
-        if newMode == 5
-            ok = loadExternalUnderlayInteractive();
-            if ok
-                S.underlayMode = 5;
-            else
-                S.underlayMode = oldMode;
-                set(src,'Value',oldMode);
-            end
-            updateDbControlsEnabled();
-            renderNow();
-            return;
+    % save current mode display settings before switching
+    saveCurrentDisplayPreset(oldMode);
+
+    if newMode == 5
+        ok = loadExternalUnderlayInteractive();
+        if ok
+            S.underlayMode = 5;
+            loadDisplayPreset(5);
+        else
+            S.underlayMode = oldMode;
+            set(src,'Value',oldMode);
+            loadDisplayPreset(oldMode);
         end
-
-        S.underlayMode = newMode;
         Ubase = computeUnderlayVolume(S.underlayMode);
         updateTitle();
         updateDbControlsEnabled();
         renderNow();
+        return;
     end
+
+    S.underlayMode = newMode;
+    loadDisplayPreset(newMode);
+    Ubase = computeUnderlayVolume(S.underlayMode);
+    updateTitle();
+    updateDbControlsEnabled();
+    renderNow();
+end
 
     function onLoadExternal(~,~)
         ok = loadExternalUnderlayInteractive();
@@ -1025,10 +1076,11 @@ uiwait(fig);
         end
     end
 
-    function onGlobalScaling(src,~)
-        S.globalScaling = logical(get(src,'Value'));
-        renderNow();
-    end
+ function onGlobalScaling(src,~)
+    S.globalScaling = logical(get(src,'Value'));
+    saveCurrentDisplayPreset(S.underlayMode);
+    renderNow();
+ end
 
     function onDbEdit(~,~)
         lo = str2double(get(h.edDbLow,'String'));
@@ -1101,47 +1153,51 @@ uiwait(fig);
 
 % -------------------- Display controls --------------------
     function onDisplayChange(~,~)
-        S.brightness = get(h.slBright,'Value');
-        S.contrast   = get(h.slCont,'Value');
-        S.gamma      = get(h.slGamma,'Value');
-        S.sharpness  = get(h.slSharp,'Value');
+    S.brightness = get(h.slBright,'Value');
+    S.contrast   = get(h.slCont,'Value');
+    S.gamma      = get(h.slGamma,'Value');
+    S.sharpness  = get(h.slSharp,'Value');
 
-        set(h.txtBright,'String',sprintf('%.2f',S.brightness));
-        set(h.txtCont,'String',sprintf('%.2f',S.contrast));
-        set(h.txtGamma,'String',sprintf('%.2f',S.gamma));
-        set(h.txtSharp,'String',sprintf('%.2f',S.sharpness));
+    set(h.txtBright,'String',sprintf('%.2f',S.brightness));
+    set(h.txtCont,'String',sprintf('%.2f',S.contrast));
+    set(h.txtGamma,'String',sprintf('%.2f',S.gamma));
+    set(h.txtSharp,'String',sprintf('%.2f',S.sharpness));
 
-        renderNow();
-    end
+    saveCurrentDisplayPreset(S.underlayMode);
+    renderNow();
+end
 
     function onCmapChange(src,~)
-        S.cmapMode = get(src,'Value');
-        renderNow();
-    end
-
+    S.cmapMode = get(src,'Value');
+    saveCurrentDisplayPreset(S.underlayMode);
+    renderNow();
+end
 % -------------------- Advanced underlay --------------------
-    function onAdvancedUnderlayChange(~,~)
-        S.vesselEnable = logical(get(h.chkVessel,'Value'));
-        S.vesselConnect = logical(get(h.chkVesselConnect,'Value'));
-        S.vesselSigma = get(h.slVesselSigma,'Value');
-        S.vesselGain = get(h.slVesselGain,'Value');
-        S.vesselThresh = get(h.slVesselThresh,'Value');
-        S.softToneEnable = logical(get(h.chkSoftTone,'Value'));
-        S.softToneStrength = get(h.slToneStrength,'Value');
+ function onAdvancedUnderlayChange(~,~)
+    S.vesselEnable = logical(get(h.chkVessel,'Value'));
+    S.vesselConnect = logical(get(h.chkVesselConnect,'Value'));
+    S.vesselSigma = get(h.slVesselSigma,'Value');
+    S.vesselGain = get(h.slVesselGain,'Value');
+    S.vesselThresh = get(h.slVesselThresh,'Value');
+    S.softToneEnable = logical(get(h.chkSoftTone,'Value'));
+    S.softToneStrength = get(h.slToneStrength,'Value');
 
-        syncAdvancedControls();
-        updateAdvancedControlsEnabled();
-        renderNow();
-    end
+    syncAdvancedControls();
+    updateAdvancedControlsEnabled();
+    saveCurrentDisplayPreset(S.underlayMode);
+    renderNow();
+end
 
     function onResetUnderlayFX(~,~)
-    S.vesselEnable = true;
+    S.vesselEnable = false;
     S.vesselSigma = 0.20;
     S.vesselGain = 0.50;
     S.vesselThresh = 0.80;
     S.vesselConnect = true;
     S.softToneEnable = true;
-    S.softToneStrength = 0.20;
+    S.softToneStrength = 0.40;
+
+    saveCurrentDisplayPreset(S.underlayMode);
     syncAdvancedControls();
     updateAdvancedControlsEnabled();
     renderNow();
@@ -1191,6 +1247,69 @@ end
         set(h.txtToneStrength,'Enable',tState);
     end
 
+
+function saveCurrentDisplayPreset(modeIdx)
+    if modeIdx < 1 || modeIdx > numel(S.displayPreset)
+        return;
+    end
+
+    P = S.displayPreset{modeIdx};
+    P.brightness      = S.brightness;
+    P.contrast        = S.contrast;
+    P.gamma           = S.gamma;
+    P.sharpness       = S.sharpness;
+    P.globalScaling   = S.globalScaling;
+    P.vesselEnable    = S.vesselEnable;
+    P.vesselSigma     = S.vesselSigma;
+    P.vesselGain      = S.vesselGain;
+    P.vesselThresh    = S.vesselThresh;
+    P.vesselConnect   = S.vesselConnect;
+    P.softToneEnable  = S.softToneEnable;
+    P.softToneStrength = S.softToneStrength;
+    P.cmapMode        = S.cmapMode;
+
+    S.displayPreset{modeIdx} = P;
+end
+
+function loadDisplayPreset(modeIdx)
+    if modeIdx < 1 || modeIdx > numel(S.displayPreset)
+        return;
+    end
+
+    P = S.displayPreset{modeIdx};
+    S.brightness      = P.brightness;
+    S.contrast        = P.contrast;
+    S.gamma           = P.gamma;
+    S.sharpness       = P.sharpness;
+    S.globalScaling   = P.globalScaling;
+    S.vesselEnable    = P.vesselEnable;
+    S.vesselSigma     = P.vesselSigma;
+    S.vesselGain      = P.vesselGain;
+    S.vesselThresh    = P.vesselThresh;
+    S.vesselConnect   = P.vesselConnect;
+    S.softToneEnable  = P.softToneEnable;
+    S.softToneStrength = P.softToneStrength;
+    S.cmapMode        = P.cmapMode;
+
+    syncDisplayControlsFromState();
+    syncAdvancedControls();
+    updateAdvancedControlsEnabled();
+end
+
+function syncDisplayControlsFromState()
+    set(h.slBright,'Value',S.brightness);
+    set(h.slCont,'Value',S.contrast);
+    set(h.slGamma,'Value',S.gamma);
+    set(h.slSharp,'Value',S.sharpness);
+
+    set(h.txtBright,'String',sprintf('%.2f',S.brightness));
+    set(h.txtCont,'String',sprintf('%.2f',S.contrast));
+    set(h.txtGamma,'String',sprintf('%.2f',S.gamma));
+    set(h.txtSharp,'String',sprintf('%.2f',S.sharpness));
+
+    set(h.chkGlobal,'Value',double(S.globalScaling));
+    set(h.popCmap,'Value',S.cmapMode);
+end
 % -------------------- Tool controls --------------------
     function onBrushChange(~,~)
         S.brushR = max(1, round(get(h.slBrush,'Value')));
@@ -1397,6 +1516,9 @@ end
         maskEditorInfo.vesselConnect = S.vesselConnect;
         maskEditorInfo.softToneEnable = S.softToneEnable;
         maskEditorInfo.softToneStrength = S.softToneStrength;
+                maskEditorInfo.stdLow = S.stdLow;
+        maskEditorInfo.stdHigh = S.stdHigh;
+        maskEditorInfo.stdGain = S.stdGain;
 
         maskBundle = struct();
         maskBundle.brainImage = brainImage;
@@ -1776,18 +1898,34 @@ end
         end
     end
 
-    function U01 = buildDisplayUnderlay(Usl)
-        if S.underlayMode == 6
-            U01 = scaleFixed(Usl, S.dbLow, S.dbHigh);
-        else
-            U01 = scale01(Usl, S.globalScaling);
-        end
-
+      function U01 = buildDisplayUnderlay(Usl)
+    if S.underlayMode == 6
+        U01 = scaleFixed(Usl, S.dbLow, S.dbHigh);
         U01 = applyVesselEnhanceMaybe(U01);
         U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
         U01 = applySoftToneMaybe(U01);
         U01 = min(max(U01,0),1);
+        return;
     end
+
+    if S.underlayMode == 7
+        % Standardized base scaling first
+        U01 = scaleFixed(Usl, S.stdLow, S.stdHigh);
+
+        % Then still allow user display tuning on top
+        U01 = applyVesselEnhanceMaybe(U01);
+        U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
+        U01 = applySoftToneMaybe(U01);
+        U01 = min(max(U01,0),1);
+        return;
+    end
+
+    U01 = scale01(Usl, S.globalScaling);
+    U01 = applyVesselEnhanceMaybe(U01);
+    U01 = applyDisplayAdjust(U01, S.brightness, S.contrast, S.gamma, S.sharpness);
+    U01 = applySoftToneMaybe(U01);
+    U01 = min(max(U01,0),1);
+end
 
     function brainImage = buildBrainImageForSave_native()
         brainImage = zeros(nY,nX,nZ,'single');
@@ -2093,6 +2231,13 @@ end
                     end
                     U = Ucache.imregd;
                     UbaseLabel = 'imregdemons Mean (dB)';
+                    
+                case 7
+                    if isempty(Ucache.stdEq)
+                        Ucache.stdEq = underlayStandardizedEqualized(I, S.stdGain);
+                    end
+                    U = Ucache.stdEq;
+                    UbaseLabel = 'Standardized Doppler equalized';
             end
 
             U = double(U);
@@ -2126,6 +2271,85 @@ end
         else
             U = max(double(Iin),[],4);
         end
+    end
+
+    function U = underlayStandardizedEqualized(Iin, gain)
+        gain = max(0, min(5, double(gain)));
+
+        if ndims(Iin) == 3
+            % Iin = Y x X x T
+            a0 = mean(double(Iin), 3);
+            U2 = equalizeImageVasc_local(a0, gain);
+            U = reshape(U2, [nY nX 1]);
+            return;
+        end
+
+        % Iin = Y x X x Z x T
+        a0 = mean(double(Iin), 4);
+        U = zeros(nY, nX, nZ, 'double');
+
+        for zz = 1:nZ
+            U(:,:,zz) = equalizeImageVasc_local(a0(:,:,zz), gain);
+        end
+    end
+
+    function ae = equalizeImageVasc_local(a, gain)
+        a = double(a);
+        a(~isfinite(a)) = 0;
+
+        [nz_, nx_] = size(a);
+
+        mx = max(a(:));
+        if ~isfinite(mx) || mx <= 0
+            ae = zeros(size(a));
+            return;
+        end
+
+        a = a ./ mx;
+        ae = zeros(nz_, nx_);
+
+        g = 1 + (0:nz_-1)' / max(1,nz_) * gain;
+        gg = g * ones(1, nx_);
+
+        tmp = a;
+        tmp = tmp - min(tmp(:));
+        tmp = tmp .* gg;
+
+        mx2 = max(tmp(:));
+        if ~isfinite(mx2) || mx2 <= 0
+            ae = zeros(size(a));
+            return;
+        end
+        tmp = tmp ./ mx2;
+
+        m = median(tmp(:));
+        if ~isfinite(m) || m <= 0
+            m = eps;
+        end
+
+        comp = -1 / log2(m);
+        if ~isfinite(comp) || comp <= 0
+            comp = 1;
+        end
+
+        tmp = tmp .^ comp;
+
+        mx3 = max(tmp(:));
+        if ~isfinite(mx3) || mx3 <= 0
+            ae = zeros(size(a));
+            return;
+        end
+        tmp = tmp ./ mx3;
+
+        ae = tmp;
+        ae = ae - min(ae(:));
+
+        mx4 = max(ae(:));
+        if ~isfinite(mx4) || mx4 <= 0
+            ae = zeros(size(a));
+            return;
+        end
+        ae = ae ./ mx4;
     end
 
     function U = underlayMedianLinear(Iin)
@@ -2417,18 +2641,18 @@ end
         end
     end
 
-    function U01 = scaleFixed(U, lo, hi)
-        U = double(U);
-        U(~isfinite(U)) = lo;
-        if ~isfinite(lo), lo = -48; end
-        if ~isfinite(hi), hi = -7; end
-        if hi <= lo + 1
-            hi = lo + 1;
-        end
-        U = min(max(U, lo), hi);
-        U01 = (U - lo) / max(eps, (hi - lo));
-        U01 = min(max(U01,0),1);
+  function U01 = scaleFixed(U, lo, hi)
+    U = double(U);
+    if ~isfinite(lo), lo = min(U(:)); end
+    if ~isfinite(hi), hi = max(U(:)); end
+    if hi <= lo + eps
+        hi = lo + 1;
     end
+    U(~isfinite(U)) = lo;
+    U = min(max(U, lo), hi);
+    U01 = (U - lo) / max(eps, (hi - lo));
+    U01 = min(max(U01,0),1);
+end
 
     function U01 = applyVesselEnhanceMaybe(U01)
         U01 = double(U01);

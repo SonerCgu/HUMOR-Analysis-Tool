@@ -91,8 +91,8 @@ state.z   = max(1, round(nZ/2));
 state.cax = [0 100];
 
 state.alphaModOn = true;
-state.modMin = 10;
-state.modMax = 20;
+state.modMin = 15;
+state.modMax = 30;
 
 roi.size = 5;
 roi.colors = lines(12);
@@ -490,12 +490,38 @@ set(ebRoiXY, 'TooltipString', 'Type x y, for example 120 80 or 120,80, then pres
 set(ebRoiXY, 'KeyPressFcn', @roiXYKey);
 btnRoiAddXY = mkBtn(pOverlay, 'ADD ROI', @addRoiFromXY, colBtnNeutral, 12);
 
+baseStart0 = 30;
+baseEnd0   = 240;
+
+if isstruct(baseline)
+    if isfield(baseline,'start') && isfinite(baseline.start)
+        baseStart0 = baseline.start;
+    end
+    if isfield(baseline,'end') && isfinite(baseline.end)
+        baseEnd0 = baseline.end;
+    end
+end
+
+% default SCM signal window
+sigStart0 = 840;
+sigEnd0   = 900;
+
+if isstruct(baseline)
+    if isfield(baseline,'sigStart') && isfinite(baseline.sigStart)
+        sigStart0 = baseline.sigStart;
+    end
+    if isfield(baseline,'sigEnd') && isfinite(baseline.sigEnd)
+        sigEnd0 = baseline.sigEnd;
+    end
+end
+
 lblBase = mkLblImp(pOverlay, 'Baseline window (s)');
-ebBase  = mkEdit(pOverlay, '30-240', @onWindowEdited);
+ebBase  = mkEdit(pOverlay, sprintf('%g-%g', baseStart0, baseEnd0), @onWindowEdited);
 set(ebBase, 'ForegroundColor', [1.00 0.35 0.35]);
 
 lblSig = mkLblImp(pOverlay, 'Signal window (s)');
-ebSig  = mkEdit(pOverlay, '840-900', @onWindowEdited);
+ebSig  = mkEdit(pOverlay, sprintf('%g-%g', sigStart0, sigEnd0), @onWindowEdited);
+set(ebSig, 'ForegroundColor', [1.00 0.35 0.35]);
 set(ebSig, 'ForegroundColor', [1.00 0.35 0.35]);
 
 lblAlpha = mkLbl(pOverlay, 'Overlay alpha (%)');
@@ -514,11 +540,11 @@ lblAlphaMod = mkLblImp(pOverlay, 'Alpha modulation');
 cbAlphaMod  = mkChk(pOverlay, 'Alpha modulate by |SCM|', double(state.alphaModOn), @alphaModToggled);
 
 lblModMin = mkLblImp(pOverlay, 'Mod Min (abs %)');
-ebModMin  = mkEdit(pOverlay, '10', @updateView);
+ebModMin  = mkEdit(pOverlay, '15', @updateView);
 set(ebModMin, 'ForegroundColor', [1.00 0.35 0.35]);
 
 lblModMax = mkLblImp(pOverlay, 'Mod Max (abs %)');
-ebModMax  = mkEdit(pOverlay, '20', @updateView);
+ebModMax  = mkEdit(pOverlay, '30', @updateView);
 set(ebModMax, 'ForegroundColor', [1.00 0.35 0.35]);
 
 lblMap = mkLbl(pOverlay, 'Colormap');
@@ -1217,7 +1243,7 @@ end
 
 function computeSCM(~,~)
     [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
-    [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
+    [s0,s1] = parseRangeSafe(getStr(ebSig), 840, 900);
 
     sig = str2double(getStr(ebSigma));
     if ~isfinite(sig), sig = 1; end
@@ -2304,7 +2330,7 @@ end
         set(ax2, 'YLim', yl);
 
         [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
-        [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
+        [s0,s1] = parseRangeSafe(getStr(ebSig), 840, 900);
 
         if isVolMode
             b0s = (clamp(round(b0), 1, nT)-1)*TR;
@@ -2395,7 +2421,7 @@ function exportForGroupAnalysisCB(~,~)
         safeMkdirIfNeeded(Pexp.bundleDir);
 
         [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
-        [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
+        [s0,s1] = parseRangeSafe(getStr(ebSig), 840, 900);
 
         sigma = str2double(getStr(ebSigma));
         if ~isfinite(sigma), sigma = 1; end
@@ -3222,17 +3248,41 @@ end
 %% ==========================================================
 % Video GUI
 %% ==========================================================
-function openVideo(~,~)
+    function openVideo(~,~)
     try
+        bStart = 30;
+        bEnd   = 240;
+
+        if isstruct(baseline)
+            if isfield(baseline,'start') && isfinite(baseline.start)
+                bStart = baseline.start;
+            end
+            if isfield(baseline,'end') && isfinite(baseline.end)
+                bEnd = baseline.end;
+            end
+        end
+
+        launchCfg = showScmVideoSetupDialog('Video GUI', bStart, bEnd, 1);
+        if isempty(launchCfg) || ~isstruct(launchCfg) || ...
+                ~isfield(launchCfg,'cancelled') || launchCfg.cancelled
+            return;
+        end
+
+        baselineLocal = baseline;
+        baselineLocal.start = launchCfg.baselineStart;
+        baselineLocal.end   = launchCfg.baselineEnd;
+        baselineLocal.mode  = 'sec';
+
         play_fusi_video_final( ...
             PSC, PSC, PSC, bg, ...
             par, 10, 240, ...
-            TR, (nT-1)*TR, baseline, ...
+            TR, (nT-1)*TR, baselineLocal, ...
             passedMask, passedMaskIsInclude, ...
             nT, false, struct(), ...
             fileLabel, state.z);
+
     catch ME
-        errordlg(ME.message, 'Video GUI failed');
+        errordlg(ME.message, 'Open Video GUI failed');
     end
 end
 
@@ -4617,7 +4667,7 @@ end
 %% ==========================================================
     function drawTimeWindows()
     [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
-    [s0,s1] = parseRangeSafe(getStr(ebSig), baseline.end+10, baseline.end+40);
+    [s0,s1] = parseRangeSafe(getStr(ebSig), 840, 900);
 
     if isVolMode
         b0s = (clamp(round(b0), 1, nT)-1)*TR;

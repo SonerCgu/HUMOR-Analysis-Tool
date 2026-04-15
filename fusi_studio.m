@@ -2149,6 +2149,26 @@ function scmCallback(~,~)
 
     data = getActiveData();
 
+    % -----------------------------------------------------
+    % Launch setup popup: baseline + underlay selection
+    % -----------------------------------------------------
+    launchCfg = showScmVideoSetupDialog('SCM GUI', 30, 240, 5, data.I);
+    if isempty(launchCfg) || ~isstruct(launchCfg) || ...
+            ~isfield(launchCfg,'cancelled') || launchCfg.cancelled
+        addLog('SCM cancelled.');
+        return;
+    end
+
+   baseline = struct( ...
+    'start',    launchCfg.baselineStart, ...
+    'end',      launchCfg.baselineEnd, ...
+    'sigStart', 840, ...
+    'sigEnd',   900, ...
+    'mode',     'sec');
+
+    % -----------------------------------------------------
+    % Prepare par
+    % -----------------------------------------------------
     par = struct();
     par.interpol = 1;
     par.previewCaxis = [];
@@ -2180,9 +2200,11 @@ function scmCallback(~,~)
         par.loadedFile = '';
     end
 
-    baseline = struct('start',0,'end',10,'mode','sec');
-
-    if isfield(data,'PSC') && ~isempty(data.PSC) && isfield(data,'bg') && ~isempty(data.bg)
+    % -----------------------------------------------------
+    % Get PSC + default background
+    % -----------------------------------------------------
+    if isfield(data,'PSC') && ~isempty(data.PSC) && ...
+       isfield(data,'bg')  && ~isempty(data.bg)
         PSCsig = data.PSC;
         bgDefault = data.bg;
     else
@@ -2197,14 +2219,28 @@ function scmCallback(~,~)
         end
     end
 
-    [bgUnderlay, underlayLabel] = chooseSCMUnderlay(studio, data, bgDefault);
-    if isempty(bgUnderlay)
-        addLog('SCM cancelled (no underlay selected).');
-        return;
-    end
+    % -----------------------------------------------------
+    % Resolve underlay from popup choice
+    % -----------------------------------------------------
+if isfield(launchCfg,'precomputedUnderlayDisplay') && ~isempty(launchCfg.precomputedUnderlayDisplay)
+    bgUnderlay = launchCfg.precomputedUnderlayDisplay;
+    underlayLabel = launchCfg.underlayLabel;
+else
+    [bgUnderlay, underlayLabel] = resolveScmVideoUnderlayChoice( ...
+        studio, data, bgDefault, launchCfg.underlayChoice);
+end
 
+if isempty(bgUnderlay)
+    addLog('SCM cancelled (no underlay selected).');
+    return;
+end
+
+    % -----------------------------------------------------
+    % Pass stored mask if available
+    % -----------------------------------------------------
     loadedMask = [];
     loadedMaskIsInclude = true;
+
     if isfield(studio,'mask') && ~isempty(studio.mask)
         loadedMask = studio.mask;
         if isfield(studio,'maskIsInclude') && ~isempty(studio.maskIsInclude)
@@ -2212,7 +2248,11 @@ function scmCallback(~,~)
         end
     end
 
+    % -----------------------------------------------------
+    % Launch SCM GUI
+    % -----------------------------------------------------
     addLog(['Opening SCM GUI (Dataset: ' studio.activeDataset ')']);
+    addLog(sprintf('SCM baseline: %.3g-%.3g s', baseline.start, baseline.end));
     addLog(['SCM underlay: ' underlayLabel]);
 
     setProgramStatus(false);
@@ -2236,7 +2276,6 @@ function scmCallback(~,~)
         setProgramStatus(true);
     end
 end
-
 %% =========================================================
 %  VIDEO GUI CALLBACK
 % =========================================================
@@ -2253,25 +2292,16 @@ function videoGUICallback(~,~)
 
     addLog(['Opening Video GUI (Dataset: ' studio.activeDataset ')']);
 
-    answer = inputdlg( ...
-        {'Baseline START (seconds):','Baseline END (seconds):'}, ...
-        'Video GUI Baseline', ...
-        1, {'0','10'});
+launchCfg = showScmVideoSetupDialog('Video GUI', 30, 240, 5, data.I);
+if launchCfg.cancelled
+    addLog('Video GUI cancelled.');
+    return;
+end
 
-    if isempty(answer)
-        addLog('Video GUI cancelled.');
-        return;
-    end
-
-    blStart = str2double(answer{1});
-    blEnd = str2double(answer{2});
-
-    if isnan(blStart) || isnan(blEnd) || blEnd <= blStart
-        errordlg('Invalid baseline range (seconds).');
-        return;
-    end
-
-    baseline = struct('start',blStart,'end',blEnd,'mode','sec');
+baseline = struct( ...
+    'start', launchCfg.baselineStart, ...
+    'end',   launchCfg.baselineEnd, ...
+    'mode',  'sec');
 
     par = struct();
     par.interpol = 1;
@@ -2325,11 +2355,18 @@ function videoGUICallback(~,~)
         bgDefault = proc.bg;
     end
 
-    [bgUnderlay, underlayLabel] = chooseSCMUnderlay(studio, data, bgDefault);
-    if isempty(bgUnderlay)
-        addLog('Video GUI cancelled (no underlay selected).');
-        return;
-    end
+if isfield(launchCfg,'precomputedUnderlayDisplay') && ~isempty(launchCfg.precomputedUnderlayDisplay)
+    bgUnderlay = launchCfg.precomputedUnderlayDisplay;
+    underlayLabel = launchCfg.underlayLabel;
+else
+    [bgUnderlay, underlayLabel] = resolveScmVideoUnderlayChoice( ...
+        studio, data, bgDefault, launchCfg.underlayChoice);
+end
+
+if isempty(bgUnderlay)
+    addLog('Video GUI cancelled (no underlay selected).');
+    return;
+end
 
     if isfield(studio,'mask') && ~isempty(studio.mask)
         loadedMask = studio.mask;
@@ -3265,6 +3302,57 @@ function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
             [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
                                'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif)'}, ...
                                'Select underlay (DP/anatomy)', startPath);
+            if isequal(f,0)
+                return;
+            end
+
+            bg = loadUnderlayFile(fullfile(p,f));
+            if isempty(bg)
+                return;
+            end
+
+            [~,nm,ext] = fileparts(f);
+            label = ['File: ' nm ext];
+    end
+end
+
+function [bg, label] = resolveScmVideoUnderlayChoice(studio, data, bgDefault, idx)
+
+    bg = [];
+    label = '';
+
+    switch idx
+        case 1
+            bg = bgDefault;
+            label = 'Default (VideoGUI bg)';
+
+        case 2
+            bg = computeUnderlayFromActive(data,'mean');
+            label = 'Mean(I)';
+
+        case 3
+            bg = computeUnderlayFromActive(data,'median');
+            label = 'Median(I)';
+
+        case 4
+            startPath = pwd;
+
+            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+                visFolder = fullfile(studio.exportPath,'Visualization');
+                if exist(visFolder,'dir')
+                    startPath = visFolder;
+                else
+                    startPath = studio.exportPath;
+                end
+            elseif isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
+                startPath = studio.loadedPath;
+            end
+
+            [f,p] = uigetfile( ...
+                {'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
+                 'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif)'}, ...
+                'Select underlay (DP/anatomy)', startPath);
+
             if isequal(f,0)
                 return;
             end

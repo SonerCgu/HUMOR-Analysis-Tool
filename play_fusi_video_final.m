@@ -125,7 +125,7 @@ tmpThrMax = 100;
 
 alphaModEnable = true;
 alphaPct  = 100;
-modMinAbs = 20;
+modMinAbs = 15;
 modMaxAbs = 30;      % <- change from 100 to 30
 
 maskThreshold = 0;
