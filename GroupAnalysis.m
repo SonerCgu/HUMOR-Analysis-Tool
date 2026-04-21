@@ -1039,7 +1039,7 @@ guidata(hFig,S);
 S = guidata(hFig);
 
 stylePreviewPanels(S);
-syncUIFromState();
+% syncUIFromState();   % removed - function is missing
 updateMapGroupSideLabels();
 updateManualTabs();
 refreshTable();
@@ -8015,10 +8015,13 @@ for i = 1:numel(cands)
 end
 end
 
-function meta = parseMetaSingleText(txt)
+    function meta = parseMetaSingleText(txt)
 meta = struct('animalID','N/A','session','N/A','scanID','N/A');
 
-if nargin < 1 || isempty(txt), return; end
+if nargin < 1 || isempty(txt)
+    return;
+end
+
 try
     txt = char(txt);
 catch
@@ -8028,29 +8031,108 @@ end
 txt = strrep(txt,'\','/');
 txtU = upper(txt);
 
+% ---------------------------------------------------------
+% OLD STYLE 1: ANIMAL_S1_FUS_2
+% ---------------------------------------------------------
 tok = regexpi(txtU,'([A-Z]{1,8}\d{6}[A-Z]?)_(S\d+)_(FUS_\d+)','tokens','once');
 if ~isempty(tok)
-    meta.animalID = upper(strtrim(tok{1}));
-    meta.session  = upper(strtrim(tok{2}));
-    meta.scanID   = upper(strtrim(tok{3}));
+    meta.animalID = strtrim(tok{1});
+    meta.session  = strtrim(tok{2});
+    meta.scanID   = strtrim(tok{3});
     return;
 end
 
+% ---------------------------------------------------------
+% OLD STYLE 2: ANIMAL_S1
+% ---------------------------------------------------------
 tok = regexpi(txtU,'([A-Z]{1,8}\d{6}[A-Z]?)_(S\d+)','tokens','once');
 if ~isempty(tok)
-    meta.animalID = upper(strtrim(tok{1}));
-    meta.session  = upper(strtrim(tok{2}));
+    meta.animalID = strtrim(tok{1});
+    meta.session  = strtrim(tok{2});
 end
 
+% ---------------------------------------------------------
+% OLD STYLE 3: FUS_2
+% ---------------------------------------------------------
 tok = regexpi(txtU,'(FUS_\d+)','tokens','once');
 if ~isempty(tok)
-    meta.scanID = upper(strtrim(tok{1}));
+    meta.scanID = strtrim(tok{1});
+end
+
+if ~strcmpi(meta.animalID,'N/A') || ~strcmpi(meta.session,'N/A') || ~strcmpi(meta.scanID,'N/A')
+    return;
+end
+
+% ---------------------------------------------------------
+% NEW STYLE:
+% RGRO_260407_1024_MM_B6J_1059_scan2_SB
+% -> animalID = 1059
+% -> session  = N/A
+% -> scanID   = scan2_SB
+%
+% Also works for scan3_M, scan4_ES, etc.
+% We parse from the FULL PATH so it still works if the ROI filename
+% itself is generic but the folder contains the dataset name.
+% ---------------------------------------------------------
+txtTok = regexprep(txt,'[^A-Za-z0-9/_\-]','_');
+parts = regexp(txtTok,'[/_\-]+','split');
+parts = parts(~cellfun(@isempty,parts));
+
+scanIdx = [];
+for k = 1:numel(parts)
+    if ~isempty(regexpi(parts{k},'^scan\d+$','once'))
+        scanIdx = k;
+
+        scanID = parts{k};
+
+        % Optional suffix after scan token, e.g. SB / M / ES
+        if k < numel(parts)
+            nxt = parts{k+1};
+
+            if ~isempty(regexpi(nxt,'^[A-Za-z]{1,6}[A-Za-z0-9]*$','once')) && ...
+               isempty(regexpi(nxt,'^S\d+$','once')) && ...
+               isempty(regexpi(nxt,'^\d+$','once'))
+                scanID = [scanID '_' nxt];
+            end
+        end
+
+        meta.scanID = scanID;
+        break;
+    end
+end
+
+% Session only if explicit S<number> exists somewhere
+for k = 1:numel(parts)
+    if ~isempty(regexpi(parts{k},'^S\d+$','once'))
+        meta.session = parts{k};
+        break;
+    end
+end
+
+% Animal ID = numeric token immediately before scan token
+if ~isempty(scanIdx)
+    for k = scanIdx-1:-1:max(1,scanIdx-3)
+        if ~isempty(regexpi(parts{k},'^\d{3,6}$','once'))
+            meta.animalID = parts{k};
+            break;
+        end
+    end
+end
+
+% ---------------------------------------------------------
+% Fallbacks
+% ---------------------------------------------------------
+if strcmpi(meta.scanID,'N/A')
+    tok = regexpi(txt,'(scan\d+(?:_[A-Za-z0-9]+)?)','tokens','once');
+    if ~isempty(tok)
+        meta.scanID = tok{1};
+    end
 end
 
 if strcmpi(meta.animalID,'N/A')
     tok = regexpi(txtU,'\b([A-Z]{1,8}\d{6}[A-Z]?)\b','tokens','once');
     if ~isempty(tok)
-        meta.animalID = upper(strtrim(tok{1}));
+        meta.animalID = strtrim(tok{1});
     end
 end
 end
@@ -9841,12 +9923,17 @@ end
     end
 end
 
-function s = displayScanID(scanID)
+    function s = displayScanID(scanID)
 s = strtrimSafe(scanID);
 if isempty(s)
     return;
 end
+
+% old style cleanup
 s = regexprep(s, '(?i)^FUS_?', '');
+
+% new style cleanup: show scan2_SB instead of SCAN2_SB
+s = regexprep(s, '(?i)^SCAN', 'scan');
 end
 
 function s = makeBundleDisplayTitle(animalID, sessionID, scanID)

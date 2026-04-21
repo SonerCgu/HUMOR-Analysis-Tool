@@ -813,6 +813,8 @@ function [img2D, info] = loadSourceAs2D(sourceFile)
 info = struct();
 info.path = sourceFile;
 info.label = sourceFile;
+info.sourceSliceIndex = 1;
+info.sourceWas3D = false;
 info.mask2D = [];
 
 if endsWithLower(sourceFile,'.mat')
@@ -863,22 +865,22 @@ if isempty(jdx)
     end
 end
 
-    tmp = candData{jdx};
-    info.label = candNames{jdx};
-    img2D = choose2DSlice(tmp, info.label);
+tmp = candData{jdx};
+info.label = candNames{jdx};
+[img2D, info.sourceSliceIndex, info.sourceWas3D] = choose2DSlice(tmp, info.label);
 
     % Try to auto-attach corresponding mask from same MAT
     info.mask2D = chooseBestMaskForSource(S, tmp, info.label);
 
 elseif isNiftiFile(sourceFile)
-    [D, ~] = loadNiftiMaybeGz(sourceFile);
-    img2D = choose2DSlice(double(D), sourceFile);
-    info.label = sourceFile;
-
+[D, ~] = loadNiftiMaybeGz(sourceFile);
+[img2D, info.sourceSliceIndex, info.sourceWas3D] = choose2DSlice(double(D), sourceFile);
+info.label = sourceFile;
 elseif isImageFile(sourceFile)
     img2D = load2DImage(sourceFile);
     info.label = sourceFile;
-
+info.sourceSliceIndex = 1;
+info.sourceWas3D = false;
 else
     error('Unsupported source file type.');
 end
@@ -1131,11 +1133,12 @@ idx = max(1, min(nz, idx));
 
 end
 
-
-function img2D = choose2DSlice(D, labelText)
+function [img2D, sliceIdx, was3D] = choose2DSlice(D, labelText)
 
 if ndims(D) == 2
     img2D = D;
+    sliceIdx = 1;
+    was3D = false;
     return;
 end
 
@@ -1163,9 +1166,9 @@ end
 idx = max(1, min(nz, idx));
 
 img2D = squeeze(D(:,:,idx));
-
+sliceIdx = idx;
+was3D = true;
 end
-
 
 %% =======================================================================
 % Generic utilities

@@ -1784,8 +1784,9 @@ function exportScmSeries1minCB(~,~)
     SAVE_JPG = true;
 
     figT = [];
-    tmpSLD = '';
-    slidePNGs = {};
+  tmpSLD = '';
+slidePNGs = {};
+slideSpecs = {};
 
     try
         a = inputdlg({ ...
@@ -2050,33 +2051,37 @@ function exportScmSeries1minCB(~,~)
             shortTitle = sprintf('%s | z=%d/%d', getAnimalID(fileLabel), zSel, nZ);
 
             for si = 1:nSlides
-                i0 = (si-1)*perSlide + 1;
-                i1 = min(si*perSlide, numel(tilePNG));
-                idx = i0:i1;
+    i0 = (si-1)*perSlide + 1;
+    i1 = min(si*perSlide, numel(tilePNG));
+    idx = i0:i1;
 
-                outSlide = fullfile(tmpSLD, sprintf('slide_z%02d_%02d.png', zSel, si));
-                if si == 1
-                    tStr = fullTitle;
-                else
-                    tStr = shortTitle;
-                end
+    if si == 1
+        tStr = fullTitle;
+    else
+        tStr = shortTitle;
+    end
 
-                renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
+    outSlide = fullfile(tmpSLD, sprintf('slide_z%02d_%02d.png', zSel, si));
+    renderSlideMontagePNG(outSlide, tilePNG(idx), tileLBL(idx), cm, caxV, tStr, footerInfo, EXPORT_DPI_SLIDES);
 
-                if exist(outSlide, 'file') ~= 2
-                    error('Failed to create slide PNG: %s', outSlide);
-                end
+    if exist(outSlide, 'file') ~= 2
+        error('Failed to create slide PNG: %s', outSlide);
+    end
 
-                slidePNGs{end+1} = outSlide; %#ok<AGROW>
+    slidePNGs{end+1} = outSlide; %#ok<AGROW>
 
-                try
-                    set(info1, 'String', sprintf('Building slide PNGs... slice %d/%d | slide %d/%d', ...
-                        zSel, nZ, si, nSlides));
-                    set(info1, 'TooltipString', outDir);
-                    drawnow limitrate;
-                catch
-                end
-            end
+    % only store the tile PNGs that should become separate PPT objects
+    slideSpecs{end+1} = struct( ...
+        'pngList', {tilePNG(idx)}); %#ok<AGROW>
+
+    try
+        set(info1, 'String', sprintf('Building PPT slides... slice %d/%d | slide %d/%d', ...
+            zSel, nZ, si, nSlides));
+        set(info1, 'TooltipString', outDir);
+        drawnow limitrate;
+    catch
+    end
+end
         end
 
         if ~isempty(figT) && isgraphics(figT)
@@ -2096,7 +2101,7 @@ function exportScmSeries1minCB(~,~)
             if canUsePptApi()
                 pptPath = chooseShortPptPath(outDir, fileLabel, stamp);
                 try
-                    writePptFromSlidePNGs(pptPath, slidePNGs);
+        writePptFromSlidePNGsWithEditableTiles(pptPath, slidePNGs, slideSpecs);
                     if exist(pptPath, 'file') ~= 2
                         error('PPT writer finished, but file was not found on disk.');
                     end
@@ -2700,16 +2705,31 @@ function renderSingleScmSlidePNG(outFile, imagePng, titleLabel, zSel, nZSel, cax
     imshow(imread(imagePng), 'Parent', axI);
     axis(axI, 'off');
 
-    axCB = axes('Parent', figS, 'Position', [0.92 0.16 0.02 0.66], 'Visible', 'off');
-    imagesc(axCB, [0 1;0 1]);
-    colormap(axCB, cm);
-    caxis(axCB, caxV);
-    cbx = colorbar(axCB, 'Position', [0.92 0.16 0.02 0.66]);
-    cbx.Color = 'w';
-    cbx.FontName = 'Arial';
-    cbx.FontSize = 10;
-    cbx.Label.String = 'Signal change (%)';
-    cbx.Label.Color = 'w';
+axCB = axes('Parent', figS, 'Position', [0.885 0.16 0.001 0.66], ...
+    'Visible', 'off', ...
+    'XTick', [], ...
+    'YTick', [], ...
+    'XColor', 'none', ...
+    'YColor', 'none', ...
+    'Box', 'off');
+
+imagesc(axCB, [0 1; 0 1]);
+colormap(axCB, cm);
+caxis(axCB, caxV);
+
+cbx = colorbar(axCB, 'Position', [0.895 0.16 0.015 0.66]);
+cbx.Color = 'w';
+cbx.FontName = 'Arial';
+cbx.FontSize = 10;
+cbx.Label.String = 'Signal change (%)';
+cbx.Label.Color = 'w';
+cbx.TickDirection = 'out';
+cbx.Box = 'off';
+
+try
+    cbx.AxisLocation = 'out';
+catch
+end
 
     print(figS, outFile, '-dpng', '-r220', '-opengl');
     close(figS);
@@ -2740,18 +2760,33 @@ function renderSlideMontagePNG(outFile, pngList, lblList, cm, caxV, titleStr, fo
         'HorizontalAlignment', 'right', ...
         'Interpreter', 'none');
 
-    axCB = axes('Parent', figS, 'Position', [0.03 0.14 0.02 0.74], 'Visible', 'off');
-    imagesc(axCB, [0 1;0 1]);
-    colormap(axCB, cm);
-    caxis(axCB, caxV);
-    cbx = colorbar(axCB, 'Position', [0.03 0.14 0.02 0.74]);
-    cbx.Color = 'w';
-    cbx.FontName = 'Arial';
-    cbx.FontSize = 10;
-    cbx.Label.String = 'Signal change (%)';
-    cbx.Label.Color = 'w';
+  axCB = axes('Parent', figS, 'Position', [0.010 0.14 0.001 0.74], ...
+    'Visible', 'off', ...
+    'XTick', [], ...
+    'YTick', [], ...
+    'XColor', 'none', ...
+    'YColor', 'none', ...
+    'Box', 'off');
 
-    x0 = 0.08;
+imagesc(axCB, [0 1; 0 1]);
+colormap(axCB, cm);
+caxis(axCB, caxV);
+
+cbx = colorbar(axCB, 'Position', [0.018 0.14 0.015 0.74]);
+cbx.Color = 'w';
+cbx.FontName = 'Arial';
+cbx.FontSize = 10;
+cbx.Label.String = 'Signal change (%)';
+cbx.Label.Color = 'w';
+cbx.TickDirection = 'out';
+cbx.Box = 'off';
+
+try
+    cbx.AxisLocation = 'out';
+catch
+end
+
+x0 = 0.095;
     x1 = 0.98;
     yBot = 0.12;
     yTop = 0.86;
@@ -3699,8 +3734,34 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
             end
             return;
 
-        elseif ndims(X) == 4
-            zSel = max(1, min(size(X,3), state.z));
+   elseif ndims(X) == 4
+
+    if isfield(T,'sourceSliceIndex') && ~isempty(T.sourceSliceIndex) && isfinite(T.sourceSliceIndex)
+        zSel = round(T.sourceSliceIndex);
+    elseif isfield(T,'sourceSlice') && ~isempty(T.sourceSlice) && isfinite(T.sourceSlice)
+        zSel = round(T.sourceSlice);
+    else
+        zSel = state.z;
+    end
+
+    zSel = max(1, min(size(X,3), zSel));
+
+    X2 = squeeze(X(:,:,zSel,:));
+
+    nTT = size(X2,3);
+    Y = zeros([outSize2 nTT], 'single');
+
+    for tt = 1:nTT
+        frm = single(X2(:,:,tt));
+        Y(:,:,tt) = imwarp(frm, tform2, 'linear', 'OutputView', Rout2);
+    end
+
+    try
+        set(info1, 'String', sprintf(['Applied 2D coronal atlas warp using source slice %d. ' ...
+            'SCM now displays one atlas slice.'], zSel));
+    catch
+    end
+    return;
             X2   = squeeze(X(:,:,zSel,:));
 
             nTT = size(X2,3);
@@ -5344,6 +5405,124 @@ function U = clip01_percentile(A, pLow, pHigh)
     U = min(max(U, 0), 1);
 end
 
+function writePptFromSlidePNGsWithEditableTiles(pptPath, slidePNGs, slideSpecs)
+    import mlreportgen.ppt.*
+
+    if nargin < 2 || isempty(slidePNGs)
+        error('No slide PNGs were provided for PPT export.');
+    end
+
+    pptDir = fileparts(pptPath);
+    safeMkdirIfNeeded(pptDir);
+
+    if exist(pptPath, 'file') == 2
+        try
+            delete(pptPath);
+        catch
+            error('Could not overwrite existing PPT file: %s', pptPath);
+        end
+    end
+
+    % same geometry as renderSlideMontagePNG
+    slideW = 13.333;
+    slideH = 7.5;
+
+    x0 = 0.08;
+    colGap = 0.02;
+    yBot = 0.12;
+    rowGap = 0.06;
+
+    cellH = (0.86 - 0.12 - rowGap) / 2;   % = 0.34
+    cellW = (0.98 - 0.08 - 2*colGap) / 3; % = 0.286666...
+
+    ppt = [];
+    try
+        ppt = Presentation(pptPath);
+        open(ppt);
+
+        for i = 1:numel(slidePNGs)
+            bgFile = slidePNGs{i};
+            if exist(bgFile, 'file') ~= 2
+                warning('Slide background missing, skipping: %s', bgFile);
+                continue;
+            end
+
+            try
+                slide = add(ppt, 'Blank');
+            catch
+                slide = add(ppt);
+            end
+
+            % 1) add the old good-looking flattened slide PNG as background
+            bgPic = Picture(bgFile);
+            bgPic.X = '0in';
+            bgPic.Y = '0in';
+            bgPic.Width  = sprintf('%.3fin', slideW);
+            bgPic.Height = sprintf('%.3fin', slideH);
+            add(slide, bgPic);
+
+            % 2) add the individual brain PNGs on top
+            if i <= numel(slideSpecs) && isfield(slideSpecs{i}, 'pngList')
+                pngList = slideSpecs{i}.pngList;
+                nThis = min(6, numel(pngList));
+
+                for k = 1:nThis
+                    imgFile = pngList{k};
+                    if exist(imgFile, 'file') ~= 2
+                        continue;
+                    end
+
+                    if k <= 3
+                        cc = k - 1;
+                        yNorm = yBot + cellH + rowGap;   % top row
+                    else
+                        cc = k - 4;
+                        yNorm = yBot;                    % bottom row
+                    end
+
+                    xNorm = x0 + cc*(cellW + colGap);
+
+                    xIn = xNorm * slideW;
+                    wIn = cellW * slideW;
+                    hIn = cellH * slideH;
+
+                    % MATLAB figure uses bottom-left origin, PPT uses top-left
+                    yIn = (1 - (yNorm + cellH)) * slideH;
+
+                    pic = Picture(imgFile);
+                    pic.X = sprintf('%.3fin', xIn);
+                    pic.Y = sprintf('%.3fin', yIn);
+                    pic.Width  = sprintf('%.3fin', wIn);
+                    pic.Height = sprintf('%.3fin', hIn);
+                    add(slide, pic);
+                end
+            end
+        end
+
+        close(ppt);
+
+    catch ME
+        try
+            if ~isempty(ppt)
+                close(ppt);
+            end
+        catch
+        end
+        error('PowerPoint export failed: %s', ME.message);
+    end
+
+    pause(0.3);
+
+    if exist(pptPath, 'file') ~= 2
+        error('PowerPoint file was not created: %s', pptPath);
+    end
+
+    dpp = dir(pptPath);
+    if isempty(dpp) || dpp.bytes <= 0
+        error('PowerPoint file exists but is empty or corrupt: %s', pptPath);
+    end
+end
+
 function q = prctile_fallback(v, p)
     try
         q = prctile(v, p);
@@ -5443,6 +5622,163 @@ function tag = askExportLabel(defaultTag, dlgTitle)
     end
 
     tag = sanitizeExportTag(tag);
+end
+
+function writePptFromSlideItems(pptPath, slideSpecs, colorbarPng)
+    import mlreportgen.ppt.*
+
+    if nargin < 2 || isempty(slideSpecs)
+        error('No slide specs were provided for PPT export.');
+    end
+    if nargin < 3
+        colorbarPng = '';
+    end
+
+    pptDir = fileparts(pptPath);
+    safeMkdirIfNeeded(pptDir);
+
+    if exist(pptPath, 'file') == 2
+        try
+            delete(pptPath);
+        catch
+            error('Could not overwrite existing PPT file: %s', pptPath);
+        end
+    end
+
+    ppt = [];
+    try
+        ppt = Presentation(pptPath);
+        open(ppt);
+
+        for i = 1:numel(slideSpecs)
+            S = slideSpecs{i};
+
+            try
+                slide = add(ppt, 'Blank');
+            catch
+                slide = add(ppt);
+            end
+
+            % ---------------- Title ----------------
+            tb = TextBox(S.titleStr);
+            tb.X = '0.35in';
+            tb.Y = '0.10in';
+            tb.Width  = '12.60in';
+            tb.Height = '0.35in';
+            tb.Bold = true;
+            tb.FontSize = '18pt';
+            add(slide, tb);
+
+            % ---------------- Footer ----------------
+            if isfield(S, 'footerStr') && ~isempty(S.footerStr)
+                fb = TextBox(S.footerStr);
+                fb.X = '0.35in';
+                fb.Y = '7.12in';
+                fb.Width  = '12.60in';
+                fb.Height = '0.20in';
+                fb.FontSize = '9pt';
+                add(slide, fb);
+            end
+
+            % ---------------- Colorbar ----------------
+            if ~isempty(colorbarPng) && exist(colorbarPng, 'file') == 2
+                cb = Picture(colorbarPng);
+                cb.X = '0.18in';
+                cb.Y = '1.00in';
+                cb.Width  = '0.42in';
+                cb.Height = '5.75in';
+                add(slide, cb);
+            end
+
+            % ---------------- 2x3 image grid ----------------
+            % slide size ~ 13.333 x 7.5 in
+            x0 = 0.80;
+            y0 = 0.82;
+            colGap = 0.18;
+            rowGap = 0.32;
+            labelH = 0.22;
+            cellW  = 3.95;
+            cellH  = 2.45;
+
+            nThis = min(6, numel(S.pngList));
+            for k = 1:nThis
+                rr = floor((k-1)/3);      % 0 or 1
+                cc = mod((k-1), 3);       % 0,1,2
+
+                x = x0 + cc*(cellW + colGap);
+                y = y0 + rr*(cellH + labelH + rowGap);
+
+                % Label above image
+                if isfield(S, 'lblList') && numel(S.lblList) >= k && ~isempty(S.lblList{k})
+                    lb = TextBox(S.lblList{k});
+                    lb.X = sprintf('%.3fin', x);
+                    lb.Y = sprintf('%.3fin', y);
+                    lb.Width  = sprintf('%.3fin', cellW);
+                    lb.Height = sprintf('%.3fin', labelH);
+                    lb.Bold = true;
+                    lb.FontSize = '11pt';
+                    add(slide, lb);
+                end
+
+                % Individual image object
+                imgFile = S.pngList{k};
+                if exist(imgFile, 'file') == 2
+                    pic = Picture(imgFile);
+                    pic.X = sprintf('%.3fin', x);
+                    pic.Y = sprintf('%.3fin', y + labelH);
+                    pic.Width  = sprintf('%.3fin', cellW);
+                    pic.Height = sprintf('%.3fin', cellH);
+                    add(slide, pic);
+                end
+            end
+        end
+
+        close(ppt);
+
+    catch ME
+        try
+            if ~isempty(ppt)
+                close(ppt);
+            end
+        catch
+        end
+        error('PowerPoint export failed: %s', ME.message);
+    end
+
+    pause(0.3);
+
+    if exist(pptPath, 'file') ~= 2
+        error('PowerPoint file was not created: %s', pptPath);
+    end
+
+    dpp = dir(pptPath);
+    if isempty(dpp) || dpp.bytes <= 0
+        error('PowerPoint file exists but is empty or corrupt: %s', pptPath);
+    end
+end
+
+
+
+function makePptColorbarPNG(outFile, cm, caxV)
+    figC = figure('Visible', 'off', ...
+        'Color', [1 1 1], ...
+        'InvertHardcopy', 'off', ...
+        'Units', 'pixels', ...
+        'Position', [100 100 260 1200]);
+
+    axC = axes('Parent', figC, 'Position', [0.18 0.04 0.22 0.92]);
+    imagesc(axC, repmat(linspace(caxV(1), caxV(2), 256)', 1, 2));
+    set(axC, 'YDir', 'normal', 'XTick', [], 'YTick', []);
+    colormap(axC, cm);
+    caxis(axC, caxV);
+
+    cb = colorbar(axC, 'Position', [0.52 0.05 0.22 0.90]);
+    cb.FontName = 'Arial';
+    cb.FontSize = 12;
+    cb.Label.String = 'Signal change (%)';
+
+    print(figC, outFile, '-dpng', '-r220', '-opengl');
+    close(figC);
 end
 
 function tag = sanitizeExportTag(s)
