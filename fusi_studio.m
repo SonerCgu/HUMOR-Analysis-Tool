@@ -538,7 +538,15 @@ end
         studio.loadedName = datasetName;
         studio.exportPath = datasetFolder;
         studio.pipeline.loadDone = true;
+if isempty(studio.meta) || ~isstruct(studio.meta)
+    studio.meta = struct();
+end
 
+studio.meta.exportPath = datasetFolder;
+studio.meta.savePath   = datasetFolder;
+studio.meta.outPath    = datasetFolder;
+studio.meta.loadedPath = path;
+studio.meta.loadedFile = fullInputFile;
       pscFolder = fullfile(datasetFolder,'PSC');
 if exist(pscFolder,'dir')
     pscFiles = dir(fullfile(pscFolder,'*.mat'));
@@ -2123,8 +2131,46 @@ function liveViewerCallback(~,~)
     drawnow;
 
     try
-        viewerFig = fUSI_Live_Studio(I, data.TR, studio.meta, studio.activeDataset);
+        metaForViewer = studio.meta;
+
+        if isempty(metaForViewer) || ~isstruct(metaForViewer)
+            metaForViewer = struct();
+        end
+
+        % -----------------------------------------------------
+        % Pass analysed/save paths explicitly to Live Viewer
+        % -----------------------------------------------------
+        metaForViewer.exportPath = studio.exportPath;
+        metaForViewer.savePath   = studio.exportPath;
+        metaForViewer.outPath    = studio.exportPath;
+
+        % -----------------------------------------------------
+        % Also pass raw/load info as fallback
+        % -----------------------------------------------------
+        metaForViewer.loadedPath = studio.loadedPath;
+
+        if isfield(studio,'loadedFile') && ~isempty(studio.loadedFile)
+            if ~isempty(studio.loadedPath)
+                metaForViewer.loadedFile = fullfile(studio.loadedPath, studio.loadedFile);
+            else
+                metaForViewer.loadedFile = studio.loadedFile;
+            end
+        end
+
+        % -----------------------------------------------------
+        % Helpful labels
+        % -----------------------------------------------------
+        metaForViewer.activeDataset = studio.activeDataset;
+        metaForViewer.datasetDisplayName = getDatasetDisplayName(studio, studio.activeDataset);
+
+        viewerFig = fUSI_Live_Studio( ...
+            I, ...
+            data.TR, ...
+            metaForViewer, ...
+            getDatasetDisplayName(studio, studio.activeDataset));
+
         addlistener(viewerFig,'ObjectBeingDestroyed', @(~,~) setProgramStatus(true));
+
     catch ME
         addLog(['Live Viewer ERROR: ' ME.message]);
         errordlg(ME.message,'Live Viewer Failed');

@@ -971,7 +971,17 @@ end
         Reg2D.invert = S.invert;
         Reg2D.cmapName = S.cmapName;
         Reg2D.timestamp = datestr(now,'yyyymmdd_HHMMSS');
+if isfield(sourceInfo,'sourceSliceIndex') && ~isempty(sourceInfo.sourceSliceIndex) && isfinite(sourceInfo.sourceSliceIndex)
+    Reg2D.sourceSliceIndex = round(sourceInfo.sourceSliceIndex);
+else
+    Reg2D.sourceSliceIndex = 1;
+end
 
+if isfield(sourceInfo,'sourceWas3D') && ~isempty(sourceInfo.sourceWas3D)
+    Reg2D.sourceWas3D = logical(sourceInfo.sourceWas3D);
+else
+    Reg2D.sourceWas3D = false;
+end
         if isfield(sourceInfo,'path')
             Reg2D.sourcePath = sourceInfo.path;
         else

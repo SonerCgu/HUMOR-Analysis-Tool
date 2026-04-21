@@ -1283,135 +1283,15 @@ set(fig,'CloseRequestFcn',@cleanup);
         updateFrame();
     end
 
-     function videosDir = getAnalysedVideosDir()
-        baseDir = '';
-        cand = {};
 
-        % ---------------------------------------------------------
-        % Collect candidate directories from metadata
-        % ---------------------------------------------------------
-        try
-            if isstruct(metadata)
-                if isfield(metadata,'exportPath') && ~isempty(metadata.exportPath)
-                    cand{end+1} = char(metadata.exportPath);
-                end
-                if isfield(metadata,'savePath') && ~isempty(metadata.savePath)
-                    cand{end+1} = char(metadata.savePath);
-                end
-                if isfield(metadata,'outPath') && ~isempty(metadata.outPath)
-                    cand{end+1} = char(metadata.outPath);
-                end
-                if isfield(metadata,'loadedPath') && ~isempty(metadata.loadedPath)
-                    cand{end+1} = char(metadata.loadedPath);
-                end
-                if isfield(metadata,'rawPath') && ~isempty(metadata.rawPath)
-                    cand{end+1} = char(metadata.rawPath);
-                end
-                if isfield(metadata,'loadedFile') && ~isempty(metadata.loadedFile)
-                    lf = char(metadata.loadedFile);
-                    if exist(lf,'file') == 2
-                        cand{end+1} = fileparts(lf);
-                    end
-                end
-            end
-        catch
-        end
-
-        % ---------------------------------------------------------
-        % Clean candidates
-        % ---------------------------------------------------------
-        for ii = 1:numel(cand)
-            try
-                cand{ii} = strtrim(strrep(cand{ii}, '"', ''));
-            catch
-                cand{ii} = '';
-            end
-        end
-
-        % ---------------------------------------------------------
-        % 1) Prefer path already inside AnalysedData
-        % ---------------------------------------------------------
-        for ii = 1:numel(cand)
-            p = cand{ii};
-            if isempty(p)
-                continue;
-            end
-            if exist(p,'dir') == 7 && ~isempty(strfind(lower(p), lower('analyseddata')))
-                baseDir = p;
-                break;
-            end
-        end
-
-        % ---------------------------------------------------------
-        % 2) Convert RawData path -> AnalysedData path
-        % ---------------------------------------------------------
-        if isempty(baseDir)
-            for ii = 1:numel(cand)
-                p = cand{ii};
-                if isempty(p) || exist(p,'dir') ~= 7
-                    continue;
-                end
-
-                pLow = lower(p);
-                rawIdx = strfind(pLow, lower('rawdata'));
-
-                if ~isempty(rawIdx)
-                    k = rawIdx(1);
-                    leftPart  = p(1:k-1);
-                    rightPart = p(k+length('RawData'):end);
-
-                    while ~isempty(rightPart) && any(rightPart(1) == ['\' '/'])
-                        rightPart = rightPart(2:end);
-                    end
-
-                    testDir = fullfile(leftPart, 'AnalysedData', rightPart);
-
-                    if exist(testDir,'dir') == 7
-                        baseDir = testDir;
-                        break;
-                    end
-                end
-            end
-        end
-
-        % ---------------------------------------------------------
-        % 3) Fallback to first existing candidate only if it is
-        %    already clearly under AnalysedData
-        % ---------------------------------------------------------
-        if isempty(baseDir)
-            for ii = 1:numel(cand)
-                p = cand{ii};
-                if isempty(p)
-                    continue;
-                end
-                if exist(p,'dir') == 7 && ~isempty(strfind(lower(p), lower('analyseddata')))
-                    baseDir = p;
-                    break;
-                end
-            end
-        end
-
-        % ---------------------------------------------------------
-        % 4) Do NOT silently fall back to pwd
-        % ---------------------------------------------------------
-        if isempty(baseDir) || exist(baseDir,'dir') ~= 7
-            error(['No valid analysed export path found for Live Viewer. ' ...
-                   'Pass metadata.exportPath / savePath from fusi_studio.']);
-        end
-
-        videosDir = fullfile(baseDir, 'Videos');
-    end
-
- function exportVideoCB(~,~)
-    txtExp = [];
-    vid = [];
-    wasPlaying = false;
-    oldFrame = currentFrame;
-    oldZ = currentZ;
-    oldLiveROI = liveROI_enabled;
-    roiWasVisible = {};
-    hiddenTxt = [];
-    hiddenTxtVisible = {};
+    function exportVideoCB(~,~)
+        txtExp = [];
+        vid = [];
+        wasPlaying = false;
+        oldFrame = currentFrame;
+        oldZ = currentZ;
+        oldLiveROI = liveROI_enabled;
+        roiWasVisible = {};
 
         try
             % -------------------------------------------------------------
@@ -1495,20 +1375,29 @@ set(fig,'CloseRequestFcn',@cleanup);
                 exportAllSlices = false;
             end
 
-                             % -------------------------------------------------------------
+            % -------------------------------------------------------------
             % Output folder
             % -------------------------------------------------------------
-            videosDir = getAnalysedVideosDir();
+            rootDir = pwd;
 
-            if ~exist(videosDir,'dir')
-                [ok,msg] = mkdir(videosDir);
-                if ~ok
-                    error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
+            try
+                if isstruct(metadata)
+                    if isfield(metadata,'savePath') && ~isempty(metadata.savePath) && exist(metadata.savePath,'dir')
+                        rootDir = metadata.savePath;
+                    elseif isfield(metadata,'loadedPath') && ~isempty(metadata.loadedPath) && exist(metadata.loadedPath,'dir')
+                        rootDir = metadata.loadedPath;
+                    elseif isfield(metadata,'outPath') && ~isempty(metadata.outPath) && exist(metadata.outPath,'dir')
+                        rootDir = metadata.outPath;
+                    end
                 end
+            catch
             end
 
-            disp('--- LIVE VIEWER SAVE VIDEO DEBUG ---');
-            disp(['videosDir    = ' videosDir]);
+            videosDir = fullfile(rootDir,'Videos');
+            if ~exist(videosDir,'dir')
+                mkdir(videosDir);
+            end
+
             % -------------------------------------------------------------
             % Naming
             % -------------------------------------------------------------
@@ -1543,23 +1432,7 @@ set(fig,'CloseRequestFcn',@cleanup);
                 'BackgroundColor','k', ...
                 'Margin',6, ...
                 'Interpreter','none');
-% Hide any other text objects on the image axis during export
-axTxt = findall(ax1, 'Type', 'text');
-for kk = 1:numel(axTxt)
-    hTxt = axTxt(kk);
 
-    if isequal(hTxt, txtExp) || isequal(hTxt, L_text) || isequal(hTxt, R_text)
-        continue;
-    end
-
-    hiddenTxt(end+1) = hTxt; %#ok<AGROW>
-    try
-        hiddenTxtVisible{end+1} = get(hTxt, 'Visible'); %#ok<AGROW>
-        set(hTxt, 'Visible', 'off');
-    catch
-        hiddenTxtVisible{end+1} = 'on'; %#ok<AGROW>
-    end
-end
             % -------------------------------------------------------------
             % Export loop
             % -------------------------------------------------------------
@@ -1617,13 +1490,7 @@ end
             end
 
             restoreAfterExport();
-                     fprintf('[Live Viewer] MP4 export finished: %s\n', videosDir);
-
-try
-    msgbox(sprintf('MP4 export finished.\n\nSaved in:\n%s', videosDir), ...
-        'Export complete', 'help');
-catch
-end
+            fprintf('[Live Viewer] MP4 export finished: %s\n', videosDir);
 
         catch ME
             try
@@ -1671,7 +1538,7 @@ end
                     'BackgroundColor',[0.45 0.08 0.08]);
             end
 
-                       if ~isempty(roiHandles)
+            if ~isempty(roiHandles)
                 for kk = 1:numel(roiHandles)
                     if isgraphics(roiHandles(kk))
                         try
@@ -1685,23 +1552,6 @@ end
                     end
                 end
             end
-
-            if ~isempty(hiddenTxt)
-                for kk = 1:numel(hiddenTxt)
-                    if isgraphics(hiddenTxt(kk))
-                        try
-                            if numel(hiddenTxtVisible) >= kk && ~isempty(hiddenTxtVisible{kk})
-                                set(hiddenTxt(kk), 'Visible', hiddenTxtVisible{kk});
-                            else
-                                set(hiddenTxt(kk), 'Visible', 'on');
-                            end
-                        catch
-                        end
-                    end
-                end
-            end
-
-            updateFrame();
 
             updateFrame();
 

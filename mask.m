@@ -264,6 +264,17 @@ S.displayPreset{1}.gamma      = 1.00;
 S.displayPreset{1}.sharpness  = 0.0;
 S.displayPreset{1}.globalScaling = false;
 
+% Preset for External file mode
+S.displayPreset{5}.brightness = 0.00;
+S.displayPreset{5}.contrast   = 1.00;
+S.displayPreset{5}.gamma      = 1.00;
+S.displayPreset{5}.sharpness  = 0.0;
+S.displayPreset{5}.globalScaling = false;
+S.displayPreset{5}.vesselEnable = false;
+S.displayPreset{5}.softToneEnable = false;
+S.displayPreset{5}.softToneStrength = 0.20;
+S.displayPreset{5}.cmapMode = 1;
+
 % Preset for Standardized mode
 S.displayPreset{7}.brightness = 0.10;
 S.displayPreset{7}.contrast   = 0.50;
@@ -1031,50 +1042,65 @@ uiwait(fig);
 end
 
     function onLoadExternal(~,~)
-        ok = loadExternalUnderlayInteractive();
-        if ok
-            S.underlayMode = 5;
-            set(h.popUnderlay,'Value',5);
-            updateDbControlsEnabled();
-            renderNow();
-        end
+    oldMode = S.underlayMode;
+    saveCurrentDisplayPreset(oldMode);
+
+    ok = loadExternalUnderlayInteractive();
+    if ok
+        S.underlayMode = 5;
+        set(h.popUnderlay,'Value',5);
+
+        % IMPORTANT: load the external-underlay display preset
+        loadDisplayPreset(5);
+
+        updateTitle();
+        updateDbControlsEnabled();
+        renderNow();
+    end
+end
+
+function ok = loadExternalUnderlayInteractive()
+    ok = false;
+
+    startPath = resolveRegistration2DStartPath();
+
+    disp(['[mask] External underlay startPath = ' startPath]);
+
+    [f,p] = uigetfile( ...
+        {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.png;*.jpg;*.jpeg', ...
+         'Underlay (*.mat,*.nii,*.nii.gz, images)'}, ...
+        'Select external underlay', ...
+        fullfile(startPath,'*.*'));
+
+    if isequal(f,0)
+        return;
     end
 
-              function ok = loadExternalUnderlayInteractive()
-        ok = false;
+    S.externalFile = fullfile(p,f);
 
-        startPath = resolveRegistration2DStartPath();
+    try
+        tmp = loadUnderlayAny(S.externalFile);
+        tmp = fitExternalUnderlayToDims(tmp, nY, nX, nZ);
 
-        disp(['[mask] External underlay startPath = ' startPath]);
+        Ucache.external = double(tmp);
+        Ubase = Ucache.external;
 
-        [f,p] = uigetfile( ...
-            {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.png;*.jpg;*.jpeg', ...
-             'Underlay (*.mat,*.nii,*.nii.gz, images)'}, ...
-            'Select external underlay', ...
-            fullfile(startPath,'*.*'));
+        [~,nm,ex] = fileparts(f);
+        UbaseLabel = ['External: ' nm ex];
 
-        if isequal(f,0)
-            return;
+        updateTitle();
+        updateStatus(['External underlay loaded from: ' p]);
+        ok = true;
+
+    catch ME
+        msg = ME.message;
+        if ~isempty(ME.stack)
+            msg = sprintf('%s\n\nFunction: %s\nLine: %d', ...
+                ME.message, ME.stack(1).name, ME.stack(1).line);
         end
-
-        S.externalFile = fullfile(p,f);
-
-        try
-            tmp = loadUnderlayAny(S.externalFile);
-            tmp = fitUnderlayToDims(tmp, nY, nX, nZ);
-            Ucache.external = double(tmp);
-            Ubase = Ucache.external;
-
-            [~,nm,ex] = fileparts(f);
-            UbaseLabel = ['External: ' nm ex];
-
-            updateTitle();
-            updateStatus(['External underlay loaded from: ' p]);
-            ok = true;
-        catch ME
-            errordlg(ME.message,'External underlay failed');
-        end
+        errordlg(msg,'External underlay failed');
     end
+end
 
  function onGlobalScaling(src,~)
     S.globalScaling = logical(get(src,'Value'));
@@ -1889,13 +1915,17 @@ out.anatomical_reference = buildProcessedUnderlayForSave_native();
             end
         end
 
-        imgH.CData = RGB;
+     if ~isempty(imgH) && isgraphics(imgH)
+    set(imgH,'CData',RGB);
+end
 
-        if nZ > 1
-            txtSlice.String = sprintf('Slice %d / %d', z, nZ);
-        else
-            txtSlice.String = '';
-        end
+if ~isempty(txtSlice) && isgraphics(txtSlice)
+    if nZ > 1
+        set(txtSlice,'String',sprintf('Slice %d / %d', z, nZ));
+    else
+        set(txtSlice,'String','');
+    end
+end
 
         try
             drawnow limitrate;
@@ -2451,8 +2481,11 @@ end
         end
 
         if strcmpi(ext,'.mat')
-            Sx = load(fullFile);
-            U = pickNumericFromMat(Sx);
+          Sx = load(fullFile);
+if ~isstruct(Sx)
+    error('Loaded MAT content is not a struct.');
+end
+U = pickNumericFromMat(Sx);
             U = double(U);
             U = squeezeTo2Dor3D(U);
             return;
@@ -2507,6 +2540,32 @@ end
         U = squeezeTo2Dor3D(U);
         U = fitUnderlayToDims(U, ny, nx, nz);
     end
+
+function U = fitExternalUnderlayToDims(U, ny, nx, nz)
+    U = double(U);
+    U(~isfinite(U)) = 0;
+    U = squeezeTo2Dor3D(U);
+
+    % For 2D histology/image underlays:
+    % preserve aspect ratio and pad instead of stretching.
+    if ndims(U) == 2 || (ndims(U) == 3 && size(U,3) == 1)
+     padVal = median(U(isfinite(U)));
+if ~isfinite(padVal)
+    padVal = 0;
+end
+U2 = resize2DKeepAspectPad(U(:,:,1), ny, nx, padVal);
+
+        if nz > 1
+            U = repmat(U2, [1 1 nz]);
+        else
+            U = reshape(U2, [ny nx 1]);
+        end
+        return;
+    end
+
+    % For real 3D external volumes, keep old behavior
+    U = fitUnderlayToDims(U, ny, nx, nz);
+end
 
     function M = fitMaskToDims(Min, ny, nx, nz)
         M = false(ny,nx,nz);
@@ -2568,63 +2627,146 @@ end
         end
     end
 
- function U = pickNumericFromMat(Sx)
-
-if isfield(Sx,'maskBundle') && isstruct(Sx.maskBundle)
-    try
-        U = pickNumericFromMat(Sx.maskBundle);
-        return;
-    catch
+    function Aout = resize2DKeepAspectPad(A, ny, nx, padVal)
+    if nargin < 4
+        padVal = 0;
     end
+
+    A = double(A);
+    [srcNy, srcNx] = size(A);
+
+    if srcNy < 1 || srcNx < 1
+        Aout = padVal * ones(ny,nx);
+        return;
+    end
+
+    scale = min(ny / srcNy, nx / srcNx);
+    newNy = max(1, round(srcNy * scale));
+    newNx = max(1, round(srcNx * scale));
+
+    try
+        Ar = imresize(A, [newNy newNx], 'bilinear');
+    catch
+        [yy,xx] = ndgrid(linspace(1,srcNy,newNy), linspace(1,srcNx,newNx));
+        Ar = interp2(A, xx, yy, 'linear', padVal);
+    end
+
+    Aout = padVal * ones(ny,nx);
+
+    y0 = floor((ny - newNy)/2) + 1;
+    x0 = floor((nx - newNx)/2) + 1;
+
+    Aout(y0:y0+newNy-1, x0:x0+newNx-1) = Ar;
 end
 
-pref = { ...
-    'anatomical_reference', ...
-    'brainImage', ...
-    'anatomical_reference_raw', ...
-    'underlay2D', ...
-    'underlay', ...
-    'bg', ...
-    'img', ...
-    'I', ...
-    'Data'};
 
-for kk = 1:numel(pref)
-    fn = pref{kk};
-    if isfield(Sx,fn)
-        v = Sx.(fn);
+ function U = pickNumericFromMat(Sx)
 
+    U = [];
+
+    if isempty(Sx)
+        error('No usable numeric underlay found in MAT.');
+    end
+
+    % If something non-struct was passed in by mistake, still handle it safely
+    if isnumeric(Sx) && ~isempty(Sx)
+        U = Sx;
+        return;
+    end
+
+    if ~isstruct(Sx)
+        error('No usable numeric underlay found in MAT.');
+    end
+
+    % First try nested maskBundle, but only if it is really a struct
+    if isfield(Sx,'maskBundle')
+        mb = Sx.maskBundle;
+        if isstruct(mb)
+            try
+                U = pickNumericFromMat(mb);
+                return;
+            catch
+            end
+        end
+    end
+
+    pref = { ...
+        'anatomical_reference', ...
+        'brainImage', ...
+        'anatomical_reference_raw', ...
+        'underlay2D', ...
+        'underlay', ...
+        'bg', ...
+        'img', ...
+        'I', ...
+        'Data'};
+
+    % Priority fields
+    for kk = 1:numel(pref)
+        fn = pref{kk};
+
+        if isfield(Sx, fn)
+            v = Sx.(fn);
+
+            if isnumeric(v) && ~isempty(v)
+                U = v;
+                return;
+            end
+
+            if isstruct(v)
+                if isfield(v,'Data')
+                    dv = v.Data;
+                    if isnumeric(dv) && ~isempty(dv)
+                        U = dv;
+                        return;
+                    end
+                end
+
+                if isfield(v,'I')
+                    iv = v.I;
+                    if isnumeric(iv) && ~isempty(iv)
+                        U = iv;
+                        return;
+                    end
+                end
+            end
+        end
+    end
+
+    % Any struct field containing I or Data
+    fn = fieldnames(Sx);
+    for kk = 1:numel(fn)
+        v = Sx.(fn{kk});
+
+        if isstruct(v)
+            if isfield(v,'I')
+                iv = v.I;
+                if isnumeric(iv) && ~isempty(iv)
+                    U = iv;
+                    return;
+                end
+            end
+
+            if isfield(v,'Data')
+                dv = v.Data;
+                if isnumeric(dv) && ~isempty(dv)
+                    U = dv;
+                    return;
+                end
+            end
+        end
+    end
+
+    % Any numeric top-level field
+    for kk = 1:numel(fn)
+        v = Sx.(fn{kk});
         if isnumeric(v) && ~isempty(v)
             U = v;
             return;
         end
-
-        if isstruct(v) && isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
-            U = v.Data;
-            return;
-        end
     end
-end
 
-fn = fieldnames(Sx);
-
-for kk = 1:numel(fn)
-    v = Sx.(fn{kk});
-    if isstruct(v) && isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
-        U = v.I;
-        return;
-    end
-end
-
-for kk = 1:numel(fn)
-    v = Sx.(fn{kk});
-    if isnumeric(v) && ~isempty(v)
-        U = v;
-        return;
-    end
-end
-
-error('No usable numeric underlay found in MAT.');
+    error('No usable numeric underlay found in MAT.');
 end
 
 % -------------------- Display utils --------------------
