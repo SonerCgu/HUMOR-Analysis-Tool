@@ -89,7 +89,7 @@ logPanel = uipanel(fig, ...
     'Position',[0.50 0.18 0.47 0.71], ...
     'BackgroundColor',[0.07 0.07 0.07], ...
     'ForegroundColor','w', ...
-    'FontSize',14, ...
+    'FontSize',18, ...
     'FontWeight','bold');
 
 activeDatasetText = uicontrol(fig,'Style','text', ...
@@ -113,14 +113,14 @@ jLog = javaObjectEDT('javax.swing.JTextArea');
 jLog.setEditable(false);
 jLog.setLineWrap(true);
 jLog.setWrapStyleWord(true);
-jLog.setFont(java.awt.Font('Monospaced', java.awt.Font.PLAIN, 16));
+jLog.setFont(java.awt.Font('Monospaced', java.awt.Font.PLAIN, 26));
 jLog.setBackground(java.awt.Color(0,0,0));
 jLog.setForeground(java.awt.Color(0.60,0.85,1.00));
 jLog.setText('');
 
 jScroll = javaObjectEDT('javax.swing.JScrollPane', jLog);
 [~, hLogContainer] = javacomponent(jScroll, [1 1 1 1], logPanel); %#ok<JAVCM>
-set(hLogContainer, 'Units','normalized', 'Position',[0.02 0.02 0.96 0.94]);
+set(hLogContainer, 'Units','normalized', 'Position',[0.02 0.02 0.96 0.95]);
 
 studio = guidata(fig);
 studio.logBox = hLogContainer;
