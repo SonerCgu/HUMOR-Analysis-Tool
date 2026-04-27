@@ -94,6 +94,13 @@ state.alphaModOn = true;
 state.modMin = 15;
 state.modMax = 30;
 
+state.signMode = 1;           % 1=positive only, 2=negative only, 3=both
+state.prevSignMode = 1;
+state.lastSignedMap = zeros(nY, nX);
+state.tcFixY = false;
+state.tcFixX = false;
+state.tcYLim = [0 100];
+state.tcXLim = [0 max(tmin)];
 roi.size = 5;
 roi.colors = lines(12);
 roi.isFrozen = false;
@@ -181,6 +188,8 @@ set(hOV, 'AlphaData', 0);
 
 cmapNames = { ...
     'blackbdy_iso', ...
+    'winter_brain_fsl', ...
+    'signed_blackbdy_winter', ...
     'hot', 'parula', 'turbo', 'jet', 'gray', 'bone', 'copper', 'pink', ...
     'viridis', 'plasma', 'magma', 'inferno'};
 
@@ -192,6 +201,7 @@ cb.Color = 'w';
 cb.Label.String = 'Signal change (%)';
 cb.Label.FontWeight = 'bold';
 cb.FontSize = 12;
+set(cb, 'Units', 'pixels');
 
 hold(ax, 'off');
 txtSliceOverlay = text(ax, 0.985, 0.985, '', ...
@@ -279,6 +289,7 @@ hLiveRect = rectangle(ax, 'Position', [1 1 1 1], ...
     'EdgeColor', [0 1 0], ...
     'LineWidth', 2, ...
     'Visible', 'off');
+
 
 %% ---------------- SLICE SLIDER ----------------
 slZ = uicontrol(fig, 'Style', 'slider', ...
@@ -535,7 +546,10 @@ set(ebThr, 'ForegroundColor', [1.00 0.35 0.35]);
 lblCax = mkLblImp(pOverlay, 'Display range (min max)');
 ebCax  = mkEdit(pOverlay, '0 100', @updateView);
 set(ebCax, 'ForegroundColor', [1.00 0.35 0.35]);
-
+lblSignMode = mkLblImp(pOverlay, 'Signal sign display');
+popSignMode = mkPopup(pOverlay, ...
+    {'Positive only', 'Negative only', 'Positive + Negative'}, ...
+    state.signMode, @updateView);
 lblAlphaMod = mkLblImp(pOverlay, 'Alpha modulation');
 cbAlphaMod  = mkChk(pOverlay, 'Alpha modulate by |SCM|', double(state.alphaModOn), @alphaModToggled);
 
@@ -595,6 +609,72 @@ btnLoadUnder  = mkBtn(pUnderlay, 'LOAD NEW UNDERLAY', @loadNewUnderlayCB, colBtn
 btnWarpAtlas  = mkBtn(pUnderlay, 'WARP FUNCTIONAL TO ATLAS', @warpFunctionalToAtlasCB, colBtnExport, 12);
 btnResetWarp  = mkBtn(pUnderlay, 'RESET TO NATIVE', @resetWarpToNativeCB, colBtnNeutral, 12);
 
+
+%% ---------------- Time-course axis controls ----------------
+tcAxisBar = uipanel('Parent', fig, ...
+    'Units', 'pixels', ...
+    'BorderType', 'none', ...
+    'BackgroundColor', [0.05 0.05 0.05]);
+
+cbTcFixY = uicontrol(tcAxisBar, 'Style', 'checkbox', 'String', 'Fix Y', ...
+    'Units', 'pixels', ...
+    'Value', double(state.tcFixY), ...
+    'Callback', @tcAxisModeChanged, ...
+    'BackgroundColor', [0.05 0.05 0.05], ...
+    'ForegroundColor', [0.95 0.95 0.95], ...
+    'FontName', 'Arial', ...
+    'FontSize', 11, ...
+    'FontWeight', 'bold');
+
+ebTcYLim = uicontrol(tcAxisBar, 'Style', 'edit', ...
+    'String', sprintf('%g %g', state.tcYLim(1), state.tcYLim(2)), ...
+    'Units', 'pixels', ...
+    'BackgroundColor', bgEdit, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 11, ...
+    'FontWeight', 'bold', ...
+    'Callback', @tcAxisModeChanged);
+
+btnTcYFromCax = uicontrol(tcAxisBar, 'Style', 'pushbutton', 'String', 'Y = CAX', ...
+    'Units', 'pixels', ...
+    'Callback', @tcYFromCax, ...
+    'BackgroundColor', colBtnNeutral, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 10, ...
+    'FontWeight', 'bold');
+
+cbTcFixX = uicontrol(tcAxisBar, 'Style', 'checkbox', 'String', 'Fix X', ...
+    'Units', 'pixels', ...
+    'Value', double(state.tcFixX), ...
+    'Callback', @tcAxisModeChanged, ...
+    'BackgroundColor', [0.05 0.05 0.05], ...
+    'ForegroundColor', [0.95 0.95 0.95], ...
+    'FontName', 'Arial', ...
+    'FontSize', 11, ...
+    'FontWeight', 'bold');
+
+ebTcXLim = uicontrol(tcAxisBar, 'Style', 'edit', ...
+    'String', sprintf('%g %g', state.tcXLim(1), state.tcXLim(2)), ...
+    'Units', 'pixels', ...
+    'BackgroundColor', bgEdit, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 11, ...
+    'FontWeight', 'bold', ...
+    'Callback', @tcAxisModeChanged);
+
+btnTcXAll = uicontrol(tcAxisBar, 'Style', 'pushbutton', 'String', 'X = ALL', ...
+    'Units', 'pixels', ...
+    'Callback', @tcXAll, ...
+    'BackgroundColor', colBtnNeutral, ...
+    'ForegroundColor', fgMain, ...
+    'FontName', 'Arial', ...
+    'FontSize', 10, ...
+    'FontWeight', 'bold');
+
+
 %% ---------------- Bottom buttons ----------------
 btnCompute = uicontrol(fig, 'Style', 'pushbutton', 'String', 'Compute SCM', ...
     'Units', 'pixels', ...
@@ -649,6 +729,7 @@ alphaModToggled();
 updateUnderlayControlsEnable();
 updateInfoLines();
 layoutUI();
+tcAxisModeChanged();
 updateSliceIndicators();
 computeSCM();
 redrawROIsForCurrentSlice();
@@ -730,27 +811,56 @@ end
     set(btnHelp,  'Position', [panelX yHelp halfW btnH]);
     set(btnClose, 'Position', [panelX + halfW + 14 yClose halfW btnH]);
 
-    tcH = min(238, max(180, round(0.22 * Hh)));
-axH = max(360, Hh - botM - tcH - gapY - topM);
+   tcCtrlH   = 28;   % small row for time-course axis controls
+tcCtrlGap = 6;
 
-sliderW = 18;
-sliderGap = 10;
+tcHfull = min(238, max(180, round(0.22 * Hh)));
+tcPlotH = max(120, tcHfull - tcCtrlH - tcCtrlGap);
+
+cbW          = 18;   % colorbar width
+cbGap        = 10;   % gap between image and colorbar
+imgRightGap  = 26;   % gap between colorbar and control panel
+
+axH = max(340, Hh - botM - tcHfull - gapY - topM);
 
 axX = leftM;
+leftW = max(360, panelX - axX - gapX - cbW - cbGap - imgRightGap);
 
-leftW = max(420, panelX - axX - gapX);
-
-axY = botM + tcH + gapY;
+axY = botM + tcHfull + gapY;
 set(ax, 'Position', [axX axY leftW axH]);
 
-tcLeftPad = 8;
-set(axTC, 'Position', [axX + tcLeftPad botM leftW - tcLeftPad tcH]);
+% manual colorbar placement
+cbH = round(0.84 * axH);
+cbY = axY + round(0.08 * axH);
+cbX = axX + leftW + cbGap;
+set(cb, 'Position', [cbX cbY cbW cbH]);
 
+tcLeftPad = 8;
+set(axTC, 'Position', [axX + tcLeftPad, botM + tcCtrlH + tcCtrlGap, leftW - tcLeftPad, tcPlotH]);
+set(tcAxisBar, 'Position', [axX + tcLeftPad, botM, leftW - tcLeftPad, tcCtrlH]);
+
+barW = leftW - tcLeftPad;
+x = 0;
+y = 2;
+hh = tcCtrlH - 4;
+
+wChk = 62;
+wEdit = 95;
+wBtn = 72;
+g = 8;
+
+set(cbTcFixY,    'Position', [x+4 y wChk hh]);          x = x + wChk + g;
+set(ebTcYLim,    'Position', [x   y wEdit hh]);         x = x + wEdit + g;
+set(btnTcYFromCax,'Position',[x   y wBtn hh]);          x = x + wBtn + 20;
+
+set(cbTcFixX,    'Position', [x   y wChk hh]);          x = x + wChk + g;
+set(ebTcXLim,    'Position', [x   y wEdit hh]);         x = x + wEdit + g;
+set(btnTcXAll,   'Position', [x   y wBtn hh]);
 set(slZ, 'Visible', 'off', 'Enable', 'off');
 set(txtZ, 'Visible', 'off');
 
 set(txtTitle, ...
-    'Position', [axX axY + axH + 10 leftW 28], ...
+    'Position', [axX axY + axH + 10 leftW + cbGap + cbW 28], ...
     'String', makeFullTitle(fileLabel), ...
     'Visible', 'on');
 
@@ -824,12 +934,16 @@ end
     y = y + (gapLoc - groupGapLoc);
 
     setRowSlider(lblAlpha, slAlpha, txtAlpha);
-    setRowEdit(lblThr, ebThr);
-    setRowEdit(lblCax, ebCax);
+setRowEdit(lblThr, ebThr);
+setRowEdit(lblCax, ebCax);
 
-    set(lblAlphaMod, 'Position', [xLabel y wLabel rowHLoc]);
-    set(cbAlphaMod,  'Position', [xCtrl y (w - xCtrl - pad) rowHLoc]);
-    y = y - (rowHLoc + gapLoc);
+set(lblSignMode, 'Position', [xLabel y wLabel rowHLoc]);
+set(popSignMode, 'Position', [xCtrl y (w - xCtrl - pad) rowHLoc]);
+y = y - (rowHLoc + gapLoc);
+
+set(lblAlphaMod, 'Position', [xLabel y wLabel rowHLoc]);
+set(cbAlphaMod,  'Position', [xCtrl y (w - xCtrl - pad) rowHLoc]);
+y = y - (rowHLoc + gapLoc);
 
     setRowEdit(lblModMin, ebModMin);
     setRowEdit(lblModMax, ebModMax);
@@ -960,16 +1074,18 @@ set(slZ, 'Value', nZ - state.z + 1);
     redrawROIsForCurrentSlice();
 end
 
-function unfreezeHover(~,~)
+    function unfreezeHover(~,~)
     roi.isFrozen = false;
     set(hLiveRect, 'Visible', 'off');
     set(hLivePSC, 'Visible', 'off');
     set(hRoiCoordTxt, 'Visible', 'off', 'String', '');
-end
+    applyTimecourseAxisMode();
+    end
 
 function setROIsize()
     roi.size = max(1, round(get(slROI, 'Value')));
     set(txtROIsz, 'String', sprintf('%d', roi.size));
+    applyTimecourseAxisMode();
 end
 
 function onRoiSizeEdited(~,~)
@@ -994,6 +1110,7 @@ function mouseMove(~,~)
         set(hLiveRect, 'Visible', 'off');
         set(hLivePSC, 'Visible', 'off');
         set(hRoiCoordTxt, 'Visible', 'off', 'String', '');
+        applyTimecourseAxisMode();
         return;
     end
 
@@ -1030,13 +1147,7 @@ function mouseMove(~,~)
 
     set(hLivePSC, 'XData', state.tminHover, 'YData', tc, 'Visible', 'on');
 
-    mn = min(tc);
-    mx = max(tc);
-    if isfinite(mn) && isfinite(mx) && mx > mn
-        padY = max(0.15 * (mx-mn), 0.5);
-        set(axTC, 'YLim', [mn-padY mx+padY]);
-        drawTimeWindows();
-    end
+applyTimecourseAxisMode();
 end
 
 function roiXYNoop(~,~)
@@ -1069,15 +1180,6 @@ function tc = computeRoiPSC_atSlice(zSel, x1, x2, y1, y2)
         tc = [];
     end
 
-        if ~isempty(tc) && all(isfinite(tc))
-        mn = min(tc);
-        mx = max(tc);
-        if isfinite(mn) && isfinite(mx) && mx > mn
-            padY = max(0.15 * (mx-mn), 0.5);
-            set(axTC, 'YLim', [mn-padY mx+padY]);
-            drawTimeWindows();
-        end
-    end
 end
 
 function tc = computeRoiPSC_idx(zSel, x1, x2, y1, y2, idx)
@@ -1151,7 +1253,7 @@ function addRoiFromXY(~,~)
     set(hRoiCoordTxt, 'String', sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1, x2, y1, y2), ...
         'Visible', 'on');
 
-    drawTimeWindows();
+applyTimecourseAxisMode();
 end
 
 function mouseScroll(~,evt)
@@ -1222,7 +1324,7 @@ function mouseClick(~,~)
         set(hRoiCoordTxt, 'String', sprintf('ROI z=%d | x:%d-%d  y:%d-%d', state.z, x1, x2, y1, y2), ...
             'Visible', 'on');
 
-        drawTimeWindows();
+        applyTimecourseAxisMode();
 
     elseif strcmp(type, 'alt')
         roi.isFrozen = false;
@@ -1238,6 +1340,7 @@ function mouseClick(~,~)
         set(hLiveRect, 'Visible', 'off');
         set(hLivePSC, 'Visible', 'off');
         set(hRoiCoordTxt, 'Visible', 'off', 'String', '');
+        applyTimecourseAxisMode();
     end
 end
 
@@ -1272,11 +1375,13 @@ function computeSCM(~,~)
         map = smooth2D_gauss(map, sig);
     end
 
-    map(~mask2D) = 0;
-    set(hOV, 'CData', map);
+map(~mask2D) = 0;
 
-    updateView();
-    drawTimeWindows();
+state.lastSignedMap = map;
+set(hOV, 'CData', map);
+
+updateView();
+applyTimecourseAxisMode();
 end
 
 function alphaModToggled(~,~)
@@ -1289,6 +1394,82 @@ function alphaModToggled(~,~)
         set(ebModMax, 'Enable', 'off', 'ForegroundColor', [0.55 0.55 0.55], 'BackgroundColor', [0.16 0.16 0.16]);
     end
     updateView();
+end
+
+
+function [dispMap, alpha] = buildDisplayedOverlay(rawMap, localMask)
+    a = get(slAlpha, 'Value');
+
+    thr = str2double(getStr(ebThr));
+    if ~isfinite(thr), thr = 0; end
+
+    mMin = str2double(getStr(ebModMin));
+    if ~isfinite(mMin), mMin = state.modMin; end
+
+    mMax = str2double(getStr(ebModMax));
+    if ~isfinite(mMax), mMax = state.modMax; end
+
+    if mMax < mMin
+        tmp = mMin;
+        mMin = mMax;
+        mMax = tmp;
+    end
+
+% state.signMode already updated by updateView
+
+    switch state.signMode
+        case 1   % Positive only (old default behavior)
+            showMask = (rawMap > 0);
+            dispMap  = rawMap;
+
+        case 2   % Negative only -> show magnitude of negatives
+            showMask = (rawMap < 0);
+            dispMap  = abs(min(rawMap, 0));
+
+        otherwise   % Positive + Negative
+            showMask = isfinite(rawMap) & (rawMap ~= 0);
+            dispMap  = rawMap;
+    end
+
+    baseMask = double(localMask);
+    thrMask  = double((abs(rawMap) >= thr) & showMask) .* baseMask;
+
+    if ~state.alphaModOn
+        alpha = (a/100) .* thrMask;
+        return;
+    end
+
+    effLo = max(mMin, thr);
+    effHi = mMax;
+
+    mag = abs(rawMap);
+    mag(~showMask) = NaN;
+
+    if ~isfinite(effHi) || effHi <= effLo
+        tmp = mag(isfinite(mag));
+        if isempty(tmp)
+            effHi = effLo + eps;
+        else
+            effHi = max(tmp);
+        end
+    end
+    if ~isfinite(effHi) || effHi <= effLo
+        effHi = effLo + eps;
+    end
+
+    mod = (abs(rawMap) - effLo) ./ max(eps, (effHi - effLo));
+    mod(~isfinite(mod)) = 0;
+    mod = min(max(mod, 0), 1);
+    mod(~showMask) = 0;
+
+    % Keep old behavior for default positive-only mode
+    if state.signMode == 1
+        alpha = (a/100) .* mod .* thrMask;
+    else
+        % Softer alpha floor for negative/signed display so contrast is not destroyed
+        modSoft = 0.20 + 0.80 .* mod;
+        alpha = (a/100) .* modSoft .* thrMask;
+    end
 end
 
 function updateView(~,~)
@@ -1306,14 +1487,29 @@ function updateView(~,~)
         end
     end
 
-    maps = get(popMap, 'String');
-    idx  = get(popMap, 'Value');
-    if iscell(maps)
-        cmapName = maps{idx};
-    else
-        cmapName = strtrim(maps(idx,:));
+newSignMode = get(popSignMode, 'Value');
+state.signMode = newSignMode;
+
+% only auto-switch colormap when sign mode actually changes
+if newSignMode ~= state.prevSignMode
+    if newSignMode == 3
+        set(popMap, 'Value', findPopupIndexByName(popMap, 'signed_blackbdy_winter'));
+    elseif newSignMode == 2
+        set(popMap, 'Value', findPopupIndexByName(popMap, 'winter_brain_fsl'));
+    elseif newSignMode == 1
+        set(popMap, 'Value', findPopupIndexByName(popMap, 'blackbdy_iso'));
     end
-    setOverlayColormap(cmapName);
+    state.prevSignMode = newSignMode;
+end
+
+maps = get(popMap, 'String');
+idx  = get(popMap, 'Value');
+if iscell(maps)
+    cmapName = maps{idx};
+else
+    cmapName = strtrim(maps(idx,:));
+end
+setOverlayColormap(cmapName);
 
     mMin = str2double(getStr(ebModMin));
     if ~isfinite(mMin), mMin = state.modMin; end
@@ -1325,49 +1521,12 @@ function updateView(~,~)
     state.modMin = mMin;
     state.modMax = mMax;
 
-    ov = get(hOV, 'CData');
+    rawMap = state.lastSignedMap;
+[dispMap, alpha] = buildDisplayedOverlay(rawMap, mask2D);
 
-    baseMask = double(mask2D);
-
-% show only positive SCM values
-showMask = (ov > 0);
-
-% threshold still based on absolute magnitude, but only for positive values
-thrMask = double((abs(ov) >= thr) & showMask);
-
-if ~state.alphaModOn
-    alpha = (a/100) .* thrMask .* baseMask;
-else
-    effLo = max(state.modMin, thr);
-    effHi = state.modMax;
-
-    ovAbsPos = abs(ov);
-    ovAbsPos(~showMask) = NaN;
-
-    if ~isfinite(effHi) || effHi <= effLo
-        tmp = ovAbsPos(isfinite(ovAbsPos));
-        if isempty(tmp)
-            effHi = effLo + eps;
-        else
-            effHi = max(tmp);
-        end
-    end
-    if ~isfinite(effHi) || effHi <= effLo
-        effHi = effLo + eps;
-    end
-
-    mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-    mod(~isfinite(mod)) = 0;
-    mod = min(max(mod, 0), 1);
-
-    % never show negative values
-    mod(~showMask) = 0;
-
-    alpha = (a/100) .* mod .* thrMask .* baseMask;
-end
-
-    set(hOV, 'AlphaData', alpha);
-    caxis(ax, state.cax);
+set(hOV, 'CData', dispMap);
+set(hOV, 'AlphaData', alpha);
+caxis(ax, state.cax);
 end
 
 function underlayModeChanged(~,~)
@@ -1936,53 +2095,7 @@ slideSpecs = {};
                 end
                 map(~maskLocal) = 0;
 
-                % ----- alpha from current settings, but for this slice mask -----
-                aVal = get(slAlpha, 'Value');
-                thr = str2double(getStr(ebThr));
-                if ~isfinite(thr), thr = 0; end
-
-                mMin = str2double(getStr(ebModMin));
-                if ~isfinite(mMin), mMin = state.modMin; end
-                mMax = str2double(getStr(ebModMax));
-                if ~isfinite(mMax), mMax = state.modMax; end
-                if mMax < mMin
-                    tmp = mMin;
-                    mMin = mMax;
-                    mMax = tmp;
-                end
-
-                baseMask = double(maskLocal);
-                showMask = (map > 0);
-                thrMask  = double((abs(map) >= thr) & showMask);
-
-                if ~state.alphaModOn
-                    alpha = (aVal/100) .* thrMask .* baseMask;
-                else
-                    effLo = max(mMin, thr);
-                    effHi = mMax;
-
-                    ovAbsPos = abs(map);
-                    ovAbsPos(~showMask) = NaN;
-
-                    if ~isfinite(effHi) || effHi <= effLo
-                        tmp = ovAbsPos(isfinite(ovAbsPos));
-                        if isempty(tmp)
-                            effHi = effLo + eps;
-                        else
-                            effHi = max(tmp);
-                        end
-                    end
-                    if ~isfinite(effHi) || effHi <= effLo
-                        effHi = effLo + eps;
-                    end
-
-                    modA = (abs(map) - effLo) ./ max(eps, (effHi - effLo));
-                    modA(~isfinite(modA)) = 0;
-                    modA = min(max(modA, 0), 1);
-                    modA(~showMask) = 0;
-
-                    alpha = (aVal/100) .* modA .* thrMask .* baseMask;
-                end
+               [dispMap, alpha] = buildDisplayedOverlay(map, maskLocal);
                 % ---------------------------------------------------------------
 
                 minIdx = floor(s0 / winLen) + 1;
@@ -2012,8 +2125,8 @@ slideSpecs = {};
                 outTif = fullfile(dirTIF, [baseName '.tif']);
                 outJpg = fullfile(dirJPG, [baseName '.jpg']);
 
-                set(hT, 'CData', map);
-                set(hT, 'AlphaData', alpha);
+          set(hT, 'CData', dispMap);
+set(hT, 'AlphaData', alpha);
                 colormap(axT, cm);
                 caxis(axT, caxV);
 
@@ -2163,102 +2276,11 @@ function releaseSeriesExportLock()
 end
 
 function alpha = alphaFromCurrentSettings(ov)
-    a = get(slAlpha, 'Value');
-    thr = str2double(getStr(ebThr));
-    if ~isfinite(thr), thr = 0; end
-
-    mMin = str2double(getStr(ebModMin));
-    if ~isfinite(mMin), mMin = state.modMin; end
-    mMax = str2double(getStr(ebModMax));
-    if ~isfinite(mMax), mMax = state.modMax; end
-    if mMax < mMin
-        tmp = mMin; mMin = mMax; mMax = tmp;
-    end
-
-    baseMask = double(mask2D);
-
-% show only positive SCM values
-showMask = (ov > 0);
-
-thrMask = double((abs(ov) >= thr) & showMask);
-
-if ~state.alphaModOn
-    alpha = (a/100) .* thrMask .* baseMask;
-else
-    effLo = max(mMin, thr);
-    effHi = mMax;
-
-    ovAbsPos = abs(ov);
-    ovAbsPos(~showMask) = NaN;
-
-    if ~isfinite(effHi) || effHi <= effLo
-        tmp = ovAbsPos(isfinite(ovAbsPos));
-        if isempty(tmp)
-            effHi = effLo + eps;
-        else
-            effHi = max(tmp);
-        end
-    end
-    if ~isfinite(effHi) || effHi <= effLo
-        effHi = effLo + eps;
-    end
-
-    mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-    mod(~isfinite(mod)) = 0;
-    mod = min(max(mod, 0), 1);
-
-    mod(~showMask) = 0;
-
-    alpha = (a/100) .* mod .* thrMask .* baseMask;
-end
+    [~, alpha] = buildDisplayedOverlay(ov, mask2D);
 end
 
-function alpha = alphaFromCurrentSettingsWithMask(ov, maskLocal)
-    a = get(slAlpha, 'Value');
-    thr = str2double(getStr(ebThr));
-    if ~isfinite(thr), thr = 0; end
-
-    mMin = str2double(getStr(ebModMin));
-    if ~isfinite(mMin), mMin = state.modMin; end
-    mMax = str2double(getStr(ebModMax));
-    if ~isfinite(mMax), mMax = state.modMax; end
-    if mMax < mMin
-        tmp = mMin; mMin = mMax; mMax = tmp;
-    end
-
-    baseMask = double(maskLocal);
-
-    showMask = (ov > 0);
-    thrMask = double((abs(ov) >= thr) & showMask);
-
-    if ~state.alphaModOn
-        alpha = (a/100) .* thrMask .* baseMask;
-    else
-        effLo = max(mMin, thr);
-        effHi = mMax;
-
-        ovAbsPos = abs(ov);
-        ovAbsPos(~showMask) = NaN;
-
-        if ~isfinite(effHi) || effHi <= effLo
-            tmp = ovAbsPos(isfinite(ovAbsPos));
-            if isempty(tmp)
-                effHi = effLo + eps;
-            else
-                effHi = max(tmp);
-            end
-        end
-        if ~isfinite(effHi) || effHi <= effLo
-            effHi = effLo + eps;
-        end
-
-        mod = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-        mod(~isfinite(mod)) = 0;
-        mod = min(max(mod, 0), 1);
-        mod(~showMask) = 0;
-
-        alpha = (a/100) .* mod .* thrMask .* baseMask;
-    end
+    function alpha = alphaFromCurrentSettingsWithMask(ov, maskLocal)
+    [~, alpha] = buildDisplayedOverlay(ov, maskLocal);
 end
 %% ==========================================================
 % Time-course PNG export
@@ -2488,8 +2510,10 @@ function exportForGroupAnalysisCB(~,~)
 
         % Current atlas-space numeric content
         G.pscAtlas4D = PSC;                 % atlas-warped PSC series currently loaded in SCM_gui
-        G.scmMapAtlas = get(hOV, 'CData');  % currently displayed SCM map
-        G.alphaAtlas  = get(hOV, 'AlphaData');
+   G.scmMapSignedAtlas  = state.lastSignedMap;   % true signed SCM
+G.scmMapDisplayAtlas = get(hOV, 'CData');     % what user currently sees
+G.alphaAtlas         = get(hOV, 'AlphaData');
+G.display.signMode   = state.signMode;
 
         % Current underlay as shown in atlas space
         G.underlayAtlas = bg;
@@ -4616,6 +4640,7 @@ function setOverlayColormap(name)
     end
 end
 
+
 function cm = getCmap(name, n)
     if isstring(name), name = char(name); end
     name = lower(strtrim(name));
@@ -4629,22 +4654,68 @@ function cm = getCmap(name, n)
         return;
     end
 
-    switch name
-        case 'hot'
-            cm = hot(n); return;
-        case 'parula'
-            cm = parula(n); return;
-        case 'jet'
-            cm = jet(n); return;
-        case 'gray'
-            cm = gray(n); return;
-        case 'bone'
-            cm = bone(n); return;
-        case 'copper'
-            cm = copper(n); return;
-        case 'pink'
-            cm = pink(n); return;
+    if strcmp(name, 'winter_brain_fsl')
+    if exist('winter_brain_fsl', 'file')
+        cm = winter_brain_fsl(n);
+    else
+        cm = winter(n);
     end
+    return;
+end
+
+if strcmp(name, 'signed_blackbdy_winter')
+    nNeg = floor(n/2);
+    nPos = n - nNeg;
+
+    if exist('winter_brain_fsl', 'file')
+        neg = winter_brain_fsl(max(nNeg,2));
+    else
+        neg = winter(max(nNeg,2));
+    end
+    neg = neg(1:nNeg, :);
+
+    % make near-zero dark on the negative side
+    neg = neg .* repmat(linspace(1, 0, nNeg)', 1, 3);
+    if ~isempty(neg)
+        neg(end,:) = [0 0 0];
+    end
+
+    if exist('blackbdy_iso', 'file')
+        pos = blackbdy_iso(max(nPos,2));
+        pos = pos(1:nPos, :);
+    else
+        pos = hot(max(nPos,2));
+        pos = pos(1:nPos, :);
+    end
+    if ~isempty(pos)
+        pos(1,:) = [0 0 0];
+    end
+
+    cm = [neg; pos];
+    cm = min(max(cm, 0), 1);
+    return;
+end
+
+ 
+
+switch name
+    case 'winter'
+        cm = winter(n); return;
+    case 'hot'
+        cm = hot(n); return;
+    case 'parula'
+        cm = parula(n); return;
+    case 'jet'
+        cm = jet(n); return;
+    case 'gray'
+        cm = gray(n); return;
+    case 'bone'
+        cm = bone(n); return;
+    case 'copper'
+        cm = copper(n); return;
+    case 'pink'
+        cm = pink(n); return;
+end
 
     if strcmp(name, 'turbo')
         if exist('turbo', 'file')
@@ -4836,6 +4907,7 @@ function redrawROIsForCurrentSlice()
             roiPlotPSC(end+1) = plot(axTC, tmin, tc, ':', 'Color', r.color, 'LineWidth', 2.4); %#ok<AGROW>
         end
     end
+    applyTimecourseAxisMode();
 end
 
 function deleteIfValid(h)
@@ -5029,6 +5101,129 @@ function B = readScmBundleFile(fullf)
         B.brainMaskIsInclude = true;
     end
 end
+
+function tcAxisModeChanged(~,~)
+    state.tcFixY = logical(get(cbTcFixY, 'Value'));
+    state.tcFixX = logical(get(cbTcFixX, 'Value'));
+
+    [y0,y1] = parseAxisPair(getStr(ebTcYLim), state.tcYLim(1), state.tcYLim(2));
+    [x0,x1] = parseAxisPair(getStr(ebTcXLim), state.tcXLim(1), state.tcXLim(2));
+
+    state.tcYLim = [y0 y1];
+    state.tcXLim = [x0 x1];
+
+    if state.tcFixY
+        set(ebTcYLim, 'Enable', 'on', 'BackgroundColor', bgEdit);
+    else
+        set(ebTcYLim, 'Enable', 'off', 'BackgroundColor', bgEditDis);
+    end
+
+    if state.tcFixX
+        set(ebTcXLim, 'Enable', 'on', 'BackgroundColor', bgEdit);
+    else
+        set(ebTcXLim, 'Enable', 'off', 'BackgroundColor', bgEditDis);
+    end
+
+    applyTimecourseAxisMode();
+end
+
+function tcYFromCax(~,~)
+    set(ebTcYLim, 'String', sprintf('%g %g', state.cax(1), state.cax(2)));
+    set(cbTcFixY, 'Value', 1);
+    tcAxisModeChanged();
+end
+
+function tcXAll(~,~)
+    set(ebTcXLim, 'String', sprintf('%g %g', tmin(1), tmin(end)));
+    set(cbTcFixX, 'Value', 1);
+    tcAxisModeChanged();
+end
+
+function applyTimecourseAxisMode()
+    [xAuto, yAuto] = getAutoTcLimits();
+
+    if state.tcFixX
+        set(axTC, 'XLim', state.tcXLim);
+    else
+        set(axTC, 'XLim', xAuto);
+    end
+
+    if state.tcFixY
+        set(axTC, 'YLim', state.tcYLim);
+    else
+        set(axTC, 'YLim', yAuto);
+    end
+
+    drawTimeWindows();
+end
+
+function [xLimAuto, yLimAuto] = getAutoTcLimits()
+    xAll = [];
+    yAll = [];
+
+    if isgraphics(hLivePSC) && strcmp(get(hLivePSC, 'Visible'), 'on')
+        xh = get(hLivePSC, 'XData');
+        yh = get(hLivePSC, 'YData');
+        xAll = [xAll xh(:).']; %#ok<AGROW>
+        yAll = [yAll yh(:).']; %#ok<AGROW>
+    end
+
+    for kk = 1:numel(roiPlotPSC)
+        if isgraphics(roiPlotPSC(kk)) && strcmp(get(roiPlotPSC(kk), 'Visible'), 'on')
+            xr = get(roiPlotPSC(kk), 'XData');
+            yr = get(roiPlotPSC(kk), 'YData');
+            xAll = [xAll xr(:).']; %#ok<AGROW>
+            yAll = [yAll yr(:).']; %#ok<AGROW>
+        end
+    end
+
+    xAll = xAll(isfinite(xAll));
+    yAll = yAll(isfinite(yAll));
+
+    if numel(xAll) >= 2
+        x0 = min(xAll);
+        x1 = max(xAll);
+        if x1 <= x0
+            x1 = x0 + eps;
+        end
+        xLimAuto = [x0 x1];
+    else
+        xLimAuto = [tmin(1) tmin(end)];
+    end
+
+    if numel(yAll) >= 2
+        y0 = min(yAll);
+        y1 = max(yAll);
+        if y1 > y0
+            padY = max(0.15 * (y1 - y0), 0.5);
+            yLimAuto = [y0 - padY, y1 + padY];
+        else
+            yLimAuto = [y0 - 1, y1 + 1];
+        end
+    else
+        yLimAuto = [-5 5];
+    end
+end
+
+function [a,b] = parseAxisPair(s, da, db)
+    v = sscanf(strrep(char(s), ',', ' '), '%f');
+    if numel(v) >= 2 && all(isfinite(v(1:2)))
+        a = v(1);
+        b = v(2);
+    else
+        a = da;
+        b = db;
+    end
+    if b < a
+        tmp = a;
+        a = b;
+        b = tmp;
+    end
+    if b == a
+        b = a + eps;
+    end
+end
+
 
 function M = fitBundleMaskToCurrentScm(M0)
     M = [];
@@ -5798,6 +5993,23 @@ function tag = sanitizeExportTag(s)
     end
 
     tag = s;
+end
+
+function idx = findPopupIndexByName(hPop, targetName)
+    idx = 1;
+    try
+        items = get(hPop, 'String');
+        if ischar(items)
+            items = cellstr(items);
+        end
+        for ii = 1:numel(items)
+            if strcmpi(strtrim(items{ii}), strtrim(targetName))
+                idx = ii;
+                return;
+            end
+        end
+    catch
+    end
 end
 
 function s = getStr(h)

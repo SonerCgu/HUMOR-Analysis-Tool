@@ -66,16 +66,27 @@ H.hStatus = uicontrol(H.hBanner, 'Style', 'text', ...
 
 H.hReady = uicontrol(H.hBanner, 'Style', 'text', ...
     'Units', 'normalized', ...
-    'Position', [0.61 0.26 0.14 0.56], ...
+    'Position', [0.61 0.26 0.055 0.56], ...
     'String', 'READY', ...
-    'FontSize', 14, ...
+    'FontSize', 12, ...
     'FontWeight', 'bold', ...
     'HorizontalAlignment', 'center', ...
     'ForegroundColor', [1 1 1], ...
     'BackgroundColor', C.ready);
 
-H.pFrameBox = localMakeMiniInfoPanel(H.hBanner, [0.768 0.16 0.060 0.72], 'Frame', C, C.edgeAcq);
+% Live measured dt/TR display.
+% This is based on wall-clock timing between frame callback updates.
+H.pLiveDtBox = localMakeMiniInfoPanel(H.hBanner, [0.680 0.16 0.082 0.72], 'Live dt', C, C.edgePulse);
+H.hLiveDt = localMakeMiniInfoText(H.pLiveDtBox, 'set --', C);
+set(H.hLiveDt, 'FontSize', 16);     % bigger Live dt value
+
+H.pFrameBox = localMakeMiniInfoPanel(H.hBanner, [0.768 0.16 0.060 0.72], 'Frame / s', C, C.edgeAcq);
 H.hFrame = localMakeMiniInfoText(H.pFrameBox, '0', C);
+set(H.hFrame, 'FontSize', 16);      % bigger frame/time value
+
+set(H.pLiveDtBox, 'FontSize', 11);  % bigger title
+set(H.pFrameBox, 'FontSize', 11);   % bigger title
+
 
 H.pTrialBox = localMakeMiniInfoPanel(H.hBanner, [0.834 0.16 0.064 0.72], 'Trial', C, C.edgeStim);
 H.hTrial = localMakeMiniInfoText(H.pTrialBox, '0/0', C);
@@ -222,13 +233,15 @@ pLog = uipanel(pLogWrap, ...
 panelFs = 11;
 smallFs = 10;
 
-xLlbl = 0.05;   % left label x
-xLedt = 0.25;   % left edit x
-wLedt = 0.18;   % left edit width
+% Shared two-column grid for all upper panels.
+% This makes Acquisition / StimBox / PulsePal / Motor rows line up better.
+xLlbl = 0.05;
+xLedt = 0.28;
+wLedt = 0.17;
 
-xRlbl = 0.53;   % right label x
-xRedt = 0.78;   % right edit x
-wRedt = 0.12;   % right edit width
+xRlbl = 0.50;
+xRedt = 0.74;
+wRedt = 0.16;
 
 y1 = 0.78;
 y2 = 0.66;
@@ -260,7 +273,7 @@ uicontrol(pAcq, 'Style', 'text', ...
 H.pSaveOwner = uicontrol(pAcq, 'Style', 'popupmenu', ...
     'Units', 'normalized', ...
     'Position', [0.28 0.920 0.55 0.050], ...
-    'String', {'Soner','Yan'}, ...
+    'String', {'Soner','Yan','Guest'}, ...
     'Value', 1, ...
     'FontSize', 13, ...
     'BackgroundColor', C.editbg, ...
@@ -658,7 +671,7 @@ H.pPPTrigMode2 = localMakeLabeledPopup(H.ppAdvPanel, ...
 % ------------------------------------------------------------------
 H.cMotorEnable = uicontrol(pMotor, 'Style', 'checkbox', ...
     'Units', 'normalized', ...
-    'Position', [0.05 0.89 0.32 0.06], ...
+    'Position', [0.05 0.89 0.22 0.06], ...
     'String', 'Enable motor', ...
     'Value', 0, ...
     'FontSize', 11, ...
@@ -669,8 +682,28 @@ H.cMotorEnable = uicontrol(pMotor, 'Style', 'checkbox', ...
 
 uicontrol(pMotor, 'Style', 'text', ...
     'Units', 'normalized', ...
-    'Position', [xRlbl 0.89 0.15 0.055], ...
-    'String', 'Mode', ...
+    'Position', [0.30 0.89 0.16 0.055], ...
+    'String', 'Acq mode', ...
+    'HorizontalAlignment', 'left', ...
+    'FontSize', panelFs, ...
+    'FontWeight', 'bold', ...
+    'ForegroundColor', C.text, ...
+    'BackgroundColor', C.panel);
+
+H.pMotorAcqMode = uicontrol(pMotor, 'Style', 'popupmenu', ...
+    'Units', 'normalized', ...
+   'Position', [0.46 0.882 0.30 0.075], ...
+    'String', {'Continuous one MAT','Split per slice MAT'}, ...
+    'Value', 2, ...
+   'FontSize', panelFs, ...
+    'BackgroundColor', C.editbg, ...
+    'ForegroundColor', [0 0 0], ...
+    'Callback', @(src,evt)localOnMotorAcqModeChanged(fig));
+
+uicontrol(pMotor, 'Style', 'text', ...
+    'Units', 'normalized', ...
+    'Position', [0.78 0.89 0.07 0.055], ...
+    'String', 'Pos', ...
     'HorizontalAlignment', 'left', ...
     'FontSize', panelFs, ...
     'FontWeight', 'bold', ...
@@ -679,8 +712,8 @@ uicontrol(pMotor, 'Style', 'text', ...
 
 H.pMotorMode = uicontrol(pMotor, 'Style', 'popupmenu', ...
     'Units', 'normalized', ...
-    'Position', [xRedt 0.882 wRedt 0.075], ...
-    'String', {'Single position','Stepped scan'}, ...
+    'Position', [0.85 0.882 0.12 0.075], ...
+    'String', {'Single','Stepped'}, ...
     'Value', 2, ...
     'FontSize', panelFs, ...
     'BackgroundColor', C.editbg, ...
@@ -712,7 +745,7 @@ H.hCurrentPos = uicontrol(pMotor, 'Style', 'text', ...
 
 H.eMotorFrameStart = localMakeLabeledEdit(pMotor, ...
     'Active from frame', [xLlbl y2 0.20 0.055], [xLedt y2-0.008 wLedt 0.075], ...
-    '1', C, panelFs, C.panel);
+    '0', C, panelFs, C.panel);
 
 H.eMotorFrameDur = localMakeLabeledEdit(pMotor, ...
     'Active for frames', [xRlbl y2 0.20 0.055], [xRedt y2-0.008 wRedt 0.075], ...
@@ -731,8 +764,8 @@ H.eMStep = localMakeLabeledEdit(pMotor, ...
     '0.5', C, panelFs, C.panel);
 
 H.eMFrames = localMakeLabeledEdit(pMotor, ...
-    'Move every N', [xRlbl y4 0.18 0.055], [xRedt y4-0.008 wRedt 0.075], ...
-    '100', C, panelFs, C.panel);
+    'Frames/slice', [xRlbl y4 0.18 0.055], [xRedt y4-0.008 wRedt 0.075], ...
+    '50', C, panelFs, C.panel);
 
 H.cMotorRepeat = uicontrol(pMotor, 'Style', 'checkbox', ...
     'Units', 'normalized', ...
@@ -888,7 +921,7 @@ H.bJournalNote = uicontrol(fig, 'Style', 'pushbutton', ...
         H.ePPVolt1 H.ePPDur1 H.ePPIPI H.ePPTrainDur H.ePPRest H.cPPBiphasic ...
         H.ePPInterPhase H.ePPVolt2 H.ePPDur2 H.ePPBurstDur H.ePPInterBurst H.ePPTrainDelay ...
         H.pPPCustomID H.pPPCustomTarget H.cPPCustomLoop H.cPPLink1 H.cPPLink2 H.pPPTrigMode1 H.pPPTrigMode2 ...
-        H.cMotorEnable H.pMotorMode H.eMotorCom H.eMotorFrameStart H.eMotorFrameDur H.cMotorRepeat H.eMotorRepeatEvery ...
+        H.cMotorEnable H.pMotorAcqMode H.pMotorMode H.eMotorCom H.eMotorFrameStart H.eMotorFrameDur H.cMotorRepeat H.eMotorRepeatEvery ...
         H.eMStart H.eMEnd H.eMStep H.eMFrames H.cPeriodic H.cReturnZero H.bReadMotor ...
         ];
 
@@ -919,11 +952,14 @@ set(H.ePPDur1, 'Callback', @(src,evt)localRefreshPulsePalPanel(fig));
     set(H.eMFrames, 'Callback', @(src,evt)localRefreshMotorPanel(fig));
 
     guidata(fig, H);
-    setappdata(fig, 'stopRequested', false);
-    setappdata(fig, 'isRunning', false);
-    setappdata(fig, 'motorCurrentPosAbsMM', NaN);
-    setappdata(fig, 'PulsePalTab', 'std');
+setappdata(fig, 'stopRequested', false);
+setappdata(fig, 'isRunning', false);
+setappdata(fig, 'motorCurrentPosAbsMM', NaN);
+setappdata(fig, 'PulsePalTab', 'std');
 setappdata(fig, 'journalNote', '');
+
+% Live measured dt/TR tracking.
+setappdata(fig, 'liveTRStats', localInitLiveTRStats());
     localSetStatus(fig, 'Idle', 'idle');
     localSetReady(fig, true);
     localSetFrame(fig, 0);
@@ -932,7 +968,7 @@ setappdata(fig, 'journalNote', '');
     localSetCurrentPos(fig, NaN);
         localUpdateJournalNoteButton(fig);
     localAppendLog(fig, 'GUI opened.');
-
+localResetLiveTR(fig);
 
     localLoadDefaults(fig);
     localRestorePulsePalTab(fig);
@@ -953,8 +989,10 @@ function C = localBuildColors()
     C.ready      = [0.15 0.58 0.22];
     C.notready   = [0.65 0.18 0.18];
     C.running    = [0.14 0.39 0.80];
-    C.error      = [0.74 0.18 0.18];
-    C.idle       = [0.25 0.28 0.33];
+   C.error      = [0.74 0.18 0.18];
+C.warn       = [0.85 0.45 0.10];
+C.good       = [0.15 0.58 0.22];
+C.idle       = [0.25 0.28 0.33];
 
     C.btn        = [0.28 0.33 0.40];
     C.btnDark    = [0.20 0.23 0.28];
@@ -1109,7 +1147,7 @@ function localSwitchPulsePalTab(fig, tabName)
             setappdata(fig, 'PulsePalTab', 'adv');
     end
 
-    drawnow;
+    drawnow limitrate;
 end
 
 function localRestorePulsePalTab(fig)
@@ -1218,7 +1256,32 @@ function localRefreshPulsePalPanel(fig)
 
     localRestorePulsePalTab(fig);
 end
+function localOnMotorAcqModeChanged(fig)
+    if ~ishandle(fig)
+        return;
+    end
 
+    H = guidata(fig);
+
+    acqModeIdx = get(H.pMotorAcqMode, 'Value');
+    isContinuous = (acqModeIdx == 1);
+
+    if isContinuous
+        % Continuous one-MAT mode should cycle through the slice list.
+        set(H.cPeriodic, 'Value', 1);
+
+        % Start at 0 = pre-position before scan.
+        set(H.eMotorFrameStart, 'String', '0');
+
+        % Use full trial length as motor active duration.
+        try
+            set(H.eMotorFrameDur, 'String', get(H.eNFrames, 'String'));
+        catch
+        end
+    end
+
+    localRefreshMotorPanel(fig);
+end
 function localRefreshMotorPanel(fig)
     if ~ishandle(fig)
         return;
@@ -1228,31 +1291,64 @@ function localRefreshMotorPanel(fig)
 
     motorOn = logical(get(H.cMotorEnable, 'Value'));
     steppedMode = (get(H.pMotorMode, 'Value') == 2);
-    repOn = logical(get(H.cMotorRepeat, 'Value'));
 
-    motorHandlesAlways = [H.pMotorMode H.eMotorCom H.eMotorFrameStart H.eMotorFrameDur H.cMotorRepeat H.eMotorRepeatEvery H.eMStart H.cReturnZero H.bReadMotor];
-    motorHandlesStepped = [H.eMEnd H.eMStep H.eMFrames H.cPeriodic];
+    acqModeIdx = get(H.pMotorAcqMode, 'Value');
+    splitMode = (acqModeIdx == 2);
+
+    motorHandlesAlways = [ ...
+        H.pMotorAcqMode H.pMotorMode H.eMotorCom ...
+        H.eMStart H.cReturnZero H.bReadMotor];
+
+    motorHandlesStepped = [H.eMEnd H.eMStep H.eMFrames];
 
     localSetHandleGroup([motorHandlesAlways motorHandlesStepped], motorOn);
 
     if motorOn
         localSetHandleGroup(motorHandlesStepped, steppedMode);
-        localSetHandleGroup(H.eMotorRepeatEvery, repOn);
     end
 
+    % Old continuous-only controls.
+    % In split mode they are not used because each slice is its own scan.
+    localSetHandleGroup([H.eMotorFrameStart H.eMotorFrameDur H.cMotorRepeat H.eMotorRepeatEvery H.cPeriodic], ...
+        motorOn && ~splitMode);
+
     nPos = localEstimateMotorPositions(fig);
-    nUsed = localEstimateMotorVisitsPerTrial(fig);
+    framesPerSlice = str2double(get(H.eMFrames, 'String'));
+
+    if isnan(framesPerSlice) || framesPerSlice < 1
+        framesPerSlice = NaN;
+    end
 
     if ~motorOn
-        set(H.hMotorSummary, 'String', 'Estimated positions: 0 | Used per trial: 0');
+        set(H.hMotorSummary, 'String', 'Motor OFF');
         localSetMotor(fig, 0, 0, NaN, 0);
         localSetCurrentPos(fig, NaN);
+
     elseif ~steppedMode
-        set(H.hMotorSummary, 'String', 'Single move mode | Used per trial: 1');
+        if splitMode
+            set(H.hMotorSummary, 'String', sprintf( ...
+                'Split mode: 1 slice file/trial | %s frames/file | no acquisition during movement', ...
+                localNum2Str(framesPerSlice)));
+        else
+            set(H.hMotorSummary, 'String', sprintf( ...
+                'Continuous mode: single position | one MAT | %s frames/slice', ...
+                localNum2Str(framesPerSlice)));
+        end
         localSetMotor(fig, 0, 1, NaN, 0);
+
     else
-        set(H.hMotorSummary, 'String', sprintf('Estimated positions: %d | Used per trial: %d', nPos, nUsed));
-        localSetMotor(fig, 0, nUsed, NaN, 0);
+        if splitMode
+            set(H.hMotorSummary, 'String', sprintf( ...
+                'Split mode: %d slice files/trial | %s frames/file | motor moves between files', ...
+                nPos, localNum2Str(framesPerSlice)));
+        else
+            expectedFrames = nPos * framesPerSlice;
+            set(H.hMotorSummary, 'String', sprintf( ...
+                'Continuous mode: one MAT | %d slices x %s frames = ~%s frames', ...
+                nPos, localNum2Str(framesPerSlice), localNum2Str(expectedFrames)));
+        end
+
+        localSetMotor(fig, 0, nPos, NaN, 0);
     end
 end
 
@@ -1293,6 +1389,14 @@ function localUpdateTRDisplay(fig)
     calcFrames = str2double(get(H.eCalcFrames, 'String'));
     if ~isnan(calcFrames) && ~isnan(tr)
         set(H.eCalcSec, 'String', sprintf('%.3f', calcFrames * tr));
+    end
+
+    % When not running, update the live-dt target display too.
+    try
+        if ~getappdata(fig, 'isRunning')
+            localResetLiveTR(fig);
+        end
+    catch
     end
 end
 
@@ -1383,42 +1487,11 @@ function nUsed = localEstimateMotorVisitsPerTrial(fig)
     end
 
     modeVal = get(H.pMotorMode, 'Value');
+
     if modeVal == 1
         nUsed = 1;
-        return;
-    end
-
-    nFramesTotal = str2double(get(H.eNFrames, 'String'));
-    framesPerPos = str2double(get(H.eMFrames, 'String'));
-    frameStart = str2double(get(H.eMotorFrameStart, 'String'));
-    frameDur = str2double(get(H.eMotorFrameDur, 'String'));
-    periodicWithinCycle = logical(get(H.cPeriodic, 'Value'));
-    repeatCycle = logical(get(H.cMotorRepeat, 'Value'));
-    repeatEvery = str2double(get(H.eMotorRepeatEvery, 'String'));
-
-    if any(isnan([nFramesTotal framesPerPos frameStart frameDur])) || nFramesTotal < 1 || framesPerPos < 1
-        nUsed = 1;
-        return;
-    end
-
-    nPossible = localEstimateMotorPositions(fig);
-    cycleStarts = localBuildCycleStarts(frameStart, repeatCycle, repeatEvery, nFramesTotal);
-
-    nUsed = 0;
-    for i = 1:numel(cycleStarts)
-        c0 = cycleStarts(i);
-        c1 = min(nFramesTotal, c0 + max(1, round(frameDur)) - 1);
-        slotFrames = c0:max(1, round(framesPerPos)):c1;
-
-        if isempty(slotFrames)
-            slotFrames = c0;
-        end
-
-        if periodicWithinCycle
-            nUsed = nUsed + numel(slotFrames);
-        else
-            nUsed = nUsed + min(nPossible, numel(slotFrames));
-        end
+    else
+        nUsed = localEstimateMotorPositions(fig);
     end
 end
 
@@ -1589,23 +1662,34 @@ function localOnStart(fig)
     setappdata(fig, 'stopRequested', false);
     setappdata(fig, 'isRunning', true);
 
-    localSetBusy(fig, true);
-    localSetFrame(fig, 0);
-    localSetTrial(fig, 0, cfg.n_trials);
-    localSetMotor(fig, 0, localEstimateMotorVisitsPerTrial(fig), NaN, 0);
-    localSetStatus(fig, 'Starting experiment...', 'running');
+  localSetBusy(fig, true);
+localSetFrame(fig, 0);
+localResetLiveTR(fig);
+localSetTrial(fig, 0, cfg.n_trials);
+localSetMotor(fig, 0, localEstimateMotorVisitsPerTrial(fig), NaN, 0);
+localSetStatus(fig, 'Starting experiment...', 'running');
     localSetReady(fig, false);
     localAppendLog(fig, 'Starting experiment...');
 
     cfg.gui = struct();
     cfg.gui.statusFcn = @(msg, state)localSafeGuiStatus(fig, msg, state);
     cfg.gui.logFcn = @(msg)localSafeGuiLog(fig, msg);
-    cfg.gui.frameFcn = @(frameIdx)localSafeGuiFrame(fig, frameIdx);
-    cfg.gui.trialFcn = @(iTrial, nTrials)localSafeGuiTrial(fig, iTrial, nTrials);
-    cfg.gui.motorStepFcn = @(idx, total, absPosMM, frameIdx)localSafeGuiMotor(fig, idx, total, absPosMM, frameIdx);
-    cfg.gui.stopRequestedFcn = @()localSafeStopRequested(fig);
-    cfg.gui.frameUpdateEvery = 10;
+ cfg.gui.frameFcn = @(frameIdx)localSafeGuiFrame(fig, frameIdx);
+cfg.gui.trialFcn = @(iTrial, nTrials)localSafeGuiTrial(fig, iTrial, nTrials);
+cfg.gui.motorStepFcn = @(idx, total, absPosMM, frameIdx)localSafeGuiMotor(fig, idx, total, absPosMM, frameIdx);
+cfg.gui.timingFcn = @(targetDt, meanDt, devPct, elapsedSec, nFrames)localSafeGuiTiming(fig, targetDt, meanDt, devPct, elapsedSec, nFrames);
+cfg.gui.stopRequestedFcn = @()localSafeStopRequested(fig);
+% Do not update GUI every frame. GUI drawing can slow acquisition.
+cfg.gui.frameUpdateEvery = 10;
 
+% IMPORTANT:
+% Do not force processRF only for live GUI display.
+% processRF is used only when needed for StimBox, PulsePal,
+% or continuous motor movement.
+%
+% In split motor mode this keeps acquisition close to plain SCAN.doppler.
+cfg.gui.forceProcessRFForLiveFrames = true;
+cfg.gui.frameUpdateEvery = 1;
   try
     vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg);
 
@@ -1675,7 +1759,7 @@ function localLoadDefaults(fig)
     H = guidata(fig);
 
     
-    set(H.pSaveOwner, 'Value', 1);   % 1 = Soner, 2 = Yan
+set(H.pSaveOwner, 'Value', 1);   % 1 = Soner, 2 = Yan, 3 = Guest
     set(H.eXpName, 'String', 'RGRO_yymmdd_1024_MM_B6J_ID');
     set(H.eNFrames, 'String', '9000');
     set(H.eNTrials, 'String', '1');
@@ -1732,20 +1816,23 @@ set(H.eStimRepeatEvery, 'String', '50');
     set(H.pPPTrigMode2, 'Value', 1);
 
     % Motor
-    set(H.cMotorEnable, 'Value', 0);
-    set(H.pMotorMode, 'Value', 2);
-    set(H.eMotorCom, 'String', 'COM8');
-    set(H.eMotorFrameStart, 'String', '1');
-    set(H.eMotorFrameDur, 'String', '9000');
-    set(H.cMotorRepeat, 'Value', 0);
-    set(H.eMotorRepeatEvery, 'String', '100');
-    set(H.eMStart, 'String', '0');
-    set(H.eMEnd, 'String', '30');
-    set(H.eMStep, 'String', '0.5');
-    set(H.eMFrames, 'String', '188');
-    set(H.cPeriodic, 'Value', 1);
-    set(H.cReturnZero, 'Value', 0);
+  set(H.cMotorEnable, 'Value', 0);
+set(H.pMotorAcqMode, 'Value', 2);   % 1 = continuous, 2 = split per slice
+set(H.pMotorMode, 'Value', 2);      % stepped positions
+set(H.eMotorCom, 'String', 'COM8');
 
+set(H.eMotorFrameStart, 'String', '0');
+set(H.eMotorFrameDur, 'String', '9000');
+set(H.cMotorRepeat, 'Value', 0);
+set(H.eMotorRepeatEvery, 'String', '100');
+
+set(H.eMStart, 'String', '0');
+set(H.eMEnd, 'String', '30');
+set(H.eMStep, 'String', '0.5');
+
+set(H.eMFrames, 'String', '50');    % frames per slice
+set(H.cPeriodic, 'Value', 0);
+set(H.cReturnZero, 'Value', 1);
     % Calculator
     set(H.eCalcSec, 'String', '10');
     set(H.eCalcFrames, 'String', '31');
@@ -1846,7 +1933,15 @@ cfg.save_owner = strtrim(saveOwners{saveOwnerIdx});
     % Motor
     cfg.motor = struct();
     cfg.motor.enable = logical(get(H.cMotorEnable, 'Value'));
+motorAcqItems = get(H.pMotorAcqMode, 'String');
+motorAcqIdx = get(H.pMotorAcqMode, 'Value');
+motorAcqText = lower(strtrim(motorAcqItems{motorAcqIdx}));
 
+if ~isempty(strfind(motorAcqText, 'continuous'))
+    cfg.motor.acquisition_mode = 'continuous';
+else
+    cfg.motor.acquisition_mode = 'split';
+end
     if get(H.pMotorMode, 'Value') == 1
         cfg.motor.mode = 'single';
     else
@@ -1868,10 +1963,10 @@ cfg.save_owner = strtrim(saveOwners{saveOwnerIdx});
     cfg.motor.end_offset_mm = cfg.motor.end_mm;
 
     cfg.motor.step_mm = localParseNumeric(get(H.eMStep, 'String'), 'Motor step size');
-    cfg.motor.frames_per_position = localParseNumeric(get(H.eMFrames, 'String'), 'Move every N frames');
+ cfg.motor.frames_per_position = localParseNumeric(get(H.eMFrames, 'String'), 'Frames per slice');
     cfg.motor.periodic = logical(get(H.cPeriodic, 'Value'));
     cfg.motor.return_to_zero = logical(get(H.cReturnZero, 'Value'));
-    cfg.motor.settle_pause_s = 0.05;
+    cfg.motor.settle_pause_s = 1.0;
 
     % Optional compatibility metadata
     if cfg.stimbox.enable
@@ -1940,7 +2035,7 @@ else
         localRefreshMotorPanel(fig);
     end
 
-    drawnow;
+    drawnow limitrate;
 end
 
 % =========================================================================
@@ -1968,7 +2063,7 @@ function localSetStatus(fig, msg, state)
     end
 
     set(H.hStatus, 'String', ['Status: ' msg], 'BackgroundColor', bg);
-    drawnow;
+    drawnow limitrate;
 end
 
 function localSetReady(fig, tfReady)
@@ -1984,17 +2079,60 @@ function localSetReady(fig, tfReady)
     else
         set(H.hReady, 'String', 'NOT READY', 'BackgroundColor', C.notready);
     end
-    drawnow;
+    drawnow limitrate;
 end
 
-function localSetFrame(fig, frameIdx)
+function localSetFrame(fig, frameIdx, elapsedSec)
     if ~ishandle(fig)
         return;
     end
 
+    if nargin < 3 || isempty(elapsedSec) || isnan(elapsedSec)
+        elapsedSec = NaN;
+
+        try
+            if isappdata(fig, 'liveTRStats')
+                S = getappdata(fig, 'liveTRStats');
+                if isstruct(S) && isfield(S, 'elapsedSec')
+                    elapsedSec = S.elapsedSec;
+                end
+            end
+        catch
+        end
+    end
+
     H = guidata(fig);
-    set(H.hFrame, 'String', sprintf('%d', round(frameIdx)));
-    drawnow;
+
+    fpsVal = NaN;
+    try
+        if isappdata(fig, 'liveTRStats')
+            S = getappdata(fig, 'liveTRStats');
+            if isstruct(S) && isfield(S, 'meanDtSec') && ...
+                    isfinite(S.meanDtSec) && S.meanDtSec > 0
+                fpsVal = 1 / S.meanDtSec;
+            end
+        end
+    catch
+        fpsVal = NaN;
+    end
+
+    if isnan(elapsedSec)
+        elapsedTxt = '--.-s';
+    else
+        elapsedTxt = sprintf('%.1fs', elapsedSec);
+    end
+
+    if isnan(fpsVal)
+        fpsTxt = '--/s';
+    else
+        fpsTxt = sprintf('%.1f/s', fpsVal);
+    end
+
+    txt = sprintf('%d\n%s\n%s', round(frameIdx), elapsedTxt, fpsTxt);
+
+    set(H.hFrame, 'String', txt);
+
+    drawnow limitrate;
 end
 
 function localSetTrial(fig, iTrial, nTrials)
@@ -2004,7 +2142,7 @@ function localSetTrial(fig, iTrial, nTrials)
 
     H = guidata(fig);
     set(H.hTrial, 'String', sprintf('%d/%d', iTrial, nTrials));
-    drawnow;
+    drawnow limitrate;
 end
 
 function localSetMotor(fig, idx, totalUsed, absPosMM, frameIdx)
@@ -2028,7 +2166,7 @@ function localSetMotor(fig, idx, totalUsed, absPosMM, frameIdx)
         localSetCurrentPos(fig, absPosMM);
     end
 
-    drawnow;
+    drawnow limitrate;
 end
 
 function localSetCurrentPos(fig, absPosMM)
@@ -2044,7 +2182,7 @@ function localSetCurrentPos(fig, absPosMM)
         set(H.hCurrentPos, 'String', sprintf('%.3f mm', absPosMM));
     end
 
-    drawnow;
+    drawnow limitrate;
 end
 
 % =========================================================================
@@ -2073,7 +2211,7 @@ function localAppendLog(fig, msg)
     end
 
     set(H.logList, 'String', old, 'Value', numel(old));
-    drawnow;
+    drawnow limitrate;
 end
 
 % =========================================================================
@@ -2104,7 +2242,22 @@ function localSafeGuiFrame(fig, frameIdx)
     if ~ishandle(fig)
         return;
     end
-    localSetFrame(fig, frameIdx);
+
+    frameIdx = round(frameIdx);
+
+    % Backend sends frame 0 before every new acquisition.
+    % Use that to reset live timing.
+    if frameIdx <= 0
+        localResetLiveTR(fig);
+        localSetFrame(fig, 0, 0);
+        return;
+    end
+
+    % This updates both:
+    %   1) real frame index
+    %   2) real elapsed wall-clock seconds
+    %   3) live measured dt/TR box
+    localUpdateLiveTRFromFrame(fig, frameIdx);
 end
 
 function localSafeGuiTrial(fig, iTrial, nTrials)
@@ -2119,12 +2272,54 @@ function localSafeGuiMotor(fig, idx, totalFromBackend, absPosMM, frameIdx)
         return;
     end
 
-    %#ok<NASGU>
-    totalFromBackend = totalFromBackend;
+    if nargin < 3 || isempty(totalFromBackend) || totalFromBackend <= 0
+        totalUsed = localEstimateMotorPositions(fig);
+    else
+        totalUsed = totalFromBackend;
+    end
 
-    totalUsed = localEstimateMotorVisitsPerTrial(fig);
     localSetMotor(fig, idx, totalUsed, absPosMM, frameIdx);
 end
+
+function localSafeGuiTiming(fig, targetDt, meanDt, devPct, elapsedSec, nFrames)
+    if ~ishandle(fig)
+        return;
+    end
+
+    H = guidata(fig);
+
+    warnNow = false;
+    if ~isempty(targetDt) && ~isnan(targetDt) && targetDt > 0 && ...
+            ~isempty(meanDt) && ~isnan(meanDt)
+
+        if abs(devPct) > 15 || abs(meanDt - targetDt) > 0.050
+            warnNow = true;
+        end
+    end
+
+    if isfield(H, 'hLiveDt') && ishandle(H.hLiveDt)
+        if isempty(meanDt) || isnan(meanDt)
+            txt = 'dt --';
+            bg = H.C.miniBg;
+        else
+            txt = sprintf('%.3fs %+0.0f%%', meanDt, devPct);
+
+            if warnNow
+                bg = H.C.error;
+            else
+                bg = H.C.good;
+            end
+        end
+
+        set(H.hLiveDt, ...
+            'String', txt, ...
+            'BackgroundColor', bg, ...
+            'ForegroundColor', [1 1 1]);
+    end
+
+    drawnow limitrate;
+end
+
 
 function tf = localSafeStopRequested(fig)
     tf = false;
@@ -2139,6 +2334,172 @@ function tf = localSafeStopRequested(fig)
     end
 end
 
+% =========================================================================
+% Live measured dt / TR monitor
+% =========================================================================
+function S = localInitLiveTRStats()
+    S.targetDtSec = NaN;
+
+    S.firstWallSec = NaN;
+    S.lastFrame = NaN;
+    S.lastWallSec = NaN;
+
+    S.elapsedSec = 0;
+    S.meanDtSec = NaN;
+    S.nIntervals = 0;
+
+    % Warning rule:
+    % Warn if measured dt differs from expected TR by >15 percent
+    % OR by more than 50 ms.
+    S.warnFrac = 0.15;
+    S.warnAbsSec = 0.050;
+
+    % Avoid log spam
+    S.lastWarnFrame = -Inf;
+    S.warnEveryFrames = 200;
+end
+
+function localResetLiveTR(fig)
+    if ~ishandle(fig)
+        return;
+    end
+
+    S = localInitLiveTRStats();
+    S.targetDtSec = localGetTR(fig);
+    setappdata(fig, 'liveTRStats', S);
+
+    localSetFrame(fig, 0, 0);
+
+    H = guidata(fig);
+    if isfield(H, 'hLiveDt') && ishandle(H.hLiveDt)
+        if isnan(S.targetDtSec)
+            set(H.hLiveDt, 'String', 'set --', ...
+                'BackgroundColor', H.C.miniBg, ...
+                'ForegroundColor', [1 1 1]);
+        else
+            set(H.hLiveDt, 'String', sprintf('set %.3fs', S.targetDtSec), ...
+                'BackgroundColor', H.C.miniBg, ...
+                'ForegroundColor', [1 1 1]);
+        end
+    end
+end
+
+function localUpdateLiveTRFromFrame(fig, frameIdx)
+    if ~ishandle(fig)
+        return;
+    end
+
+    frameIdx = round(frameIdx);
+    if frameIdx < 1
+        return;
+    end
+
+    H = guidata(fig);
+
+    if ~isappdata(fig, 'liveTRStats')
+        setappdata(fig, 'liveTRStats', localInitLiveTRStats());
+    end
+
+    S = getappdata(fig, 'liveTRStats');
+
+    if isempty(S) || ~isstruct(S)
+        S = localInitLiveTRStats();
+    end
+
+    if isempty(S.targetDtSec) || isnan(S.targetDtSec)
+        S.targetDtSec = localGetTR(fig);
+    end
+
+    nowSec = now * 86400;
+
+    % First received real frame callback.
+    if isnan(S.firstWallSec)
+        S.firstWallSec = nowSec;
+        S.lastFrame = frameIdx;
+        S.lastWallSec = nowSec;
+        S.elapsedSec = 0;
+
+        setappdata(fig, 'liveTRStats', S);
+
+        localSetFrame(fig, frameIdx, 0);
+        return;
+    end
+
+    frameDelta = frameIdx - S.lastFrame;
+    timeDeltaSec = nowSec - S.lastWallSec;
+
+    S.elapsedSec = max(0, nowSec - S.firstWallSec);
+
+    if frameDelta <= 0 || timeDeltaSec <= 0
+        setappdata(fig, 'liveTRStats', S);
+        localSetFrame(fig, frameIdx, S.elapsedSec);
+        return;
+    end
+
+    blockDtSec = timeDeltaSec / frameDelta;
+
+    if isnan(S.meanDtSec)
+        S.meanDtSec = blockDtSec;
+        S.nIntervals = frameDelta;
+    else
+        S.meanDtSec = ((S.meanDtSec * S.nIntervals) + (blockDtSec * frameDelta)) / ...
+            max(1, S.nIntervals + frameDelta);
+        S.nIntervals = S.nIntervals + frameDelta;
+    end
+
+    S.lastFrame = frameIdx;
+    S.lastWallSec = nowSec;
+
+    target = S.targetDtSec;
+    warnNow = false;
+    devPct = NaN;
+
+    if ~isnan(target) && target > 0 && ~isnan(S.meanDtSec)
+        devFrac = abs(S.meanDtSec - target) / target;
+        devPct = 100 * (S.meanDtSec - target) / target;
+
+        if devFrac > S.warnFrac || abs(S.meanDtSec - target) > S.warnAbsSec
+            warnNow = true;
+        end
+    end
+
+    % Update Frame / seconds box.
+    localSetFrame(fig, frameIdx, S.elapsedSec);
+
+    % Update live dt/TR box.
+    if isfield(H, 'hLiveDt') && ishandle(H.hLiveDt)
+        if isnan(S.meanDtSec)
+            txt = 'dt --';
+            bg = H.C.miniBg;
+        else
+            if isnan(devPct)
+                txt = sprintf('%.3fs', S.meanDtSec);
+            else
+                txt = sprintf('%.3fs %+0.f%%', S.meanDtSec, devPct);
+            end
+
+            if warnNow
+                bg = H.C.error;
+            else
+                bg = H.C.good;
+            end
+        end
+
+        set(H.hLiveDt, 'String', txt, ...
+            'BackgroundColor', bg, ...
+            'ForegroundColor', [1 1 1]);
+    end
+
+    if warnNow && frameIdx - S.lastWarnFrame >= S.warnEveryFrames
+        localAppendLog(fig, sprintf( ...
+            'TR WARNING: expected %.3f s, measured mean %.3f s (%+.1f%%) at frame %d.', ...
+            target, S.meanDtSec, devPct, frameIdx));
+
+        S.lastWarnFrame = frameIdx;
+    end
+
+    setappdata(fig, 'liveTRStats', S);
+end
 % =========================================================================
 % Help
 % =========================================================================
@@ -2204,6 +2565,36 @@ end
 % =========================================================================
 % Small helpers
 % =========================================================================
+function sessionFolder = getNextSplitMotorSessionFolder(expFolder)
+% Creates next available split-motor session folder:
+% Session_001_SplitMotor, Session_002_SplitMotor, ...
+
+if nargin < 1 || isempty(expFolder) || ~exist(expFolder, 'dir')
+    error('Experiment folder does not exist.');
+end
+
+d = dir(fullfile(expFolder, 'Session_*_SplitMotor'));
+existingNames = {d([d.isdir]).name};
+
+maxIdx = 0;
+for i = 1:numel(existingNames)
+    tok = regexp(existingNames{i}, '^Session_(\d+)_SplitMotor$', 'tokens', 'once');
+    if ~isempty(tok)
+        v = str2double(tok{1});
+        if isfinite(v)
+            maxIdx = max(maxIdx, v);
+        end
+    end
+end
+
+nextIdx = maxIdx + 1;
+sessionFolder = fullfile(expFolder, sprintf('Session_%03d_SplitMotor', nextIdx));
+
+if ~exist(sessionFolder, 'dir')
+    mkdir(sessionFolder);
+end
+end
+
 function localEditJournalNote(fig)
     if ~ishandle(fig)
         return;

@@ -2143,7 +2143,9 @@ function liveViewerCallback(~,~)
         metaForViewer.exportPath = studio.exportPath;
         metaForViewer.savePath   = studio.exportPath;
         metaForViewer.outPath    = studio.exportPath;
-
+metaForViewer.analysedPath = studio.exportPath;
+metaForViewer.datasetName  = getDatasetDisplayName(studio, studio.activeDataset);
+metaForViewer.activeDataset = studio.activeDataset;
         % -----------------------------------------------------
         % Also pass raw/load info as fallback
         % -----------------------------------------------------

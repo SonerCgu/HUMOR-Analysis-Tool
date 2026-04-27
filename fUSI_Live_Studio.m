@@ -1283,124 +1283,254 @@ set(fig,'CloseRequestFcn',@cleanup);
         updateFrame();
     end
 
-     function videosDir = getAnalysedVideosDir()
-        baseDir = '';
-        cand = {};
+  function videosDir = getAnalysedVideosDir()
 
-        % ---------------------------------------------------------
-        % Collect candidate directories from metadata
-        % ---------------------------------------------------------
-        try
-            if isstruct(metadata)
-                if isfield(metadata,'exportPath') && ~isempty(metadata.exportPath)
-                    cand{end+1} = char(metadata.exportPath);
-                end
-                if isfield(metadata,'savePath') && ~isempty(metadata.savePath)
-                    cand{end+1} = char(metadata.savePath);
-                end
-                if isfield(metadata,'outPath') && ~isempty(metadata.outPath)
-                    cand{end+1} = char(metadata.outPath);
-                end
-                if isfield(metadata,'loadedPath') && ~isempty(metadata.loadedPath)
-                    cand{end+1} = char(metadata.loadedPath);
-                end
-                if isfield(metadata,'rawPath') && ~isempty(metadata.rawPath)
-                    cand{end+1} = char(metadata.rawPath);
-                end
-                if isfield(metadata,'loadedFile') && ~isempty(metadata.loadedFile)
-                    lf = char(metadata.loadedFile);
-                    if exist(lf,'file') == 2
-                        cand{end+1} = fileparts(lf);
+    baseDir = '';
+    cand = {};
+
+    % =========================================================
+    % Collect candidate paths from metadata
+    % =========================================================
+    try
+        if isstruct(metadata)
+
+            if isfield(metadata,'exportPath') && ~isempty(metadata.exportPath)
+                cand{end+1} = char(metadata.exportPath);
+            end
+
+            if isfield(metadata,'savePath') && ~isempty(metadata.savePath)
+                cand{end+1} = char(metadata.savePath);
+            end
+
+            if isfield(metadata,'outPath') && ~isempty(metadata.outPath)
+                cand{end+1} = char(metadata.outPath);
+            end
+
+            if isfield(metadata,'analysedPath') && ~isempty(metadata.analysedPath)
+                cand{end+1} = char(metadata.analysedPath);
+            end
+
+            if isfield(metadata,'loadedPath') && ~isempty(metadata.loadedPath)
+                cand{end+1} = char(metadata.loadedPath);
+            end
+
+            if isfield(metadata,'loadedFile') && ~isempty(metadata.loadedFile)
+                lf = char(metadata.loadedFile);
+                if exist(lf,'file') == 2
+                    cand{end+1} = fileparts(lf);
+                else
+                    [lfPath,~,~] = fileparts(lf);
+                    if ~isempty(lfPath)
+                        cand{end+1} = lfPath;
                     end
                 end
+            end
+        end
+    catch
+    end
+
+    % =========================================================
+    % Clean candidates
+    % =========================================================
+    cleanCand = {};
+    for ii = 1:numel(cand)
+        try
+            p = strtrim(strrep(cand{ii}, '"', ''));
+            if ~isempty(p)
+                cleanCand{end+1} = p; %#ok<AGROW>
             end
         catch
         end
+    end
+    cand = unique(cleanCand, 'stable');
 
-        % ---------------------------------------------------------
-        % Clean candidates
-        % ---------------------------------------------------------
-        for ii = 1:numel(cand)
-            try
-                cand{ii} = strtrim(strrep(cand{ii}, '"', ''));
-            catch
-                cand{ii} = '';
-            end
+    % =========================================================
+    % First preference: existing AnalysedData path
+    % =========================================================
+    for ii = 1:numel(cand)
+
+        p = cand{ii};
+
+        if exist(p,'dir') == 7 && ~isempty(strfind(lower(p), lower('analyseddata'))) %#ok<STREMP>
+            baseDir = p;
+            break;
         end
+    end
 
-        % ---------------------------------------------------------
-        % 1) Prefer path already inside AnalysedData
-        % ---------------------------------------------------------
+    % =========================================================
+    % Second preference: convert RawData path to AnalysedData path
+    % =========================================================
+    if isempty(baseDir)
+
         for ii = 1:numel(cand)
+
             p = cand{ii};
+
             if isempty(p)
                 continue;
             end
-            if exist(p,'dir') == 7 && ~isempty(strfind(lower(p), lower('analyseddata')))
-                baseDir = p;
+
+            pLow = lower(p);
+            rawIdx = strfind(pLow, lower('rawdata'));
+
+            if isempty(rawIdx)
+                continue;
+            end
+
+            k = rawIdx(1);
+
+            leftPart  = p(1:k-1);
+            rightPart = p(k+length('RawData'):end);
+
+            while ~isempty(rightPart) && any(rightPart(1) == ['\' '/'])
+                rightPart = rightPart(2:end);
+            end
+
+            testDir = fullfile(leftPart, 'AnalysedData', rightPart);
+
+            if exist(testDir,'dir') ~= 7
+                try
+                    mkdir(testDir);
+                catch
+                end
+            end
+
+            if exist(testDir,'dir') == 7
+                baseDir = testDir;
                 break;
             end
         end
-
-        % ---------------------------------------------------------
-        % 2) Convert RawData path -> AnalysedData path
-        % ---------------------------------------------------------
-        if isempty(baseDir)
-            for ii = 1:numel(cand)
-                p = cand{ii};
-                if isempty(p) || exist(p,'dir') ~= 7
-                    continue;
-                end
-
-                pLow = lower(p);
-                rawIdx = strfind(pLow, lower('rawdata'));
-
-                if ~isempty(rawIdx)
-                    k = rawIdx(1);
-                    leftPart  = p(1:k-1);
-                    rightPart = p(k+length('RawData'):end);
-
-                    while ~isempty(rightPart) && any(rightPart(1) == ['\' '/'])
-                        rightPart = rightPart(2:end);
-                    end
-
-                    testDir = fullfile(leftPart, 'AnalysedData', rightPart);
-
-                    if exist(testDir,'dir') == 7
-                        baseDir = testDir;
-                        break;
-                    end
-                end
-            end
-        end
-
-        % ---------------------------------------------------------
-        % 3) Fallback to first existing candidate only if it is
-        %    already clearly under AnalysedData
-        % ---------------------------------------------------------
-        if isempty(baseDir)
-            for ii = 1:numel(cand)
-                p = cand{ii};
-                if isempty(p)
-                    continue;
-                end
-                if exist(p,'dir') == 7 && ~isempty(strfind(lower(p), lower('analyseddata')))
-                    baseDir = p;
-                    break;
-                end
-            end
-        end
-
-        % ---------------------------------------------------------
-        % 4) Do NOT silently fall back to pwd
-        % ---------------------------------------------------------
-        if isempty(baseDir) || exist(baseDir,'dir') ~= 7
-            error(['No valid analysed export path found for Live Viewer. ' ...
-                   'Pass metadata.exportPath / savePath from fusi_studio.']);
-        end
-
-        videosDir = fullfile(baseDir, 'Videos');
     end
+
+    % =========================================================
+    % Final fallback: ask user
+    % =========================================================
+    if isempty(baseDir) || exist(baseDir,'dir') ~= 7
+
+        startPath = pwd;
+
+        if exist('Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData','dir') == 7
+            startPath = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData';
+        end
+
+        selectedDir = uigetdir(startPath, ...
+            'Select analysed folder for Live Viewer MP4 export');
+
+        if isequal(selectedDir,0)
+            error('MP4 export cancelled: no output folder selected.');
+        end
+
+        baseDir = selectedDir;
+    end
+
+    % =========================================================
+    % IMPORTANT:
+    % Avoid Unicode/special-character folder names for VideoWriter.
+    % If baseDir contains non-ASCII characters, create an ASCII-safe
+    % video folder one level above or inside a safe sibling folder.
+    % =========================================================
+    baseDir = char(baseDir);
+
+    if hasNonAscii(baseDir)
+        parentDir = fileparts(baseDir);
+
+        safeName = makeSafeAsciiFileName(datasetName);
+        if isempty(safeName)
+            safeName = ['LiveViewer_' datestr(now,'yyyymmdd_HHMMSS')];
+        end
+
+        safeBaseDir = fullfile(parentDir, [safeName '_VideoExport']);
+
+        if exist(safeBaseDir,'dir') ~= 7
+            [ok,msg] = mkdir(safeBaseDir);
+            if ~ok
+                error('Could not create ASCII-safe video export folder:\n%s\n\nReason: %s', ...
+                    safeBaseDir, msg);
+            end
+        end
+
+        baseDir = safeBaseDir;
+    end
+
+    videosDir = fullfile(baseDir, 'Videos');
+
+    if exist(videosDir,'dir') ~= 7
+        [ok,msg] = mkdir(videosDir);
+        if ~ok
+            error('Could not create Videos folder:\n%s\n\nReason: %s', videosDir, msg);
+        end
+    end
+
+    % =========================================================
+    % Test write permission/path validity before VideoWriter
+    % =========================================================
+    testFile = fullfile(videosDir, ['write_test_' datestr(now,'yyyymmdd_HHMMSS') '.tmp']);
+
+    fid = fopen(testFile,'w');
+
+    if fid == -1
+        error(['Cannot write to Videos folder:\n%s\n\n' ...
+               'This usually means the network path is unavailable, the folder has permission issues, ' ...
+               'or VideoWriter cannot handle the path.'], videosDir);
+    end
+
+    fprintf(fid,'test');
+    fclose(fid);
+
+    try
+        delete(testFile);
+    catch
+    end
+end
+
+
+function tf = hasNonAscii(s)
+
+    tf = false;
+
+    try
+        s = char(s);
+        tf = any(double(s) > 127);
+    catch
+        tf = true;
+    end
+end
+
+
+function s = makeSafeAsciiFileName(s)
+
+    if nargin < 1 || isempty(s)
+        s = 'LiveViewer';
+    end
+
+    s = char(s);
+
+    s = strrep(s, 'µ', 'u');
+    s = strrep(s, 'μ', 'u');
+    s = strrep(s, 'ä', 'ae');
+    s = strrep(s, 'ö', 'oe');
+    s = strrep(s, 'ü', 'ue');
+    s = strrep(s, 'Ä', 'Ae');
+    s = strrep(s, 'Ö', 'Oe');
+    s = strrep(s, 'Ü', 'Ue');
+    s = strrep(s, 'ß', 'ss');
+
+    s = regexprep(s, '\.nii\.gz$', '', 'ignorecase');
+    s = regexprep(s, '\.nii$', '', 'ignorecase');
+    s = regexprep(s, '\.mat$', '', 'ignorecase');
+
+    s = regexprep(s, '[^A-Za-z0-9_\-]+', '_');
+    s = regexprep(s, '_+', '_');
+    s = regexprep(s, '^_+', '');
+    s = regexprep(s, '_+$', '');
+
+    if isempty(s)
+        s = 'LiveViewer';
+    end
+end
+
+
+
 
  function exportVideoCB(~,~)
     txtExp = [];
@@ -1516,11 +1646,11 @@ set(fig,'CloseRequestFcn',@cleanup);
             modeName = modeNames{get(displayDropdown,'Value')};
             modeTag = lower(regexprep(modeName,'[^a-zA-Z0-9]+','_'));
 
-            dataTag = lower(regexprep(datasetName,'[^a-zA-Z0-9]+','_'));
-            if isempty(dataTag)
-                dataTag = 'liveviewer';
-            end
+dataTag = lower(makeSafeAsciiFileName(datasetName));
 
+if isempty(dataTag)
+    dataTag = 'liveviewer';
+end
             timeTag = datestr(now,'yyyymmdd_HHMMSS');
 
             if dims == 4 && exportAllSlices
@@ -1572,13 +1702,37 @@ end
                     zz = 1;
                 end
 
-                outFile = fullfile(videosDir, ...
-                    sprintf('%s_%s_z%02d_%s.mp4', dataTag, modeTag, zz, timeTag));
+            outFile = fullfile(videosDir, ...
+    sprintf('%s_%s_z%02d_%s.mp4', dataTag, modeTag, zz, timeTag));
 
-                vid = VideoWriter(outFile,'MPEG-4');
-                vid.FrameRate = exportFPS;
-                vid.Quality = 95;
-                open(vid);
+% Make absolutely sure the parent folder exists
+outParent = fileparts(outFile);
+if exist(outParent,'dir') ~= 7
+    [ok,msg] = mkdir(outParent);
+    if ~ok
+        error('Could not create output folder:\n%s\n\nReason: %s', outParent, msg);
+    end
+end
+
+% Debug print
+disp('--- MP4 EXPORT TARGET ---');
+disp(['outParent = ' outParent]);
+disp(['outFile   = ' outFile]);
+
+% Pre-test file creation
+fid = fopen(outFile, 'w');
+if fid == -1
+    error(['Cannot create MP4 file at:\n%s\n\n' ...
+           'The folder may not exist, may be read-only, or the path contains unsupported characters.'], ...
+           outFile);
+end
+fclose(fid);
+delete(outFile);
+
+vid = VideoWriter(outFile,'MPEG-4');
+vid.FrameRate = exportFPS;
+vid.Quality = 95;
+open(vid);
 
                 for ff = 1:T
                     currentFrame = ff;
@@ -1644,6 +1798,9 @@ end
             errordlg(sprintf('MP4 export failed:\n\n%s', ME.message), ...
                 'Export MP4 failed');
         end
+
+
+       
 
         function restoreAfterExport()
             currentFrame = oldFrame;
