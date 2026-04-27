@@ -50,12 +50,25 @@ function vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg)
     stimboxFrames = struct('d3_frames', [], 'd5_frames', [], 'd6_frames', []);
     pulsepalTriggerFrames = [];
 
-    sessionTag = datestr(now, 'yymmdd_HHMMSS');
-    userStopped = false;
+  sessionTag = datestr(now, 'yymmdd_HHMMSS');
+
+% -------------------------------------------------------------
+% Prepare output folder once per GUI START click.
+%
+% In split motor mode, all slice files from this run go into:
+%   Data\<save_owner>\<xp_name>\Session_001_SplitMotor
+%   Data\<save_owner>\<xp_name>\Session_002_SplitMotor
+%   ...
+% -------------------------------------------------------------
+cfg = localPrepareSplitMotorSessionFolder(cfg, sessionTag);
+
+userStopped = false;
 
     try
         localGuiStatus(cfg, 'Connecting hardware...', 'notready');
-
+if isfield(cfg, 'output_session_folder') && ~isempty(cfg.output_session_folder)
+    localGuiLog(cfg, sprintf('Split motor session folder: %s', cfg.output_session_folder));
+end
         % Create callback object in all cases so GUI frame updates and STOP work
         pp = vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_OBJECT([]);
 
@@ -209,136 +222,559 @@ end
             localSetObjPropIfExists(pp, 'stim_mode', 'hybrid');
         end
 
-        % -----------------------------------------------------------------
-        % Motor scheduling into callback object
-        % -----------------------------------------------------------------
-        localSetObjPropIfExists(pp, 'motor_enable', cfg.motor.enable);
-        localSetObjPropIfExists(pp, 'motor_axis', motorAxis);
+% -------------------------------------------------------------
+% Motor callback behavior depends on acquisition mode.
+%
+% Split mode:
+%   motor moves before SCAN.doppler
+%   no motor callback
+%
+% Continuous mode:
+%   one long MAT
+%   motor moves inside processRF callback
+% -------------------------------------------------------------
+if cfg.motor.enable && strcmpi(localGetMotorAcqMode(cfg), 'continuous')
 
-        % Legacy/internal schedule fallback
-        localSetObjPropIfExists(pp, 'motor_mode', cfg.motor.mode);
-        localSetObjPropIfExists(pp, 'motor_positions_abs_mm', motorPositionsAbsMM);
-        localSetObjPropIfExists(pp, 'motor_frames_per_position', cfg.motor.frames_per_position);
-        localSetObjPropIfExists(pp, 'motor_periodic', cfg.motor.periodic);
-        localSetObjPropIfExists(pp, 'motor_settle_pause_s', cfg.motor.settle_pause_s);
-        localSetObjPropIfExists(pp, 'motor_start_frame', cfg.motor.frame_start);
-        localSetObjPropIfExists(pp, 'motor_duration_frames', cfg.motor.frame_duration);
-        localSetObjPropIfExists(pp, 'motor_repeat_enable', cfg.motor.repeat_enable);
-        localSetObjPropIfExists(pp, 'motor_repeat_every_frames', cfg.motor.repeat_interval_frames);
+    continuousMotorPlan = localBuildContinuousMotorCallbackPlan( ...
+        cfg.motor, motorPositionsAbsMM, cfg.n_frames);
 
-        % New explicit plan
-        localSetObjPropIfExists(pp, 'motor_move_frames', motorPlan.frames);
-        localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', motorPlan.targets_abs_mm);
-        localSetObjPropIfExists(pp, 'motor_home_abs_mm', motorHomeMM);
-        localSetObjPropIfExists(pp, 'motor_use_explicit_plan', true);
-        localSetObjPropIfExists(pp, 'motor_display_total', numel(motorPlan.frames));
+    localSetObjPropIfExists(pp, 'motor_enable', true);
+    localSetObjPropIfExists(pp, 'motor_axis', motorAxis);
+    localSetObjPropIfExists(pp, 'motor_settle_pause_s', cfg.motor.settle_pause_s);
 
-        localPrintSummary(cfg, motorHomeMM, motorPositionsAbsMM, stimboxFrames, pulsepalTriggerFrames, motorPlan);
+    localSetObjPropIfExists(pp, 'motor_use_explicit_plan', true);
+    localSetObjPropIfExists(pp, 'motor_move_frames', continuousMotorPlan.frames);
+    localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', continuousMotorPlan.targets_abs_mm);
+    localSetObjPropIfExists(pp, 'motor_display_total', numel(continuousMotorPlan.frames));
 
-        localGuiStatus(cfg, 'Hardware ready. Starting experiment...', 'notready');
-        localGuiFrame(cfg, 0);
-        localGuiTrial(cfg, 0, cfg.n_trials);
+    localGuiLog(cfg, sprintf( ...
+        'Continuous motor mode armed: %d in-scan motor moves planned.', ...
+        numel(continuousMotorPlan.frames)));
 
-        if cfg.motor.enable
-            localGuiMotor(cfg, 0, numel(motorPlan.frames), motorHomeMM, 0);
-            localGuiLog(cfg, localMotorSummaryText(cfg, motorHomeMM, motorPositionsAbsMM, motorPlan));
+else
+
+    localSetObjPropIfExists(pp, 'motor_enable', false);
+    localSetObjPropIfExists(pp, 'motor_axis', []);
+    localSetObjPropIfExists(pp, 'motor_use_explicit_plan', false);
+    localSetObjPropIfExists(pp, 'motor_move_frames', []);
+    localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', []);
+    localSetObjPropIfExists(pp, 'motor_display_total', 0);
+
+end
+
+       % -----------------------------------------------------------------
+% Main acquisition loop: STABLE SYNCHRONIZED MOTOR MODE
+%
+% Important:
+%   - motor moves BEFORE SCAN.doppler
+%   - motor settles BEFORE SCAN.doppler
+%   - motor does NOT move during SCAN.doppler
+%
+% One motor position = one complete saved acquisition.
+% -----------------------------------------------------------------
+
+if cfg.motor.enable && ~isempty(motorPositionsAbsMM) && all(~isnan(motorPositionsAbsMM))
+    scanMotorPositionsAbsMM = motorPositionsAbsMM(:)';
+else
+    scanMotorPositionsAbsMM = NaN;
+end
+
+motorIsValid = cfg.motor.enable && ...
+    ~isempty(scanMotorPositionsAbsMM) && ...
+    all(~isnan(scanMotorPositionsAbsMM));
+
+if motorIsValid
+    nMotorPositionsThisRun = numel(scanMotorPositionsAbsMM);
+else
+    nMotorPositionsThisRun = 1;
+end
+
+motorAcqMode = 'off';
+if cfg.motor.enable && isfield(cfg.motor, 'acquisition_mode')
+    motorAcqMode = cfg.motor.acquisition_mode;
+end
+
+isSplitMotor = motorIsValid && strcmpi(motorAcqMode, 'split');
+isContinuousMotor = motorIsValid && strcmpi(motorAcqMode, 'continuous');
+
+% Split mode:
+%   one SCAN.doppler call per slice block.
+%   Keep cycling through slices until cfg.n_frames total requested frames
+%   are reached.
+%
+% Example:
+%   cfg.n_frames = 125
+%   cfg.motor.frames_per_position = 25
+%   nMotorPositionsThisRun = 3
+%
+%   nSplitBlocksPerTrial = ceil(125 / 25) = 5
+%   sequence:
+%       block 1 -> slice 1, t001
+%       block 2 -> slice 2, t001
+%       block 3 -> slice 3, t001
+%       block 4 -> slice 1, t002
+%       block 5 -> slice 2, t002
+
+if isSplitMotor
+    framesPerSplitBlock = max(1, round(cfg.motor.frames_per_position));
+    nSplitBlocksPerTrial = ceil(cfg.n_frames / framesPerSplitBlock);
+    nMotorLoopThisRun = nSplitBlocksPerTrial;
+
+    if mod(nSplitBlocksPerTrial, nMotorPositionsThisRun) ~= 0
+        localGuiLog(cfg, sprintf([ ...
+            'SPLIT MOTOR WARNING: total frames do not form complete slice cycles. ' ...
+            'Frames/trial=%d, frames/slice=%d, slices=%d. ' ...
+            'For clean motor reconstruction, prefer Frames/trial = slices x frames/slice x cycles.'], ...
+            cfg.n_frames, framesPerSplitBlock, nMotorPositionsThisRun));
+    end
+else
+    framesPerSplitBlock = cfg.n_frames;
+    nSplitBlocksPerTrial = 1;
+    nMotorLoopThisRun = 1;
+end
+
+totalAcqCount = cfg.n_trials * nMotorLoopThisRun;
+acqCounter = 0;
+
+% Split motor: do not write TXT/JOURNAL after every small MAT file.
+% Store lightweight info and write ONE summary TXT at the very end.
+splitSessionRows = {};
+splitLastNameFile = '';
+splitLastMd = struct();
+splitLastTrial = NaN;
+
+for iTrial = 1:cfg.n_trials
+
+    for iMotor = 1:nMotorLoopThisRun
+
+        acqCounter = acqCounter + 1;
+   
+        % -------------------------------------------------------------
+        % Split mode block indexing
+        %
+        % iMotor is now the split block number, not always the slice number.
+        % Convert block number into:
+        %   iSliceIndex = physical motor slice
+        %   iTimeIndex  = repeated time/cycle index
+        % -------------------------------------------------------------
+        if isSplitMotor
+            iSliceIndex = mod(iMotor - 1, nMotorPositionsThisRun) + 1;
+            iTimeIndex  = floor((iMotor - 1) / nMotorPositionsThisRun) + 1;
         else
-            localGuiMotor(cfg, 0, 0, NaN, 0);
+            iSliceIndex = iMotor;
+            iTimeIndex  = iTrial;
+        end
+        if localStopRequested(cfg)
+            error('vfUSI:UserStop', 'User stop requested.');
         end
 
-        % -----------------------------------------------------------------
-        % Main trial loop
-        % -----------------------------------------------------------------
-        for iTrial = 1:cfg.n_trials
-            if localStopRequested(cfg)
-                error('vfUSI:UserStop', 'User stop requested.');
-            end
+        localGuiFrame(cfg, 0);
+        localGuiTrial(cfg, acqCounter, totalAcqCount);
 
-            localGuiFrame(cfg, 0);
-            localGuiTrial(cfg, iTrial, cfg.n_trials);
+        requestedMotorAbsMM = NaN;
+        actualMotorAbsMM = NaN;
 
-            if cfg.motor.enable
-                localGuiMotor(cfg, 0, numel(motorPlan.frames), motorHomeMM, 0);
-            end
+              % -------------------------------------------------------------
+        % Motor movement before acquisition
+        %
+        % Split mode:
+        %   move to every slice before each SCAN.doppler call.
+        %
+        % Continuous mode:
+        %   move to the first slice before SCAN.doppler starts.
+        %   later moves happen inside processRF callback.
+        % -------------------------------------------------------------
+ if isSplitMotor
 
-            runMsg = sprintf('Running trial %d/%d', iTrial, cfg.n_trials);
-            localGuiStatus(cfg, runMsg, 'notready');
-            localGuiLog(cfg, runMsg);
+    requestedMotorAbsMM = scanMotorPositionsAbsMM(iSliceIndex);
 
-            fprintf('----- Trial %02d / %02d -----\n', iTrial, cfg.n_trials);
-            tTrial = tic;
+    localGuiStatus(cfg, sprintf( ...
+        'Split mode: moving motor slice %d/%d, t%03d before acquisition...', ...
+        iSliceIndex, nMotorPositionsThisRun, iTimeIndex), 'notready');
 
-            try
-                pp.prepareTrial();
-            catch
-            end
+    [actualMotorAbsMM, ~] = localMoveMotorBeforeStableScan( ...
+        cfg, motorAxis, requestedMotorAbsMM, iSliceIndex, nMotorPositionsThisRun);
 
-            try
-                [I, md] = SCAN.doppler(cfg.nblocksImage, cfg.n_frames, ...
-                    'processRF', @(rf)localProcessRFBridge(pp, rf));
-            catch ME
-                localGuiLog(cfg, sprintf('DOPPLER FAILURE: %s', ME.message));
-                fprintf(2, '\n===== DOPPLER FAILURE =====\n');
-                fprintf(2, '%s\n', getReport(ME, 'extended', 'hyperlinks', 'on'));
-                rethrow(ME);
-            end
+    localGuiMotor(cfg, iSliceIndex, nMotorPositionsThisRun, actualMotorAbsMM, 0);
 
-            [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPositionsAbsMM, motorHomeMM, iTrial);
+        elseif isContinuousMotor
 
-[saveFolder, saveBase, saveExt] = fileparts(nameFile);
-tmpFile = fullfile(saveFolder, [saveBase '__tmp' saveExt]);
+            requestedMotorAbsMM = scanMotorPositionsAbsMM(1);
 
-if exist(tmpFile, 'file')
+            localGuiStatus(cfg, sprintf( ...
+                'Continuous mode: moving motor to first slice before acquisition...'), ...
+                'notready');
+
+            [actualMotorAbsMM, ~] = localMoveMotorBeforeStableScan( ...
+                cfg, motorAxis, requestedMotorAbsMM, 1, nMotorPositionsThisRun);
+
+            localGuiMotor(cfg, 1, nMotorPositionsThisRun, actualMotorAbsMM, 0);
+        end
+        runMsg = sprintf('Running acquisition %d/%d | Trial %d/%d', ...
+            acqCounter, totalAcqCount, iTrial, cfg.n_trials);
+
+        if cfg.motor.enable
+            runMsg = sprintf('%s | Stable motor %d/%d | abs %.3f mm', ...
+                runMsg, iMotor, nMotorPositionsThisRun, requestedMotorAbsMM);
+        end
+
+        localGuiStatus(cfg, runMsg, 'notready');
+        localGuiLog(cfg, runMsg);
+
+        fprintf('----- Acquisition %02d / %02d -----\n', acqCounter, totalAcqCount);
+        fprintf('----- Trial %02d / %02d -----\n', iTrial, cfg.n_trials);
+
+        if cfg.motor.enable
+            fprintf('----- Stable motor position %02d / %02d: requested %.3f mm, actual %.3f mm -----\n', ...
+                iMotor, nMotorPositionsThisRun, requestedMotorAbsMM, actualMotorAbsMM);
+        end
+
+                tTrial = tic;
+
+        % -------------------------------------------------------------
+        % Decide how many frames THIS SCAN.doppler call acquires.
+        %
+        % Split mode:
+        %   each slice file gets cfg.motor.frames_per_position frames.
+        %
+        % Continuous mode / no motor:
+        %   one full acquisition gets cfg.n_frames frames.
+        % -------------------------------------------------------------
+  nFramesThisAcq = cfg.n_frames;
+
+if isSplitMotor
+    framesAlreadyRequested = (iMotor - 1) * framesPerSplitBlock;
+    framesRemaining = cfg.n_frames - framesAlreadyRequested;
+
+    nFramesThisAcq = min(framesPerSplitBlock, framesRemaining);
+end
+
+        if isempty(nFramesThisAcq) || ~isnumeric(nFramesThisAcq) || ...
+                isnan(nFramesThisAcq) || nFramesThisAcq < 1
+            error('Invalid number of frames for this acquisition.');
+        end
+
+        nFramesThisAcq = round(nFramesThisAcq);
+
+        % The callback object must know the frame count of THIS acquisition.
+        localSetObjPropIfExists(pp, 'total_frames', nFramesThisAcq);
+
+        % -------------------------------------------------------------
+        % Configure motor behavior for this acquisition.
+        %
+        % Split mode:
+        %   motor movement is disabled inside callback.
+        %
+        % Continuous mode:
+        %   motor movement is enabled inside callback.
+        % -------------------------------------------------------------
+    if isContinuousMotor
+    continuousMotorPlan = localBuildContinuousMotorCallbackPlan( ...
+        cfg.motor, scanMotorPositionsAbsMM, nFramesThisAcq);
+
+    localSetObjPropIfExists(pp, 'motor_enable', true);
+    localSetObjPropIfExists(pp, 'motor_axis', motorAxis);
+    localSetObjPropIfExists(pp, 'motor_settle_pause_s', cfg.motor.settle_pause_s);
+
+    % Use explicit plan so the motor does NOT move again at frame 1.
+    % The command file already moved to slice 1 before SCAN.doppler.
+    localSetObjPropIfExists(pp, 'motor_use_explicit_plan', true);
+    localSetObjPropIfExists(pp, 'motor_move_frames', continuousMotorPlan.frames);
+    localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', continuousMotorPlan.targets_abs_mm);
+    localSetObjPropIfExists(pp, 'motor_display_total', numel(continuousMotorPlan.frames));
+
+        else
+            localSetObjPropIfExists(pp, 'motor_enable', false);
+            localSetObjPropIfExists(pp, 'motor_axis', []);
+            localSetObjPropIfExists(pp, 'motor_use_explicit_plan', false);
+            localSetObjPropIfExists(pp, 'motor_move_frames', []);
+            localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', []);
+            localSetObjPropIfExists(pp, 'motor_display_total', 0);
+        end
+
+        try
+            pp.prepareTrial();
+        catch
+        end
+
+   try
+    acqTic = tic;
+    acqStartDatenum = now;
+
+    % -------------------------------------------------------------
+    % IMPORTANT:
+    % If no frame-synchronized stimulation is needed, do NOT pass
+    % processRF. This keeps acquisition identical to the stable
+    % collaborator/plain scanner version.
+    %
+    % Motor is already handled before SCAN.doppler, so motor does not
+    % need processRF either.
+    % -------------------------------------------------------------
+useProcessRF = false;
+
+% Need processRF for real frame-synchronized StimBox triggering.
+if isfield(cfg, 'stimbox') && isstruct(cfg.stimbox) && logical(cfg.stimbox.enable)
+    useProcessRF = true;
+end
+
+% Need processRF for real frame-synchronized PulsePal triggering.
+if isfield(cfg, 'pulsepal') && isstruct(cfg.pulsepal) && logical(cfg.pulsepal.enable)
+    useProcessRF = true;
+end
+
+% Also use processRF when the GUI wants live frame/time updates,
+% even if no stimulation device is enabled.
+if isfield(cfg, 'gui') && isstruct(cfg.gui) && ...
+        isfield(cfg.gui, 'forceProcessRFForLiveFrames') && ...
+        logical(cfg.gui.forceProcessRFForLiveFrames) && ...
+        isfield(cfg.gui, 'frameFcn')
+    useProcessRF = true;
+end
+% Continuous motor mode needs processRF because motor movements are frame-based.
+if isContinuousMotor
+    useProcessRF = true;
+end
+
+if useProcessRF
+    if logical(cfg.stimbox.enable) || logical(cfg.pulsepal.enable)
+        localGuiLog(cfg, 'Using processRF callback for stimulation + live GUI frame/time updates.');
+    else
+        localGuiLog(cfg, 'Using processRF callback for live GUI frame/time updates only.');
+    end
+[I, md] = SCAN.doppler(cfg.nblocksImage, nFramesThisAcq, ...
+    'processRF', @(rf)localProcessRFBridge(pp, rf));
+else
+    localGuiLog(cfg, 'Using plain SCAN.doppler without processRF callback.');
+
+  [I, md] = SCAN.doppler(cfg.nblocksImage, nFramesThisAcq);
+end
+
+ acqElapsedSec = toc(acqTic);
+acqEndDatenum = now;
+
+requestedDtSec = localCalcTRSec(cfg.nblocksImage);
+actualFrames = localGetAcquiredFrameCount(I, nFramesThisAcq);
+actualMeanDtSec = acqElapsedSec / max(1, actualFrames);
+
     try
-        delete(tmpFile);
+        md.requested_dt_s = requestedDtSec;
+        md.actual_acq_elapsed_s = acqElapsedSec;
+        md.actual_frames_saved = actualFrames;
+        md.actual_mean_dt_s = actualMeanDtSec;
+        md.actual_dt_deviation_s = actualMeanDtSec - requestedDtSec;
+        md.actual_dt_deviation_percent = 100 * (actualMeanDtSec - requestedDtSec) / requestedDtSec;
     catch
     end
+
+if requestedDtSec > 0
+    devPct = 100 * (actualMeanDtSec - requestedDtSec) / requestedDtSec;
+
+    localGuiTiming(cfg, requestedDtSec, actualMeanDtSec, devPct, acqElapsedSec, actualFrames);
+
+    if abs(devPct) > 15 || abs(actualMeanDtSec - requestedDtSec) > 0.050
+        localGuiLog(cfg, sprintf( ...
+            'TR WARNING after acquisition: requested %.3f s, actual mean %.3f s (%+.1f%%).', ...
+            requestedDtSec, actualMeanDtSec, devPct));
+    else
+        localGuiLog(cfg, sprintf( ...
+            'Timing QC: requested %.3f s, actual mean %.3f s (%+.1f%%).', ...
+            requestedDtSec, actualMeanDtSec, devPct));
+    end
 end
+
+catch ME
+    localGuiLog(cfg, sprintf('DOPPLER FAILURE: %s', ME.message));
+    fprintf(2, '\n===== DOPPLER FAILURE =====\n');
+    fprintf(2, '%s\n', getReport(ME, 'extended', 'hyperlinks', 'on'));
+    rethrow(ME);
+end
+
+          % -------------------------------------------------------------
+        % Add acquisition + motor metadata
+        % -------------------------------------------------------------
+        try
+            md.acquisition_mode = 'normal';
+
+            if cfg.motor.enable
+                md.acquisition_mode = cfg.motor.acquisition_mode;
+            end
+
+            md.requested_frames_this_file = nFramesThisAcq;
+            md.acq_start_datenum = acqStartDatenum;
+            md.acq_end_datenum = acqEndDatenum;
+            md.acq_start_time_string = datestr(acqStartDatenum, 'yyyy-mm-dd HH:MM:SS.FFF');
+            md.acq_end_time_string = datestr(acqEndDatenum, 'yyyy-mm-dd HH:MM:SS.FFF');
+
+            md.motor_enabled = logical(cfg.motor.enable);
+            md.motor_acquisition_mode = motorAcqMode;
+
+            md.motor_split_mode = logical(isSplitMotor);
+            md.motor_continuous_mode = logical(isContinuousMotor);
+
+            md.motor_moves_during_acquisition = logical(isContinuousMotor);
+            md.motor_moves_between_acquisitions = logical(isSplitMotor);
+
+            md.motor_stable_acquisition = logical(isSplitMotor);
+            md.motor_frames_per_slice_requested = cfg.motor.frames_per_position;md.motor_time_index = iTimeIndex;
+md.motor_slice_index = iSliceIndex;
+md.motor_slice_count = nMotorPositionsThisRun;
+
+md.timeIndex = iTimeIndex;
+md.sliceIndex = iSliceIndex;
+
+md.motor_index = iSliceIndex;
+md.motor_n_positions = nMotorPositionsThisRun;
+            md.motor_requested_abs_mm = requestedMotorAbsMM;
+            md.motor_actual_abs_mm = actualMotorAbsMM;
+            md.motor_home_abs_mm = motorHomeMM;
+
+            if ~isnan(requestedMotorAbsMM) && ~isnan(motorHomeMM)
+                md.motor_requested_rel_mm = requestedMotorAbsMM - motorHomeMM;
+            else
+                md.motor_requested_rel_mm = NaN;
+            end
+
+            if ~isnan(actualMotorAbsMM) && ~isnan(motorHomeMM)
+                md.motor_actual_rel_mm = actualMotorAbsMM - motorHomeMM;
+            else
+                md.motor_actual_rel_mm = NaN;
+            end
+
+            md.motor_settle_pause_s = cfg.motor.settle_pause_s;
+
+            if isSplitMotor
+                md.motor_rebuild_hint = 'Split mode: sort files by motor_time_index, then motor_slice_index.';
+            elseif isContinuousMotor
+                md.motor_rebuild_hint = 'Continuous mode: one file contains all motor positions; use frames_per_position and motor plan.';
+            else
+                md.motor_rebuild_hint = 'No motor reconstruction needed.';
+            end
+        catch
+        end
+        
+        [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPositionsAbsMM, motorHomeMM, iTrial);
+
+              if cfg.motor.enable
+            if isSplitMotor
+            [nameFile, nameShort] = localAppendSplitSliceToSaveName( ...
+    nameFile, iTimeIndex, iSliceIndex, nMotorPositionsThisRun, ...
+    requestedMotorAbsMM, motorHomeMM);
+
+            elseif isContinuousMotor
+                [nameFile, nameShort] = localAppendContinuousMotorToSaveName( ...
+                    nameFile, nMotorPositionsThisRun, cfg.motor.frames_per_position, ...
+                    scanMotorPositionsAbsMM(1), scanMotorPositionsAbsMM(end), motorHomeMM);
+
+            else
+          [nameFile, nameShort] = localAppendMotorPositionToSaveName( ...
+    nameFile, cfg, requestedMotorAbsMM, motorHomeMM, iMotor, iTimeIndex);
+            end
+        end
+
+        [nameFile, nameShort] = localMakeFileNameUnique(nameFile);
 
 infoI = whos('I');
 localGuiLog(cfg, sprintf('Saving I: class=%s | size=%s | %.2f MB', ...
     infoI.class, mat2str(size(I)), infoI.bytes/1024/1024));
 
-try
-    save(tmpFile, 'I', 'md', '-v7.3');
 
-    if ~exist(tmpFile, 'file')
-        error('Temporary MAT file was not created.');
-    end
-
-    varsInTmp = whos('-file', tmpFile);
-    varNames = {varsInTmp.name};
-
-    if ~ismember('I', varNames)
-        error('Temporary MAT file created, but variable I is missing.');
-    end
-
-    [ok, msg] = movefile(tmpFile, nameFile, 'f');
-    if ~ok
-        error('Could not move temp MAT file into final location: %s', msg);
-    end
-
-catch ME
-    try
-        if exist(tmpFile, 'file')
-            delete(tmpFile);
-        end
-    catch
-    end
-    rethrow(ME);
+% In split motor mode, writing a txt file after every tiny slice file
+% adds avoidable delay between slices. The MAT already contains md.
+% Write txt only for the first split file and the last split file.
+if isSplitMotor
+    localFastSaveMat(nameFile, I, md, cfg);
+else
+    localReliableSaveMat(nameFile, I, md, cfg);
 end
 
-localWriteScanInfoText(nameFile, cfg, iTrial);
-FS.writeJournal(localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHomeMM, iTrial));
+% IMPORTANT:
+% In split motor mode, do NOT write TXT during acquisition.
+% This prevents slow delay between slice files / trials.
+if ~isSplitMotor
+    localWriteScanInfoText(nameFile, cfg, iTrial, md);
+end
 
-            localGuiLog(cfg, sprintf('Saved file: %s', nameFile));
-            localGuiLog(cfg, sprintf('Saved folder: %s', fileparts(nameFile)));
+% Keep lightweight split info in memory for one final summary TXT.
+if isSplitMotor
+    splitLastNameFile = nameFile;
+    splitLastMd = md;
+    splitLastTrial = iTrial;
 
-            fprintf('Elapsed time: %.1f seconds\n', toc(tTrial));
+    splitSessionRows{end+1} = sprintf( ...
+        'File=%s | Trial=%d | T=%03d | Slice=%03d/%03d | Frames=%d | ReqAbs=%.3f | ActAbs=%.3f', ...
+        nameShort, iTrial, iTimeIndex, iSliceIndex, nMotorPositionsThisRun, ...
+        nFramesThisAcq, requestedMotorAbsMM, actualMotorAbsMM); %#ok<AGROW>
+end
+        journalTxt = localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHomeMM, iTrial);
+        if isfield(cfg, 'output_session_name') && ~isempty(cfg.output_session_name)
+    journalTxt = sprintf('%s | OutputSession=%s', journalTxt, cfg.output_session_name);
+end
+        if cfg.motor.enable
+            if isSplitMotor
+            journalTxt = sprintf('%s | MotorMode=SPLIT | T=%03d | Slice=%d/%d | FramesThisFile=%d | ReqAbs=%.3f mm | ActAbs=%.3f mm | MotorNotMovingDuringAcq=1', ...
+    journalTxt, iTimeIndex, iSliceIndex, nMotorPositionsThisRun, nFramesThisAcq, requestedMotorAbsMM, actualMotorAbsMM);
 
-            if iTrial < cfg.n_trials
-                localGuiStatus(cfg, 'Waiting between trials...', 'notready');
-                localSafePause(cfg.time_pause);
+            elseif isContinuousMotor
+                journalTxt = sprintf('%s | MotorMode=CONTINUOUS | Slices=%d | FramesPerSlice=%d | FramesThisFile=%d | MotorMovesDuringAcq=1', ...
+                    journalTxt, nMotorPositionsThisRun, round(cfg.motor.frames_per_position), nFramesThisAcq);
+
+            else
+                journalTxt = sprintf('%s | MotorMode=UNKNOWN | FramesThisFile=%d', ...
+                    journalTxt, nFramesThisAcq);
+            end
+        end
+
+% In split motor mode, do not write journal during acquisition.
+% Journal/file-system writing can delay the next slice/trial.
+writeJournalNow = ~isSplitMotor;
+
+if writeJournalNow
+    try
+        FS.writeJournal(journalTxt);
+    catch MEj
+        localGuiLog(cfg, sprintf('Journal write warning: %s', MEj.message));
+    end
+end
+
+        localGuiLog(cfg, sprintf('Saved file: %s', nameFile));
+        localGuiLog(cfg, sprintf('Saved folder: %s', fileparts(nameFile)));
+
+        fprintf('Elapsed time: %.1f seconds\n', toc(tTrial));
+
+ doPauseNow = false;
+
+if isSplitMotor
+    % In split mode, do NOT pause between slice files.
+    % Only pause after the full split trial is finished.
+    doPauseNow = (iMotor == nMotorLoopThisRun) && (iTrial < cfg.n_trials);
+else
+    doPauseNow = acqCounter < totalAcqCount;
+end
+
+if doPauseNow
+    localGuiStatus(cfg, 'Waiting before next trial...', 'notready');
+    localSafePause(cfg.time_pause);
+end
+    end
+end
+
+        % After split motor acquisition is completely finished,
+        % write ONE summary TXT and ONE journal entry.
+        if isSplitMotor && ~isempty(splitLastNameFile)
+            try
+                localWriteSplitSessionSummaryText( ...
+                    cfg, splitSessionRows, splitLastNameFile, splitLastTrial, splitLastMd);
+            catch MEsum
+                localGuiLog(cfg, sprintf('Split summary TXT warning: %s', MEsum.message));
+            end
+
+            try
+                FS.writeJournal(sprintf( ...
+                    '* Split motor session finished | Folder=%s | Files=%d | Frames/trial=%d | Frames/slice=%d', ...
+                    fileparts(splitLastNameFile), numel(splitSessionRows), ...
+                    cfg.n_frames, round(cfg.motor.frames_per_position)));
+            catch MEj
+                localGuiLog(cfg, sprintf('Final split journal warning: %s', MEj.message));
             end
         end
 
@@ -411,19 +847,103 @@ FS.writeJournal(localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorH
         if pulsePalConnected
             localClosePulsePalRobust();
         end
-    end
-
-end
+     end
 
 
 % =========================================================================
 % Safe processRF bridge
 % =========================================================================
 function rfOut = localProcessRFBridge(pp, rfIn)
-    % Pass RF data through unchanged while still allowing the object
-    % to perform GUI updates, trigger scheduling, motor moves, and stop checks.
-    rfOut = pp.newImage(rfIn);
+    % Safe bridge for echoScan processRF.
+    %
+    % Some OpenfUS / echoScan versions expect the processRF callback to
+    % return RF data, but the collaborator-style pp.newImage callback often
+    % has NO output argument.
+    %
+    % Therefore:
+    %   - call pp.newImage(rfIn) only for side effects:
+    %       GUI frame update, StimBox, PulsePal, stop check
+    %   - always return rfIn unchanged to echoScan
+    %   - motor movement is NOT handled here
+
+    rfOut = rfIn;
+
+    try
+        pp.newImage(rfIn);   % no output expected from object callback
+    catch ME
+        rethrow(ME);
+    end
 end
+
+function [I, md, actualFrames, acqElapsedSec, requestedDtSec, actualMeanDtSec] = ...
+    localRunDopplerAcquisition(SCAN, pp, cfg, nFramesThis)
+
+    nFramesThis = max(1, round(nFramesThis));
+
+    localSetObjPropIfExists(pp, 'total_frames', nFramesThis);
+
+    try
+        pp.prepareTrial();
+    catch
+    end
+
+    acqTic = tic;
+    useProcessRF = localShouldUseProcessRF(cfg);
+
+    try
+        if useProcessRF
+            localGuiLog(cfg, 'Using processRF callback.');
+
+            [I, md] = SCAN.doppler(cfg.nblocksImage, nFramesThis, ...
+                'processRF', @(rf)localProcessRFBridge(pp, rf));
+        else
+            localGuiLog(cfg, 'Using plain SCAN.doppler without processRF callback.');
+
+            [I, md] = SCAN.doppler(cfg.nblocksImage, nFramesThis);
+        end
+
+    catch ME
+        localGuiLog(cfg, sprintf('DOPPLER FAILURE: %s', ME.message));
+        fprintf(2, '\n===== DOPPLER FAILURE =====\n');
+        fprintf(2, '%s\n', getReport(ME, 'extended', 'hyperlinks', 'on'));
+        rethrow(ME);
+    end
+
+    acqElapsedSec = toc(acqTic);
+
+    requestedDtSec = localCalcTRSec(cfg.nblocksImage);
+    actualFrames = localGetAcquiredFrameCount(I, nFramesThis);
+    actualMeanDtSec = acqElapsedSec / max(1, actualFrames);
+
+    try
+        md.requested_dt_s = requestedDtSec;
+        md.actual_acq_elapsed_s = acqElapsedSec;
+        md.actual_frames_saved = actualFrames;
+        md.actual_mean_dt_s = actualMeanDtSec;
+        md.actual_dt_deviation_s = actualMeanDtSec - requestedDtSec;
+        md.actual_dt_deviation_percent = 100 * ...
+            (actualMeanDtSec - requestedDtSec) / requestedDtSec;
+    catch
+    end
+
+    if requestedDtSec > 0
+        devPct = 100 * (actualMeanDtSec - requestedDtSec) / requestedDtSec;
+
+        localGuiTiming(cfg, requestedDtSec, actualMeanDtSec, ...
+            devPct, acqElapsedSec, actualFrames);
+
+        if abs(devPct) > 15 || abs(actualMeanDtSec - requestedDtSec) > 0.050
+            localGuiLog(cfg, sprintf( ...
+                'TR WARNING after acquisition: requested %.3f s, actual mean %.3f s (%+.1f%%).', ...
+                requestedDtSec, actualMeanDtSec, devPct));
+        else
+            localGuiLog(cfg, sprintf( ...
+                'Timing QC: requested %.3f s, actual mean %.3f s (%+.1f%%).', ...
+                requestedDtSec, actualMeanDtSec, devPct));
+        end
+    end
+end
+
 
 % =========================================================================
 % Defaults
@@ -618,7 +1138,13 @@ function cfg = localApplyDefaults(cfg)
     if ~isfield(cfg.motor, 'enable') || isempty(cfg.motor.enable)
         cfg.motor.enable = true;
     end
+if ~isfield(cfg.motor, 'acquisition_mode') || isempty(cfg.motor.acquisition_mode)
+    cfg.motor.acquisition_mode = 'split';
+end
 
+if ~strcmpi(cfg.motor.acquisition_mode, 'continuous') && ~strcmpi(cfg.motor.acquisition_mode, 'split')
+    error('cfg.motor.acquisition_mode must be continuous or split.');
+end
     if ~isfield(cfg.motor, 'mode') || isempty(cfg.motor.mode)
         cfg.motor.mode = 'stepped';
     end
@@ -661,10 +1187,9 @@ function cfg = localApplyDefaults(cfg)
     if ~isfield(cfg.motor, 'step_mm') || isempty(cfg.motor.step_mm)
         cfg.motor.step_mm = 0.5;
     end
-
-    if ~isfield(cfg.motor, 'frames_per_position') || isempty(cfg.motor.frames_per_position)
-        cfg.motor.frames_per_position = 100;
-    end
+if ~isfield(cfg.motor, 'frames_per_position') || isempty(cfg.motor.frames_per_position)
+    cfg.motor.frames_per_position = 50;
+end
 
     if ~isfield(cfg.motor, 'periodic') || isempty(cfg.motor.periodic)
         cfg.motor.periodic = false;
@@ -675,7 +1200,7 @@ function cfg = localApplyDefaults(cfg)
     end
 
     if ~isfield(cfg.motor, 'settle_pause_s') || isempty(cfg.motor.settle_pause_s)
-        cfg.motor.settle_pause_s = 0.05;
+        cfg.motor.settle_pause_s = 1.0;
     end
 end
 
@@ -1101,6 +1626,44 @@ function plan = localBuildMotorPlan(motorCfg, positionsAbsMM, nFrames)
     end
 end
 
+function [actualPosMM, ok] = localMoveMotorBeforeStableScan(cfg, motorAxis, targetAbsMM, iMotor, nMotor)
+    actualPosMM = NaN;
+    ok = false;
+
+    if isempty(motorAxis)
+        error('Motor is enabled, but motorAxis is empty.');
+    end
+
+    if isempty(targetAbsMM) || ~isnumeric(targetAbsMM) || isnan(targetAbsMM)
+        error('Invalid motor target position.');
+    end
+
+    localGuiLog(cfg, sprintf( ...
+        'Motor move BEFORE acquisition: %d/%d -> abs %.3f mm', ...
+        iMotor, nMotor, targetAbsMM));
+
+    motorAxis.moveAbsolute(targetAbsMM, zaber.motion.Units.LENGTH_MILLIMETRES);
+
+    if isfield(cfg, 'motor') && isfield(cfg.motor, 'settle_pause_s') && ...
+            isnumeric(cfg.motor.settle_pause_s) && cfg.motor.settle_pause_s > 0
+
+        localGuiLog(cfg, sprintf('Motor settling pause: %.3f s', cfg.motor.settle_pause_s));
+        pause(cfg.motor.settle_pause_s);
+    end
+
+    try
+        actualPosMM = motorAxis.getPosition(zaber.motion.Units.LENGTH_MILLIMETRES);
+    catch
+        actualPosMM = targetAbsMM;
+    end
+
+    localGuiLog(cfg, sprintf( ...
+        'Motor stable BEFORE acquisition: requested %.3f mm | actual %.3f mm', ...
+        targetAbsMM, actualPosMM));
+
+    ok = true;
+end
+
 % =========================================================================
 % StimBox serial open
 % =========================================================================
@@ -1141,18 +1704,49 @@ function [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPos
     % IMPORTANT:
     % scan number is global within the experiment folder, independent of suffix.
 
-    if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
-        cfg.save_owner = 'Soner';
-    end
+if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
+    cfg.save_owner = 'Soner';
+end
 
-    baseFolder = fullfile('Data', cfg.save_owner, cfg.xp_name);
+% Default experiment folder
+baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
-    if ~exist(baseFolder, 'dir')
-        mkdir(baseFolder);
-    end
+if isfield(cfg, 'output_base_folder') && ~isempty(cfg.output_base_folder)
+    baseFolder = cfg.output_base_folder;
+end
 
-    deviceSuffix = localBuildDeviceSuffix(cfg);
-    scanIdx = localGetNextScanIndex(baseFolder, cfg.xp_name);
+if ~exist(baseFolder, 'dir')
+    mkdir(baseFolder);
+end
+
+% In split motor mode, save inside the prepared session subfolder.
+saveFolder = baseFolder;
+
+useSplitMotorFolder = false;
+try
+    useSplitMotorFolder = ...
+        isfield(cfg, 'motor') && isstruct(cfg.motor) && ...
+        isfield(cfg.motor, 'enable') && logical(cfg.motor.enable) && ...
+        isfield(cfg.motor, 'acquisition_mode') && ...
+        strcmpi(cfg.motor.acquisition_mode, 'split') && ...
+        isfield(cfg, 'output_session_folder') && ...
+        ~isempty(cfg.output_session_folder);
+catch
+    useSplitMotorFolder = false;
+end
+
+if useSplitMotorFolder
+    saveFolder = cfg.output_session_folder;
+end
+
+if ~exist(saveFolder, 'dir')
+    mkdir(saveFolder);
+end
+
+deviceSuffix = localBuildDeviceSuffix(cfg);
+
+% Scan index is counted inside the folder where files are saved.
+scanIdx = localGetNextScanIndex(saveFolder, cfg.xp_name);
 
     if isempty(deviceSuffix)
         nameShort = sprintf('%s_scan%d.mat', cfg.xp_name, scanIdx);
@@ -1160,7 +1754,258 @@ function [nameFile, nameShort] = localMakeSaveName(FS, cfg, sessionTag, motorPos
         nameShort = sprintf('%s_scan%d%s.mat', cfg.xp_name, scanIdx, deviceSuffix);
     end
 
-    nameFile = fullfile(baseFolder, nameShort);
+nameFile = fullfile(saveFolder, nameShort);
+end
+function [nameFileOut, nameShortOut] = localMakeFileNameUnique(nameFileIn)
+    [folderPath, baseName, ext] = fileparts(nameFileIn);
+
+    nameFileOut = nameFileIn;
+    nameShortOut = [baseName ext];
+
+    if ~exist(nameFileOut, 'file')
+        return;
+    end
+
+    for k = 1:999
+        candidateShort = sprintf('%s_dup%03d%s', baseName, k, ext);
+        candidateFull = fullfile(folderPath, candidateShort);
+
+        if ~exist(candidateFull, 'file')
+            nameFileOut = candidateFull;
+            nameShortOut = candidateShort;
+            return;
+        end
+    end
+
+    error('Could not create unique filename for %s.', nameFileIn);
+end
+
+
+function localReliableSaveMat(nameFile, I, md, cfg)
+    [saveFolder, saveBase, saveExt] = fileparts(nameFile);
+
+    if ~exist(saveFolder, 'dir')
+        mkdir(saveFolder);
+    end
+
+    lastErr = '';
+
+    for attempt = 1:3
+
+        tmpFile = fullfile(saveFolder, sprintf('%s__tmp_%s_%06d%s', ...
+            saveBase, datestr(now, 'HHMMSS'), round(rand * 1e6), saveExt));
+
+        try
+            if exist(tmpFile, 'file')
+                delete(tmpFile);
+            end
+
+            save(tmpFile, 'I', 'md', '-v7.3');
+
+            if ~exist(tmpFile, 'file')
+                error('Temporary MAT file was not created.');
+            end
+
+            d = dir(tmpFile);
+            if isempty(d) || d.bytes <= 0
+                error('Temporary MAT file is empty.');
+            end
+
+            varsInTmp = whos('-file', tmpFile);
+            varNames = {varsInTmp.name};
+
+            if ~ismember('I', varNames)
+                error('Temporary MAT file created, but variable I is missing.');
+            end
+
+            if ~ismember('md', varNames)
+                error('Temporary MAT file created, but variable md is missing.');
+            end
+
+            [ok, msg] = movefile(tmpFile, nameFile, 'f');
+            if ~ok
+                error('Could not move temporary MAT file into final location: %s', msg);
+            end
+
+            if ~exist(nameFile, 'file')
+                error('Final MAT file missing after movefile.');
+            end
+
+            varsFinal = whos('-file', nameFile);
+            finalNames = {varsFinal.name};
+
+            if ~ismember('I', finalNames) || ~ismember('md', finalNames)
+                error('Final MAT file verification failed: I or md missing.');
+            end
+
+            localGuiLog(cfg, sprintf('Reliable save verified: %s', nameFile));
+            return;
+
+        catch ME
+            lastErr = ME.message;
+
+            try
+                if exist(tmpFile, 'file')
+                    delete(tmpFile);
+                end
+            catch
+            end
+
+            localGuiLog(cfg, sprintf('Save attempt %d failed: %s', attempt, lastErr));
+            pause(0.5);
+        end
+    end
+
+    error('Reliable save failed after 3 attempts: %s', lastErr);
+end
+
+function localFastSaveMat(nameFile, I, md, cfg)
+    % Fast save for split-motor tiny files.
+    % Uses -v7 first because it is much faster than -v7.3 for small files.
+    % Falls back to -v7.3 if needed.
+
+    [saveFolder, ~, ~] = fileparts(nameFile);
+
+    if ~exist(saveFolder, 'dir')
+        mkdir(saveFolder);
+    end
+
+    try
+        save(nameFile, 'I', 'md', '-v7');
+    catch ME1
+        try
+            localGuiLog(cfg, sprintf('Fast -v7 save failed, trying -v7.3: %s', ME1.message));
+            save(nameFile, 'I', 'md', '-v7.3');
+        catch ME2
+            localGuiLog(cfg, sprintf('Fast save failed, using reliable save: %s', ME2.message));
+            localReliableSaveMat(nameFile, I, md, cfg);
+        end
+    end
+end
+
+function [nameFileOut, nameShortOut] = localAppendMotorPositionToSaveName(nameFileIn, cfg, absPosMM, homeMM, iMotor, iTimeIndex)
+
+    if nargin < 6 || isempty(iTimeIndex) || isnan(iTimeIndex)
+        iTimeIndex = 1;
+    end
+
+    [folderPath, baseName, ext] = fileparts(nameFileIn);
+
+    motorMode = localGetMotorAcqMode(cfg);
+
+    switch lower(motorMode)
+
+        case 'split'
+            % IMPORTANT for motor.m:
+            % It can parse:
+            %   slice001_t001
+            %   slice002_t001
+            %   slice001_t002
+            %
+            % Keep this simple and analysis-friendly.
+            tag = sprintf('M_split_slice%03d_t%03d', ...
+                round(iMotor), round(iTimeIndex));
+
+        case 'continuous'
+            % One long MAT file containing all motor positions.
+            tag = 'M_continuousmotor';
+
+        otherwise
+            tag = 'M_motor';
+    end
+
+    nameShortOut = [baseName '_' tag ext];
+    nameFileOut = fullfile(folderPath, nameShortOut);
+end
+function [nameFileOut, nameShortOut] = localAppendSplitSliceToSaveName(nameFileIn, iTrial, iSlice, nSlices, absPosMM, homeMM) %#ok<INUSD>
+    [folderPath, baseName, ext] = fileparts(nameFileIn);
+
+    nameShortOut = sprintf('%s_T%03d_Slice%03dof%03d%s', ...
+        baseName, round(iTrial), round(iSlice), round(nSlices), ext);
+
+    nameFileOut = fullfile(folderPath, nameShortOut);
+end
+
+function md = localAddMotorMetadata(md, cfg, motorHomeMM, requestedMotorAbsMM, actualMotorAbsMM, ...
+    iMotor, nMotor, iTimeIndex, nTimeTotal, globalFrameStart, globalFrameEnd, ...
+    continuousMotorPlan)
+
+    if nargin < 12
+        continuousMotorPlan = struct('frames', [], 'targets_abs_mm', []);
+    end
+
+    if ~isstruct(md)
+        tmp = md;
+        md = struct();
+        md.original_md = tmp;
+    end
+
+    motorMode = localGetMotorAcqMode(cfg);
+
+    try
+        md.motor_enabled = logical(cfg.motor.enable);
+        md.motor_acquisition_mode = motorMode;
+        md.motor_moves_during_acquisition = strcmpi(motorMode, 'continuous');
+        md.motor_stable_acquisition = strcmpi(motorMode, 'split');
+
+        md.sliceIndex = iMotor;
+        md.timeIndex = iTimeIndex;
+        md.globalFrameStart = globalFrameStart;
+        md.globalFrameEnd = globalFrameEnd;
+
+        md.motor_index = iMotor;
+        md.motor_n_positions = nMotor;
+        md.motor_time_index = iTimeIndex;
+        md.motor_n_time_indices = nTimeTotal;
+
+        md.motor_requested_abs_mm = requestedMotorAbsMM;
+        md.motor_actual_abs_mm = actualMotorAbsMM;
+        md.motor_home_abs_mm = motorHomeMM;
+        md.motor_requested_rel_mm = requestedMotorAbsMM - motorHomeMM;
+        md.motor_actual_rel_mm = actualMotorAbsMM - motorHomeMM;
+        md.motor_settle_pause_s = cfg.motor.settle_pause_s;
+
+        md.motor_frames_per_slice = cfg.motor.frames_per_position;
+        md.motor_total_target_frames = cfg.n_frames;
+
+        motorMeta = struct();
+        motorMeta.acquisitionMode = motorMode;
+        motorMeta.sliceIndex = iMotor;
+        motorMeta.timeIndex = iTimeIndex;
+        motorMeta.globalFrameStart = globalFrameStart;
+        motorMeta.globalFrameEnd = globalFrameEnd;
+        motorMeta.nMotorPositions = nMotor;
+        motorMeta.nTimeIndices = nTimeTotal;
+        motorMeta.framesPerSlice = cfg.motor.frames_per_position;
+        motorMeta.totalTargetFrames = cfg.n_frames;
+        motorMeta.requestedAbsMM = requestedMotorAbsMM;
+        motorMeta.actualAbsMM = actualMotorAbsMM;
+        motorMeta.homeAbsMM = motorHomeMM;
+        motorMeta.movesDuringAcquisition = strcmpi(motorMode, 'continuous');
+        motorMeta.stableDuringAcquisition = strcmpi(motorMode, 'split');
+
+        if strcmpi(motorMode, 'continuous')
+            motorMeta.continuousMoveFrames = continuousMotorPlan.frames;
+            motorMeta.continuousMoveTargetsAbsMM = continuousMotorPlan.targets_abs_mm;
+            motorMeta.reconstructionHint = ...
+                'Continuous mode: use one long I movie with motorFramesPerSlice from metadata.';
+        else
+            motorMeta.reconstructionHint = ...
+                'Split mode: group files by sliceIndex and timeIndex or by slice###_t### filename.';
+        end
+
+        md.motorMeta = motorMeta;
+    catch
+    end
+end
+
+function [nameFileOut, nameShortOut] = localAppendContinuousMotorToSaveName(nameFileIn, nSlices, framesPerSlice, startAbsMM, endAbsMM, homeMM) %#ok<INUSD>
+    [folderPath, baseName, ext] = fileparts(nameFileIn);
+
+    nameShortOut = sprintf('%s_ContinuousMotor_Slices%03d%s', ...
+        baseName, round(nSlices), ext);
+
+    nameFileOut = fullfile(folderPath, nameShortOut);
 end
 
 function suffix = localBuildDeviceSuffix(cfg)
@@ -1174,9 +2019,10 @@ function suffix = localBuildDeviceSuffix(cfg)
         parts{end+1} = 'ES'; %#ok<AGROW>
     end
 
-    if isfield(cfg, 'motor') && isstruct(cfg.motor) && isfield(cfg.motor, 'enable') && logical(cfg.motor.enable)
-        parts{end+1} = 'M'; %#ok<AGROW>
-    end
+% Do not add generic _M here.
+% Motor mode is added later as:
+%   M_continuousmotor
+%   M_split_slice001_t001
 
     if isempty(parts)
         suffix = '';
@@ -1231,7 +2077,7 @@ function txt = localMakeJournalText(nameShort, cfg, motorPositionsAbsMM, motorHo
 end
 
 
-function localWriteScanInfoText(nameFile, cfg, iTrial)
+function localWriteScanInfoText(nameFile, cfg, iTrial, md)
     [folderPath, baseName, ~] = fileparts(nameFile);
     txtFile = fullfile(folderPath, [baseName '.txt']);
 
@@ -1255,13 +2101,38 @@ function localWriteScanInfoText(nameFile, cfg, iTrial)
     fprintf(fid, '[Acquisition]\n');
     fprintf(fid, 'Save owner: %s\n', localSafeText(localGetFieldIfExists(cfg, 'save_owner', 'NA')));
     fprintf(fid, 'Experiment name: %s\n', localSafeText(localGetFieldIfExists(cfg, 'xp_name', 'NA')));
+    if isfield(cfg, 'output_session_name') && ~isempty(cfg.output_session_name)
+    fprintf(fid, 'Output session folder: %s\n', localSafeText(cfg.output_session_name));
+end
+
+if isfield(cfg, 'output_session_folder') && ~isempty(cfg.output_session_folder)
+    fprintf(fid, 'Output session path: %s\n', localSafeText(cfg.output_session_folder));
+end
     fprintf(fid, 'Frames per trial: %s\n', localNumToStr(cfg.n_frames));
     fprintf(fid, 'Number of trials: %s\n', localNumToStr(cfg.n_trials));
     fprintf(fid, 'nblocksImage: %s\n', localNumToStr(cfg.nblocksImage));
     fprintf(fid, 'TR (s): %s\n', localNumToStr(trSec));
     fprintf(fid, 'Frame rate (Hz): %s\n', localNumToStr(1 / trSec));
     fprintf(fid, 'Pause between trials (s): %s\n', localNumToStr(cfg.time_pause));
+if nargin >= 4 && isstruct(md)
+    fprintf(fid, '\n[Timing QC]\n');
 
+    if isfield(md, 'requested_dt_s')
+        fprintf(fid, 'Requested dt/TR (s): %s\n', localNumToStr(md.requested_dt_s));
+    end
+    if isfield(md, 'actual_mean_dt_s')
+        fprintf(fid, 'Actual mean dt/TR (s): %s\n', localNumToStr(md.actual_mean_dt_s));
+    end
+    if isfield(md, 'actual_acq_elapsed_s')
+        fprintf(fid, 'Actual acquisition elapsed time (s): %s\n', localNumToStr(md.actual_acq_elapsed_s));
+    end
+    if isfield(md, 'actual_frames_saved')
+        fprintf(fid, 'Actual frames saved: %s\n', localNumToStr(md.actual_frames_saved));
+    end
+    if isfield(md, 'actual_dt_deviation_percent')
+        fprintf(fid, 'Actual dt deviation (percent): %s\n', localNumToStr(md.actual_dt_deviation_percent));
+    end
+end
     fprintf(fid, '\n[StimBox]\n');
     fprintf(fid, 'Enabled: %s\n', localOnOff(cfg.stimbox.enable));
     fprintf(fid, 'COM: %s\n', localSafeText(cfg.stimbox.com));
@@ -1296,9 +2167,16 @@ function localWriteScanInfoText(nameFile, cfg, iTrial)
     fprintf(fid, 'Train delay (s): %s\n', localNumToStr(cfg.pulsepal.train_delay_s));
     fprintf(fid, 'Train duration (s): %s\n', localNumToStr(cfg.pulsepal.train_duration_s));
 
-    fprintf(fid, '\n[Step Motor]\n');
+       fprintf(fid, '\n[Step Motor]\n');
     fprintf(fid, 'Enabled: %s\n', localOnOff(cfg.motor.enable));
     fprintf(fid, 'COM: %s\n', localSafeText(cfg.motor.com));
+
+    if isfield(cfg.motor, 'acquisition_mode')
+        fprintf(fid, 'Acquisition mode: %s\n', localSafeText(cfg.motor.acquisition_mode));
+    else
+        fprintf(fid, 'Acquisition mode: NA\n');
+    end
+
     fprintf(fid, 'Mode: %s\n', localSafeText(cfg.motor.mode));
     fprintf(fid, 'Active from frame: %s\n', localNumToStr(cfg.motor.frame_start));
     fprintf(fid, 'Active for frames: %s\n', localNumToStr(cfg.motor.frame_duration));
@@ -1311,7 +2189,25 @@ function localWriteScanInfoText(nameFile, cfg, iTrial)
     fprintf(fid, 'Periodic: %s\n', localOnOff(cfg.motor.periodic));
     fprintf(fid, 'Return home: %s\n', localOnOff(cfg.motor.return_to_zero));
     fprintf(fid, 'Settle pause (s): %s\n', localNumToStr(cfg.motor.settle_pause_s));
+if nargin >= 4 && isstruct(md)
+    fprintf(fid, '\n[Motor Reconstruction Metadata]\n');
 
+    if isfield(md, 'motor_time_index')
+        fprintf(fid, 'Motor time index: %s\n', localNumToStr(md.motor_time_index));
+    end
+    if isfield(md, 'motor_slice_index')
+        fprintf(fid, 'Motor slice index: %s\n', localNumToStr(md.motor_slice_index));
+    end
+    if isfield(md, 'motor_slice_count')
+        fprintf(fid, 'Motor slice count: %s\n', localNumToStr(md.motor_slice_count));
+    end
+    if isfield(md, 'requested_frames_this_file')
+        fprintf(fid, 'Requested frames this file: %s\n', localNumToStr(md.requested_frames_this_file));
+    end
+    if isfield(md, 'motor_rebuild_hint')
+        fprintf(fid, 'Rebuild hint: %s\n', localSafeText(md.motor_rebuild_hint));
+    end
+end
    fprintf(fid, '\n[User Journal Note]\n');
 userNote = localGetFieldIfExists(cfg, 'journal_note', '');
 
@@ -1329,6 +2225,108 @@ end
 
     localGuiLog(cfg, sprintf('Saved scan info txt: %s', txtFile));
 end
+
+function localWriteSplitSessionSummaryText(cfg, splitSessionRows, lastNameFile, lastTrial, lastMd)
+
+    if isfield(cfg, 'output_session_folder') && ~isempty(cfg.output_session_folder)
+        folderPath = cfg.output_session_folder;
+    else
+        folderPath = fileparts(lastNameFile);
+    end
+
+    if isfield(cfg, 'output_session_name') && ~isempty(cfg.output_session_name)
+        summaryName = [cfg.output_session_name '_summary.txt'];
+    else
+        summaryName = 'SplitMotor_session_summary.txt';
+    end
+
+    txtFile = fullfile(folderPath, summaryName);
+
+    fid = fopen(txtFile, 'w');
+    if fid < 0
+        warning('Could not create split session summary TXT: %s', txtFile);
+        return;
+    end
+
+    c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+    trSec = localCalcTRSec(cfg.nblocksImage);
+
+    fprintf(fid, 'Split motor session summary\n');
+    fprintf(fid, '===========================\n\n');
+
+    fprintf(fid, 'Saved on: %s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS'));
+    fprintf(fid, 'Output folder: %s\n', folderPath);
+    fprintf(fid, 'Experiment name: %s\n', localSafeText(cfg.xp_name));
+
+    if isfield(cfg, 'output_session_name') && ~isempty(cfg.output_session_name)
+        fprintf(fid, 'Output session: %s\n', localSafeText(cfg.output_session_name));
+    end
+
+    fprintf(fid, '\n[Acquisition]\n');
+    fprintf(fid, 'Frames per trial total: %s\n', localNumToStr(cfg.n_frames));
+    fprintf(fid, 'Number of trials: %s\n', localNumToStr(cfg.n_trials));
+    fprintf(fid, 'nblocksImage: %s\n', localNumToStr(cfg.nblocksImage));
+    fprintf(fid, 'Requested TR (s): %s\n', localNumToStr(trSec));
+    fprintf(fid, 'Requested frame rate (Hz): %s\n', localNumToStr(1 / trSec));
+
+    fprintf(fid, '\n[Step Motor]\n');
+    fprintf(fid, 'Enabled: %s\n', localOnOff(cfg.motor.enable));
+    fprintf(fid, 'COM: %s\n', localSafeText(cfg.motor.com));
+    fprintf(fid, 'Acquisition mode: %s\n', localSafeText(cfg.motor.acquisition_mode));
+    fprintf(fid, 'Mode: %s\n', localSafeText(cfg.motor.mode));
+    fprintf(fid, 'Start position (mm): %s\n', localNumToStr(cfg.motor.start_mm));
+    fprintf(fid, 'End position (mm): %s\n', localNumToStr(cfg.motor.end_mm));
+    fprintf(fid, 'Step size (mm): %s\n', localNumToStr(cfg.motor.step_mm));
+    fprintf(fid, 'Frames per position/slice file: %s\n', localNumToStr(cfg.motor.frames_per_position));
+    fprintf(fid, 'Periodic: %s\n', localOnOff(cfg.motor.periodic));
+    fprintf(fid, 'Settle pause (s): %s\n', localNumToStr(cfg.motor.settle_pause_s));
+
+    if nargin >= 5 && isstruct(lastMd)
+        fprintf(fid, '\n[Last file timing QC]\n');
+
+        if isfield(lastMd, 'requested_dt_s')
+            fprintf(fid, 'Requested dt/TR (s): %s\n', localNumToStr(lastMd.requested_dt_s));
+        end
+        if isfield(lastMd, 'actual_mean_dt_s')
+            fprintf(fid, 'Actual mean dt/TR (s): %s\n', localNumToStr(lastMd.actual_mean_dt_s));
+        end
+        if isfield(lastMd, 'actual_acq_elapsed_s')
+            fprintf(fid, 'Actual acquisition elapsed time (s): %s\n', localNumToStr(lastMd.actual_acq_elapsed_s));
+        end
+        if isfield(lastMd, 'actual_frames_saved')
+            fprintf(fid, 'Actual frames saved: %s\n', localNumToStr(lastMd.actual_frames_saved));
+        end
+        if isfield(lastMd, 'actual_dt_deviation_percent')
+            fprintf(fid, 'Actual dt deviation percent: %s\n', localNumToStr(lastMd.actual_dt_deviation_percent));
+        end
+    end
+
+    fprintf(fid, '\n[Split files]\n');
+    fprintf(fid, 'Number of MAT files: %d\n', numel(splitSessionRows));
+    fprintf(fid, 'Last trial: %s\n\n', localNumToStr(lastTrial));
+
+    for k = 1:numel(splitSessionRows)
+        fprintf(fid, '%s\n', splitSessionRows{k});
+    end
+
+    fprintf(fid, '\n[User Journal Note]\n');
+    userNote = localGetFieldIfExists(cfg, 'journal_note', '');
+
+    if isempty(userNote)
+        fprintf(fid, 'NA\n');
+    else
+        userNote = localNormalizeJournalNote(userNote);
+        if isempty(strtrim(userNote))
+            fprintf(fid, 'NA\n');
+        else
+            fprintf(fid, '%s\n', userNote);
+        end
+    end
+
+    localGuiLog(cfg, sprintf('Saved final split session summary TXT: %s', txtFile));
+end
+
 
 function s = localMotorTag(cfg, motorPositionsAbsMM, motorHomeMM)
     if ~cfg.motor.enable
@@ -1429,6 +2427,23 @@ end
 function localSafePause(t)
     if ~isempty(t) && isnumeric(t) && isfinite(t) && t > 0
         pause(t);
+    end
+end
+
+function n = localGetAcquiredFrameCount(I, fallbackN)
+    n = fallbackN;
+
+    try
+        sz = size(I);
+        if numel(sz) >= 3
+            n = sz(end);
+        end
+
+        if isempty(n) || ~isnumeric(n) || isnan(n) || n < 1
+            n = fallbackN;
+        end
+    catch
+        n = fallbackN;
     end
 end
 
@@ -1726,6 +2741,41 @@ function localProgramPulsePal(cfg)
     end
 end
 
+function localGuiTiming(cfg, requestedDtSec, actualMeanDtSec, devPct, acqElapsedSec, actualFrames)
+    if isfield(cfg, 'gui') && isstruct(cfg.gui) && isfield(cfg.gui, 'timingFcn')
+        try
+            cfg.gui.timingFcn(requestedDtSec, actualMeanDtSec, devPct, acqElapsedSec, actualFrames);
+        catch
+        end
+    end
+end
+
+function motorMode = localGetMotorAcqMode(cfg)
+
+    motorMode = 'off';
+
+    try
+        if ~isfield(cfg, 'motor') || ~isstruct(cfg.motor) || ...
+                ~isfield(cfg.motor, 'enable') || ~logical(cfg.motor.enable)
+            return;
+        end
+
+        if isfield(cfg.motor, 'acquisition_mode') && ~isempty(cfg.motor.acquisition_mode)
+            if strcmpi(cfg.motor.acquisition_mode, 'continuous')
+                motorMode = 'continuous';
+            elseif strcmpi(cfg.motor.acquisition_mode, 'split')
+                motorMode = 'split';
+            else
+                motorMode = 'split';
+            end
+        else
+            motorMode = 'split';
+        end
+    catch
+        motorMode = 'split';
+    end
+end
+
 function localProgramPulsePalParamChecked(channel, paramName, value)
     try
         confirmBit = ProgramPulsePalParam(channel, paramName, value);
@@ -1736,6 +2786,108 @@ function localProgramPulsePalParamChecked(channel, paramName, value)
 
     if isnumeric(confirmBit) && isscalar(confirmBit) && confirmBit == 0
         error('PulsePal rejected parameter %s on channel %d.', paramName, channel);
+    end
+end
+function tf = localShouldUseProcessRF(cfg)
+
+    tf = false;
+
+    % Needed for frame-synchronized StimBox.
+    try
+        if isfield(cfg, 'stimbox') && isstruct(cfg.stimbox) && logical(cfg.stimbox.enable)
+            tf = true;
+            return;
+        end
+    catch
+    end
+
+    % Needed for frame-synchronized PulsePal.
+    try
+        if isfield(cfg, 'pulsepal') && isstruct(cfg.pulsepal) && logical(cfg.pulsepal.enable)
+            tf = true;
+            return;
+        end
+    catch
+    end
+
+    % Needed for continuous motor mode because motor moves inside the scan.
+    try
+        if isfield(cfg, 'motor') && isstruct(cfg.motor) && ...
+                logical(cfg.motor.enable) && ...
+                isfield(cfg.motor, 'acquisition_mode') && ...
+                strcmpi(cfg.motor.acquisition_mode, 'continuous')
+            tf = true;
+            return;
+        end
+    catch
+    end
+
+    % Optional GUI-only live frame updates.
+    % Keep this false if you care about TR.
+    try
+        if isfield(cfg, 'gui') && isstruct(cfg.gui) && ...
+                isfield(cfg.gui, 'forceProcessRFForLiveFrames') && ...
+                logical(cfg.gui.forceProcessRFForLiveFrames)
+            tf = true;
+            return;
+        end
+    catch
+    end
+end
+function plan = localBuildContinuousMotorCallbackPlan(motorCfg, positionsAbsMM, nFrames)
+
+    plan = struct();
+    plan.frames = [];
+    plan.targets_abs_mm = [];
+
+    if isempty(positionsAbsMM) || any(isnan(positionsAbsMM))
+        return;
+    end
+
+    nPos = numel(positionsAbsMM);
+    if nPos < 2
+        return;
+    end
+
+    framesPerSlice = max(1, round(motorCfg.frames_per_position));
+
+    startFrame = 1;
+    if isfield(motorCfg, 'frame_start') && ~isempty(motorCfg.frame_start) && ...
+            isnumeric(motorCfg.frame_start) && isfinite(motorCfg.frame_start)
+        startFrame = max(1, round(motorCfg.frame_start));
+    end
+
+    nFrames = max(1, round(nFrames));
+
+    % We pre-move to slice 1 before SCAN.doppler.
+    % Therefore first motor move during acquisition is to slice 2.
+    maxMoveSlots = floor((nFrames - startFrame) / framesPerSlice);
+
+    if maxMoveSlots < 1
+        return;
+    end
+
+    if isfield(motorCfg, 'periodic') && logical(motorCfg.periodic)
+        nMoves = maxMoveSlots;
+    else
+        nMoves = min(maxMoveSlots, nPos - 1);
+    end
+
+    for k = 1:nMoves
+        moveFrame = startFrame + k * framesPerSlice;
+
+        if moveFrame > nFrames
+            continue;
+        end
+
+        if isfield(motorCfg, 'periodic') && logical(motorCfg.periodic)
+            targetIdx = mod(k, nPos) + 1;
+        else
+            targetIdx = k + 1;
+        end
+
+        plan.frames(end+1) = moveFrame; %#ok<AGROW>
+        plan.targets_abs_mm(end+1) = positionsAbsMM(targetIdx); %#ok<AGROW>
     end
 end
 
@@ -1749,6 +2901,84 @@ end
 % =========================================================================
 % Small utilities
 % =========================================================================
+function cfg = localPrepareSplitMotorSessionFolder(cfg, sessionTag)
+
+    if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
+        cfg.save_owner = 'Soner';
+    end
+
+    baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
+
+    if ~exist(baseFolder, 'dir')
+        mkdir(baseFolder);
+    end
+
+    cfg.output_base_folder = baseFolder;
+    cfg.output_session_folder = '';
+    cfg.output_session_name = '';
+    cfg.output_session_tag = sessionTag;
+
+    useSplitMotor = false;
+
+    try
+        useSplitMotor = ...
+            isfield(cfg, 'motor') && isstruct(cfg.motor) && ...
+            isfield(cfg.motor, 'enable') && logical(cfg.motor.enable) && ...
+            isfield(cfg.motor, 'acquisition_mode') && ...
+            strcmpi(cfg.motor.acquisition_mode, 'split');
+    catch
+        useSplitMotor = false;
+    end
+
+    if ~useSplitMotor
+        return;
+    end
+
+    sessionIdx = localGetNextSplitMotorSessionIndex(baseFolder);
+
+    sessionName = sprintf('Session_%03d_SplitMotor', sessionIdx);
+    sessionFolder = fullfile(baseFolder, sessionName);
+
+    if ~exist(sessionFolder, 'dir')
+        mkdir(sessionFolder);
+    end
+
+    cfg.output_session_name = sessionName;
+    cfg.output_session_folder = sessionFolder;
+end
+
+function sessionIdx = localGetNextSplitMotorSessionIndex(baseFolder)
+
+    sessionIdx = 1;
+
+    if ~exist(baseFolder, 'dir')
+        return;
+    end
+
+    d = dir(fullfile(baseFolder, 'Session_*_SplitMotor*'));
+
+    nums = [];
+
+    for i = 1:numel(d)
+        if ~d(i).isdir
+            continue;
+        end
+
+        tok = regexp(d(i).name, '^Session_(\d+)_SplitMotor', 'tokens', 'once');
+
+        if ~isempty(tok)
+            n = str2double(tok{1});
+            if ~isnan(n)
+                nums(end+1) = n; %#ok<AGROW>
+            end
+        end
+    end
+
+    if ~isempty(nums)
+        sessionIdx = max(nums) + 1;
+    end
+end
+
 function localSetObjPropIfExists(obj, propName, propValue)
     try
         if isprop(obj, propName)
@@ -1961,4 +3191,6 @@ function s = localNumToStr(v)
     else
         s = sprintf('%g', v);
     end
+end
+
 end

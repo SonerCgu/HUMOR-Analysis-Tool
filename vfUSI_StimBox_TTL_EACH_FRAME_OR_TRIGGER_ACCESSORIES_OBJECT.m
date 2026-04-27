@@ -246,9 +246,19 @@ classdef vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_OBJECT < handle
                 end
 
                 % -----------------------------------------------------
-                % Motor scheduling
+                % Motor movement
+                %
+                % Split mode:
+                %   backend keeps obj.motor_enable = false
+                %   motor moves BEFORE each SCAN.doppler call
+                %
+                % Continuous mode:
+                %   backend sets obj.motor_enable = true
+                %   motor moves inside the frame callback
                 % -----------------------------------------------------
-                obj.localHandleMotorSchedule(imag);
+                if obj.motor_enable
+                    obj.localHandleMotorSchedule(imag);
+                end
 
                 % -----------------------------------------------------
                 % StimBox
