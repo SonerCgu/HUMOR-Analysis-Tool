@@ -221,7 +221,7 @@ S.stdGain = 2.0;   % 0..5, collaborator said exact value is not critical
 S.brightness = 0.10;
 S.contrast   = 0.50;
 S.gamma      = 1.10;
-S.sharpness  = 150.0;
+S.sharpness  = 75.0;
 S.globalScaling = false;
 S.pctLow  = 1;
 S.pctHigh = 99;
@@ -279,7 +279,7 @@ S.displayPreset{5}.cmapMode = 1;
 S.displayPreset{7}.brightness = 0.10;
 S.displayPreset{7}.contrast   = 0.50;
 S.displayPreset{7}.gamma      = 1.10;
-S.displayPreset{7}.sharpness  = 150.0;
+S.displayPreset{7}.sharpness  = 75.0;
 S.displayPreset{7}.globalScaling = false;
 S.displayPreset{7}.vesselEnable = false;
 S.displayPreset{7}.softToneEnable = true;
@@ -1519,6 +1519,14 @@ anatomical_reference = buildProcessedUnderlayForSave_native();
         maskEditorInfo.timestamp = ts;
         maskEditorInfo.saveMode = mode;
         maskEditorInfo.saveModeLabel = saveModeLabel;
+        switch lower(mode)
+    case 'brain'
+        maskEditorInfo.compatibilityMaskPointsTo = 'brainMask';
+    case 'overlay'
+        maskEditorInfo.compatibilityMaskPointsTo = 'overlayMask';
+    otherwise
+        maskEditorInfo.compatibilityMaskPointsTo = 'overlayMask';
+end
         maskEditorInfo.outputFilePrefix = filePrefix;
         maskEditorInfo.underlayMode = S.underlayMode;
         maskEditorInfo.underlayLabel = UbaseLabel;
@@ -1593,11 +1601,18 @@ maskBundle.anatomical_reference = anatomical_reference;
             out.files.brainImage_mat = outFile;
         end
 
-        out.mask = logical(brainMaskVol);
-        out.brainMask = logical(brainMaskVol);
-        out.underlayMask = logical(brainMaskVol);
-        out.overlayMask = logical(overlayMaskVol);
-        out.signalMask = logical(overlayMaskVol);
+     out.mask = logical(mask);
+out.activeMask = logical(activeMask);
+out.loadedMask = logical(loadedMask);
+
+out.brainMask = logical(brainMask);
+out.underlayMask = logical(underlayMask);
+out.overlayMask = logical(overlayMask);
+out.signalMask = logical(signalMask);
+
+out.maskIsInclude = maskIsInclude;
+out.loadedMaskIsInclude = loadedMaskIsInclude;
+out.overlayMaskIsInclude = overlayMaskIsInclude;
         if brainHas
             out.brainImage = brainImage;
         end
@@ -1700,11 +1715,33 @@ out.anatomical_reference = anatomical_reference;
 
     function onCloseReturn(~,~)
         out.cancelled = false;
-        out.mask = logical(brainMaskVol);
-        out.brainMask = logical(brainMaskVol);
-        out.underlayMask = logical(brainMaskVol);
-        out.overlayMask = logical(overlayMaskVol);
-        out.signalMask = logical(overlayMaskVol);
+        brainMask = logical(brainMaskVol);
+underlayMask = brainMask;
+overlayMask = logical(overlayMaskVol);
+signalMask = overlayMask;
+
+if any(overlayMask(:))
+    mask = overlayMask;
+    activeMask = overlayMask;
+    loadedMask = overlayMask;
+else
+    mask = brainMask;
+    activeMask = brainMask;
+    loadedMask = brainMask;
+end
+
+out.mask = mask;
+out.activeMask = activeMask;
+out.loadedMask = loadedMask;
+
+out.brainMask = brainMask;
+out.underlayMask = underlayMask;
+out.overlayMask = overlayMask;
+out.signalMask = signalMask;
+
+out.maskIsInclude = true;
+out.loadedMaskIsInclude = true;
+out.overlayMaskIsInclude = true;
      out.anatomical_reference_raw = double(Ubase);
 out.anatomical_reference = buildProcessedUnderlayForSave_native();
 

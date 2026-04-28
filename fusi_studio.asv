@@ -1352,10 +1352,10 @@ uicontrol('Parent',settingsPanel,'Style','text', ...
     modePopup = uicontrol('Parent',settingsPanel,'Style','popupmenu', ...
         'Units','normalized', ...
         'Position',[0.38 0.375 0.40 0.075], ...
-       'String',{ ...
-    'Auto-detect', ...
-    'Standard 3D demons', ...
-    'Step-motor per-slice 2D demons'}, ...
+        'String',{ ...
+            'Auto-detect', ...
+            'Force standard 3D demons for 4D data', ...
+            'Force step-motor per-slice 2D demons'}, ...
         'Value',defaultModeIdx, ...
         'BackgroundColor',panel2, ...
         'ForegroundColor',fg, ...
@@ -3084,11 +3084,8 @@ function opts = showFilteringSetupDialog(data)
     Nyq = Fs / 2;
     totalSec = nt * TR;
 
-    defaultHighPass = 0.001;   % default high-pass cutoff
-defaultLowPass  = 0.20;    % default low-pass cutoff
-
-defaultLow  = defaultHighPass;   % for band-pass low edge
-defaultHigh = defaultLowPass;    % for band-pass high edge
+    defaultLow = 0.01;
+    defaultHigh = 0.20;
 
     if defaultHigh >= Nyq
         defaultHigh = 0.80 * Nyq;
@@ -3167,19 +3164,18 @@ defaultHigh = defaultLowPass;    % for band-pass high edge
         'BorderType','line');
 
     % Guidance box
-   uicontrol('Parent',mainPanel,'Style','text', ...
-    'Units','normalized', ...
-    'Position',[0.04 0.805 0.92 0.145], ...
-    'String',{ ...
-        'Recommended default for fUSI preprocessing:', ...
-        'Band-pass 0.001-0.20 Hz, order 4, no trimming.', ...
-        'Use trimming only if the beginning/end contains unstable frames.'}, ...
-    'BackgroundColor',panel2, ...
-    'ForegroundColor',[0.95 0.88 0.55], ...
-    'FontName','Arial', ...
-    'FontSize',10, ...
-    'FontWeight','bold', ...
-    'HorizontalAlignment','left');
+    uicontrol('Parent',mainPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.04 0.84 0.92 0.11], ...
+        'String',{ ...
+            'Recommended default for fUSI preprocessing:', ...
+            'Band-pass 0.01-0.20 Hz, order 4, no trimming. Use trimming only if the beginning/end contains unstable frames.'}, ...
+        'BackgroundColor',panel2, ...
+        'ForegroundColor',[0.95 0.88 0.55], ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
 
     % Filter type
     addLabel(mainPanel, 'Filter type', 0.06, 0.72);
@@ -3374,58 +3370,37 @@ defaultHigh = defaultLowPass;    % for band-pass high edge
 
     function onTypeChanged(~,~)
 
-    typeIdx = get(hType,'Value');
+        typeIdx = get(hType,'Value');
 
-    switch typeIdx
+        switch typeIdx
+            case 1
+                msg = 'Band-pass selected: FcLow and FcHigh will be used.';
+                col = [0.60 0.90 1.00];
 
-        case 1
-            % Band-pass: use both cutoffs
-            set(hLow,  'String', num2str(defaultHighPass,'%.6g'));
-            set(hHigh, 'String', num2str(defaultLowPass,'%.6g'));
+            case 2
+                msg = 'Low-pass selected: only FcHigh will be used.';
+                col = [0.95 0.82 0.35];
 
-            set(hLow,  'Enable','on');
-            set(hHigh, 'Enable','on');
+            case 3
+                msg = 'High-pass selected: only FcLow will be used.';
+                col = [0.95 0.60 0.35];
 
-            msg = 'Band-pass selected: 0.001-0.20 Hz will be used.';
-            col = [0.60 0.90 1.00];
+            otherwise
+                msg = 'Ready.';
+                col = [0.60 0.90 1.00];
+        end
 
-        case 2
-            % Low-pass: use only high cutoff
-            set(hLow,  'String','0');
-            set(hHigh, 'String', num2str(defaultLowPass,'%.6g'));
-
-            set(hLow,  'Enable','off');
-            set(hHigh, 'Enable','on');
-
-            msg = 'Low-pass selected: only FcHigh = 0.20 Hz will be used.';
-            col = [0.95 0.82 0.35];
-
-        case 3
-            % High-pass: use only low cutoff
-            set(hLow,  'String', num2str(defaultHighPass,'%.6g'));
-            set(hHigh, 'String','0');
-
-            set(hLow,  'Enable','on');
-            set(hHigh, 'Enable','off');
-
-            msg = 'High-pass selected: only FcLow = 0.001 Hz will be used.';
-            col = [0.95 0.60 0.35];
-
-        otherwise
-            msg = 'Ready.';
-            col = [0.60 0.90 1.00];
+        if ishandle(hStatus)
+            set(hStatus,'String',msg,'ForegroundColor',col);
+        end
     end
 
-    if ishandle(hStatus)
-        set(hStatus,'String',msg,'ForegroundColor',col);
-    end
-end
     function onReset(~,~)
 
         set(hType,'Value',1);
         set(hOrder,'Value',4);
-      set(hLow,'String',num2str(defaultHighPass,'%.6g'));
-set(hHigh,'String',num2str(defaultLowPass,'%.6g'));
+        set(hLow,'String',num2str(defaultLow,'%.6g'));
+        set(hHigh,'String',num2str(defaultHigh,'%.6g'));
         set(hTrimStart,'String','0');
         set(hTrimEnd,'String','0');
         set(hTaper,'Value',1);
@@ -3433,7 +3408,7 @@ set(hHigh,'String',num2str(defaultLowPass,'%.6g'));
         set(hChunk,'String','50000');
 
         set(hStatus, ...
-            'String','Defaults restored: Band-pass 0.001-0.20 Hz, order 4, no trimming.', ...
+            'String','Defaults restored: Band-pass 0.01-0.20 Hz, order 4, no trimming.', ...
             'ForegroundColor',[0.60 0.90 1.00]);
 
         onTypeChanged();
