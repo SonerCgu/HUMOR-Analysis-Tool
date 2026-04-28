@@ -140,6 +140,30 @@ MAX_CONLEV  = 500;
 uState.conectSize = 18;
 uState.conectLev  = 35;
 
+
+%% ---------------- ATLAS / UNDERLAY SPACE GUARD ----------------
+% Important:
+% If SCM receives an atlas-space histology underlay at startup, but PSC is
+% still native-space, the image looks stretched/misaligned.
+% This block detects atlas-sized underlays and auto-warps functional data
+% once, if a transform is available.
+
+origPSC = PSC;
+origBG  = bg;
+origPassedMask = passedMask;
+
+state.isAtlasWarped          = false;
+state.atlasTransformFile     = '';
+state.lastAtlasTransformFile = '';
+
+state.isColorUnderlay     = false;
+state.regionLabelUnderlay = [];
+state.regionColorLUT      = [];
+state.regionInfo          = struct();
+
+startupAtlasNote = '';
+autoFixStartupAtlasUnderlayIfNeeded();
+
 %% ---------------- FIGURE ----------------
 figW0 = 1880;
 figH0 = 1160;
@@ -326,19 +350,19 @@ if ~passedMaskIsInclude && ~isempty(passedMask)
 end
 
 %% ---------------- ORIGINAL DATA SNAPSHOT ----------------
-origPSC = PSC;
-origBG  = bg;
-origPassedMask = passedMask;
+% Already initialized before figure creation by ATLAS / UNDERLAY SPACE GUARD.
+% Do not reset origPSC/origBG/state.isAtlasWarped here, otherwise startup
+% atlas correction is lost.
 
-state.isAtlasWarped          = false;
-state.atlasTransformFile     = '';
-state.lastAtlasTransformFile = '';
-
-% underlay display state
-state.isColorUnderlay     = false;
-state.regionLabelUnderlay = [];
-state.regionColorLUT      = [];
-state.regionInfo          = struct();
+if ~exist('origPSC','var') || isempty(origPSC)
+    origPSC = PSC;
+end
+if ~exist('origBG','var') || isempty(origBG)
+    origBG = bg;
+end
+if ~exist('origPassedMask','var')
+    origPassedMask = passedMask;
+end
 
 %% ---------------- RIGHT PANEL ----------------
 bgPanel   = [0.10 0.10 0.11];
@@ -3422,6 +3446,17 @@ function showHelp(~,~)
 end
 
 function warpFunctionalToAtlasCB(~,~)
+        if state.isAtlasWarped
+        choice = questdlg( ...
+            ['Functional data is already in atlas space.' newline newline ...
+             'Reapply atlas warp from original native PSC?'], ...
+            'Already atlas-warped', ...
+            'Reapply from native', 'Cancel', 'Cancel');
+
+        if isempty(choice) || strcmpi(choice, 'Cancel')
+            return;
+        end
+    end
     startDir = '';
     candDirs = {};
 
@@ -3596,6 +3631,10 @@ function resetWarpToNativeCB(~,~)
         passedMask = origPassedMask;
 
         state.isAtlasWarped = false;
+        try
+    set(btnWarpAtlas, 'String', 'WARP FUNCTIONAL TO ATLAS');
+catch
+end
         state.atlasTransformFile = '';
 
         set(txtTitle, 'String', fileLabel);
@@ -3836,6 +3875,126 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
     error('Unsupported transform matrix size: %dx%d', size(A,1), size(A,2));
 end
 
+
+function autoFixStartupAtlasUnderlayIfNeeded()
+    % Detects the bad case:
+    %   bg = atlas/histology size
+    %   PSC = native functional size
+    %
+    % Then uses CoronalRegistration2D.mat / Transformation.mat to warp PSC
+    % to atlas space before the GUI draws anything.
+
+    try
+        if isempty(bg) || ~(isnumeric(bg) || islogical(bg))
+            return;
+        end
+
+        U = squeeze(bg);
+
+        if isempty(U) || ndims(U) < 2
+            return;
+        end
+
+        % If underlay already matches current PSC XY size, do nothing.
+        if size(U,1) == nY && size(U,2) == nX
+            return;
+        end
+
+        tfFile = getBestTransformForUnderlay('');
+
+        if isempty(tfFile) || exist(tfFile, 'file') ~= 2
+            startupAtlasNote = ['Startup underlay size did not match PSC, ' ...
+                'but no atlas transform was found. Using fallback native underlay.'];
+            bg = makeNativeFallbackUnderlayFromPSC(origPSC);
+            return;
+        end
+
+        S = load(tfFile);
+        T = extractAtlasWarpStruct(S);
+
+        if ~doesUnderlayMatchTransformOutput(U, T)
+            startupAtlasNote = ['Startup underlay did not match PSC size or transform output. ' ...
+                'Using fallback native underlay.'];
+            bg = makeNativeFallbackUnderlayFromPSC(origPSC);
+            return;
+        end
+
+        % Underlay is atlas-sized. Warp functional data to the same atlas space.
+        PSC = warpFunctionalSeriesToAtlas(origPSC, T);
+
+        state.isAtlasWarped = true;
+        state.atlasTransformFile = tfFile;
+        state.lastAtlasTransformFile = tfFile;
+
+        refreshDimsAfterPSCChange();
+
+        bg = validateAndPrepareUnderlay(U, 'startup underlay');
+        applyUnderlayMeta(defaultUnderlayMeta(), bg);
+
+        startupAtlasNote = ['Startup atlas underlay detected. Functional data auto-warped using: ' tfFile];
+
+    catch ME
+        startupAtlasNote = ['Startup atlas guard failed: ' ME.message];
+        try
+            bg = makeNativeFallbackUnderlayFromPSC(origPSC);
+        catch
+        end
+    end
+end
+
+
+function refreshDimsAfterPSCChange()
+    dNow = ndims(PSC);
+
+    if dNow == 3
+        [nY, nX, nT] = size(PSC);
+        nZ = 1;
+    elseif dNow == 4
+        [nY, nX, nZ, nT] = size(PSC);
+    else
+        error('PSC must be [Y X T] or [Y X Z T].');
+    end
+
+    tsec = (0:nT-1) * TR;
+    tmin = tsec / 60;
+
+    state.hoverStride = max(1, ceil(nT / state.hoverMaxPts));
+    state.hoverIdx    = 1:state.hoverStride:nT;
+    state.tminHover   = tmin(state.hoverIdx);
+
+    state.z = max(1, min(state.z, nZ));
+    state.lastSignedMap = zeros(nY, nX);
+end
+
+
+function U = makeNativeFallbackUnderlayFromPSC(X)
+    % Safe fallback so SCM never stretches an atlas image over native PSC.
+
+    if ndims(X) == 3
+        U = mean(double(X), 3);
+    elseif ndims(X) == 4
+        U = mean(double(X), 4);
+    else
+        U = zeros(nY, nX);
+    end
+
+    U(~isfinite(U)) = 0;
+
+    if ndims(U) == 3
+        % keep Z-stack if possible
+        if size(U,3) >= 1
+            return;
+        end
+    end
+
+    if ndims(U) > 3
+        U = squeeze(U);
+        if ndims(U) > 3
+            U = U(:,:,1);
+        end
+    end
+end
+
 %%%%% Load New Underlay %%%%
 
 function loadNewUnderlayCB(~,~)
@@ -3869,7 +4028,7 @@ function loadNewUnderlayCB(~,~)
                 applyUnderlayMeta(meta, U);
 
             elseif doesUnderlayMatchOriginalDisplay(Uraw)
-                tfFile = getBestTransformForUnderlay(fullf);
+                tfFile = getBestTransformForUnderlay(fullf, Uraw);
                 if isempty(tfFile) || exist(tfFile, 'file') ~= 2
                     error(['Current SCM is atlas-warped, but no transform file could be found ' ...
                            'to auto-warp the newly selected native underlay.']);
@@ -3919,16 +4078,19 @@ function loadNewUnderlayCB(~,~)
             return;
         end
 
-        tfFile = getBestTransformForUnderlay(fullf);
+        tfFile = getBestTransformForUnderlay(fullf, Uraw);
 
-        if isempty(tfFile) || exist(tfFile, 'file') ~= 2
-            [ft,pt] = uigetfile({'*.mat','Transform files (*.mat)'}, ...
-                'Selected underlay looks atlas-sized. Select transform file', getUnderlayStartPath());
-            if isequal(ft,0)
-                return;
-            end
-            tfFile = fullfile(pt, ft);
-        end
+     if isempty(tfFile) || exist(tfFile, 'file') ~= 2
+    errordlg([ ...
+        'The selected underlay looks atlas-sized, but SCM could not find a transform automatically.' newline newline ...
+        'Expected one of these files:' newline ...
+        '  - Registration2D/CoronalRegistration2D.mat' newline ...
+        '  - Registration/Transformation.mat' newline newline ...
+        'Fix: place the transform file in the dataset AnalysedData Registration folder, ' ...
+        'or first use WARP FUNCTIONAL TO ATLAS and then LOAD NEW UNDERLAY.'], ...
+        'Transform not found');
+    return;
+end
 
         S = load(tfFile);
         T = extractAtlasWarpStruct(S);
@@ -3945,6 +4107,10 @@ function loadNewUnderlayCB(~,~)
         passedMaskIsInclude = true;
 
         state.isAtlasWarped = true;
+        try
+    set(btnWarpAtlas, 'String', 'ALREADY WARPED TO ATLAS');
+catch
+end
         state.atlasTransformFile = tfFile;
         state.lastAtlasTransformFile = tfFile;
 
@@ -4017,7 +4183,7 @@ function U = validateAndPrepareUnderlay(U, fullf)
     error('Unsupported underlay dimensionality in file: %s', fullf);
 end
 
-function applyUnderlayMeta(meta, U)
+    function applyUnderlayMeta(meta, U)
     ensureUnderlayStateFields();
 
     state.isColorUnderlay     = false;
@@ -4025,27 +4191,60 @@ function applyUnderlayMeta(meta, U)
     state.regionColorLUT      = [];
     state.regionInfo          = struct();
 
+    explicitRegionMode = false;
+
     if nargin >= 1 && isstruct(meta)
-        if isfield(meta, 'isColor') && ~isempty(meta.isColor)
-            state.isColorUnderlay = logical(meta.isColor);
-        end
+
         if isfield(meta, 'regionLabels') && ~isempty(meta.regionLabels)
             state.regionLabelUnderlay = double(meta.regionLabels);
             state.isColorUnderlay = true;
+            explicitRegionMode = true;
         end
+
         if isfield(meta, 'regionInfo') && ~isempty(meta.regionInfo)
             state.regionInfo = meta.regionInfo;
         end
+
+        if isfield(meta, 'atlasMode') && ~isempty(meta.atlasMode)
+            try
+                if strcmpi(char(meta.atlasMode), 'regions')
+                    explicitRegionMode = true;
+                    state.isColorUnderlay = true;
+                end
+            catch
+            end
+        end
     end
 
-   if nargin >= 2 && ~state.isColorUnderlay
-    % Auto-detect RGB only for true 2D SCM case.
-    % For 3D motor data with nZ == 3, [Y X 3] is usually a slice stack.
-    if ndims(U) == 3 && size(U,3) == 3 && nZ == 1
-        state.isColorUnderlay = true;
+    if nargin < 2 || isempty(U)
+        return;
     end
-end
-end
+
+    U = squeeze(U);
+
+    % Ambiguous case:
+    % [Y X 3] can mean RGB, but for step-motor / 3-slice data it can also
+    % mean 3 grayscale slices. Only call it RGB when SCM is 2D or when this
+    % is explicitly a region/RGB atlas file.
+    ambiguousThreeSliceStack = ...
+        ndims(U) == 3 && size(U,3) == 3 && nZ > 1 && ...
+        size(U,1) == nY && size(U,2) == nX;
+
+    if explicitRegionMode
+        state.isColorUnderlay = true;
+        return;
+    end
+
+    if ndims(U) == 3 && size(U,3) == 3
+        if ambiguousThreeSliceStack
+            state.isColorUnderlay = false;
+        else
+            state.isColorUnderlay = true;
+        end
+    else
+        state.isColorUnderlay = false;
+    end
+    end
 
 function tf = doesUnderlayMatchTransformOutput(U, T)
     tf = false;
@@ -4066,63 +4265,432 @@ function tf = doesUnderlayMatchTransformOutput(U, T)
     end
 end
 
-function tfFile = getBestTransformForUnderlay(underlayFile)
+    function tfFile = getBestTransformForUnderlay(underlayFile, Ucandidate)
+% Robust transform finder for SCM atlas/histology underlays.
+%
+% This fixes filenames such as:
+%   CoronalRegistration2D_source001_atlas112_histology.mat
+%
+% Logic:
+%   1) search exact names first
+%   2) search wildcard names
+%   3) load each MAT and validate real transform fields
+%   4) prefer transforms whose outputSize matches the selected underlay
+%
+% Do NOT rely only on kB size; file size is only a weak bonus.
+
+    if nargin < 2
+        Ucandidate = [];
+    end
+
     tfFile = '';
 
-    cand = {};
+    candFiles = {};
+    candScore = [];
 
+    candDirs = {};
+
+    % ------------------------------------------------------------
+    % Already-used transform has highest priority
+    % ------------------------------------------------------------
     try
-        if isfield(state, 'atlasTransformFile') && ~isempty(state.atlasTransformFile) ...
-                && exist(state.atlasTransformFile, 'file') == 2
-            cand{end+1} = char(state.atlasTransformFile); %#ok<AGROW>
+        if isfield(state, 'atlasTransformFile') && ~isempty(state.atlasTransformFile)
+            addFileCandidate(char(state.atlasTransformFile), 300);
         end
     catch
     end
 
     try
-        if isfield(state, 'lastAtlasTransformFile') && ~isempty(state.lastAtlasTransformFile) ...
-                && exist(state.lastAtlasTransformFile, 'file') == 2
-            cand{end+1} = char(state.lastAtlasTransformFile); %#ok<AGROW>
+        if isfield(state, 'lastAtlasTransformFile') && ~isempty(state.lastAtlasTransformFile)
+            addFileCandidate(char(state.lastAtlasTransformFile), 250);
         end
     catch
     end
 
+    % ------------------------------------------------------------
+    % Candidate directories from underlay location
+    % ------------------------------------------------------------
     try
-        udir = fileparts(char(underlayFile));
-        cand{end+1} = fullfile(udir, 'CoronalRegistration2D.mat'); %#ok<AGROW>
-        cand{end+1} = fullfile(udir, 'Transformation.mat'); %#ok<AGROW>
+        if nargin >= 1 && ~isempty(underlayFile)
+            udir = fileparts(char(underlayFile));
 
-        p1 = fileparts(udir);
-        cand{end+1} = fullfile(p1, 'Registration2D', 'CoronalRegistration2D.mat'); %#ok<AGROW>
-        cand{end+1} = fullfile(p1, 'Registration',   'Transformation.mat');        %#ok<AGROW>
-        cand{end+1} = fullfile(p1, 'CoronalRegistration2D.mat');                   %#ok<AGROW>
-        cand{end+1} = fullfile(p1, 'Transformation.mat');                          %#ok<AGROW>
+            addDirCandidate(udir);
 
-        p2 = fileparts(p1);
-        cand{end+1} = fullfile(p2, 'Registration2D', 'CoronalRegistration2D.mat'); %#ok<AGROW>
-        cand{end+1} = fullfile(p2, 'Registration',   'Transformation.mat');        %#ok<AGROW>
+            p1 = fileparts(udir);
+            p2 = fileparts(p1);
+
+            addDirCandidate(fullfile(udir, 'Registration2D'));
+            addDirCandidate(fullfile(udir, 'Registration'));
+
+            addDirCandidate(fullfile(p1, 'Registration2D'));
+            addDirCandidate(fullfile(p1, 'Registration'));
+            addDirCandidate(p1);
+
+            addDirCandidate(fullfile(p2, 'Registration2D'));
+            addDirCandidate(fullfile(p2, 'Registration'));
+            addDirCandidate(p2);
+        end
     catch
     end
 
+    % ------------------------------------------------------------
+    % Candidate directories from SCM par.exportPath
+    % ------------------------------------------------------------
     try
-        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
+        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath)
             ep = char(par.exportPath);
-            cand{end+1} = fullfile(ep, 'Registration2D', 'CoronalRegistration2D.mat'); %#ok<AGROW>
-            cand{end+1} = fullfile(ep, 'Registration',   'Transformation.mat');        %#ok<AGROW>
-            cand{end+1} = fullfile(ep, 'CoronalRegistration2D.mat');                   %#ok<AGROW>
-            cand{end+1} = fullfile(ep, 'Transformation.mat');                          %#ok<AGROW>
+
+            addDirCandidate(fullfile(ep, 'Registration2D'));
+            addDirCandidate(fullfile(ep, 'Registration'));
+            addDirCandidate(ep);
+
+            p1 = fileparts(ep);
+            addDirCandidate(fullfile(p1, 'Registration2D'));
+            addDirCandidate(fullfile(p1, 'Registration'));
+            addDirCandidate(p1);
         end
     catch
     end
 
-    for ii = 1:numel(cand)
+    % ------------------------------------------------------------
+    % Candidate directories from loaded/raw path -> analysed path
+    % ------------------------------------------------------------
+    try
+        if isstruct(par) && isfield(par,'loadedPath') && ~isempty(par.loadedPath)
+            lp = char(par.loadedPath);
+
+            addDirCandidate(fullfile(lp, 'Registration2D'));
+            addDirCandidate(fullfile(lp, 'Registration'));
+            addDirCandidate(lp);
+
+            if contains(lp, [filesep 'RawData' filesep])
+                ap = strrep(lp, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                addDirCandidate(fullfile(ap, 'Registration2D'));
+                addDirCandidate(fullfile(ap, 'Registration'));
+                addDirCandidate(ap);
+            end
+        end
+    catch
+    end
+
+    try
+        if isstruct(par) && isfield(par,'loadedFile') && ~isempty(par.loadedFile)
+            lf = char(par.loadedFile);
+            if exist(lf,'file') == 2
+                ldir = fileparts(lf);
+
+                addDirCandidate(fullfile(ldir, 'Registration2D'));
+                addDirCandidate(fullfile(ldir, 'Registration'));
+                addDirCandidate(ldir);
+
+                if contains(ldir, [filesep 'RawData' filesep])
+                    ap = strrep(ldir, [filesep 'RawData' filesep], [filesep 'AnalysedData' filesep]);
+                    addDirCandidate(fullfile(ap, 'Registration2D'));
+                    addDirCandidate(fullfile(ap, 'Registration'));
+                    addDirCandidate(ap);
+                end
+            end
+        end
+    catch
+    end
+
+    % ------------------------------------------------------------
+    % Search exact names and wildcard names in all candidate dirs
+    % ------------------------------------------------------------
+    exactNames = { ...
+        'CoronalRegistration2D.mat', ...
+        'Transformation.mat'};
+
+    wildNames = { ...
+        'CoronalRegistration2D*.mat', ...
+        '*CoronalRegistration2D*.mat', ...
+        '*Registration2D*.mat', ...
+        'Transformation*.mat', ...
+        '*Transformation*.mat', ...
+        '*source*_atlas*.mat', ...
+        '*histology*.mat', ...
+        '*atlas*.mat'};
+
+    for ii = 1:numel(candDirs)
+        d0 = candDirs{ii};
+
+        if isempty(d0) || exist(d0,'dir') ~= 7
+            continue;
+        end
+
+        for kk = 1:numel(exactNames)
+            addFileCandidate(fullfile(d0, exactNames{kk}), 120);
+        end
+
+        for kk = 1:numel(wildNames)
+            dd = dir(fullfile(d0, wildNames{kk}));
+            for jj = 1:numel(dd)
+                if ~dd(jj).isdir
+                    addFileCandidate(fullfile(dd(jj).folder, dd(jj).name), 60);
+                end
+            end
+        end
+    end
+
+    % ------------------------------------------------------------
+    % Remove duplicates
+    % ------------------------------------------------------------
+    if isempty(candFiles)
+        return;
+    end
+
+    [candFiles, ia] = uniquePathList(candFiles);
+    candScore = candScore(ia);
+
+    % ------------------------------------------------------------
+    % Validate + score each transform
+    % ------------------------------------------------------------
+    bestScore = -Inf;
+    bestFile  = '';
+
+    for ii = 1:numel(candFiles)
+        f0 = candFiles{ii};
+
+        [ok, extraScore] = scoreTransformCandidate(f0, Ucandidate);
+
+        if ~ok
+            continue;
+        end
+
+        totalScore = candScore(ii) + extraScore;
+
+        if totalScore > bestScore
+            bestScore = totalScore;
+            bestFile = f0;
+        end
+    end
+
+    if ~isempty(bestFile)
+        tfFile = bestFile;
+
         try
-            if ~isempty(cand{ii}) && exist(cand{ii}, 'file') == 2
-                tfFile = cand{ii};
+            set(info1, 'String', ['Auto-detected transform: ' shortenPath(tfFile,85)]);
+            set(info1, 'TooltipString', tfFile);
+        catch
+        end
+    end
+
+    % ============================================================
+    % Local helper functions
+    % ============================================================
+    function addDirCandidate(d)
+        try
+            if isempty(d)
                 return;
+            end
+            d = char(d);
+            if exist(d,'dir') == 7
+                candDirs{end+1} = d; %#ok<AGROW>
             end
         catch
         end
+    end
+
+    function addFileCandidate(f, baseScore)
+        try
+            if isempty(f)
+                return;
+            end
+            f = char(f);
+            if exist(f,'file') == 2
+                candFiles{end+1} = f; %#ok<AGROW>
+                candScore(end+1) = baseScore; %#ok<AGROW>
+            end
+        catch
+        end
+    end
+
+    function [ok, score] = scoreTransformCandidate(f, Ucand)
+        ok = false;
+        score = -Inf;
+
+        try
+            S = load(f);
+            T = extractAtlasWarpStruct(S);
+        catch
+            return;
+        end
+
+        if ~isfield(T,'warpA') || isempty(T.warpA)
+            return;
+        end
+
+        A = double(T.warpA);
+
+        if ~(isequal(size(A),[3 3]) || isequal(size(A),[4 4]))
+            return;
+        end
+
+        ok = true;
+        score = 0;
+
+        [folder0, name0, ~] = fileparts(f);
+        nameL = lower(name0);
+        folderL = lower(folder0);
+
+        % Prefer correct transform names
+        if ~isempty(strfind(nameL, 'coronalregistration2d')) %#ok<STREMP>
+            score = score + 100;
+        end
+        if ~isempty(strfind(nameL, 'registration2d')) %#ok<STREMP>
+            score = score + 80;
+        end
+        if ~isempty(strfind(nameL, 'transformation')) %#ok<STREMP>
+            score = score + 60;
+        end
+
+        % Your filename style
+        if ~isempty(strfind(nameL, 'source')) %#ok<STREMP>
+            score = score + 20;
+        end
+        if ~isempty(strfind(nameL, 'atlas')) %#ok<STREMP>
+            score = score + 20;
+        end
+        if ~isempty(strfind(nameL, 'histology')) %#ok<STREMP>
+            score = score + 25;
+        end
+
+        % Prefer Registration2D folder for 2D affine
+        if ~isempty(strfind(folderL, 'registration2d')) && isequal(size(A),[3 3]) %#ok<STREMP>
+            score = score + 80;
+        end
+
+        % Output size matching selected underlay is strongest evidence
+        if ~isempty(Ucand)
+            if transformOutputMatchesUnderlay(Ucand, T)
+                score = score + 600;
+            else
+                score = score - 200;
+            end
+        end
+
+        % If already atlas-warped, prefer transform matching current display
+        try
+            if isfield(state,'isAtlasWarped') && state.isAtlasWarped
+                if transformOutputMatchesCurrentDisplay(T)
+                    score = score + 200;
+                end
+            end
+        catch
+        end
+
+        % Weak bonus only: small transform files are often true transform MATs.
+        % This is intentionally weak. Do not rely on size alone.
+        try
+            dd = dir(f);
+            if ~isempty(dd)
+                if dd.bytes > 0 && dd.bytes < 200000
+                    score = score + 10;
+                end
+                if dd.bytes > 0 && dd.bytes < 10000
+                    score = score + 5;
+                end
+            end
+        catch
+        end
+    end
+
+    function tf = transformOutputMatchesUnderlay(Ucand, T)
+        tf = false;
+
+        try
+            Ucand = squeeze(Ucand);
+
+            if ~isfield(T,'outSize') || isempty(T.outSize)
+                return;
+            end
+
+            outSize = round(double(T.outSize));
+
+            if numel(outSize) < 2
+                return;
+            end
+
+            % 2D coronal registration: underlay can be grayscale [Y X]
+            % or RGB [Y X 3]. Only first two dims matter.
+            if isequal(size(double(T.warpA)), [3 3])
+                tf = (size(Ucand,1) == outSize(1) && size(Ucand,2) == outSize(2));
+                return;
+            end
+
+            % 3D registration
+            if isequal(size(double(T.warpA)), [4 4])
+                if numel(outSize) < 3
+                    return;
+                end
+
+                if ndims(Ucand) >= 3
+                    tf = (size(Ucand,1) == outSize(1) && ...
+                          size(Ucand,2) == outSize(2) && ...
+                          size(Ucand,3) == outSize(3));
+                else
+                    tf = false;
+                end
+                return;
+            end
+
+        catch
+            tf = false;
+        end
+    end
+
+    function tf = transformOutputMatchesCurrentDisplay(T)
+        tf = false;
+
+        try
+            if ~isfield(T,'outSize') || isempty(T.outSize)
+                return;
+            end
+
+            outSize = round(double(T.outSize));
+
+            if numel(outSize) < 2
+                return;
+            end
+
+            if isequal(size(double(T.warpA)), [3 3])
+                tf = (outSize(1) == nY && outSize(2) == nX);
+                return;
+            end
+
+            if isequal(size(double(T.warpA)), [4 4])
+                if numel(outSize) < 3
+                    return;
+                end
+                tf = (outSize(1) == nY && outSize(2) == nX && outSize(3) == nZ);
+                return;
+            end
+
+        catch
+            tf = false;
+        end
+    end
+
+    function [u, ia] = uniquePathList(c)
+        keys = cell(size(c));
+
+        for qq = 1:numel(c)
+            try
+                keys{qq} = char(java.io.File(c{qq}).getCanonicalPath());
+            catch
+                keys{qq} = char(c{qq});
+            end
+
+            keys{qq} = strrep(keys{qq}, '/', filesep);
+            keys{qq} = strrep(keys{qq}, '\', filesep);
+
+            if ispc
+                keys{qq} = lower(keys{qq});
+            end
+        end
+
+        [~, ia] = unique(keys, 'stable');
+        u = c(ia);
     end
 end
 
@@ -4956,71 +5524,126 @@ function PSCz = getPSCForSlice(z)
     end
 end
 
-    function bg2 = getBg2DForSlice(z)
+   function bg2 = getBg2DForSlice(z)
     ensureUnderlayStateFields();
 
     z = max(1, min(nZ, z));
 
     if ndims(bg) == 2
         bg2 = bg;
+        bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
         return;
     end
 
     if ndims(bg) == 3
-        % IMPORTANT:
-        % [Y X 3] is ambiguous:
-        %   - RGB underlay for 2D data
-        %   - 3-slice grayscale stack for motor/3D data
-        %
-        % Only treat it as RGB if:
-        %   1) it was explicitly marked as color, or
-        %   2) current SCM is truly 2D (nZ == 1)
 
-        if size(bg,3) == 3 && (state.isColorUnderlay || nZ == 1)
+        % RGB underlay for true 2D display
+        if size(bg,3) == 3 && state.isColorUnderlay
             bg2 = bg;
+            bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
             return;
         end
 
-        % true grayscale Z-stack
+        % Grayscale Z-stack
         if nZ > 1 && size(bg,3) == nZ
             bg2 = bg(:,:,z);
+            bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
             return;
         end
 
-        % 2D case where bg is actually [Y X T]
+        % 2D time-stack style underlay
         if nZ == 1 && size(bg,3) == nT
             bg2 = mean(bg, 3);
+            bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
             return;
         end
 
-        % fallback
+        % Fallback: choose nearest plane
         bg2 = bg(:,:,max(1, min(size(bg,3), z)));
+        bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
         return;
     end
 
     if ndims(bg) == 4
-        % explicit color underlay stack: [Y X 3 Z]
-        if size(bg,3) == 3 && (state.isColorUnderlay || nZ == 1) && size(bg,4) >= 1
-            z = max(1, min(size(bg,4), z));
-            bg2 = squeeze(bg(:,:,:,z));
+
+        % RGB stack: [Y X 3 Z]
+        if size(bg,3) == 3 && state.isColorUnderlay && size(bg,4) >= 1
+            zUse = max(1, min(size(bg,4), z));
+            bg2 = squeeze(bg(:,:,:,zUse));
+            bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
             return;
         end
 
-        % grayscale volume over time or similar
+        % Grayscale volume/time fallback
         tmp = mean(bg, 4);
 
         if ndims(tmp) == 3
-            z = max(1, min(size(tmp,3), z));
-            bg2 = tmp(:,:,z);
+            zUse = max(1, min(size(tmp,3), z));
+            bg2 = tmp(:,:,zUse);
         else
             bg2 = squeeze(tmp(:,:,1));
         end
+
+        bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
         return;
     end
 
     bg2 = squeeze(bg);
     if ndims(bg2) > 2
         bg2 = bg2(:,:,1);
+    end
+
+    bg2 = fitUnderlayPlaneToCurrentDisplay(bg2);
+end
+
+
+function U2 = fitUnderlayPlaneToCurrentDisplay(U2)
+    % Last safety check:
+    % Whatever underlay is selected, force displayed plane/RGB image to
+    % current PSC display size [nY nX]. This prevents stretched/mismatched
+    % underlays from corrupting the SCM view.
+
+    if isempty(U2)
+        U2 = zeros(nY, nX);
+        return;
+    end
+
+    U2 = squeeze(U2);
+
+    if ndims(U2) == 2
+        if size(U2,1) ~= nY || size(U2,2) ~= nX
+            try
+                U2 = imresize(double(U2), [nY nX], 'bilinear');
+            catch
+                tmp = zeros(nY, nX);
+                yy = min(nY, size(U2,1));
+                xx = min(nX, size(U2,2));
+                tmp(1:yy,1:xx) = double(U2(1:yy,1:xx));
+                U2 = tmp;
+            end
+        end
+        return;
+    end
+
+    if ndims(U2) == 3 && size(U2,3) == 3
+        if size(U2,1) ~= nY || size(U2,2) ~= nX
+            try
+                U2 = imresize(double(U2), [nY nX], 'bilinear');
+            catch
+                tmp = zeros(nY, nX, 3);
+                yy = min(nY, size(U2,1));
+                xx = min(nX, size(U2,2));
+                tmp(1:yy,1:xx,:) = double(U2(1:yy,1:xx,:));
+                U2 = tmp;
+            end
+        end
+        return;
+    end
+
+    % Unexpected multi-plane input: take first plane and fit.
+    if ndims(U2) > 2
+        U2 = U2(:,:,1);
+        U2 = fitUnderlayPlaneToCurrentDisplay(U2);
     end
 end
 function B = readScmBundleFile(fullf)

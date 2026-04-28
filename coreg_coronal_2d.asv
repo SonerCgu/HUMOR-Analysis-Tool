@@ -3,19 +3,12 @@ function Reg2D = coreg_coronal_2d(studio, forcedSourceFile)
 %
 % Simple manual 2D coronal registration to atlas.
 %
-% IMPORTANT UPDATE IN THIS VERSION
-%   - The source-file selector no longer uses Java JList / java.awt.Color.
-%   - This avoids the Java color error:
-%       Color parameter outside of expected range: Red Green Blue
-%   - The selector is now pure MATLAB UI with large readable font,
-%     colored legend/buttons, and a detail box.
-%
-% Main features:
+% Main improvements:
 %   1) Supports forcedSourceFile from the unified launcher.
 %   2) Cleaner source-file search:
 %        - prefers underlay / overlay / brainImage / BrainOnly / anatomical files
 %        - avoids random QC / plot / motion / video / functional files
-%   3) Dark readable source selector with MATLAB-only colors:
+%   3) Dark readable source selector with colored labels:
 %        - UNDERLAY
 %        - OVERLAY
 %        - BRAINIMAGE
@@ -491,8 +484,7 @@ elseif ~isempty(strfind(nameL,'overlay'))
 elseif ~isempty(strfind(nameL,'brainimage')) || ~isempty(strfind(nameL,'brainonly'))
     cls = 'BRAINIMAGE';
 elseif ~isempty(strfind(nameL,'brainmask')) || ~isempty(strfind(nameL,'underlaymask')) || ...
-        ~isempty(strfind(nameL,'overlaymask')) || ~isempty(strfind(nameL,'maskbundle')) || ...
-        strcmpi(nameL,'mask')
+        ~isempty(strfind(nameL,'overlaymask')) || ~isempty(strfind(nameL,'maskbundle'))
     cls = 'MASK';
 elseif ~isempty(strfind(nameL,'anatom')) || ~isempty(strfind(nameL,'reference'))
     cls = 'SOURCE';
@@ -1004,6 +996,7 @@ for pp = 1:numel(preferredNames)
 end
 
 if isempty(jdx)
+    % Prefer underlay/overlay/brain terms by candidate name.
     goodTerms = getSourceGoodNameTerms();
     for i = 1:numel(candNames)
         if nameHasAnyTerm(lower(candNames{i}), goodTerms)
@@ -1259,7 +1252,7 @@ end
 end
 
 
-function mask2D = chooseBestMaskForSource(S, selectedData, selectedLabel, selectedSliceIdx, targetSize) %#ok<INUSD>
+function mask2D = chooseBestMaskForSource(S, selectedData, selectedLabel, selectedSliceIdx, targetSize)
 
 mask2D = [];
 
@@ -1728,7 +1721,7 @@ end
 
 
 %% =======================================================================
-% Source chooser GUI - PURE MATLAB, NO JAVA COLORS
+% Source chooser GUI
 %% =======================================================================
 function [idx, tf] = chooseSourceFileDialog(sourceLabels)
 
@@ -1739,21 +1732,11 @@ if isempty(sourceLabels)
     return;
 end
 
-bg       = [0.00 0.00 0.00];
-panelBG  = [0.08 0.08 0.09];
-editBG   = [0.03 0.03 0.035];
-fg       = [1.00 1.00 1.00];
-subFG    = [0.82 0.82 0.82];
-blueBtn  = [0.20 0.45 0.92];
-redBtn   = [0.85 0.20 0.20];
-grayBtn  = [0.25 0.25 0.28];
-
-% Build clean list labels. Keep all colors in MATLAB controls only.
-listStrings = cell(size(sourceLabels));
-for i = 1:numel(sourceLabels)
-    [typ, loc] = splitSourceTypeAndLocation(sourceLabels{i});
-    listStrings{i} = sprintf('[%-10s] %s', typ, loc);
-end
+bg      = [0.00 0.00 0.00];
+fg      = [1.00 1.00 1.00];
+subFG   = [0.82 0.82 0.82];
+btnBlue = [0.20 0.45 0.92];
+btnRed  = [0.85 0.20 0.20];
 
 figSel = figure( ...
     'Name','Select Coronal Source Image', ...
@@ -1764,8 +1747,7 @@ figSel = figure( ...
     'Resize','off', ...
     'WindowStyle','modal', ...
     'Position',[120 60 1500 900], ...
-    'CloseRequestFcn',@onCancel, ...
-    'KeyPressFcn',@onKey);
+    'CloseRequestFcn',@onCancel);
 
 uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
     'Position',[0.03 0.945 0.94 0.035], ...
@@ -1784,106 +1766,108 @@ uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
     'HorizontalAlignment','left', ...
     'FontName','Arial', ...
     'FontSize',12, ...
-    'String','Recommended: underlay / overlay / brainImage / BrainOnly / anatomical reference from Mask Editor. Double-click or press Enter.');
+    'String','Recommended: underlay / overlay / brainImage / BrainOnly / anatomical reference from Mask Editor.');
 
-% MATLAB-only colored legend
-makeLegendBox(figSel, 0.03, 0.865, 0.10, 'UNDERLAY',   [0.43 0.76 1.00]);
-makeLegendBox(figSel, 0.145,0.865, 0.10, 'OVERLAY',    [1.00 0.55 0.85]);
-makeLegendBox(figSel, 0.260,0.865, 0.12, 'BRAINIMAGE', [0.49 1.00 0.70]);
-makeLegendBox(figSel, 0.395,0.865, 0.075,'MASK',       [1.00 0.80 0.40]);
-makeLegendBox(figSel, 0.485,0.865, 0.09, 'SOURCE',     [0.85 0.85 0.85]);
-
-mainPanel = uipanel('Parent',figSel,'Units','normalized', ...
-    'Position',[0.03 0.13 0.94 0.72], ...
-    'BackgroundColor',panelBG, ...
-    'ForegroundColor',fg, ...
-    'Title','Source files', ...
-    'FontSize',13, ...
-    'FontWeight','bold');
-
-hList = uicontrol('Style','listbox','Parent',mainPanel,'Units','normalized', ...
-    'Position',[0.02 0.16 0.96 0.80], ...
-    'String',listStrings, ...
-    'Value',1, ...
-    'BackgroundColor',[0 0 0], ...
-    'ForegroundColor',[1 1 1], ...
-    'FontName','Consolas', ...
-    'FontSize',15, ...
-    'Max',1, ...
-    'Min',0, ...
-    'Callback',@onListSelect);
-
-hDetail = uicontrol('Style','edit','Parent',mainPanel,'Units','normalized', ...
-    'Position',[0.02 0.02 0.96 0.115], ...
-    'Max',2, ...
-    'Min',0, ...
-    'Enable','inactive', ...
+% colored legend
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.03 0.865 0.13 0.025], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',[0.43 0.76 1.00], ...
     'HorizontalAlignment','left', ...
-    'BackgroundColor',editBG, ...
-    'ForegroundColor',[0.78 0.92 1.00], ...
-    'FontName','Consolas', ...
-    'FontSize',12, ...
-    'String','');
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'String','UNDERLAY');
+
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.15 0.865 0.13 0.025], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',[1.00 0.55 0.85], ...
+    'HorizontalAlignment','left', ...
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'String','OVERLAY');
+
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.27 0.865 0.13 0.025], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',[0.49 1.00 0.70], ...
+    'HorizontalAlignment','left', ...
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'String','BRAINIMAGE');
+
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.41 0.865 0.13 0.025], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',[1.00 0.80 0.40], ...
+    'HorizontalAlignment','left', ...
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'String','MASK');
+
+uicontrol('Style','text','Parent',figSel,'Units','normalized', ...
+    'Position',[0.51 0.865 0.13 0.025], ...
+    'BackgroundColor',bg, ...
+    'ForegroundColor',[0.85 0.85 0.85], ...
+    'HorizontalAlignment','left', ...
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'String','SOURCE');
+
+listLabels = colorizeSourceLabelsForJava(sourceLabels);
+
+jModel = javaObjectEDT('javax.swing.DefaultListModel');
+for ii = 1:numel(listLabels)
+    jModel.addElement(listLabels{ii});
+end
+
+jList = javaObjectEDT('javax.swing.JList', jModel);
+jList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+jList.setSelectedIndex(0);
+jList.setBackground(java.awt.Color(0,0,0));
+jList.setForeground(java.awt.Color(1,1,1));
+jList.setSelectionBackground(java.awt.Color(0.18,0.18,0.18));
+jList.setSelectionForeground(java.awt.Color(1,1,1));
+jList.setFont(java.awt.Font('Consolas', java.awt.Font.PLAIN, 17));
+jList.setFixedCellHeight(31);
+
+jScroll = javaObjectEDT('javax.swing.JScrollPane', jList);
+jScroll.setBackground(java.awt.Color(0,0,0));
+jScroll.getViewport.setBackground(java.awt.Color(0,0,0));
+
+[~, hListContainer] = javacomponent(jScroll, [40 95 1415 660], figSel);
+set(hListContainer, 'Units','pixels');
+
+set(handle(jList,'CallbackProperties'), 'MouseClickedCallback', @onJListClick);
+set(handle(jList,'CallbackProperties'), 'KeyPressedCallback', @onJListKey);
 
 uicontrol('Style','pushbutton','Parent',figSel,'Units','normalized', ...
-    'Position',[0.38 0.035 0.17 0.065], ...
+    'Position',[0.58 0.03 0.18 0.06], ...
     'String','Use Selected', ...
-    'BackgroundColor',blueBtn, ...
+    'BackgroundColor',btnBlue, ...
     'ForegroundColor','w', ...
     'FontWeight','bold', ...
     'FontSize',13, ...
     'Callback',@onOK);
 
 uicontrol('Style','pushbutton','Parent',figSel,'Units','normalized', ...
-    'Position',[0.57 0.035 0.17 0.065], ...
-    'String','Refresh View', ...
-    'BackgroundColor',grayBtn, ...
-    'ForegroundColor','w', ...
-    'FontWeight','bold', ...
-    'FontSize',13, ...
-    'Callback',@updateDetail);
-
-uicontrol('Style','pushbutton','Parent',figSel,'Units','normalized', ...
-    'Position',[0.76 0.035 0.17 0.065], ...
+    'Position',[0.78 0.03 0.18 0.06], ...
     'String','Cancel', ...
-    'BackgroundColor',redBtn, ...
+    'BackgroundColor',btnRed, ...
     'ForegroundColor','w', ...
     'FontWeight','bold', ...
     'FontSize',13, ...
     'Callback',@onCancel);
 
-updateDetail();
 uiwait(figSel);
-
-    function onListSelect(~,~)
-        updateDetail();
-        try
-            if strcmpi(get(figSel,'SelectionType'),'open')
-                onOK();
-            end
-        catch
-        end
-    end
-
-    function updateDetail(~,~)
-        try
-            v = get(hList,'Value');
-            v = max(1, min(numel(sourceLabels), v));
-            [typ, loc] = splitSourceTypeAndLocation(sourceLabels{v});
-            set(hDetail,'String',sprintf('Type: %s\nPath: %s', typ, loc));
-        catch
-        end
-    end
 
     function onOK(~,~)
         try
-            idx = get(hList,'Value');
+            idx = double(jList.getSelectedIndex()) + 1;
         catch
             idx = 1;
         end
-
-        idx = max(1, min(numel(sourceLabels), idx));
-        tf = true;
+        tf = ~isempty(idx) && idx >= 1;
 
         try
             uiresume(figSel);
@@ -1909,49 +1893,94 @@ uiwait(figSel);
         end
     end
 
-    function onKey(~, ev)
+    function onJListClick(~, evt)
         try
-            if strcmpi(ev.Key,'return') || strcmpi(ev.Key,'enter')
+            if evt.getClickCount() >= 2
                 onOK();
-            elseif strcmpi(ev.Key,'escape')
+            end
+        catch
+        end
+    end
+
+    function onJListKey(~, evt)
+        try
+            keyCode = evt.getKeyCode();
+            if keyCode == java.awt.event.KeyEvent.VK_ENTER
+                onOK();
+            elseif keyCode == java.awt.event.KeyEvent.VK_ESCAPE
                 onCancel();
             end
         catch
         end
     end
-end
-
-
-function makeLegendBox(parent, x, y, w, label, colorVal)
-
-uicontrol('Style','text','Parent',parent,'Units','normalized', ...
-    'Position',[x y w 0.026], ...
-    'BackgroundColor',[0 0 0], ...
-    'ForegroundColor',colorVal, ...
-    'HorizontalAlignment','left', ...
-    'FontName','Arial', ...
-    'FontSize',11, ...
-    'FontWeight','bold', ...
-    'String',label);
 
 end
 
 
-function [typ, loc] = splitSourceTypeAndLocation(s)
+function out = colorizeSourceLabelsForJava(sourceLabels)
 
-typ = 'SOURCE';
-loc = s;
+out = cell(size(sourceLabels));
 
-known = {'UNDERLAY','OVERLAY','BRAINIMAGE','MASK','SOURCE'};
+for i = 1:numel(sourceLabels)
+    s = sourceLabels{i};
 
-for i = 1:numel(known)
-    p = [known{i} ': '];
-    if startsWithLocal(s, p)
-        typ = known{i};
-        loc = s(numel(p)+1:end);
-        return;
+    typePrefix = 'SOURCE';
+    rest = s;
+    typeColor = '#D9D9D9';
+
+    locColor = '#FFFFFF';
+
+    if startsWithLocal(s, 'UNDERLAY: ')
+        typePrefix = 'UNDERLAY';
+        rest = s(numel('UNDERLAY: ')+1:end);
+        typeColor = '#6EC1FF';
+
+    elseif startsWithLocal(s, 'OVERLAY: ')
+        typePrefix = 'OVERLAY';
+        rest = s(numel('OVERLAY: ')+1:end);
+        typeColor = '#FF8CE0';
+
+    elseif startsWithLocal(s, 'BRAINIMAGE: ')
+        typePrefix = 'BRAINIMAGE';
+        rest = s(numel('BRAINIMAGE: ')+1:end);
+        typeColor = '#7DFFB2';
+
+    elseif startsWithLocal(s, 'MASK: ')
+        typePrefix = 'MASK';
+        rest = s(numel('MASK: ')+1:end);
+        typeColor = '#FFCC66';
+
+    elseif startsWithLocal(s, 'SOURCE: ')
+        typePrefix = 'SOURCE';
+        rest = s(numel('SOURCE: ')+1:end);
+        typeColor = '#D9D9D9';
     end
+
+    if ~isempty(strfind(rest,'LOADED:')) %#ok<STREMP>
+        locColor = '#FF8CA8';
+    elseif ~isempty(strfind(rest,'RAW:')) %#ok<STREMP>
+        locColor = '#6EC1FF';
+    elseif ~isempty(strfind(rest,'ANA:')) %#ok<STREMP>
+        locColor = '#7DFFB2';
+    elseif ~isempty(strfind(rest,'REG2D:')) %#ok<STREMP>
+        locColor = '#FFCC66';
+    end
+
+    rest = escapeHtml(rest);
+
+    out{i} = sprintf( ...
+        '<html><span style="font-family:Consolas; font-size:16px;"><b><font color="%s">[%s]</font></b> <font color="%s">%s</font></span></html>', ...
+        typeColor, typePrefix, locColor, rest);
 end
+
+end
+
+
+function s = escapeHtml(s)
+
+s = strrep(s, '&', '&amp;');
+s = strrep(s, '<', '&lt;');
+s = strrep(s, '>', '&gt;');
 
 end
 
@@ -2166,7 +2195,7 @@ displayListOut = displayList(ord);
 end
 
 
-function tf = pathHasAnyTerm(pathStr, terms)
+jList.setBackground(java.awt.Color(0,0,0));HasAnyTerm(pathStr, terms)
 
 tf = false;
 pathStr = lower(pathStr);

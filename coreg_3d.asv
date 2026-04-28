@@ -120,13 +120,6 @@ if ~isempty(forcedAnatomyFile) && exist(forcedAnatomyFile,'file') == 2
     anatomyFile = forcedAnatomyFile;
     fprintf('Selected 3D anatomy source file:\n%s\n', anatomyFile);
 else
- if ~isempty(forcedAnatomyFile) && exist(forcedAnatomyFile,'file') == 2
-
-    anatomyFile = forcedAnatomyFile;
-    fprintf('Selected 3D anatomy source file:\n%s\n', anatomyFile);
-
-else
-
     [fileList, displayList] = collectAnatomyFiles(searchFolders, rawFolder, analysedFolder, registrationDir);
 
     if isempty(fileList)
@@ -145,8 +138,6 @@ else
     end
 
     anatomyFile = fileList{idx};
-
-end
 end
 
 %% ---------------------------------------------------------

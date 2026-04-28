@@ -6,21 +6,22 @@ function Reg2Dout = registration_coronal_2d(atlas, src2D, sourceInfo, initialReg
 % Target stays fixed: atlas coronal slice
 % Source moves:       selected coronal source image
 %
-% UPDATED GUI VERSION:
-%   - image titles above images
-%   - larger bottom atlas slice/mode panel
-%   - thicker slice slider
-%   - larger right-side controls and larger action buttons
-%   - action buttons arranged in 2 rows
-%   - atlas mode uses checkboxes
-%   - mouse wheel changes atlas slice
-%   - closing without explicit save returns empty
+% UPDATED SAVE LOGIC:
+%   - Save Trafo:
+%       saves only the current Reg2D affine transformation MAT file
 %
-% Saved files:
-%   saveDir/CoronalRegistration2D.mat
-%   saveDir/atlasUnderlay_vascular_sliceXXX.mat
-%   saveDir/atlasUnderlay_histology_sliceXXX.mat
-%   saveDir/atlasUnderlay_regions_sliceXXX.mat
+%   - Save Underlays + Regions:
+%       refreshes/saves current Reg2D
+%       saves vascular/histology/regions atlas underlays
+%       saves region labels and region list TXT for the atlas slice
+%
+% Notes for multi-slice / step-motor:
+%   - This file is now source-slice aware through sourceInfo.sourceSliceIndex.
+%   - If sourceInfo.sourceWas3D is true, output folders are named:
+%         SourceSliceXXX_AtlasSliceYYY
+%   - Full source-slice switching / save-all-slices should be added in the
+%     next patch from coreg_coronal_2d.m by passing the source stack and
+%     storing per-source-slice Reg2D states.
 %
 % ASCII only
 % MATLAB 2017b compatible
@@ -124,7 +125,7 @@ FS.title   = 18;
 FS.section = 13;
 FS.label   = 11.5;
 FS.edit    = 11.5;
-FS.button  = 11.0;
+FS.button  = 10.8;
 FS.status  = 10.0;
 FS.small   = 10.5;
 FS.mode    = 11.0;
@@ -244,7 +245,7 @@ hModeRegions = uicontrol('Style','checkbox','Parent',bottomPanel,'Units','normal
 
 uicontrol('Style','text','Parent',bottomPanel,'Units','normalized', ...
     'Position',[0.03 0.05 0.12 0.20], ...
-    'String','Slice', ...
+    'String','Atlas', ...
     'BackgroundColor',panelBG, ...
     'ForegroundColor',fg, ...
     'HorizontalAlignment','left', ...
@@ -259,12 +260,20 @@ hSliceEdit = uicontrol('Style','edit','Parent',bottomPanel,'Units','normalized',
     'FontSize',FS.edit, ...
     'Callback',@onSliceEdit);
 
-% Thicker slider
 hSliceSlider = uicontrol('Style','slider','Parent',bottomPanel,'Units','normalized', ...
     'Position',[0.29 0.08 0.50 0.15], ...
     'Min',1,'Max',size(atlas.Vascular,1),'Value',S.slice, ...
     'SliderStep',[1/max(1,size(atlas.Vascular,1)-1) 10/max(1,size(atlas.Vascular,1)-1)], ...
     'Callback',@onSliceSlider);
+
+hSourceInfo = uicontrol('Style','text','Parent',bottomPanel,'Units','normalized', ...
+    'Position',[0.80 0.05 0.17 0.20], ...
+    'String',getSourceSliceStatusText(), ...
+    'BackgroundColor',panelBG, ...
+    'ForegroundColor',[1.00 0.86 0.45], ...
+    'HorizontalAlignment','right', ...
+    'FontSize',FS.small, ...
+    'FontWeight','bold');
 
 % ---------------------------------------------------------------------
 % Right controls panel
@@ -378,7 +387,7 @@ hInvert = uicontrol('Style','checkbox','Parent',ctrl,'Units','normalized', ...
 % ---------------------------------------------------------------------
 uicontrol('Style','text','Parent',ctrl,'Units','normalized', ...
     'Position',[0.05 0.690 0.90 0.035], ...
-    'String','Manual transform', ...
+    'String','Manual transform / trafo', ...
     'BackgroundColor',panelBG, ...
     'ForegroundColor',[0.75 0.90 1.00], ...
     'HorizontalAlignment','left', ...
@@ -389,7 +398,7 @@ uicontrol('Style','text','Parent',ctrl,'Units','normalized', ...
 
 uicontrol('Style','text','Parent',ctrl,'Units','normalized', ...
     'Position',[0.05 0.245 0.90 0.040], ...
-    'String','Mouse: left-drag translate, right-drag rotate, wheel scroll slices', ...
+    'String','Mouse: left-drag translate, right-drag rotate, wheel scroll atlas slices', ...
     'BackgroundColor',panelBG, ...
     'ForegroundColor',[0.82 0.90 1.00], ...
     'HorizontalAlignment','left', ...
@@ -445,21 +454,23 @@ uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
 
 uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
     'Position',[0.08 row2Y 0.38 btnH2], ...
-    'String','Save Transformation', ...
+    'String','Save Trafo', ...
+    'TooltipString','Saves only the current 2D affine transformation Reg2D for this source/atlas slice.', ...
     'BackgroundColor',greenBtn, ...
     'ForegroundColor','w', ...
     'FontWeight','bold', ...
     'FontSize',FS.button, ...
-    'Callback',@onSave);
+    'Callback',@onSaveTrafo);
 
 uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
     'Position',[0.54 row2Y 0.38 btnH2], ...
-    'String','Save Underlays', ...
+    'String','Save Underlays + Regions', ...
+    'TooltipString','Saves atlas vascular/histology/regions underlays and region list. Also refreshes the current Reg2D inside those files.', ...
     'BackgroundColor',greenBtn, ...
     'ForegroundColor','w', ...
     'FontWeight','bold', ...
     'FontSize',FS.button, ...
-    'Callback',@onSaveUnderlays);
+    'Callback',@onSaveUnderlaysRegions);
 
 % ---------------------------------------------------------------------
 % Images
@@ -594,6 +605,7 @@ uiwait(fig);
 
         set(hSliceEdit,'String',num2str(S.slice));
         set(hSliceSlider,'Value',S.slice);
+        set(hSourceInfo,'String',getSourceSliceStatusText());
 
         set(hTx.edit,'String',num2str(S.tx));
         set(hTy.edit,'String',num2str(S.ty));
@@ -603,9 +615,10 @@ uiwait(fig);
 
         updateModeCheckboxes();
 
-        set(hStatus,'String',sprintf(['Slice %d | Mode %s | tx %.2f | ty %.2f | rot %.2f | ' ...
+        set(hStatus,'String',sprintf(['Source slice %d | Atlas slice %d | %s | tx %.2f | ty %.2f | rot %.2f | ' ...
                                       'sx %.3f | sy %.3f'], ...
-                                      S.slice, S.atlasMode, S.tx, S.ty, S.rotDeg, S.sx, S.sy));
+                                      getSourceSliceIndexForStatus(), S.slice, S.atlasMode, ...
+                                      S.tx, S.ty, S.rotDeg, S.sx, S.sy));
 
         drawnow limitrate;
     end
@@ -743,61 +756,180 @@ uiwait(fig);
         set(hStatus,'String','Transform reset.');
     end
 
-   function onSave(~, ~)
-
-    Reg2D = buildReg2D();
-
-    sliceDir = getSliceSaveDir(saveDir, S.slice);
-    outFile = fullfile(sliceDir, ...
-        sprintf('CoronalRegistration2D_slice%03d_%s.mat', S.slice, lower(S.atlasMode)));
-
-    try
-        save(outFile,'Reg2D');
-
-        savedFile = outFile;
-        Reg2D.savedFile = outFile;
-        Reg2Dout = Reg2D;
-        didExplicitSave = true;
-
-        set(hStatus,'String',['Saved transformation: ' outFile]);
-        logMessage(['Saved slice-specific registration -> ' outFile]);
-
-    catch ME
-        set(hStatus,'String',['Save failed: ' ME.message]);
-        logMessage(['Save failed: ' ME.message]);
+    function onSaveTrafo(~, ~)
+        saveCurrentTrafoOnly();
     end
-end
 
- function onSaveUnderlays(~, ~)
+    function onSaveUnderlaysRegions(~, ~)
+        saveUnderlaysAndRegionsForCurrentSlice();
+    end
 
-    try
-        Reg2D = buildReg2D();
+    function saveCurrentTrafoOnly()
 
-        sliceDir = getSliceSaveDir(saveDir, S.slice);
+        try
+            sliceDir = getCurrentSliceDir();
+            if ~exist(sliceDir,'dir')
+                mkdir(sliceDir);
+            end
+
+            sliceFile = getCurrentRegFile();
+            savedFile = sliceFile;
+
+            Reg2D = buildReg2D();
+            Reg2D.savedFile = sliceFile;
+
+            save(sliceFile,'Reg2D');
+
+            verifyFilesExist({sliceFile});
+
+            Reg2Dout = Reg2D;
+            didExplicitSave = true;
+
+            set(hStatus,'String',sprintf('Saved TRAFO | source slice %d | atlas slice %03d | %s', ...
+                getSourceSliceIndexForStatus(), round(S.slice), S.atlasMode));
+
+            logMessage(['Saved TRAFO Reg2D        -> ' sliceFile]);
+            logTrafoDetails();
+
+        catch ME
+            set(hStatus,'String',['Save trafo failed: ' ME.message]);
+            logMessage(['Save trafo failed: ' ME.message]);
+        end
+    end
+
+    function saveUnderlaysAndRegionsForCurrentSlice()
+
+        try
+            sliceDir = getCurrentSliceDir();
+            if ~exist(sliceDir,'dir')
+                mkdir(sliceDir);
+            end
+
+            sliceFile = getCurrentRegFile();
+            savedFile = sliceFile;
+
+            % Always refresh Reg2D first so underlay MAT files contain
+            % the current transformation values.
+            Reg2D = buildReg2D();
+            Reg2D.savedFile = sliceFile;
+
+            save(sliceFile,'Reg2D');
+
+            files = saveAtlasUnderlaysLocal(atlas, Reg2D, sliceDir);
+
+            expectedFiles = {sliceFile};
+
+            if isstruct(files)
+                if isfield(files,'vascular'),   expectedFiles{end+1} = files.vascular;   end %#ok<AGROW>
+                if isfield(files,'histology'),  expectedFiles{end+1} = files.histology;  end %#ok<AGROW>
+                if isfield(files,'regions'),    expectedFiles{end+1} = files.regions;    end %#ok<AGROW>
+                if isfield(files,'regionsTxt'), expectedFiles{end+1} = files.regionsTxt; end %#ok<AGROW>
+            end
+
+            verifyFilesExist(expectedFiles);
+
+            Reg2Dout = Reg2D;
+            didExplicitSave = true;
+
+            set(hStatus,'String',sprintf('Saved UNDERLAYS + REGIONS | source slice %d | atlas slice %03d | %s', ...
+                getSourceSliceIndexForStatus(), round(S.slice), S.atlasMode));
+
+            logMessage(['Saved/refreshed TRAFO    -> ' sliceFile]);
+            logTrafoDetails();
+            logMessage(['Saved atlas output folder -> ' sliceDir]);
+
+            if isstruct(files)
+                if isfield(files,'vascular')
+                    logMessage(['Vascular underlay        -> ' files.vascular]);
+                end
+                if isfield(files,'histology')
+                    logMessage(['Histology underlay       -> ' files.histology]);
+                end
+                if isfield(files,'regions')
+                    logMessage(['Regions underlay         -> ' files.regions]);
+                end
+                if isfield(files,'regionsTxt')
+                    logMessage(['Regions TXT list         -> ' files.regionsTxt]);
+                end
+            end
+
+        catch ME
+            set(hStatus,'String',['Save underlays/regions failed: ' ME.message]);
+            logMessage(['Save underlays/regions failed: ' ME.message]);
+        end
+    end
+
+    function verifyFilesExist(fileCell)
+
+        if isempty(fileCell)
+            return;
+        end
+
+        for ii = 1:numel(fileCell)
+            f = fileCell{ii};
+            if isempty(f)
+                continue;
+            end
+            if exist(f,'file') ~= 2
+                error(['Save verification failed. Missing file: ' f]);
+            end
+        end
+    end
+
+    function logTrafoDetails()
+        logMessage(sprintf('TRAFO details             -> source slice %d | atlas slice %03d | mode %s | tx %.2f | ty %.2f | rot %.2f | sx %.3f | sy %.3f', ...
+            getSourceSliceIndexForStatus(), round(S.slice), S.atlasMode, ...
+            S.tx, S.ty, S.rotDeg, S.sx, S.sy));
+    end
+
+    function sliceDir = getCurrentSliceDir()
+        sliceDir = getSliceSaveDir(saveDir, S.slice, getSourceSliceIndexForStatus(), isSourceMultiSlice());
+    end
+
+    function sliceFile = getCurrentRegFile()
+        sliceDir = getCurrentSliceDir();
         sliceFile = fullfile(sliceDir, ...
-            sprintf('CoronalRegistration2D_slice%03d_%s.mat', S.slice, lower(S.atlasMode)));
-
-        save(sliceFile,'Reg2D');
-
-        savedFile = sliceFile;
-        Reg2D.savedFile = sliceFile;
-        Reg2Dout = Reg2D;
-        didExplicitSave = true;
-
-        files = saveAtlasUnderlaysLocal(atlas, Reg2D, sliceDir);
-
-        set(hStatus,'String','Saved transformation and atlas underlays.');
-        logMessage(['Saved slice registration -> ' sliceFile]);
-        logMessage(['Saved atlas underlays    -> ' sliceDir]);
-        logMessage(['Vascular underlay        -> ' files.vascular]);
-        logMessage(['Histology underlay       -> ' files.histology]);
-        logMessage(['Regions underlay         -> ' files.regions]);
-
-    catch ME
-        set(hStatus,'String',['Save underlays failed: ' ME.message]);
-        logMessage(['Save underlays failed: ' ME.message]);
+            sprintf('CoronalRegistration2D_source%03d_atlas%03d_%s.mat', ...
+            getSourceSliceIndexForStatus(), round(S.slice), lower(S.atlasMode)));
     end
-end
+
+    function sourceIdx = getSourceSliceIndexForStatus()
+
+        sourceIdx = 1;
+
+        try
+            if isfield(sourceInfo,'sourceSliceIndex') && ~isempty(sourceInfo.sourceSliceIndex)
+                tmp = round(double(sourceInfo.sourceSliceIndex));
+                if isfinite(tmp) && tmp >= 1
+                    sourceIdx = tmp;
+                end
+            end
+        catch
+            sourceIdx = 1;
+        end
+    end
+
+    function tf = isSourceMultiSlice()
+
+        tf = false;
+
+        try
+            if isfield(sourceInfo,'sourceWas3D') && ~isempty(sourceInfo.sourceWas3D)
+                tf = logical(sourceInfo.sourceWas3D);
+            end
+        catch
+            tf = false;
+        end
+    end
+
+    function txt = getSourceSliceStatusText()
+
+        if isSourceMultiSlice()
+            txt = sprintf('Source slice %d', getSourceSliceIndexForStatus());
+        else
+            txt = 'Single source';
+        end
+    end
 
     function onHelp(~, ~)
 
@@ -809,7 +941,7 @@ end
             'NumberTitle','off', ...
             'Resize','off', ...
             'WindowStyle','modal', ...
-            'Position',[220 120 760 620]);
+            'Position',[220 120 820 690]);
 
         helpText = { ...
             '2D CORONAL REGISTRATION - QUICK GUIDE'; ...
@@ -823,8 +955,8 @@ end
             ' '; ...
             '4) Change atlas slice using:'; ...
             '      - mouse wheel'; ...
-            '      - slice slider'; ...
-            '      - slice edit box'; ...
+            '      - atlas slice slider'; ...
+            '      - atlas slice edit box'; ...
             ' '; ...
             '5) Mouse interaction in fused view:'; ...
             '      - left drag  = translate'; ...
@@ -841,15 +973,28 @@ end
             '      - Colormap'; ...
             '      - Invert'; ...
             ' '; ...
-            '8) Buttons:'; ...
-            '      - Reset: restore default transform'; ...
-            '      - Save Transformation: saves CoronalRegistration2D.mat'; ...
-            '      - Save Underlays: saves registration and atlas underlay MAT files'; ...
-            '      - Close: closes without saving unless you explicitly saved'; ...
+            '8) Save buttons:'; ...
+            ' '; ...
+            '      Save Trafo:'; ...
+            '          saves only the current 2D affine transformation Reg2D'; ...
+            '          this is the alignment/trafo file for the current source slice'; ...
+            ' '; ...
+            '      Save Underlays + Regions:'; ...
+            '          refreshes/saves the current Reg2D first'; ...
+            '          saves vascular atlas underlay'; ...
+            '          saves histology atlas underlay'; ...
+            '          saves regions atlas underlay'; ...
+            '          saves signed left/right region labels'; ...
+            '          saves AtlasRegions_sliceXXX.txt'; ...
+            ' '; ...
+            '9) Multi-slice / step-motor note:'; ...
+            '      This GUI is now source-slice aware.'; ...
+            '      Full slice switching and save-all-slices should be added next'; ...
+            '      in coreg_coronal_2d.m by passing the full source stack.'; ...
             ' '; ...
             'IMPORTANT:'; ...
             'Closing the GUI alone does NOT save anything.'; ...
-            'Only the save buttons write files.'; ...
+            'Click Save Trafo or Save Underlays + Regions before closing.'; ...
             ' '; ...
             'Tip:'; ...
             'First align by translation, then rotation, then scale.' ...
@@ -971,34 +1116,23 @@ end
         Reg2D.invert = S.invert;
         Reg2D.cmapName = S.cmapName;
         Reg2D.timestamp = datestr(now,'yyyymmdd_HHMMSS');
-if isfield(sourceInfo,'sourceSliceIndex') && ~isempty(sourceInfo.sourceSliceIndex) && isfinite(sourceInfo.sourceSliceIndex)
-    Reg2D.sourceSliceIndex = round(sourceInfo.sourceSliceIndex);
-else
-    Reg2D.sourceSliceIndex = 1;
-end
 
-if isfield(sourceInfo,'sourceWas3D') && ~isempty(sourceInfo.sourceWas3D)
-    Reg2D.sourceWas3D = logical(sourceInfo.sourceWas3D);
-else
-    Reg2D.sourceWas3D = false;
-end
+        Reg2D.sourceSliceIndex = getSourceSliceIndexForStatus();
+        Reg2D.sourceWas3D = isSourceMultiSlice();
+
         if isfield(sourceInfo,'path')
             Reg2D.sourcePath = sourceInfo.path;
         else
             Reg2D.sourcePath = '';
         end
+
         if isfield(sourceInfo,'label')
             Reg2D.sourceLabel = sourceInfo.label;
         else
             Reg2D.sourceLabel = '';
         end
 
-        if ~isempty(savedFile)
-    Reg2D.savedFile = savedFile;
-else
-    Reg2D.savedFile = fullfile(getSliceSaveDir(saveDir, S.slice), ...
-    sprintf('CoronalRegistration2D_slice%03d_%s.mat', S.slice, lower(S.atlasMode)));
-end
+        Reg2D.savedFile = getCurrentRegFile();
     end
 
     function logMessage(msg)
@@ -1065,11 +1199,9 @@ for i = 1:numel(modes)
             'atlasInfoRegions', ...
             'regionList');
 
-        try
-            txtFile = fullfile(saveDir, sprintf('AtlasRegions_slice%03d.txt', sliceIdx));
-            writeRegionListTextFile(txtFile, regionList);
-        catch
-        end
+        txtFile = fullfile(saveDir, sprintf('AtlasRegions_slice%03d.txt', sliceIdx));
+        writeRegionListTextFile(txtFile, regionList);
+        outFiles.regionsTxt = txtFile;
 
     else
         brainImage = atlasUnderlay; %#ok<NASGU>
@@ -1160,7 +1292,7 @@ function writeRegionListTextFile(txtFile, regionList)
 
 fid = fopen(txtFile,'w');
 if fid == -1
-    return;
+    error('Could not write region list TXT file: %s', txtFile);
 end
 
 fprintf(fid,'Regions present in exported 2D atlas slice\n\n');
@@ -1322,14 +1454,28 @@ for c = 1:3
 end
 end
 
-function sliceDir = getSliceSaveDir(baseDir, sliceIdx)
 
-    sliceDir = fullfile(baseDir, sprintf('Slice%03d', round(sliceIdx)));
+function sliceDir = getSliceSaveDir(baseDir, atlasSliceIdx, sourceSliceIdx, useSourceFolder)
 
-    if ~exist(sliceDir,'dir')
-        mkdir(sliceDir);
-    end
+if nargin < 3 || isempty(sourceSliceIdx)
+    sourceSliceIdx = 1;
 end
+if nargin < 4 || isempty(useSourceFolder)
+    useSourceFolder = false;
+end
+
+if useSourceFolder
+    sliceDir = fullfile(baseDir, ...
+        sprintf('SourceSlice%03d_AtlasSlice%03d', round(sourceSliceIdx), round(atlasSliceIdx)));
+else
+    sliceDir = fullfile(baseDir, sprintf('Slice%03d', round(atlasSliceIdx)));
+end
+
+if ~exist(sliceDir,'dir')
+    mkdir(sliceDir);
+end
+end
+
 
 function A = rescale01(A)
 A = double(A);
