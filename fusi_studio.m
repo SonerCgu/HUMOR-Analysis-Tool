@@ -15,6 +15,10 @@ studio.loadedName = '';
 studio.exportPath = '';
 studio.atlasTransform = [];
 studio.atlasTransformFile = '';
+
+studio.atlasReg2D = [];
+studio.atlasReg2DFile = '';
+studio.atlasRegistrationMode = '';
 studio.allButtons = {};
 studio.figure = [];
 studio.publicationReady = [];
@@ -27,6 +31,11 @@ studio.brainMask = [];
 studio.brainImageFile = '';
 studio.anatomicalReferenceRaw = [];
 studio.anatomicalReference = [];
+studio.anatomicalReferenceIsDisplayReady = false;
+studio.anatomicalReferenceFile = '';
+
+% FC / atlas / registration helper path
+studio.registrationPath = '';
 
 studio.pipeline = struct( ...
     'loadDone', false, ...
@@ -114,8 +123,11 @@ jLog.setEditable(false);
 jLog.setLineWrap(true);
 jLog.setWrapStyleWord(true);
 jLog.setFont(java.awt.Font('Monospaced', java.awt.Font.PLAIN, 26));
-jLog.setBackground(java.awt.Color(0,0,0));
-jLog.setForeground(java.awt.Color(0.60,0.85,1.00));
+
+% Safe Java colors. Avoid direct java.awt.Color(...) calls.
+jLog.setBackground(studioJavaColor(0,0,0));
+jLog.setForeground(studioJavaColor(0.60,0.85,1.00));
+
 jLog.setText('');
 
 jScroll = javaObjectEDT('javax.swing.JScrollPane', jLog);
@@ -435,8 +447,23 @@ function loadDataCallback(~,~)
     studio.publicationReady = [];
     studio.publicationReadyNote = '';
     studio.publicationReadyTime = '';
-    studio.atlasTransform = [];
-    studio.atlasTransformFile = '';
+   studio.atlasTransform = [];
+studio.atlasTransformFile = '';
+
+studio.atlasReg2D = [];
+studio.atlasReg2DFile = '';
+studio.atlasRegistrationMode = '';
+
+% Important: avoid stale mask-editor underlay/mask from previous animal
+studio.mask = [];
+studio.maskIsInclude = true;
+studio.brainMask = [];
+studio.brainImageFile = '';
+studio.anatomicalReferenceRaw = [];
+studio.anatomicalReference = [];
+studio.anatomicalReferenceIsDisplayReady = false;
+studio.anatomicalReferenceFile = '';
+studio.registrationPath = '';
     studio.pipeline = struct( ...
         'loadDone', false, ...
         'qcDone', false, ...
@@ -517,8 +544,11 @@ function loadDataCallback(~,~)
        qcFolder  = fullfile(datasetFolder,'QC');
 preFolder = fullfile(datasetFolder,'Preprocessing');
 visFolder = fullfile(datasetFolder,'Visualization');
+regFolder = fullfile(datasetFolder,'Registration');
+reg2DFolder = fullfile(datasetFolder,'Registration2D');
+pscFolder = fullfile(datasetFolder,'PSC');
 
-folders = {qcFolder, preFolder, visFolder};
+folders = {qcFolder, preFolder, visFolder, regFolder, reg2DFolder, pscFolder};
 for kk = 1:numel(folders)
     if ~exist(folders{kk},'dir')
         mkdir(folders{kk});
@@ -540,6 +570,8 @@ end
         studio.loadedName = datasetName;
         studio.exportPath = datasetFolder;
         studio.pipeline.loadDone = true;
+        studio.registrationPath = regFolder;
+        studio.registration2DPath = reg2DFolder;
 if isempty(studio.meta) || ~isstruct(studio.meta)
     studio.meta = struct();
 end
@@ -549,6 +581,11 @@ studio.meta.savePath   = datasetFolder;
 studio.meta.outPath    = datasetFolder;
 studio.meta.loadedPath = path;
 studio.meta.loadedFile = fullInputFile;
+studio.meta.registrationPath = regFolder;
+studio.meta.registration2DPath = reg2DFolder;
+studio.meta.visualizationPath = visFolder;
+studio.meta.preprocessingPath = preFolder;
+studio.meta.pscPath = pscFolder;
       pscFolder = fullfile(datasetFolder,'PSC');
 if exist(pscFolder,'dir')
     pscFiles = dir(fullfile(pscFolder,'*.mat'));
@@ -3580,7 +3617,7 @@ end
 %% =========================================================
 %  COREGISTRATION
 % =========================================================
-function coregCallback(~,~)
+    function coregCallback(~,~)
 
     studio = guidata(fig);
     addLog('--- Atlas Coregistration ---');
@@ -3596,27 +3633,71 @@ function coregCallback(~,~)
     drawnow;
 
     try
-        Transf = coreg(studio);
+        RegOut = coreg(studio);
 
-        if isempty(Transf)
+        if isempty(RegOut)
             addLog('Coregistration cancelled.');
             setProgramStatus(true);
             return;
         end
 
-        studio.atlasTransform = Transf;
+        % -----------------------------------------------------
+        % 2D coronal registration output
+        % -----------------------------------------------------
+        if isstruct(RegOut) && ...
+                ((isfield(RegOut,'type') && ~isempty(strfind(lower(RegOut.type),'coronal_2d'))) || ...
+                 (isfield(RegOut,'A') && isfield(RegOut,'outputSize') && isfield(RegOut,'atlasSliceIndex')))
 
-        if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
-            studio.atlasTransformFile = fullfile(studio.loadedPath,'Transformation.mat');
+            studio.atlasReg2D = RegOut;
+            studio.atlasRegistrationMode = '2D coronal';
+
+            if isfield(RegOut,'savedFile') && ~isempty(RegOut.savedFile)
+                studio.atlasReg2DFile = RegOut.savedFile;
+            else
+                studio.atlasReg2DFile = '';
+            end
+
+            % Avoid confusing 2D Reg2D with old 3D Transf
+            studio.atlasTransform = [];
+            studio.atlasTransformFile = '';
+
+            guidata(fig, studio);
+
+            addLog('2D coronal atlas registration completed.');
+            addLog('Reg2D stored in studio.atlasReg2D.');
+
+            if ~isempty(studio.atlasReg2DFile)
+                addLog(['Reg2D file: ' studio.atlasReg2DFile]);
+            end
+
+        % -----------------------------------------------------
+        % 3D registration output
+        % -----------------------------------------------------
+        elseif isstruct(RegOut) && isfield(RegOut,'M')
+
+            studio.atlasTransform = RegOut;
+            studio.atlasRegistrationMode = '3D';
+
+            if isfield(studio,'exportPath') && ~isempty(studio.exportPath)
+                studio.atlasTransformFile = fullfile(studio.exportPath,'Registration','Transformation.mat');
+            else
+                studio.atlasTransformFile = 'Transformation.mat';
+            end
+
+            % Avoid stale 2D registration after new 3D registration
+            studio.atlasReg2D = [];
+            studio.atlasReg2DFile = '';
+
+            guidata(fig, studio);
+
+            addLog('3D atlas coregistration completed.');
+            addLog('3D transformation stored in studio.atlasTransform.');
+            addLog(['Transformation file: ' studio.atlasTransformFile]);
+
         else
-            studio.atlasTransformFile = 'Transformation.mat';
+            guidata(fig, studio);
+            addLog('Coregistration finished, but output type was not recognized.');
         end
-
-        guidata(fig, studio);
-
-        addLog('Atlas coregistration completed.');
-        addLog('Transformation stored in studio.atlasTransform');
-        addLog(['Transformation file: ' studio.atlasTransformFile]);
 
     catch ME
         addLog(['COREG ERROR: ' ME.message]);
@@ -3625,7 +3706,6 @@ function coregCallback(~,~)
 
     setProgramStatus(true);
 end
-
 %% =========================================================
 %  SEGMENTATION
 % =========================================================
@@ -3639,12 +3719,14 @@ function segmentationCallback(~,~)
         return;
     end
 
-    if isempty(studio.atlasTransform)
-        warndlg('Run Registration to Atlas first.');
-        addLog('Segmentation cancelled: no atlas transform found.');
-        return;
-    end
+  has3D = isfield(studio,'atlasTransform') && ~isempty(studio.atlasTransform);
+has2D = isfield(studio,'atlasReg2D') && ~isempty(studio.atlasReg2D);
 
+if ~has3D && ~has2D
+    warndlg('Run Registration to Atlas first.');
+    addLog('Segmentation cancelled: no atlas registration found.');
+    return;
+end
     setProgramStatus(false);
     drawnow;
 
@@ -3712,12 +3794,33 @@ function functionalConnectivityCallback(~,~)
 
     if ~isfield(studio,'isLoaded') || ~studio.isLoaded
         addLog('[FC] Load a dataset first.');
+        errordlg('Load data first.','Functional Connectivity');
         return;
     end
 
     data = getActiveData();
+
     if ~isstruct(data) || ~isfield(data,'I') || isempty(data.I)
         addLog('[FC] Active dataset has no .I.');
+        errordlg('Active dataset has no .I field.','Functional Connectivity');
+        return;
+    end
+
+    if ~isfield(data,'TR') || isempty(data.TR) || ...
+            ~isscalar(data.TR) || ~isfinite(data.TR) || data.TR <= 0
+        addLog('[FC] Active dataset has invalid TR.');
+        errordlg('Active dataset has invalid TR.','Functional Connectivity');
+        return;
+    end
+
+    % -----------------------------------------------------
+    % Single modern black setup popup
+    % -----------------------------------------------------
+    cfg = showFunctionalConnectivitySetupDialog(studio, data);
+
+    if isempty(cfg) || ~isstruct(cfg) || ...
+            ~isfield(cfg,'cancelled') || cfg.cancelled
+        addLog('[FC] Functional Connectivity cancelled.');
         return;
     end
 
@@ -3728,39 +3831,2194 @@ function functionalConnectivityCallback(~,~)
 
     tag = ['fc_' datestr(now,'yyyymmdd_HHMMSS')];
 
+    % -----------------------------------------------------
+    % Build data object for FunctionalConnectivity
+    % -----------------------------------------------------
+    dataFC = data;
+
+    % Functional source
+    if strcmpi(cfg.functionalSource,'psc')
+        dataFC.I = single(data.PSC);
+        dataFC.functionalSource = 'PSC';
+    else
+        dataFC.I = single(data.I);
+        dataFC.functionalSource = 'I';
+    end
+
+    % Display / bookkeeping
+    dataFC.name = getDatasetDisplayName(studio, studio.activeDataset);
+    dataFC.analysisDir = saveRoot;
+dataFC.exportPath = studio.exportPath;
+dataFC.registrationPath = fcGetRegistrationStartDir(studio);
+    if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
+        dataFC.loadedPath = studio.loadedPath;
+    end
+
+    % Mask
+    switch lower(cfg.maskMode)
+        case 'studio'
+            dataFC.mask = logical(cfg.mask);
+
+        case 'loaded'
+            dataFC.mask = logical(cfg.mask);
+
+        case 'none'
+            if isfield(dataFC,'mask')
+                dataFC.mask = [];
+            end
+            if isfield(dataFC,'brainMask')
+                dataFC.brainMask = [];
+            end
+
+        otherwise
+            % auto mask will be generated inside FunctionalConnectivity
+            if isfield(dataFC,'mask')
+                dataFC.mask = [];
+            end
+            if isfield(dataFC,'brainMask')
+                dataFC.brainMask = [];
+            end
+    end
+
+% Underlay / anatomical reference
+dataFC.anatIsDisplayReady = false;
+
+if ~isempty(cfg.anat)
+    dataFC.anat = cfg.anat;
+    dataFC.bg = cfg.anat;
+    dataFC.underlay = cfg.anat;
+
+    if isfield(cfg,'anatIsDisplayReady') && ~isempty(cfg.anatIsDisplayReady)
+        dataFC.anatIsDisplayReady = logical(cfg.anatIsDisplayReady);
+    end
+
+elseif isfield(data,'bg') && ~isempty(data.bg)
+    dataFC.anat = data.bg;
+    dataFC.bg = data.bg;
+    dataFC.underlay = data.bg;
+    dataFC.anatIsDisplayReady = false;
+end
+    % ROI atlas / region atlas
+    if ~isempty(cfg.roiAtlas)
+        dataFC.roiAtlas = round(double(cfg.roiAtlas));
+    end
+
+    % -----------------------------------------------------
+    % Options for FunctionalConnectivity
+    % -----------------------------------------------------
     opts = struct();
     opts.datasetName = studio.activeDataset;
+    opts.functionalField = 'I';
 
-    if isfield(data,'mask') && ~isempty(data.mask)
-        opts.mask = data.mask;
-    elseif isfield(studio,'mask') && ~isempty(studio.mask)
-        opts.mask = studio.mask;
+    opts.seedBoxSize = cfg.seedBoxSize;
+    opts.roiMinVox = cfg.roiMinVox;
+    opts.chunkVox = cfg.chunkVox;
+
+    opts.askMaskAtStart = false;    % important: no extra popup
+    opts.askAtlasAtStart = false;   % important: no extra popup
+    opts.debugRethrow = false;
+opts.defaultUnderlayMode = cfg.defaultUnderlayMode;
+if isfield(cfg,'anatIsDisplayReady') && ~isempty(cfg.anatIsDisplayReady)
+    opts.anatIsDisplayReady = logical(cfg.anatIsDisplayReady);
+else
+    opts.anatIsDisplayReady = false;
+end
+% -----------------------------------------------------
+% FC underlay display style
+% 3 = SCM / VideoGUI recommended display normalization
+% -----------------------------------------------------
+if isfield(cfg,'defaultUnderlayViewMode')
+    opts.defaultUnderlayViewMode = cfg.defaultUnderlayViewMode;
+else
+    opts.defaultUnderlayViewMode = 5;   % 5 = SCM log/median underlay
+end
+
+if isfield(cfg,'underlayBrightness')
+    opts.underlayBrightness = cfg.underlayBrightness;
+else
+    opts.underlayBrightness = -0.04;
+end
+
+if isfield(cfg,'underlayContrast')
+    opts.underlayContrast = cfg.underlayContrast;
+else
+    opts.underlayContrast = 1.10;
+end
+
+if isfield(cfg,'underlayGamma')
+    opts.underlayGamma = cfg.underlayGamma;
+else
+    opts.underlayGamma = 0.95;
+end
+
+    if ~isempty(cfg.roiNameTable)
+        opts.roiNameTable = cfg.roiNameTable;
+    else
+        opts.roiNameTable = struct('labels',[],'names',{{}});
     end
 
-    if isfield(data,'anat') && ~isempty(data.anat)
-        opts.anat = data.anat;
-    elseif isfield(studio,'anatomicalReference') && ~isempty(studio.anatomicalReference)
-        opts.anat = studio.anatomicalReference;
-    elseif isfield(studio,'anatomicalReferenceRaw') && ~isempty(studio.anatomicalReferenceRaw)
-        opts.anat = studio.anatomicalReferenceRaw;
-    end
-
+    opts.statusFcn = @(isReady) setProgramStatus(isReady);
     opts.logFcn = @(m) addLog(['[FC] ' m]);
 
+    % Useful paths for the FC GUI file pickers
+ opts.saveRoot = saveRoot;
+opts.loadedPath = studio.loadedPath;
+opts.exportPath = studio.exportPath;
+
+% Important for atlas / histology / region-name loading
+opts.registrationPath = fcGetRegistrationStartDir(studio);
+opts.startDirAtlas = opts.registrationPath;
+opts.startDirNames = opts.registrationPath;
+opts.startDirUnderlay = opts.registrationPath;
+
+% New FC GUI behaviour
+opts.showAtlasInSeedTab = false;
+opts.seedOverlayAtlas = false;
+opts.defaultUnderlayMode = cfg.defaultUnderlayMode;
+opts.preferredUnderlayStyle = 'scm_log_median';
+
+    addLog('[FC] Setup complete.');
+    addLog(['[FC] Functional source: ' upper(cfg.functionalSource)]);
+    addLog(['[FC] Mask mode: ' cfg.maskMode]);
+  addLog(['[FC] Underlay mode: ' cfg.defaultUnderlayMode]);
+
+if isfield(cfg,'defaultUnderlayViewMode') && cfg.defaultUnderlayViewMode == 3
+    addLog('[FC] Underlay display: SCM/Video recommended normalization.');
+end
+
+    if ~isempty(cfg.roiAtlas)
+        addLog('[FC] ROI atlas preloaded.');
+    else
+        addLog('[FC] ROI atlas not preloaded.');
+    end
+
+    if ~isempty(cfg.roiNameTable) && isfield(cfg.roiNameTable,'labels')
+        addLog(sprintf('[FC] Region names preloaded: %d labels.', ...
+            numel(cfg.roiNameTable.labels)));
+    else
+        addLog('[FC] Region names not preloaded.');
+    end
+
+    setProgramStatus(false);
+    drawnow;
+
     try
-        fcFig = FunctionalConnectivity(data, saveRoot, tag, opts);
+        fcFig = FunctionalConnectivity(dataFC, saveRoot, tag, opts);
 
         if ~isempty(fcFig) && ishandle(fcFig)
-            addlistener(fcFig,'ObjectBeingDestroyed', @(~,~) addLog('[FC] Closed.'));
+            addlistener(fcFig,'ObjectBeingDestroyed', @(~,~) fcOnClose());
+        else
+            setProgramStatus(true);
         end
 
         addLog('[FC] GUI launched.');
+
     catch ME
+        setProgramStatus(true);
         addLog(['FC ERROR: ' ME.message]);
         errordlg(ME.message,'Functional Connectivity');
     end
+
+    function fcOnClose()
+        if ~isempty(fig) && ishandle(fig)
+            setProgramStatus(true);
+            addLog('[FC] Closed.');
+        end
+    end
 end
 
+%% =========================================================
+%  MODERN FUNCTIONAL CONNECTIVITY SETUP POPUP
+% =========================================================
+function cfg = showFunctionalConnectivitySetupDialog(studio, data)
+
+    cfg = struct();
+    cfg.cancelled = true;
+
+    I = data.I;
+    nd = ndims(I);
+    sz = size(I);
+
+    if nd == 3
+        Y = sz(1);
+        X = sz(2);
+        Z = 1;
+        T = sz(3);
+        dimTxt = sprintf('%d x %d x %d', Y, X, T);
+    elseif nd == 4
+        Y = sz(1);
+        X = sz(2);
+        Z = sz(3);
+        T = sz(4);
+        dimTxt = sprintf('%d x %d x %d x %d', Y, X, Z, T);
+    else
+        error('Functional Connectivity requires 3D [Y X T] or 4D [Y X Z T] data.');
+    end
+
+    TR = double(data.TR);
+
+    hasPSC = isfield(data,'PSC') && ~isempty(data.PSC) && isnumeric(data.PSC);
+    hasDataBg = isfield(data,'bg') && ~isempty(data.bg) && isnumeric(data.bg);
+
+    hasStudioMask = isfield(studio,'mask') && ~isempty(studio.mask);
+    hasStudioAnat = false;
+
+    if isfield(studio,'anatomicalReference') && ~isempty(studio.anatomicalReference)
+        hasStudioAnat = true;
+    elseif isfield(studio,'anatomicalReferenceRaw') && ~isempty(studio.anatomicalReferenceRaw)
+        hasStudioAnat = true;
+    end
+
+    loadedMask = [];
+loadedAtlas = [];
+loadedAnat = [];
+loadedAnatDisplayReady = false;
+loadedNames = struct('labels',[],'names',{{}});
+
+    loadedMaskName = '';
+    loadedAtlasName = '';
+    loadedAnatName = '';
+    loadedNamesName = '';
+
+    % ---------------- colors ----------------
+    bg      = [0.045 0.045 0.050];
+    panel   = [0.085 0.085 0.095];
+    panel2  = [0.115 0.115 0.130];
+    fg      = [0.96 0.96 0.96];
+    fgDim   = [0.72 0.72 0.76];
+    blue    = [0.20 0.48 0.95];
+    green   = [0.15 0.68 0.35];
+    orange  = [0.95 0.55 0.18];
+    red     = [0.80 0.25 0.25];
+
+    dlg = figure( ...
+        'Name','Functional Connectivity Setup', ...
+        'Color',bg, ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'NumberTitle','off', ...
+        'Resize','off', ...
+        'Units','pixels', ...
+       'Position',[150 40 1120 820], ...
+        'WindowStyle','modal', ...
+        'Visible','off', ...
+        'CloseRequestFcn',@onCancel, ...
+        'KeyPressFcn',@onKey);
+
+    try
+        movegui(dlg,'center');
+    catch
+    end
+
+    % ---------------- title ----------------
+    uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.045 0.93 0.91 0.05], ...
+        'String','Functional Connectivity Setup', ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',21, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.047 0.885 0.91 0.035], ...
+        'String','Preload functional data, mask, underlay, ROI atlas and region names before launching the FC GUI.', ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'HorizontalAlignment','left');
+
+    % ---------------- info panel ----------------
+    infoPanel = uipanel('Parent',dlg, ...
+        'Units','normalized', ...
+        'Position',[0.045 0.785 0.91 0.085], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'BorderType','line', ...
+        'HighlightColor',[0.30 0.30 0.34], ...
+        'ShadowColor',[0.02 0.02 0.02]);
+
+    infoStr = sprintf('Input size: %s     TR: %.6g s     Volumes: %d     Duration: %.2f min', ...
+        dimTxt, TR, T, (T*TR)/60);
+
+    uicontrol('Parent',infoPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.035 0.22 0.93 0.58], ...
+        'String',infoStr, ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',[0.75 0.88 1.00], ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    % ---------------- settings panel ----------------
+    settingsPanel = uipanel('Parent',dlg, ...
+        'Units','normalized', ...
+        'Position',[0.045 0.225 0.91 0.54], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'BorderType','line', ...
+        'HighlightColor',[0.30 0.30 0.34], ...
+        'ShadowColor',[0.02 0.02 0.02]);
+
+    % Functional source
+    funcList = {'Active data.I'};
+    if hasPSC
+        funcList{end+1} = 'PSC field';
+    end
+
+    addLabel(settingsPanel,'Functional signal',0.045,0.865);
+    ddFunc = uicontrol('Parent',settingsPanel,'Style','popupmenu', ...
+        'Units','normalized', ...
+        'Position',[0.31 0.865 0.30 0.07], ...
+        'String',funcList, ...
+        'Value',1, ...
+        'BackgroundColor',panel2, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'Callback',@updateSummary);
+
+    uicontrol('Parent',settingsPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.64 0.855 0.31 0.09], ...
+        'String',{'Usually use active data.I.'; 'Use PSC only if already computed.'}, ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left');
+
+    % Mask
+    addLabel(settingsPanel,'Mask',0.045,0.720);
+    ddMask = uicontrol('Parent',settingsPanel,'Style','popupmenu', ...
+        'Units','normalized', ...
+        'Position',[0.31 0.720 0.30 0.07], ...
+        'String',{'Auto mask','Use Studio mask','Use loaded mask','No mask'}, ...
+        'Value',fcDefaultMaskValue(), ...
+        'BackgroundColor',panel2, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'Callback',@updateSummary);
+
+    btnLoadMask = uicontrol('Parent',settingsPanel,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.64 0.720 0.15 0.07], ...
+        'String','Load mask', ...
+        'BackgroundColor',blue, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'Callback',@onLoadMask);
+
+    txtMask = uicontrol('Parent',settingsPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.81 0.710 0.15 0.09], ...
+        'String','', ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',9, ...
+        'HorizontalAlignment','left');
+
+    % Underlay
+    addLabel(settingsPanel,'Underlay / anatomy',0.045,0.575);
+    ddUnderlay = uicontrol('Parent',settingsPanel,'Style','popupmenu', ...
+    'Units','normalized', ...
+    'Position',[0.31 0.575 0.30 0.07], ...
+    'String',{ ...
+    'SCM log/median underlay [recommended]', ...
+    'Mean functional', ...
+    'Median functional', ...
+    'data.bg / PSC bg', ...
+    'Mask Editor anatomical underlay', ...
+    'Loaded underlay / histology'}, ...
+'Value',1, ...
+    'BackgroundColor',panel2, ...
+    'ForegroundColor',fg, ...
+    'FontName','Arial', ...
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'Callback',@updateSummary);
+
+    btnLoadUnderlay = uicontrol('Parent',settingsPanel,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.64 0.575 0.15 0.07], ...
+        'String','Load underlay', ...
+        'BackgroundColor',blue, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'Callback',@onLoadUnderlay);
+
+    txtUnderlay = uicontrol('Parent',settingsPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.81 0.565 0.15 0.09], ...
+        'String','', ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',9, ...
+        'HorizontalAlignment','left');
+
+
+    % ROI Atlas
+    addLabel(settingsPanel,'ROI atlas / label map',0.045,0.430);
+    ddAtlas = uicontrol('Parent',settingsPanel,'Style','popupmenu', ...
+        'Units','normalized', ...
+        'Position',[0.31 0.430 0.30 0.07], ...
+        'String',{'No atlas','Use active dataset atlas','Use loaded atlas'}, ...
+        'Value',fcDefaultAtlasValue(), ...
+        'BackgroundColor',panel2, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'Callback',@updateSummary);
+
+    btnLoadAtlas = uicontrol('Parent',settingsPanel,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.64 0.430 0.15 0.07], ...
+        'String','Load labels', ...
+        'BackgroundColor',orange, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'Callback',@onLoadAtlas);
+
+    txtAtlas = uicontrol('Parent',settingsPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.81 0.420 0.15 0.09], ...
+        'String','', ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',9, ...
+        'HorizontalAlignment','left');
+
+    % Region names
+    addLabel(settingsPanel,'Region names',0.045,0.285);
+    ddNames = uicontrol('Parent',settingsPanel,'Style','popupmenu', ...
+        'Units','normalized', ...
+        'Position',[0.31 0.285 0.30 0.07], ...
+        'String',{'No region names','Use loaded names'}, ...
+        'Value',1, ...
+        'BackgroundColor',panel2, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'Callback',@updateSummary);
+
+    btnLoadNames = uicontrol('Parent',settingsPanel,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.64 0.285 0.15 0.07], ...
+        'String','Load names', ...
+        'BackgroundColor',orange, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'Callback',@onLoadNames);
+
+    txtNames = uicontrol('Parent',settingsPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.81 0.275 0.15 0.09], ...
+        'String','', ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',9, ...
+        'HorizontalAlignment','left');
+
+    % Numeric settings
+    addLabel(settingsPanel,'Seed box size',0.045,0.135);
+    edSeedBox = uicontrol('Parent',settingsPanel,'Style','edit', ...
+        'Units','normalized', ...
+        'Position',[0.31 0.140 0.10 0.065], ...
+        'String','3', ...
+        'BackgroundColor',[0.02 0.02 0.025], ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','center', ...
+        'Callback',@updateSummary);
+
+    uicontrol('Parent',settingsPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.43 0.125 0.12 0.09], ...
+        'String','pixels', ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left');
+
+    fcLabelSmall(settingsPanel,'ROI min vox',0.57,0.135);
+    edMinVox = uicontrol('Parent',settingsPanel,'Style','edit', ...
+        'Units','normalized', ...
+        'Position',[0.70 0.140 0.09 0.065], ...
+        'String','9', ...
+        'BackgroundColor',[0.02 0.02 0.025], ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','center', ...
+        'Callback',@updateSummary);
+
+    fcLabelSmall(settingsPanel,'Chunk',0.81,0.135);
+    edChunk = uicontrol('Parent',settingsPanel,'Style','edit', ...
+        'Units','normalized', ...
+        'Position',[0.89 0.140 0.07 0.065], ...
+        'String','6000', ...
+        'BackgroundColor',[0.02 0.02 0.025], ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','center', ...
+        'Callback',@updateSummary);
+
+    % Summary panel
+    summaryPanel = uipanel('Parent',dlg, ...
+        'Units','normalized', ...
+        'Position',[0.045 0.115 0.91 0.085], ...
+        'BackgroundColor',[0.035 0.035 0.040], ...
+        'ForegroundColor',fg, ...
+        'BorderType','line', ...
+        'HighlightColor',[0.25 0.25 0.28], ...
+        'ShadowColor',[0.01 0.01 0.01]);
+
+    summaryText = uicontrol('Parent',summaryPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.025 0.10 0.95 0.80], ...
+        'String','', ...
+        'BackgroundColor',[0.035 0.035 0.040], ...
+        'ForegroundColor',[0.70 1.00 0.80], ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    % Bottom buttons
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.045 0.035 0.20 0.06], ...
+        'String','AUTO SETUP', ...
+        'BackgroundColor',blue, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'Callback',@onAutoSetup);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.54 0.035 0.24 0.06], ...
+        'String','RUN CONNECTIVITY', ...
+        'BackgroundColor',green, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'FontWeight','bold', ...
+        'Callback',@onRun);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.80 0.035 0.155 0.06], ...
+        'String','CANCEL', ...
+        'BackgroundColor',red, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'FontWeight','bold', ...
+        'Callback',@onCancel);
+
+  updateFileLabels();
+updateSummary();
+
+% Make this setup popup more readable
+fcScaleFcSetupFonts(dlg);
+
+set(dlg,'Visible','on');
+waitfor(dlg);
+
+    % =====================================================
+    % Nested UI helpers
+    % =====================================================
+    function addLabel(parent, str, x, y)
+        uicontrol('Parent',parent,'Style','text', ...
+            'Units','normalized', ...
+            'Position',[x y 0.24 0.06], ...
+            'String',str, ...
+            'BackgroundColor',panel, ...
+            'ForegroundColor',fg, ...
+            'FontName','Arial', ...
+            'FontSize',12, ...
+            'FontWeight','bold', ...
+            'HorizontalAlignment','left');
+    end
+
+    function fcLabelSmall(parent, str, x, y)
+        uicontrol('Parent',parent,'Style','text', ...
+            'Units','normalized', ...
+            'Position',[x y 0.12 0.06], ...
+            'String',str, ...
+            'BackgroundColor',panel, ...
+            'ForegroundColor',fg, ...
+            'FontName','Arial', ...
+            'FontSize',10, ...
+            'FontWeight','bold', ...
+            'HorizontalAlignment','left');
+    end
+
+    function v = fcDefaultMaskValue()
+        if hasStudioMask
+            v = 2;
+        else
+            v = 1;
+        end
+    end
+
+   function v = fcDefaultUnderlayValue()
+    % Always pre-select SCM/Video recommended underlay display.
+    v = 1;
+end
+
+    function v = fcDefaultAtlasValue()
+        if fcDataHasAtlas(data,Y,X,Z)
+            v = 2;
+        else
+            v = 1;
+        end
+    end
+
+    function updateFileLabels()
+        if isempty(loadedMaskName)
+            set(txtMask,'String','no file');
+        else
+            set(txtMask,'String',shortTxt(loadedMaskName,18));
+        end
+
+        if isempty(loadedAnatName)
+            set(txtUnderlay,'String','no file');
+        else
+            set(txtUnderlay,'String',shortTxt(loadedAnatName,18));
+        end
+
+        if isempty(loadedAtlasName)
+            set(txtAtlas,'String','no file');
+        else
+            set(txtAtlas,'String',shortTxt(loadedAtlasName,18));
+        end
+
+        if isempty(loadedNamesName)
+            set(txtNames,'String','no file');
+        else
+            set(txtNames,'String',shortTxt(loadedNamesName,18));
+        end
+    end
+
+    function updateSummary(~,~)
+
+        funcStrings = get(ddFunc,'String');
+        funcTxt = funcStrings{get(ddFunc,'Value')};
+
+        maskStrings = get(ddMask,'String');
+        maskTxt = maskStrings{get(ddMask,'Value')};
+
+        underStrings = get(ddUnderlay,'String');
+        underTxt = underStrings{get(ddUnderlay,'Value')};
+
+        atlasStrings = get(ddAtlas,'String');
+        atlasTxt = atlasStrings{get(ddAtlas,'Value')};
+
+        namesStrings = get(ddNames,'String');
+        namesTxt = namesStrings{get(ddNames,'Value')};
+
+        seedBox = str2double(get(edSeedBox,'String'));
+        roiMinVox = str2double(get(edMinVox,'String'));
+        chunkVox = str2double(get(edChunk,'String'));
+
+        txt = sprintf(['%s | Mask: %s | Underlay: %s | Atlas: %s | Names: %s | ' ...
+            'Seed box: %g | ROI min vox: %g | Chunk: %g'], ...
+            funcTxt, maskTxt, underTxt, atlasTxt, namesTxt, ...
+            seedBox, roiMinVox, chunkVox);
+
+        if ishandle(summaryText)
+            set(summaryText,'String',txt);
+        end
+    end
+
+    function onAutoSetup(~,~)
+        if hasPSC
+            set(ddFunc,'Value',1);
+        end
+
+        if hasStudioMask
+            set(ddMask,'Value',2);
+        else
+            set(ddMask,'Value',1);
+        end
+
+       % Always use SCM/Video recommended display by default.
+set(ddUnderlay,'Value',1);
+
+        if fcDataHasAtlas(data,Y,X,Z)
+            set(ddAtlas,'Value',2);
+        else
+            set(ddAtlas,'Value',1);
+        end
+
+        updateSummary();
+    end
+
+    function onLoadMask(~,~)
+        startDir = fcSetupStartDir(studio);
+        [f,p] = uigetfile({'*.mat','MAT files (*.mat)'}, ...
+            'Load FC mask MAT', startDir);
+
+        if isequal(f,0)
+            return;
+        end
+
+        try
+            S = load(fullfile(p,f));
+            loadedMask = fcStudioPickVolume(S,Y,X,Z,true);
+            if isempty(loadedMask)
+                errordlg('No compatible mask found in selected MAT file.','FC mask');
+                return;
+            end
+            loadedMaskName = f;
+            set(ddMask,'Value',3);
+            updateFileLabels();
+            updateSummary();
+        catch ME
+            errordlg(ME.message,'FC mask load error');
+        end
+    end
+
+   function onLoadUnderlay(~,~)
+   startDir = fcGetRegistrationStartDir(studio);
+
+[f,p] = fc_uigetfile_start( ...
+        {'*.mat;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp', ...
+         'Underlay / histology files (*.mat,*.png,*.jpg,*.tif)'}, ...
+        'Load FC underlay / histology / anatomy', startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+    try
+        [loadedAnat, loadedAnatDisplayReady] = fcStudioReadUnderlay(fullfile(p,f),Y,X,Z);
+
+        loadedAnatName = f;
+        set(ddUnderlay,'Value',6);
+
+        updateFileLabels();
+        updateSummary();
+
+    catch ME
+        errordlg(ME.message,'FC underlay load error');
+    end
+end
+
+ function onLoadAtlas(~,~)
+    startDir = fcGetRegistrationStartDir(studio);
+
+    [f,p] = fc_uigetfile_start( ...
+        {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff', ...
+         'ROI label atlas files (*.mat,*.nii,*.nii.gz,*.tif)'}, ...
+        'Load FC ROI atlas / integer region labels', startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+    try
+        loadedAtlas = fcStudioReadAtlas(fullfile(p,f),Y,X,Z);
+
+        if isempty(loadedAtlas)
+            errordlg({ ...
+                'No compatible ROI atlas label map found.', ...
+                '', ...
+                'Important:', ...
+                '- Histology belongs under Load underlay.', ...
+                '- Colored regions underlay is only a display image.', ...
+                '- FC ROI heatmap needs an integer region-label volume.'}, ...
+                'FC atlas');
+            return;
+        end
+
+        loadedAtlas = round(double(loadedAtlas));
+        loadedAtlasName = f;
+
+        set(ddAtlas,'Value',3);
+
+        updateFileLabels();
+        updateSummary();
+
+    catch ME
+        errordlg(ME.message,'FC atlas load error');
+    end
+end
+
+function onLoadNames(~,~)
+    startDir = fcGetRegistrationStartDir(studio);
+
+    [f,p] = fc_uigetfile_start( ...
+        {'*.txt;*.csv;*.tsv;*.mat', ...
+        'Region names (*.txt,*.csv,*.tsv,*.mat)'}, ...
+        'Load FC region names', startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+        try
+            loadedNames = fcStudioReadRegionNames(fullfile(p,f));
+            if isempty(loadedNames.labels)
+                errordlg('Could not parse labels/names from selected file.','FC names');
+                return;
+            end
+            loadedNamesName = f;
+            set(ddNames,'Value',2);
+            updateFileLabels();
+            updateSummary();
+        catch ME
+            errordlg(ME.message,'FC region names load error');
+        end
+    end
+
+    function onRun(~,~)
+
+        seedBox = str2double(get(edSeedBox,'String'));
+        roiMinVox = str2double(get(edMinVox,'String'));
+        chunkVox = str2double(get(edChunk,'String'));
+
+        if ~isfinite(seedBox) || seedBox < 1
+            uiwait(errordlg('Seed box size must be >= 1.','FC setup','modal'));
+            return;
+        end
+
+        if ~isfinite(roiMinVox) || roiMinVox < 1
+            uiwait(errordlg('ROI min vox must be >= 1.','FC setup','modal'));
+            return;
+        end
+
+        if ~isfinite(chunkVox) || chunkVox < 100
+            uiwait(errordlg('Chunk voxels should be at least 100.','FC setup','modal'));
+            return;
+        end
+
+        % Functional source
+        funcStrings = get(ddFunc,'String');
+        funcChoice = funcStrings{get(ddFunc,'Value')};
+
+        if ~isempty(strfind(lower(funcChoice),'psc')) %#ok<STREMP>
+            if ~hasPSC
+                uiwait(errordlg('PSC was selected but data.PSC is missing.','FC setup','modal'));
+                return;
+            end
+            cfg.functionalSource = 'psc';
+        else
+            cfg.functionalSource = 'i';
+        end
+
+        % Mask
+        cfg.mask = [];
+        switch get(ddMask,'Value')
+            case 1
+                cfg.maskMode = 'auto';
+
+            case 2
+                if ~hasStudioMask
+                    uiwait(errordlg('Studio mask selected but no studio.mask exists.','FC setup','modal'));
+                    return;
+                end
+                cfg.maskMode = 'studio';
+                cfg.mask = fcStudioFitVolume(studio.mask,Y,X,Z,true);
+
+            case 3
+                if isempty(loadedMask)
+                    uiwait(errordlg('Loaded mask selected but no mask file was loaded.','FC setup','modal'));
+                    return;
+                end
+                cfg.maskMode = 'loaded';
+                cfg.mask = fcStudioFitVolume(loadedMask,Y,X,Z,true);
+
+            otherwise
+                cfg.maskMode = 'none';
+        end
+
+       % -----------------------------------------------------
+% Underlay / anatomy
+% -----------------------------------------------------
+cfg.anat = [];
+cfg.anatIsDisplayReady = false;
+
+
+cfg.defaultUnderlayMode = 'scm_log_median';
+
+% SCM / VideoGUI recommended display settings.
+% These are only used for raw/linear underlays.
+% If anatIsDisplayReady=true, FunctionalConnectivity.m should show it as-is.
+cfg.defaultUnderlayViewMode = 3;
+cfg.underlayBrightness = -0.04;
+cfg.underlayContrast   = 1.10;
+cfg.underlayGamma      = 0.95;
+
+switch get(ddUnderlay,'Value')
+
+        case 1
+        % SCM log/median recommended underlay.
+        % Priority:
+        %   1) Mask Editor display-ready anatomical underlay
+        %   2) Mask Editor raw anatomical underlay
+        %   3) let FunctionalConnectivity recompute SCM log/median from data.I
+
+        cfg.defaultUnderlayMode = 'scm_log_median';
+
+        if hasStudioAnat && isfield(studio,'anatomicalReference') && ~isempty(studio.anatomicalReference)
+
+            cfg.anat = fcStudioFitVolume(studio.anatomicalReference,Y,X,Z,false);
+
+            if isfield(studio,'anatomicalReferenceIsDisplayReady') && ...
+                    studio.anatomicalReferenceIsDisplayReady
+                cfg.anatIsDisplayReady = true;
+                cfg.defaultUnderlayMode = 'anat';
+            else
+                cfg.anatIsDisplayReady = false;
+                cfg.defaultUnderlayMode = 'anat';
+            end
+
+        elseif hasStudioAnat && isfield(studio,'anatomicalReferenceRaw') && ~isempty(studio.anatomicalReferenceRaw)
+
+            cfg.anat = fcStudioFitVolume(studio.anatomicalReferenceRaw,Y,X,Z,false);
+            cfg.anatIsDisplayReady = false;
+            cfg.defaultUnderlayMode = 'anat';
+
+        else
+            % No preloaded anatomical underlay.
+            % FunctionalConnectivity.m will compute the SCM-style log/median underlay.
+            cfg.anat = [];
+            cfg.anatIsDisplayReady = false;
+            cfg.defaultUnderlayMode = 'scm_log_median';
+        end
+
+    case 2
+        cfg.defaultUnderlayMode = 'mean';
+
+    case 3
+        cfg.defaultUnderlayMode = 'median';
+
+    case 4
+        if hasDataBg
+            cfg.anat = fcStudioFitVolume(data.bg,Y,X,Z,false);
+            cfg.anatIsDisplayReady = false;
+            cfg.defaultUnderlayMode = 'anat';
+        else
+            cfg.defaultUnderlayMode = 'mean';
+        end
+
+    case 5
+        if hasStudioAnat && isfield(studio,'anatomicalReference') && ~isempty(studio.anatomicalReference)
+
+            cfg.anat = fcStudioFitVolume(studio.anatomicalReference,Y,X,Z,false);
+            cfg.anatIsDisplayReady = true;
+            cfg.defaultUnderlayMode = 'anat';
+
+        elseif hasStudioAnat && isfield(studio,'anatomicalReferenceRaw') && ~isempty(studio.anatomicalReferenceRaw)
+
+            cfg.anat = fcStudioFitVolume(studio.anatomicalReferenceRaw,Y,X,Z,false);
+            cfg.anatIsDisplayReady = false;
+            cfg.defaultUnderlayMode = 'anat';
+
+        else
+            cfg.defaultUnderlayMode = 'mean';
+        end
+
+    case 6
+        if isempty(loadedAnat)
+            uiwait(errordlg('Loaded underlay selected but no underlay was loaded.','FC setup','modal'));
+            return;
+        end
+
+        cfg.anat = fcStudioFitVolume(loadedAnat,Y,X,Z,false);
+        cfg.anatIsDisplayReady = logical(loadedAnatDisplayReady);
+        cfg.defaultUnderlayMode = 'anat';
+end
+
+        % ROI atlas
+        cfg.roiAtlas = [];
+
+        switch get(ddAtlas,'Value')
+            case 1
+                cfg.roiAtlas = [];
+
+            case 2
+                cfg.roiAtlas = fcGetAtlasFromData(data,Y,X,Z);
+
+            case 3
+                if isempty(loadedAtlas)
+                    uiwait(errordlg('Loaded atlas selected but no atlas was loaded.','FC setup','modal'));
+                    return;
+                end
+                cfg.roiAtlas = fcStudioFitVolume(loadedAtlas,Y,X,Z,false);
+        end
+
+        % Region names
+        if get(ddNames,'Value') == 2
+            cfg.roiNameTable = loadedNames;
+        else
+            cfg.roiNameTable = struct('labels',[],'names',{{}});
+        end
+
+        cfg.seedBoxSize = max(1,round(seedBox));
+        cfg.roiMinVox = max(1,round(roiMinVox));
+        cfg.chunkVox = max(100,round(chunkVox));
+
+        cfg.cancelled = false;
+
+        if ishghandle(dlg)
+            delete(dlg);
+        end
+    end
+
+    function onCancel(~,~)
+        cfg.cancelled = true;
+        if ishghandle(dlg)
+            delete(dlg);
+        end
+    end
+
+    function onKey(~,ev)
+        try
+            if strcmpi(ev.Key,'escape')
+                onCancel();
+            elseif strcmpi(ev.Key,'return')
+                onRun();
+            end
+        catch
+        end
+    end
+
+    function s = shortTxt(s,n)
+        if nargin < 2
+            n = 20;
+        end
+        s = char(s);
+        if numel(s) > n
+            s = [s(1:max(1,n-3)) '...'];
+        end
+    end
+    function fcScaleFcSetupFonts(hFig)
+
+    try
+        allObj = findall(hFig);
+
+        for ii = 1:numel(allObj)
+            h = allObj(ii);
+
+            if ~ishandle(h)
+                continue;
+            end
+
+            if isprop(h,'FontName')
+                try
+                    set(h,'FontName','Arial');
+                catch
+                end
+            end
+
+            if ~isprop(h,'FontSize')
+                continue;
+            end
+
+            try
+                typ = get(h,'Type');
+            catch
+                typ = '';
+            end
+
+            if strcmpi(typ,'uicontrol')
+                try
+                    style = lower(get(h,'Style'));
+                catch
+                    style = '';
+                end
+
+                switch style
+                    case 'text'
+                        oldSize = get(h,'FontSize');
+                        if oldSize >= 18
+                            set(h,'FontSize',24,'FontWeight','bold');
+                        elseif oldSize >= 12
+                            set(h,'FontSize',14);
+                        else
+                            set(h,'FontSize',12);
+                        end
+
+                    case {'popupmenu','edit'}
+                        set(h,'FontSize',13,'FontWeight','bold');
+
+                    case 'pushbutton'
+                        set(h,'FontSize',13,'FontWeight','bold');
+
+                    case 'checkbox'
+                        set(h,'FontSize',12,'FontWeight','bold');
+
+                    otherwise
+                        set(h,'FontSize',12);
+                end
+
+            elseif strcmpi(typ,'uipanel')
+                set(h,'FontSize',13,'FontWeight','bold');
+
+            elseif strcmpi(typ,'axes')
+                set(h,'FontSize',11);
+            end
+        end
+    catch
+    end
+end
+end
+
+%% =========================================================
+%  FUNCTIONAL CONNECTIVITY SETUP HELPERS
+% =========================================================
+    function tf = fcDataHasAtlas(data,Y,X,Z)
+
+tf = false;
+
+try
+    A = fcStudioPickAtlasVolume(data,Y,X,Z);
+    tf = ~isempty(A);
+catch
+    tf = false;
+end
+    end
+
+    function atlas = fcGetAtlasFromData(data,Y,X,Z)
+
+atlas = [];
+
+try
+    atlas = fcStudioPickAtlasVolume(data,Y,X,Z);
+    if ~isempty(atlas)
+        atlas = round(double(atlas));
+    end
+catch
+    atlas = [];
+end
+end
+    function startDir = fcSetupStartDir(studio)
+% Backward-compatible default start folder.
+% For FC, prefer Registration because atlas, histology, region names,
+% and transformed files usually live there.
+
+    startDir = fcGetRegistrationStartDir(studio);
+end
+
+
+   function startDir = fcGetRegistrationStartDir(studio)
+% FC atlas / labels / names picker start folder.
+% Priority:
+%   1) <exportPath>\Registration2D
+%   2) studio.registration2DPath
+%   3) <exportPath>\Registration
+%   4) <exportPath>\Coregistration
+%   5) <exportPath>
+%   6) loaded raw path
+%   7) pwd
+
+    startDir = pwd;
+
+    % -----------------------------------------------------
+    % 1) Preferred: analysed dataset Registration2D folder
+    % -----------------------------------------------------
+    try
+        if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+
+            reg2DDir = fullfile(studio.exportPath,'Registration2D');
+
+            % Create if missing, so uigetfile can start there.
+            if ~exist(reg2DDir,'dir')
+                try
+                    mkdir(reg2DDir);
+                catch
+                end
+            end
+
+            if exist(reg2DDir,'dir')
+                startDir = reg2DDir;
+                return;
+            end
+        end
+    catch
+    end
+
+    % -----------------------------------------------------
+    % 2) Explicit studio.registration2DPath, if you store it
+    % -----------------------------------------------------
+    try
+        if isfield(studio,'registration2DPath') && ~isempty(studio.registration2DPath) && ...
+                exist(studio.registration2DPath,'dir')
+            startDir = studio.registration2DPath;
+            return;
+        end
+    catch
+    end
+
+    % -----------------------------------------------------
+    % 3) Older fallback: studio.registrationPath
+    % -----------------------------------------------------
+    try
+        if isfield(studio,'registrationPath') && ~isempty(studio.registrationPath) && ...
+                exist(studio.registrationPath,'dir')
+            startDir = studio.registrationPath;
+            return;
+        end
+    catch
+    end
+
+    % -----------------------------------------------------
+    % 4) Other analysed folders
+    % -----------------------------------------------------
+    try
+        if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+
+            regDir = fullfile(studio.exportPath,'Registration');
+            if exist(regDir,'dir')
+                startDir = regDir;
+                return;
+            end
+
+            coregDir = fullfile(studio.exportPath,'Coregistration');
+            if exist(coregDir,'dir')
+                startDir = coregDir;
+                return;
+            end
+
+            startDir = studio.exportPath;
+            return;
+        end
+    catch
+    end
+
+    % -----------------------------------------------------
+    % 5) Raw loaded path fallback
+    % -----------------------------------------------------
+    try
+        if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
+            startDir = studio.loadedPath;
+        end
+    catch
+    end
+end
+
+function [f,p] = fc_uigetfile_start(filterSpec, titleStr, startDir)
+% Robust uigetfile opener.
+% MATLAB sometimes remembers the last folder. Temporarily cd() into startDir
+% so the file picker really starts in Registration.
+
+if nargin < 3 || isempty(startDir) || ~exist(startDir,'dir')
+    startDir = pwd;
+end
+
+oldDir = pwd;
+cleanupObj = onCleanup(@() cd(oldDir)); %#ok<NASGU>
+
+try
+    cd(startDir);
+catch
+end
+
+[f,p] = uigetfile(filterSpec, titleStr);
+
+end
+
+function V = fcStudioPickVolume(S,Y,X,Z,makeLogical)
+
+    V = [];
+
+    preferred = { ...
+        'roiAtlas', ...
+        'atlas', ...
+        'regions', ...
+        'annotation', ...
+        'labels', ...
+        'mask', ...
+        'brainMask', ...
+        'loadedMask', ...
+        'underlay', ...
+        'anat', ...
+        'bg', ...
+        'Data', ...
+        'I'};
+
+    for i = 1:numel(preferred)
+        fn = preferred{i};
+        if isfield(S,fn)
+            V = fcStudioVolumeFromAny(S.(fn),Y,X,Z,makeLogical);
+            if ~isempty(V)
+                return;
+            end
+        end
+    end
+
+    fns = fieldnames(S);
+    for i = 1:numel(fns)
+        V = fcStudioVolumeFromAny(S.(fns{i}),Y,X,Z,makeLogical);
+        if ~isempty(V)
+            return;
+        end
+    end
+end
+
+function V = fcStudioVolumeFromAny(x,Y,X,Z,makeLogical)
+
+    V = [];
+
+    try
+        if isstruct(x)
+            if isfield(x,'Data') && isnumeric(x.Data)
+                x = x.Data;
+            elseif isfield(x,'I') && isnumeric(x.I)
+                x = x.I;
+            else
+                return;
+            end
+        end
+
+        if ~(isnumeric(x) || islogical(x))
+            return;
+        end
+
+        V0 = squeeze(x);
+
+        if ndims(V0) == 2
+            if Z == 1 && size(V0,1) == Y && size(V0,2) == X
+                V = reshape(V0,Y,X,1);
+            elseif size(V0,1) == Y && size(V0,2) == X
+                V = repmat(V0,[1 1 Z]);
+            end
+
+        elseif ndims(V0) == 3
+            if all(size(V0) == [Y X Z])
+                V = V0;
+            elseif size(V0,1) == Y && size(V0,2) == X && size(V0,3) ~= Z
+                zi = round(linspace(1,size(V0,3),Z));
+                V = V0(:,:,zi);
+            end
+
+        elseif ndims(V0) == 4
+            % If a functional 4D volume was accidentally selected as underlay,
+            % reduce across time.
+            if size(V0,1) == Y && size(V0,2) == X
+                V0 = mean(V0,4);
+                V = fcStudioVolumeFromAny(V0,Y,X,Z,makeLogical);
+            end
+        end
+
+        if ~isempty(V) && makeLogical
+            V = logical(V);
+        end
+
+    catch
+        V = [];
+    end
+end
+
+function V = fcStudioFitVolume(V0,Y,X,Z,makeLogical)
+
+    V = fcStudioVolumeFromAny(V0,Y,X,Z,makeLogical);
+
+    if isempty(V)
+        error('Volume cannot be fitted to functional dimensions [%d x %d x %d].',Y,X,Z);
+    end
+end
+
+function atlas = fcStudioReadAtlas(fullFile,Y,X,Z)
+
+atlas = [];
+
+if ~exist(fullFile,'file')
+    error('Atlas file does not exist: %s',fullFile);
+end
+
+if numel(fullFile) >= 7 && strcmpi(fullFile(end-6:end),'.nii.gz')
+    tmpDir = tempname;
+    mkdir(tmpDir);
+
+    try
+        gunzip(fullFile,tmpDir);
+        d = dir(fullfile(tmpDir,'*.nii'));
+        if isempty(d)
+            error('Could not unzip NIfTI atlas.');
+        end
+
+        A = double(niftiread(fullfile(tmpDir,d(1).name)));
+        atlas = fcStudioAtlasVolumeFromAny(A,Y,X,Z);
+
+        try
+            rmdir(tmpDir,'s');
+        catch
+        end
+
+    catch ME
+        try
+            rmdir(tmpDir,'s');
+        catch
+        end
+        rethrow(ME);
+    end
+
+elseif strcmpi(lower(fileparts_ext(fullFile)),'.nii')
+    A = double(niftiread(fullFile));
+    atlas = fcStudioAtlasVolumeFromAny(A,Y,X,Z);
+
+else
+    [~,~,ext] = fileparts(fullFile);
+    ext = lower(ext);
+
+    if strcmpi(ext,'.mat')
+        S = load(fullFile);
+        atlas = fcStudioPickAtlasVolume(S,Y,X,Z);
+    else
+        A = double(imread(fullFile));
+        atlas = fcStudioAtlasVolumeFromAny(A,Y,X,Z);
+    end
+end
+
+if isempty(atlas)
+    error(['No ROI label atlas found. Load histology as underlay. ' ...
+           'For ROI FC, choose a regions/labels/annotation file with integer region IDs.']);
+end
+
+atlas = round(double(atlas));
+end
+
+
+function ext = fileparts_ext(f)
+[~,~,ext] = fileparts(f);
+end
+
+
+function atlas = fcStudioPickAtlasVolume(S,Y,X,Z)
+
+atlas = [];
+candidates = struct('name',{},'score',{},'value',{});
+
+candidates = fcStudioCollectAtlasCandidates(S,'root',0,candidates,Y,X,Z);
+
+if isempty(candidates)
+    return;
+end
+
+scores = zeros(numel(candidates),1);
+for ii = 1:numel(candidates)
+    scores(ii) = candidates(ii).score;
+end
+
+[~,idx] = max(scores);
+atlas = candidates(idx).value;
+end
+
+
+function candidates = fcStudioCollectAtlasCandidates(v,pathStr,depth,candidates,Y,X,Z)
+
+if depth > 5
+    return;
+end
+
+% Numeric candidate.
+if isnumeric(v) || islogical(v)
+    [A,ok] = fcStudioAtlasVolumeFromAny(v,Y,X,Z);
+
+    if ok && ~isempty(A)
+        score = fcStudioScoreAtlasCandidate(A,pathStr);
+
+        if isfinite(score)
+            c = struct();
+            c.name = pathStr;
+            c.score = score;
+            c.value = A;
+            candidates(end+1) = c; %#ok<AGROW>
+        end
+    end
+
+    return;
+end
+
+% Cell wrapper.
+if iscell(v) && numel(v) == 1
+    candidates = fcStudioCollectAtlasCandidates(v{1},[pathStr '{1}'],depth+1,candidates,Y,X,Z);
+    return;
+end
+
+% Struct recursion.
+if isstruct(v)
+    if numel(v) > 1
+        % Region-name structs are not image volumes.
+        return;
+    end
+
+    fns = fieldnames(v);
+
+    for ii = 1:numel(fns)
+        fn = fns{ii};
+
+        if isempty(pathStr)
+            p2 = fn;
+        else
+            p2 = [pathStr '.' fn];
+        end
+
+        candidates = fcStudioCollectAtlasCandidates(v.(fn),p2,depth+1,candidates,Y,X,Z);
+    end
+end
+end
+
+
+function [A,ok] = fcStudioAtlasVolumeFromAny(v,Y,X,Z)
+
+A = [];
+ok = false;
+
+try
+    v = squeeze(v);
+
+    if isempty(v) || isvector(v)
+        return;
+    end
+
+    % RGB / colored region underlay is not a label atlas.
+    if ndims(v) == 3 && size(v,3) == 3 && Z == 1
+        return;
+    end
+
+    % 2D label image.
+    if ndims(v) == 2
+
+        v2 = double(v);
+
+        % Exact.
+        if size(v2,1) == Y && size(v2,2) == X
+            A2 = v2;
+
+        % Transposed exact.
+        elseif size(v2,1) == X && size(v2,2) == Y
+            A2 = v2';
+
+        % Co-registered export with slightly different pixel size.
+        else
+            A2 = fcStudioResizeLabel2D(v2,Y,X);
+        end
+
+        if ~fcStudioLooksLikeRoiLabelMap(A2)
+            return;
+        end
+
+        if Z == 1
+            A = reshape(round(A2),Y,X,1);
+        else
+            A = repmat(round(A2),[1 1 Z]);
+        end
+
+        ok = true;
+        return;
+    end
+
+    % 3D label volume.
+    if ndims(v) == 3
+
+        v3 = double(v);
+
+        % Avoid accidentally resizing the full Allen atlas or huge raw atlases.
+        if numel(v3) > 2e7 && ~(size(v3,1)==Y && size(v3,2)==X)
+            return;
+        end
+
+        if size(v3,1) == Y && size(v3,2) == X
+            A3 = v3;
+
+        elseif size(v3,1) == X && size(v3,2) == Y
+            A3 = permute(v3,[2 1 3]);
+
+        else
+            A3 = zeros(Y,X,size(v3,3));
+
+            for zz = 1:size(v3,3)
+                A3(:,:,zz) = fcStudioResizeLabel2D(v3(:,:,zz),Y,X);
+            end
+        end
+
+        if size(A3,3) ~= Z
+            zi = round(linspace(1,size(A3,3),Z));
+            zi = max(1,min(size(A3,3),zi));
+            A3 = A3(:,:,zi);
+        end
+
+        if ~fcStudioLooksLikeRoiLabelMap(A3)
+            return;
+        end
+
+        A = round(A3);
+        ok = true;
+        return;
+    end
+
+catch
+    A = [];
+    ok = false;
+end
+end
+
+
+function A = fcStudioResizeLabel2D(A,Y,X)
+
+A = double(A);
+
+if size(A,1) == Y && size(A,2) == X
+    return;
+end
+
+if exist('imresize','file') == 2
+    A = imresize(A,[Y X],'nearest');
+else
+    yy = round(linspace(1,size(A,1),Y));
+    xx = round(linspace(1,size(A,2),X));
+    A = A(yy,xx);
+end
+
+A = round(A);
+end
+
+
+function tf = fcStudioLooksLikeRoiLabelMap(A)
+
+tf = false;
+
+try
+    A = double(A);
+    A = A(isfinite(A));
+
+    if isempty(A)
+        return;
+    end
+
+    % Subsample for speed.
+    if numel(A) > 200000
+        idx = round(linspace(1,numel(A),200000));
+        A = A(idx);
+    end
+
+    % Must be mostly integer-valued.
+    fracInt = mean(abs(A - round(A)) < 1e-6);
+
+    if fracInt < 0.98
+        return;
+    end
+
+    U = unique(round(A(:)));
+    U = U(isfinite(U));
+    U = U(U ~= 0);
+
+    % Binary mask is not an atlas.
+    if numel(U) < 2
+        return;
+    end
+
+    % Too many labels usually means colored/intensity image, not atlas IDs.
+    if numel(U) > 5000
+        return;
+    end
+
+    tf = true;
+
+catch
+    tf = false;
+end
+end
+
+
+function score = fcStudioScoreAtlasCandidate(A,nameStr)
+
+score = -Inf;
+
+if isempty(A)
+    return;
+end
+
+if ~fcStudioLooksLikeRoiLabelMap(A)
+    return;
+end
+
+score = 100;
+
+lname = lower(nameStr);
+
+goodKeys = { ...
+    'roiatlas','roi_atlas','region','regions','label','labels', ...
+    'annotation','atlas','registered','warped','area'};
+
+badKeys = { ...
+    'histology','histo','anat','anatomical','underlay','display', ...
+    'raw','brainimage','mask','overlay','signal','rgb','image','img'};
+
+for ii = 1:numel(goodKeys)
+    if ~isempty(strfind(lname,goodKeys{ii})) %#ok<STREMP>
+        score = score + 20;
+    end
+end
+
+for ii = 1:numel(badKeys)
+    if ~isempty(strfind(lname,badKeys{ii})) %#ok<STREMP>
+        score = score - 25;
+    end
+end
+
+try
+    U = unique(round(double(A(:))));
+    U = U(U ~= 0);
+    score = score + min(50,numel(U));
+catch
+end
+end
+
+    function [U,isDisplayReady] = fcStudioReadUnderlay(fullFile,Y,X,Z)
+
+U = [];
+isDisplayReady = false;
+
+if ~exist(fullFile,'file')
+    error('File does not exist: %s',fullFile);
+end
+
+[~,~,ext] = fileparts(fullFile);
+ext = lower(ext);
+
+if strcmpi(ext,'.mat')
+    S = load(fullFile);
+
+    [U,isDisplayReady] = fcStudioPickUnderlay(S,Y,X,Z);
+
+    if isempty(U)
+        error('No compatible underlay variable found in MAT file.');
+    end
+
+    U = double(U);
+    return;
+end
+
+A = imread(fullFile);
+
+if ndims(A) == 3 && size(A,3) == 3
+    A = double(A);
+    U2 = 0.2989*A(:,:,1) + 0.5870*A(:,:,2) + 0.1140*A(:,:,3);
+else
+    U2 = double(A);
+end
+
+if size(U2,1) ~= Y || size(U2,2) ~= X
+    U2 = fcStudioResize2D(U2,Y,X);
+end
+
+if Z == 1
+    U = reshape(U2,Y,X,1);
+else
+    U = repmat(U2,[1 1 Z]);
+end
+
+isDisplayReady = true;
+    end
+
+function [U,isDisplayReady] = fcStudioPickUnderlay(S,Y,X,Z)
+
+U = [];
+isDisplayReady = false;
+
+% Prefer Mask Editor bundle first.
+if isfield(S,'maskBundle') && isstruct(S.maskBundle)
+    [U,isDisplayReady] = fcStudioPickUnderlayFromStruct(S.maskBundle,Y,X,Z);
+    if ~isempty(U)
+        return;
+    end
+end
+
+[U,isDisplayReady] = fcStudioPickUnderlayFromStruct(S,Y,X,Z);
+end
+
+
+function [U,isDisplayReady] = fcStudioPickUnderlayFromStruct(S,Y,X,Z)
+
+U = [];
+isDisplayReady = false;
+
+% These are already tuned/display-ready.
+displayFields = { ...
+    'savedUnderlayDisplay', ...
+    'savedUnderlayForReload', ...
+    'anatomical_reference', ...
+    'anatomicalReference', ...
+    'brainImage'};
+
+for ii = 1:numel(displayFields)
+    fn = displayFields{ii};
+    if ~isfield(S,fn)
+        continue;
+    end
+
+    Ucand = fcStudioUnderlayCandidate(S.(fn),Y,X,Z);
+
+    if isempty(Ucand)
+        continue;
+    end
+
+    if fcStudioLooksLikeAtlasOrMask(Ucand)
+        continue;
+    end
+
+    U = Ucand;
+    isDisplayReady = true;
+    return;
+end
+
+% These are raw/base images and should be normalized inside FC.
+rawFields = { ...
+    'anatomical_reference_raw', ...
+    'anatomicalReferenceRaw', ...
+    'underlay', ...
+    'bg', ...
+    'DP', ...
+    'dp', ...
+    'histology', ...
+    'Histology', ...
+    'image', ...
+    'img', ...
+    'I', ...
+    'Data'};
+
+for ii = 1:numel(rawFields)
+    fn = rawFields{ii};
+    if ~isfield(S,fn)
+        continue;
+    end
+
+    Ucand = fcStudioUnderlayCandidate(S.(fn),Y,X,Z);
+
+    if isempty(Ucand)
+        continue;
+    end
+
+    if fcStudioLooksLikeAtlasOrMask(Ucand)
+        continue;
+    end
+
+    U = Ucand;
+    isDisplayReady = false;
+    return;
+end
+
+% Fallback: any numeric non-mask, non-atlas field.
+skip = { ...
+    'mask','loadedMask','activeMask','brainMask','underlayMask', ...
+    'overlayMask','signalMask','roiAtlas','atlas','regions', ...
+    'annotation','labels','labelVolume', ...
+    'maskIsInclude','loadedMaskIsInclude','overlayMaskIsInclude'};
+
+fns = fieldnames(S);
+
+for ii = 1:numel(fns)
+    fn = fns{ii};
+
+    if any(strcmpi(fn,skip))
+        continue;
+    end
+
+    Ucand = fcStudioUnderlayCandidate(S.(fn),Y,X,Z);
+
+    if isempty(Ucand)
+        continue;
+    end
+
+    if fcStudioLooksLikeAtlasOrMask(Ucand)
+        continue;
+    end
+
+    U = Ucand;
+    isDisplayReady = false;
+    return;
+end
+end
+
+
+function U = fcStudioUnderlayCandidate(v,Y,X,Z)
+
+U = [];
+
+try
+    if isstruct(v)
+        if isfield(v,'Data') && isnumeric(v.Data)
+            v = v.Data;
+        elseif isfield(v,'I') && isnumeric(v.I)
+            v = v.I;
+        else
+            return;
+        end
+    end
+
+    if ~(isnumeric(v) || islogical(v))
+        return;
+    end
+
+    v = squeeze(v);
+
+    if ndims(v) == 2
+        if size(v,1) ~= Y || size(v,2) ~= X
+            v = fcStudioResize2D(double(v),Y,X);
+        end
+
+        if Z == 1
+            U = reshape(double(v),Y,X,1);
+        else
+            U = repmat(double(v),[1 1 Z]);
+        end
+        return;
+    end
+
+    % RGB only if Z==1.
+    if ndims(v) == 3 && size(v,3) == 3 && Z == 1
+        if size(v,1) ~= Y || size(v,2) ~= X
+            tmp = zeros(Y,X,3);
+            for cc = 1:3
+                tmp(:,:,cc) = fcStudioResize2D(double(v(:,:,cc)),Y,X);
+            end
+            U = tmp;
+        else
+            U = double(v);
+        end
+        return;
+    end
+
+    if ndims(v) == 3
+        if size(v,1) ~= Y || size(v,2) ~= X
+            tmp = zeros(Y,X,size(v,3));
+            for zz = 1:size(v,3)
+                tmp(:,:,zz) = fcStudioResize2D(double(v(:,:,zz)),Y,X);
+            end
+            v = tmp;
+        end
+
+        if size(v,3) ~= Z
+            zi = round(linspace(1,size(v,3),Z));
+            zi = max(1,min(size(v,3),zi));
+            v = v(:,:,zi);
+        end
+
+        U = double(v);
+    end
+
+catch
+    U = [];
+end
+end
+
+
+    function tf = fcStudioLooksLikeAtlasOrMask(A)
+
+tf = false;
+
+try
+    A = double(A);
+    A = A(isfinite(A));
+
+    if isempty(A)
+        tf = true;
+        return;
+    end
+
+    if numel(A) > 200000
+        idx = round(linspace(1,numel(A),200000));
+        A = A(idx);
+    end
+
+    u = unique(A(:));
+
+    % Binary masks only
+    if numel(u) <= 2 && all(ismember(u,[0 1]))
+        tf = true;
+        return;
+    end
+
+    % Only reject very low-count integer label maps.
+    % Do NOT reject 8-bit grayscale anatomy/histology with many intensity levels.
+    fracInt = mean(abs(A - round(A)) < 1e-6);
+    U = unique(round(A(:)));
+    U = U(U ~= 0);
+
+    if fracInt > 0.98 && numel(U) >= 2 && numel(U) < 50
+        tf = true;
+        return;
+    end
+
+catch
+    tf = false;
+end
+end
+
+function B = fcStudioResize2D(A,Y,X)
+
+    if exist('imresize','file') == 2
+        B = imresize(A,[Y X],'nearest');
+    else
+        yy = round(linspace(1,size(A,1),Y));
+        xx = round(linspace(1,size(A,2),X));
+        B = A(yy,xx);
+    end
+end
+
+function T = fcStudioReadRegionNames(fullFile)
+
+    T = struct('labels',[],'names',{{}});
+
+    if ~exist(fullFile,'file')
+        error('Region-name file does not exist.');
+    end
+
+    [~,~,ext] = fileparts(fullFile);
+    ext = lower(ext);
+
+    if strcmpi(ext,'.mat')
+        S = load(fullFile);
+
+        if isfield(S,'roiNameTable')
+            x = S.roiNameTable;
+            if isstruct(x) && isfield(x,'labels') && isfield(x,'names')
+                T.labels = double(x.labels(:));
+                T.names = cellstr(x.names(:));
+                return;
+            end
+        end
+
+        if isfield(S,'labels') && isfield(S,'names')
+            T.labels = double(S.labels(:));
+            T.names = cellstr(S.names(:));
+            return;
+        end
+
+        fns = fieldnames(S);
+        for i = 1:numel(fns)
+            x = S.(fns{i});
+
+            if isstruct(x) && numel(x) > 1
+                f = fieldnames(x);
+                idField = '';
+                nameField = '';
+
+                if any(strcmpi(f,'id')), idField = 'id'; end
+                if any(strcmpi(f,'label')), idField = 'label'; end
+                if any(strcmpi(f,'acronym')), nameField = 'acronym'; end
+                if any(strcmpi(f,'name')), nameField = 'name'; end
+
+                if ~isempty(idField) && ~isempty(nameField)
+                    labs = zeros(numel(x),1);
+                    nms = cell(numel(x),1);
+
+                    for k = 1:numel(x)
+                        labs(k) = double(x(k).(idField));
+                        nms{k} = char(x(k).(nameField));
+                    end
+
+                    T.labels = labs;
+                    T.names = nms;
+                    return;
+                end
+            end
+        end
+
+        error('Could not parse region names from MAT file.');
+    end
+
+    fid = fopen(fullFile,'r');
+    if fid < 0
+        error('Could not open region-name file.');
+    end
+
+    cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+    labels = [];
+    names = {};
+
+    while ~feof(fid)
+        line = fgetl(fid);
+
+        if ~ischar(line)
+            continue;
+        end
+
+        line = strtrim(line);
+
+        if isempty(line)
+            continue;
+        end
+
+        if line(1) == '#' || line(1) == '%'
+            continue;
+        end
+
+        line = strrep(line,char(9),',');
+        line = strrep(line,';',',');
+
+        parts = regexp(line,',','split');
+
+        if numel(parts) < 2
+            parts = regexp(line,'\s+','split');
+        end
+
+        if numel(parts) < 2
+            continue;
+        end
+
+        lab = str2double(strtrim(parts{1}));
+
+        if ~isfinite(lab)
+            continue;
+        end
+
+        nm = strtrim(parts{2});
+
+        if numel(parts) > 2
+            for k = 3:numel(parts)
+                pk = strtrim(parts{k});
+                if ~isempty(pk)
+                    nm = [nm ' ' pk]; %#ok<AGROW>
+                end
+            end
+        end
+
+        labels(end+1,1) = lab; %#ok<AGROW>
+        names{end+1,1} = nm; %#ok<AGROW>
+    end
+
+    T.labels = labels;
+    T.names = names;
+end
 %% =========================================================
 %  LIVE VIEWER CALLBACK
 % =========================================================
@@ -4161,12 +6419,80 @@ if isfield(out,'overlayMask') && ~isempty(out.overlayMask)
     studio.overlayMask = logical(out.overlayMask);
 end
 
-        if isfield(out,'anatomical_reference_raw') && ~isempty(out.anatomical_reference_raw)
-            studio.anatomicalReferenceRaw = out.anatomical_reference_raw;
+       % -----------------------------------------------------
+% Store Mask Editor underlay/reference robustly
+% Priority:
+%   1) display-ready Mask Editor underlay
+%   2) raw anatomical reference
+% -----------------------------------------------------
+
+storedDisplayUnderlay = false;
+
+displayFields = { ...
+    'anatomical_reference', ...
+    'savedUnderlayDisplay', ...
+    'savedUnderlayForReload', ...
+    'underlayDisplay', ...
+    'brainImage'};
+
+for ii = 1:numel(displayFields)
+    fn = displayFields{ii};
+
+    if isfield(out,fn) && ~isempty(out.(fn))
+        studio.anatomicalReference = out.(fn);
+        studio.anatomicalReferenceIsDisplayReady = true;
+        storedDisplayUnderlay = true;
+        addLog(['Mask Editor display-ready underlay stored from field: ' fn]);
+        break;
+    end
+end
+
+% Also check maskBundle, if Mask Editor returned a bundle-style output
+if ~storedDisplayUnderlay && isfield(out,'maskBundle') && isstruct(out.maskBundle)
+    B = out.maskBundle;
+
+    for ii = 1:numel(displayFields)
+        fn = displayFields{ii};
+
+        if isfield(B,fn) && ~isempty(B.(fn))
+            studio.anatomicalReference = B.(fn);
+            studio.anatomicalReferenceIsDisplayReady = true;
+            storedDisplayUnderlay = true;
+            addLog(['Mask Editor display-ready underlay stored from maskBundle.' fn]);
+            break;
         end
-        if isfield(out,'anatomical_reference') && ~isempty(out.anatomical_reference)
-            studio.anatomicalReference = out.anatomical_reference;
+    end
+end
+
+rawFields = { ...
+    'anatomical_reference_raw', ...
+    'anatomicalReferenceRaw', ...
+    'rawUnderlay', ...
+    'underlayRaw'};
+
+for ii = 1:numel(rawFields)
+    fn = rawFields{ii};
+
+    if isfield(out,fn) && ~isempty(out.(fn))
+        studio.anatomicalReferenceRaw = out.(fn);
+
+        if ~storedDisplayUnderlay
+            studio.anatomicalReference = out.(fn);
+            studio.anatomicalReferenceIsDisplayReady = false;
+            addLog(['Mask Editor raw underlay stored from field: ' fn]);
         end
+
+        break;
+    end
+end
+
+if isfield(out,'files') && isstruct(out.files)
+    if isfield(out.files,'brainImage_mat') && ~isempty(out.files.brainImage_mat)
+        studio.anatomicalReferenceFile = out.files.brainImage_mat;
+    elseif isfield(out.files,'underlay_mat') && ~isempty(out.files.underlay_mat)
+        studio.anatomicalReferenceFile = out.files.underlay_mat;
+    end
+end
 
         if isfield(out,'files') && isstruct(out.files) && isfield(out.files,'brainImage_mat') ...
                 && ~isempty(out.files.brainImage_mat)
@@ -6003,5 +8329,32 @@ function onCloseStudio(~,~)
     catch
     end
 end
+function c = studioJavaColor(r,g,b)
+% studioJavaColor
+% Safe Java RGB color helper for MATLAB 2017b/2023b.
+% Accepts 0..1 or 0..255 RGB and always calls Java int constructor.
 
+if nargin == 1
+    rgb = double(r);
+else
+    rgb = double([r g b]);
+end
+
+if numel(rgb) ~= 3
+    rgb = [0 0 0];
+end
+
+rgb(~isfinite(rgb)) = 0;
+
+if max(rgb) <= 1
+    rgb = round(rgb * 255);
+else
+    rgb = round(rgb);
+end
+
+rgb = max(0, min(255, rgb));
+
+c = javaObjectEDT('java.awt.Color', ...
+    int32(rgb(1)), int32(rgb(2)), int32(rgb(3)));
+end
 end
