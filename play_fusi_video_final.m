@@ -113,10 +113,14 @@ uState.conectLev  = 35;
 Nc = 256;
 cmapNames = { ...
     'blackbdy_iso', ...
+    'winter_brain_fsl', ...
+    'signed_blackbdy_winter', ...
     'hot','parula','turbo','jet','gray','bone','copper','pink', ...
     'viridis','plasma','magma','inferno'};
 
 overlayCmapName = 'blackbdy_iso';
+overlaySignMode = 1;      % 1=positive only, 2=negative only, 3=positive+negative
+overlayPrevSignMode = 1;  % for SCM-like auto colormap switching
 mapA = getCmap(overlayCmapName, Nc);
 
 [tmpThrMin, tmpThrMax] = getSuggestedThresholdRange(PSC, par.previewCaxis);
@@ -480,6 +484,11 @@ popMap = mkPopup(pOverlay,cmapNames,idxMap,@overlayMapChanged);
 lblRange = mkLblImp(pOverlay,'Display range (min max)');
 edRange  = mkEdit(pOverlay,sprintf('%.6g %.6g',par.previewCaxis(1),par.previewCaxis(2)),@overlayRangeApply);
 btnRange = mkBtn(pOverlay,'Apply range',@overlayRangeApply,[0.25 0.40 0.65],13);
+
+lblSignMode = mkLblImp(pOverlay,'Signal sign display');
+popSignMode = mkPopup(pOverlay, ...
+    {'Positive only','Negative only','Positive + Negative'}, ...
+    overlaySignMode, @overlaySignModeChanged);
 
 lblThr = mkLblImp(pOverlay,'Threshold abs (%)');
 slThr  = mkSlider(pOverlay,0,100,maskThreshold,@overlayThrSliderChanged);
@@ -849,70 +858,153 @@ set(contentFrame,'Position',[10 contentFrameY panelW-20 contentFrameH]);
     updateUnderlayEnable();
    end
 
-    function layoutOverlayTab(w, h)
-        xLabel = pad;
-        wLabel = 230;
-        xCtrl  = xLabel + wLabel + 14;
-        xVal   = w - pad - 116;
-        wVal   = 116;
-        wCtrl  = max(140, xVal - xCtrl - 12);
+   function layoutOverlayTab(w, h)
+    xLabel = pad;
+    wLabel = 230;
+    xCtrl  = xLabel + wLabel + 14;
+    xVal   = w - pad - 116;
+    wVal   = 116;
+    wCtrl  = max(140, xVal - xCtrl - 12);
 
-        fixed = 0;
-        fixed = fixed + rowHc;
-        fixed = fixed + rowHc;
-        fixed = fixed + rowHc;
-        fixed = fixed + rowHc;
-        fixed = fixed + rowHc;
-        fixed = fixed + rowHc;
-        fixed = fixed + 2*rowHc;
+    fixed = 0;
+    fixed = fixed + rowHc;   % cmap
+    fixed = fixed + rowHc;   % range
+    fixed = fixed + rowHc;   % sign mode
+    fixed = fixed + rowHc;   % threshold
+    fixed = fixed + rowHc;   % alpha
+    fixed = fixed + rowHc;   % smooth
+    fixed = fixed + rowHc;   % alpha mod
+    fixed = fixed + rowHc;   % mod min
+    fixed = fixed + rowHc;   % mod max
 
-        nGaps = 8;
-        gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
-        gapBig = gapc + 8;
+    nGaps = 8;
+    gapc = adaptiveGap(h, fixed, nGaps, 10, 14);
+    gapBig = gapc + 8;
 
-        y0 = h - 52;
+    y0 = h - 52;
 
-        set(lblMap,'Position',[xLabel y0 wLabel rowHc]);
-        set(popMap,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblMap,'Position',[xLabel y0 wLabel rowHc]);
+    set(popMap,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblRange,'Position',[xLabel y0 wLabel rowHc]);
-        set(edRange,'Position',[xCtrl y0 floor((wCtrl+wVal+12)*0.62) rowHc]);
-        set(btnRange,'Position',[xCtrl+floor((wCtrl+wVal+12)*0.62)+10 y0 floor((wCtrl+wVal+12)*0.38)-10 rowHc]);
-        y0 = y0 - (rowHc + gapBig);
+    set(lblRange,'Position',[xLabel y0 wLabel rowHc]);
+    set(edRange,'Position',[xCtrl y0 floor((wCtrl+wVal+12)*0.62) rowHc]);
+    set(btnRange,'Position',[xCtrl+floor((wCtrl+wVal+12)*0.62)+10 y0 floor((wCtrl+wVal+12)*0.38)-10 rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblThr,'Position',[xLabel y0 wLabel rowHc]);
-        set(slThr,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(edThr,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblSignMode,'Position',[xLabel y0 wLabel rowHc]);
+    set(popSignMode,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
+    y0 = y0 - (rowHc + gapBig);
 
-        set(lblAlpha,'Position',[xLabel y0 wLabel rowHc]);
-        set(slAlpha,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(txtAlpha,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblThr,'Position',[xLabel y0 wLabel rowHc]);
+    set(slThr,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(edThr,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblSmooth,'Position',[xLabel y0 wLabel rowHc]);
-        set(slSmooth,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
-        set(edSmooth,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapBig);
+    set(lblAlpha,'Position',[xLabel y0 wLabel rowHc]);
+    set(slAlpha,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(txtAlpha,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblAlphaMod,'Position',[xLabel y0 wLabel rowHc]);
-        set(chkAlphaMod,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblSmooth,'Position',[xLabel y0 wLabel rowHc]);
+    set(slSmooth,'Position',[xCtrl y0+round((rowHc-sliderH)/2) wCtrl sliderH]);
+    set(edSmooth,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapBig);
 
-        set(lblModMin,'Position',[xLabel y0 wLabel rowHc]);
-        set(edModMin,'Position',[xVal y0 wVal rowHc]);
-        y0 = y0 - (rowHc + gapc);
+    set(lblAlphaMod,'Position',[xLabel y0 wLabel rowHc]);
+    set(chkAlphaMod,'Position',[xCtrl y0 (wCtrl+wVal+12) rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        set(lblModMax,'Position',[xLabel y0 wLabel rowHc]);
-        set(edModMax,'Position',[xVal y0 wVal rowHc]);
+    set(lblModMin,'Position',[xLabel y0 wLabel rowHc]);
+    set(edModMin,'Position',[xVal y0 wVal rowHc]);
+    y0 = y0 - (rowHc + gapc);
 
-        updateOverlayEnable();
-    end
+    set(lblModMax,'Position',[xLabel y0 wLabel rowHc]);
+    set(edModMax,'Position',[xVal y0 wVal rowHc]);
+
+    updateOverlayEnable();
+end
 
 % =========================================================
 % RENDER
 % =========================================================
+   function [dispMap, alphaMap] = buildDisplayedOverlay(rawMap, baseMaskOverlay)
+    thr = maskThreshold;
+    a   = max(0, min(100, alphaPct));
+
+    mMin = modMinAbs;
+    mMax = modMaxAbs;
+    if mMax < mMin
+        tmp = mMin;
+        mMin = mMax;
+        mMax = tmp;
+    end
+
+    if isscalar(baseMaskOverlay)
+        baseMask = double(baseMaskOverlay) * ones(size(rawMap));
+    else
+        baseMask = double(baseMaskOverlay);
+    end
+
+    switch overlaySignMode
+        case 1   % Positive only
+            showMask = (rawMap > 0);
+            dispMap  = rawMap;
+
+        case 2   % Negative only -> display magnitude of negatives
+            showMask = (rawMap < 0);
+            dispMap  = abs(min(rawMap, 0));
+
+        otherwise   % Positive + Negative
+            showMask = isfinite(rawMap) & (rawMap ~= 0);
+            dispMap  = rawMap;
+    end
+
+    thrMask = double((abs(rawMap) >= thr) & showMask) .* baseMask;
+
+    if ~alphaModEnable
+        alphaMap = (a/100) .* thrMask;
+        alphaMap(~isfinite(alphaMap)) = 0;
+        alphaMap = min(max(alphaMap,0),1);
+        return;
+    end
+
+    effLo = max(mMin, thr);
+    effHi = mMax;
+
+    mag = abs(rawMap);
+    mag(~showMask) = NaN;
+
+    if ~isfinite(effHi) || effHi <= effLo
+        tmp = mag(isfinite(mag));
+        if isempty(tmp)
+            effHi = effLo + eps;
+        else
+            effHi = max(tmp);
+        end
+    end
+
+    if ~isfinite(effHi) || effHi <= effLo
+        effHi = effLo + eps;
+    end
+
+    modv = (abs(rawMap) - effLo) ./ max(eps, (effHi - effLo));
+    modv(~isfinite(modv)) = 0;
+    modv = min(max(modv,0),1);
+    modv(~showMask) = 0;
+
+    % EXACTLY like SCM_gui:
+    if overlaySignMode == 1
+        alphaMap = (a/100) .* modv .* thrMask;
+    else
+        modSoft = 0.20 + 0.80 .* modv;
+        alphaMap = (a/100) .* modSoft .* thrMask;
+    end
+
+    alphaMap(~isfinite(alphaMap)) = 0;
+    alphaMap = min(max(alphaMap,0),1);
+end
+    
     function render()
         sliceIdx = max(1, min(nZ, sliceIdx));
         set(txtSliceTop,'String',sliceString(sliceIdx,nZ));
@@ -964,85 +1056,39 @@ end
         catch
         end
 
-        A_scaled = (A - cax(1)) ./ (cax(2) - cax(1) + eps);
-        A_scaled = max(0, min(1, A_scaled));
-        pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
-
-       M = squeeze(mask(:,:,sliceIdx, volume));
+  M = squeeze(mask(:,:,sliceIdx, volume));
 M = logical(M);
 
 if size(M,1) ~= size(A,1) || size(M,2) ~= size(A,2)
     M = resizeLogical2D(M, size(A,1), size(A,2));
 end
 
-        if any(M(:))
-            if maskIsInclude
-                showMask = M;
-            else
-                showMask = ~M;
-            end
-            baseMaskOverlay = double(showMask);
-        else
-            showMask = true(size(M));
-            baseMaskOverlay = 1;
-        end
-
-        if viewMaskedOnly && any(M(:))
-            dimFactor = 0.12;
-            show3 = repmat(showMask,[1 1 3]);
-            bgRGB = bgRGB .* (show3 + dimFactor*(~show3));
-        end
-
-    thr = maskThreshold;
-a   = max(0, min(100, alphaPct));
-
-ov = A;
-baseMask = double(baseMaskOverlay);
-
-% SAME behavior as SCM_gui:
-% only show positive values
-showMask = (ov > 0);
-
-% threshold only applied to positive values
-thrMask = double((abs(ov) >= thr) & showMask);
-
-if ~alphaModEnable
-    alphaMap = (a/100) .* thrMask .* baseMask;
+if any(M(:))
+    if maskIsInclude
+        showMaskLocal = M;
+    else
+        showMaskLocal = ~M;
+    end
+    baseMaskOverlay = double(showMaskLocal);
 else
-    effLo = max(modMinAbs, thr);
-    effHi = modMaxAbs;
-
-    ovAbsPos = abs(ov);
-    ovAbsPos(~showMask) = NaN;
-
-    if ~isfinite(effHi) || effHi <= effLo
-        tmp = ovAbsPos(isfinite(ovAbsPos));
-        if isempty(tmp)
-            effHi = effLo + eps;
-        else
-            effHi = max(tmp);
-        end
-    end
-
-    if ~isfinite(effHi) || effHi <= effLo
-        effHi = effLo + eps;
-    end
-
-    modv = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-    modv(~isfinite(modv)) = 0;
-    modv = min(max(modv,0),1);
-
-    % never show non-positive values
-    modv(~showMask) = 0;
-
-    alphaMap = (a/100) .* modv .* thrMask .* baseMask;
+    showMaskLocal = true(size(M));
+    baseMaskOverlay = 1;
 end
 
-alphaMap(~isfinite(alphaMap)) = 0;
-alphaMap = min(max(alphaMap,0),1);
+if viewMaskedOnly && any(M(:))
+    dimFactor = 0.12;
+    show3 = repmat(showMaskLocal,[1 1 3]);
+    bgRGB = bgRGB .* (show3 + dimFactor*(~show3));
+end
 
-        a3 = repmat(alphaMap,[1 1 3]);
-        baseRGB = (1-a3).*bgRGB + a3.*pscRGB;
+[dispMap, alphaMap] = buildDisplayedOverlay(A, baseMaskOverlay);
+
+A_scaled = (dispMap - cax(1)) ./ (cax(2) - cax(1) + eps);
+A_scaled = max(0, min(1, A_scaled));
+pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
+
+a3 = repmat(alphaMap,[1 1 3]);
+baseRGB = (1-a3).*bgRGB + a3.*pscRGB;
 
         outRGB = baseRGB;
 
@@ -1478,6 +1524,29 @@ end
 % =========================================================
 % OVERLAY TAB CALLBACKS
 % =========================================================
+   function overlaySignModeChanged(src,~)
+    newSignMode = get(src,'Value');
+    overlaySignMode = newSignMode;
+
+    % SCM-like automatic colormap switching when sign mode changes
+    if newSignMode ~= overlayPrevSignMode
+        if newSignMode == 3
+            setPopupByName(popMap, 'signed_blackbdy_winter');
+        elseif newSignMode == 2
+            setPopupByName(popMap, 'winter_brain_fsl');
+        else
+            setPopupByName(popMap, 'blackbdy_iso');
+        end
+        overlayPrevSignMode = newSignMode;
+
+        % refresh actual colormap + redraw
+        overlayMapChanged(popMap, []);
+        return;
+    end
+
+    render();
+end
+    
     function overlayMapChanged(src,~)
         s = get(src,'String');
         idx = get(src,'Value');
@@ -1997,80 +2066,40 @@ function saveVideo(~,~)
                     cax = [0 100];
                 end
 
-                A_scaled = (A - cax(1)) ./ (cax(2) - cax(1) + eps);
-                A_scaled = max(0, min(1, A_scaled));
-                pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
+               M = squeeze(mask(:,:,sliceIdx, volume));
+M = logical(M);
 
-                M = squeeze(mask(:,:,sliceIdx, volume));
-                M = logical(M);
+if size(M,1) ~= size(A,1) || size(M,2) ~= size(A,2)
+    M = resizeLogical2D(M, size(A,1), size(A,2));
+end
 
-                if size(M,1) ~= size(A,1) || size(M,2) ~= size(A,2)
-                    M = resizeLogical2D(M, size(A,1), size(A,2));
-                end
+if any(M(:))
+    if maskIsInclude
+        showMask0 = M;
+    else
+        showMask0 = ~M;
+    end
+    baseMaskOverlay = double(showMask0);
+else
+    showMask0 = true(size(M));
+    baseMaskOverlay = 1;
+end
 
-                if any(M(:))
-                    if maskIsInclude
-                        showMask0 = M;
-                    else
-                        showMask0 = ~M;
-                    end
-                    baseMaskOverlay = double(showMask0);
-                else
-                    showMask0 = true(size(M));
-                    baseMaskOverlay = 1;
-                end
+if viewMaskedOnly && any(M(:))
+    dimFactor = 0.12;
+    show3 = repmat(showMask0,[1 1 3]);
+    bgRGB = bgRGB .* (show3 + dimFactor*(~show3));
+end
 
-                if viewMaskedOnly && any(M(:))
-                    dimFactor = 0.12;
-                    show3 = repmat(showMask0,[1 1 3]);
-                    bgRGB = bgRGB .* (show3 + dimFactor*(~show3));
-                end
+[dispMap, alphaMap] = buildDisplayedOverlay(A, baseMaskOverlay);
 
-                thr = maskThreshold;
-                a   = max(0, min(100, alphaPct));
+A_scaled = (dispMap - cax(1)) ./ (cax(2) - cax(1) + eps);
+A_scaled = max(0, min(1, A_scaled));
+pscRGB = ind2rgb(uint8(A_scaled * (Nc-1)), mapA);
 
-                ov = A;
-                baseMask = double(baseMaskOverlay);
-
-                showMask = (ov > 0);
-                thrMask  = double((abs(ov) >= thr) & showMask);
-
-                if ~alphaModEnable
-                    alphaMap = (a/100) .* thrMask .* baseMask;
-                else
-                    effLo = max(modMinAbs, thr);
-                    effHi = modMaxAbs;
-
-                    ovAbsPos = abs(ov);
-                    ovAbsPos(~showMask) = NaN;
-
-                    if ~isfinite(effHi) || effHi <= effLo
-                        tmp = ovAbsPos(isfinite(ovAbsPos));
-                        if isempty(tmp)
-                            effHi = effLo + eps;
-                        else
-                            effHi = max(tmp);
-                        end
-                    end
-
-                    if ~isfinite(effHi) || effHi <= effLo
-                        effHi = effLo + eps;
-                    end
-
-                    modv = (abs(ov) - effLo) ./ max(eps, (effHi - effLo));
-                    modv(~isfinite(modv)) = 0;
-                    modv = min(max(modv,0),1);
-                    modv(~showMask) = 0;
-
-                    alphaMap = (a/100) .* modv .* thrMask .* baseMask;
-                end
-
-                alphaMap(~isfinite(alphaMap)) = 0;
-                alphaMap = min(max(alphaMap,0),1);
-
-                a3 = repmat(alphaMap,[1 1 3]);
-                baseRGB = (1-a3).*bgRGB + a3.*pscRGB;
-                outRGB = baseRGB;
+a3 = repmat(alphaMap,[1 1 3]);
+baseRGB = (1-a3).*bgRGB + a3.*pscRGB;
+outRGB = baseRGB;
 
                 if ~viewMaskedOnly && any(M(:))
                     maskRGB = cat(3, ...
@@ -2304,6 +2333,10 @@ end
             '  If a mask exists for this slice/volume, overlay is restricted by Include/Exclude.\n' ...
             '  VIEW: MASKED dims outside region for clearer visualization.\n\n' ...
             'ALPHA MODULATION (SCM IDENTICAL):\n' ...
+            'SIGN DISPLAY (SCM IDENTICAL):\n' ...
+'  Positive only      = blackbdy_iso\n' ...
+'  Negative only      = winter_brain_fsl\n' ...
+'  Positive + Negative = signed_blackbdy_winter\n\n' ...
             '  OFF: alpha=(a/100)*thrMask*mask\n' ...
             '  ON : alpha=(a/100)*mod*thrMask*mask\n\n' ...
             'SHORTCUTS:\n' ...
@@ -2889,77 +2922,110 @@ end
 % COLORMAP HELPERS
 % =========================================================
     function cm = getCmap(name, n)
-        name = lower(strtrim(char(name)));
+    name = lower(strtrim(char(name)));
 
-        if strcmp(name,'blackbdy_iso')
-            if exist('blackbdy_iso','file')
-                cm = blackbdy_iso(n);
+    if strcmp(name,'blackbdy_iso')
+        if exist('blackbdy_iso','file')
+            cm = blackbdy_iso(n);
+        else
+            cm = hot(n);
+        end
+        cm(1,:) = 0;
+        return;
+    end
+
+    if strcmp(name,'winter_brain_fsl')
+        if exist('winter_brain_fsl','file')
+            cm = winter_brain_fsl(n);
+        else
+            cm = winter(n);
+        end
+        return;
+    end
+
+    if strcmp(name,'signed_blackbdy_winter')
+        nNeg = floor(n/2);
+        nPos = n - nNeg;
+
+        if exist('winter_brain_fsl','file')
+            neg = winter_brain_fsl(max(nNeg,2));
+        else
+            neg = winter(max(nNeg,2));
+        end
+        neg = neg(1:nNeg,:);
+
+        % make near-zero dark on negative side
+        neg = neg .* repmat(linspace(1,0,nNeg)',1,3);
+        if ~isempty(neg)
+            neg(end,:) = [0 0 0];
+        end
+
+        if exist('blackbdy_iso','file')
+            pos = blackbdy_iso(max(nPos,2));
+            pos = pos(1:nPos,:);
+        else
+            pos = hot(max(nPos,2));
+            pos = pos(1:nPos,:);
+        end
+        if ~isempty(pos)
+            pos(1,:) = [0 0 0];
+        end
+
+        cm = [neg; pos];
+        cm = min(max(cm,0),1);
+        return;
+    end
+
+    switch name
+        case 'hot'
+            cm = hot(n);
+        case 'parula'
+            cm = parula(n);
+        case 'jet'
+            cm = jet(n);
+        case 'gray'
+            cm = gray(n);
+        case 'bone'
+            cm = bone(n);
+        case 'copper'
+            cm = copper(n);
+        case 'pink'
+            cm = pink(n);
+        otherwise
+            if strcmp(name,'turbo')
+                if exist('turbo','file')
+                    cm = turbo(n);
+                else
+                    cm = jet(n);
+                end
+            elseif strcmp(name,'viridis')
+                anchors = [0.267 0.005 0.329; 0.283 0.141 0.458; 0.254 0.265 0.530; ...
+                           0.207 0.372 0.553; 0.164 0.471 0.558; 0.128 0.567 0.551; ...
+                           0.135 0.659 0.518; 0.267 0.749 0.441; 0.478 0.821 0.318; ...
+                           0.741 0.873 0.150];
+                cm = interpAnchors(anchors,n);
+            elseif strcmp(name,'plasma')
+                anchors = [0.050 0.030 0.528; 0.280 0.040 0.650; 0.500 0.060 0.650; ...
+                           0.700 0.170 0.550; 0.850 0.350 0.420; 0.940 0.550 0.260; ...
+                           0.990 0.750 0.140];
+                cm = interpAnchors(anchors,n);
+            elseif strcmp(name,'magma')
+                anchors = [0.001 0.000 0.015; 0.100 0.060 0.230; 0.250 0.080 0.430; ...
+                           0.450 0.120 0.500; 0.650 0.210 0.420; 0.820 0.370 0.280; ...
+                           0.930 0.610 0.210; 0.990 0.870 0.400];
+                cm = interpAnchors(anchors,n);
+            elseif strcmp(name,'inferno')
+                anchors = [0.002 0.002 0.014; 0.120 0.030 0.220; 0.280 0.050 0.400; ...
+                           0.480 0.090 0.430; 0.680 0.180 0.330; 0.820 0.350 0.210; ...
+                           0.930 0.590 0.110; 0.990 0.860 0.240];
+                cm = interpAnchors(anchors,n);
             else
                 cm = hot(n);
             end
-            cm(1,:) = 0;
-            return;
         end
 
-        switch name
-            case 'hot'
-                cm = hot(n);
-            case 'parula'
-                cm = parula(n);
-            case 'jet'
-                cm = jet(n);
-            case 'gray'
-                cm = gray(n);
-            case 'bone'
-                cm = bone(n);
-            case 'copper'
-                cm = copper(n);
-            case 'pink'
-                cm = pink(n);
-            otherwise
-                if strcmp(name,'turbo')
-                    if exist('turbo','file')
-                        cm = turbo(n);
-                    else
-                        cm = jet(n);
-                    end
-                elseif strcmp(name,'viridis')
-                    anchors = [0.267 0.005 0.329; 0.283 0.141 0.458; 0.254 0.265 0.530; ...
-                               0.207 0.372 0.553; 0.164 0.471 0.558; 0.128 0.567 0.551; ...
-                               0.135 0.659 0.518; 0.267 0.749 0.441; 0.478 0.821 0.318; ...
-                               0.741 0.873 0.150];
-                    cm = interpAnchors(anchors,n);
-                elseif strcmp(name,'plasma')
-                    anchors = [0.050 0.030 0.528; 0.280 0.040 0.650; 0.500 0.060 0.650; ...
-                               0.700 0.170 0.550; 0.850 0.350 0.420; 0.940 0.550 0.260; ...
-                               0.990 0.750 0.140];
-                    cm = interpAnchors(anchors,n);
-                elseif strcmp(name,'magma')
-                    anchors = [0.001 0.000 0.015; 0.100 0.060 0.230; 0.250 0.080 0.430; ...
-                               0.450 0.120 0.500; 0.650 0.210 0.420; 0.820 0.370 0.280; ...
-                               0.930 0.610 0.210; 0.990 0.870 0.400];
-                    cm = interpAnchors(anchors,n);
-                elseif strcmp(name,'inferno')
-                    anchors = [0.002 0.002 0.014; 0.120 0.030 0.220; 0.280 0.050 0.400; ...
-                               0.480 0.090 0.430; 0.680 0.180 0.330; 0.820 0.350 0.210; ...
-                               0.930 0.590 0.110; 0.990 0.860 0.240];
-                    cm = interpAnchors(anchors,n);
-                else
-                    cm = hot(n);
-                end
-        end
-        cm(1,:) = 0;
-    end
-
-    function cm = interpAnchors(anchors,n)
-        x = linspace(0,1,size(anchors,1));
-        xi = linspace(0,1,n);
-        cm = zeros(n,3);
-        for k=1:3
-            cm(:,k) = interp1(x, anchors(:,k), xi, 'linear');
-        end
-        cm = min(max(cm,0),1);
-    end
+    cm(1,:) = 0;
+end
 
 % =========================================================
 % THRESHOLD RANGE HELPER
@@ -4673,6 +4739,23 @@ function ensureUnderlayStateFields()
         state.regionInfo = struct();
     end
 end
+
+function setPopupByName(hPop, targetName)
+    try
+        items = get(hPop,'String');
+        if ischar(items)
+            items = cellstr(items);
+        end
+        for ii = 1:numel(items)
+            if strcmpi(strtrim(items{ii}), strtrim(targetName))
+                set(hPop,'Value',ii);
+                return;
+            end
+        end
+    catch
+    end
+end
+
 
     function s = safeStr(x)
         s = '';

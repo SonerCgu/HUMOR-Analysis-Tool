@@ -811,10 +811,10 @@ end
     set(btnHelp,  'Position', [panelX yHelp halfW btnH]);
     set(btnClose, 'Position', [panelX + halfW + 14 yClose halfW btnH]);
 
-   tcCtrlH   = 28;   % small row for time-course axis controls
-tcCtrlGap = 6;
+tcCtrlH   = 30;   % slightly taller controls row
+tcCtrlGap = 20;   % IMPORTANT: more gap so x-axis tick labels are visible again
 
-tcHfull = min(238, max(180, round(0.22 * Hh)));
+tcHfull = min(250, max(190, round(0.24 * Hh)));
 tcPlotH = max(120, tcHfull - tcCtrlH - tcCtrlGap);
 
 cbW          = 18;   % colorbar width
@@ -836,13 +836,17 @@ cbX = axX + leftW + cbGap;
 set(cb, 'Position', [cbX cbY cbW cbH]);
 
 tcLeftPad = 8;
+
+% move time-course plot a bit higher
 set(axTC, 'Position', [axX + tcLeftPad, botM + tcCtrlH + tcCtrlGap, leftW - tcLeftPad, tcPlotH]);
-set(tcAxisBar, 'Position', [axX + tcLeftPad, botM, leftW - tcLeftPad, tcCtrlH]);
+
+% move the Fix Y / Fix X bar slightly lower
+set(tcAxisBar, 'Position', [axX + tcLeftPad, botM - 6, leftW - tcLeftPad, tcCtrlH]);
 
 barW = leftW - tcLeftPad;
 x = 0;
-y = 2;
-hh = tcCtrlH - 4;
+y = 4;
+hh = tcCtrlH - 8;
 
 wChk = 62;
 wEdit = 95;
@@ -2355,6 +2359,28 @@ end
             yl = [-5 5];
         end
         set(ax2, 'YLim', yl);
+
+        xl = get(axTC, 'XLim');
+if any(~isfinite(xl)) || xl(2) <= xl(1)
+    xl = [tmin(1) tmin(end)];
+end
+set(ax2, 'XLim', xl);
+
+span = xl(2) - xl(1);
+if span <= 5
+    stepMin = 1;
+elseif span <= 15
+    stepMin = 2;
+else
+    stepMin = 5;
+end
+
+xt = ceil(xl(1)/stepMin)*stepMin : stepMin : floor(xl(2)/stepMin)*stepMin;
+if isempty(xt)
+    xt = [xl(1) xl(2)];
+end
+set(ax2, 'XTick', xt);
+
 
         [b0,b1] = parseRangeSafe(getStr(ebBase), 30, 240);
         [s0,s1] = parseRangeSafe(getStr(ebSig), 840, 900);
@@ -5139,23 +5165,68 @@ function tcXAll(~,~)
     tcAxisModeChanged();
 end
 
-function applyTimecourseAxisMode()
+    function applyTimecourseAxisMode()
     [xAuto, yAuto] = getAutoTcLimits();
 
     if state.tcFixX
-        set(axTC, 'XLim', state.tcXLim);
+        xUse = state.tcXLim;
     else
-        set(axTC, 'XLim', xAuto);
+        xUse = xAuto;
     end
 
     if state.tcFixY
-        set(axTC, 'YLim', state.tcYLim);
+        yUse = state.tcYLim;
     else
-        set(axTC, 'YLim', yAuto);
+        yUse = yAuto;
     end
 
+    set(axTC, 'XLim', xUse);
+    set(axTC, 'YLim', yUse);
+
+    applyTimecourseXTicks(xUse);
     drawTimeWindows();
+    end
+
+function applyTimecourseXTicks(xLimNow)
+    if nargin < 1 || isempty(xLimNow) || numel(xLimNow) < 2 || any(~isfinite(xLimNow))
+        xLimNow = get(axTC, 'XLim');
+    end
+
+    span = xLimNow(2) - xLimNow(1);
+    if ~isfinite(span) || span <= 0
+        set(axTC, 'XTickMode', 'auto', 'XTickLabelMode', 'auto');
+        return;
+    end
+
+    % choose sensible spacing in minutes
+    if span <= 5
+        stepMin = 1;
+    elseif span <= 15
+        stepMin = 2;
+    else
+        stepMin = 5;
+    end
+
+    x0 = ceil(xLimNow(1) / stepMin) * stepMin;
+    x1 = floor(xLimNow(2) / stepMin) * stepMin;
+
+    ticks = x0:stepMin:x1;
+
+    if isempty(ticks)
+        ticks = [xLimNow(1) xLimNow(2)];
+    end
+
+    if numel(ticks) == 1
+        ticks = unique([xLimNow(1) ticks xLimNow(2)]);
+    end
+
+    ticks = ticks(isfinite(ticks));
+
+    set(axTC, 'XTick', ticks, ...
+              'XTickMode', 'manual', ...
+              'XTickLabelMode', 'auto');
 end
+
 
 function [xLimAuto, yLimAuto] = getAutoTcLimits()
     xAll = [];
