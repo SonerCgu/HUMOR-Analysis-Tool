@@ -181,7 +181,7 @@ listPanel = uipanel('Parent',dlg, ...
 hList = uicontrol('Parent',listPanel,'Style','listbox', ...
     'Units','normalized', ...
     'Position',[0.02 0.12 0.96 0.84], ...
-    'String',labelList, ...
+        'String',colorizeCoregLabels(labelList), ...
     'Value',defaultIdx, ...
     'BackgroundColor',[0 0 0], ...
     'ForegroundColor',[1 1 1], ...
@@ -302,7 +302,7 @@ uiwait(dlg);
             labelList = {'AUTO / FALLBACK: no filtered source found'};
         end
         defaultIdx = chooseDefaultCandidateIndex(labelList);
-        set(hList,'String',labelList,'Value',defaultIdx);
+        set(hList,'String',colorizeCoregLabels(labelList),'Value',defaultIdx);
         updateSelectedText();
     end
 
@@ -775,7 +775,65 @@ end
 k = p;
 end
 
+function out = colorizeCoregLabels(labels)
 
+out = labels;
+
+if isempty(labels)
+    return;
+end
+
+if ischar(labels)
+    labels = cellstr(labels);
+end
+
+out = cell(size(labels));
+
+for i = 1:numel(labels)
+
+    s = labels{i};
+    sPlain = s;
+
+    tag = '';
+    tok = regexp(sPlain, '^\[([A-Z_]+)\]', 'tokens', 'once');
+
+    if ~isempty(tok)
+        tag = tok{1};
+    end
+
+    col = '#FFFFFF';
+
+    switch upper(tag)
+        case 'BRAINIMAGE'
+            col = '#FF8FC7';
+        case 'UNDERLAY'
+            col = '#72C8FF';
+        case 'OVERLAY'
+            col = '#FFB347';
+        case 'MASK'
+            col = '#7CFF91';
+        case 'ANATOMY'
+            col = '#D8B4FF';
+        case 'HISTOLOGY'
+            col = '#FFD27A';
+        case 'VASCULAR'
+            col = '#9DE6FF';
+        case 'SOURCE'
+            col = '#FFFFFF';
+    end
+
+    if ~isempty(tag)
+        sHtml = regexprep(sPlain, '^\[[A-Z_]+\]', ...
+            ['<font color="' col '"><b>[$0]</b></font>']);
+        sHtml = strrep(sHtml, '[[$0]]', ['$0']); % safety, usually not used
+        sHtml = regexprep(sPlain, '^\[([A-Z_]+)\]', ...
+            ['<font color="' col '"><b>[$1]</b></font>']);
+        out{i} = ['<html>' sHtml '</html>'];
+    else
+        out{i} = ['<html><font color="#FFFFFF">' sPlain '</font></html>'];
+    end
+end
+end
 function out = inferAnalysedFromRaw(rawFolder)
 out = '';
 if isempty(rawFolder)

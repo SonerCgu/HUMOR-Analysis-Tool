@@ -403,8 +403,9 @@ set(ebSigma, 'ForegroundColor', [1.00 0.35 0.35]);
 btnRoiExport   = mkBtn(pOverlay, 'EXPORT ROIs (TXT)', @exportROIsCB, colBtnExport, 13);
 btnScmExport   = mkBtn(pOverlay, 'EXPORT SCM IMAGE', @exportSCMImageCB, colBtnExport, 13);
 btnTcPng       = mkBtn(pOverlay, 'EXPORT TIME COURSE PNG', @exportTimecoursePngCB, colBtnExport, 13);
-btnScmSeries   = mkBtn(pOverlay, 'EXPORT SCM SERIES', @exportScmSeries1minCB, colBtnExport, 12);
-btnGroupBundle = mkBtn(pOverlay, 'EXPORT FOR GROUP ANALYSIS', @exportForGroupAnalysisCB, colBtnPrimary, 12);
+btnScmSeries   = mkBtn(pOverlay, 'EXPORT PPT', @exportScmSeries1minCB, colBtnExport, 12);
+btnGroupBundle = mkBtn(pOverlay, 'EXPORT SCM BUNDLE', @exportForGroupAnalysisCB, colBtnPrimary, 12);
+btnOpenGroupBundle = mkBtn(pOverlay, 'OPEN GROUP BUNDLE', @openGroupBundleCB, colBtnPrimary, 12);
 btnUnfreeze    = mkBtn(pOverlay, 'UNFREEZE HOVER', @unfreezeHover, colBtnNeutral, 12);
 
 %% ---------------- Underlay controls ----------------
@@ -635,17 +636,21 @@ function layoutOverlay(w, h)
     y = y - (rowHLoc + groupGapLoc);
     setRowEditOverlay(lblSigma, ebSigma);
     y = y - 2;
+btnW2 = floor((w - 2*pad - 10) / 2);
 
-    btnW2 = floor((w - 2*pad - 10) / 2);
-    set(btnRoiExport, 'Position', [xLabel y btnW2 wideBtnHLoc]);
-    set(btnScmExport, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
-    y = y - (wideBtnHLoc + gapLoc);
-    set(btnTcPng, 'Position', [xLabel y btnW2 wideBtnHLoc]);
-    set(btnScmSeries, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
-    y = y - (wideBtnHLoc + gapLoc);
-    set(btnGroupBundle, 'Position', [xLabel y (w-2*pad) wideBtnHLoc]);
-    y = y - (wideBtnHLoc + groupGapLoc);
-    set(btnUnfreeze, 'Position', [xLabel y (w-2*pad) smallBtnHLoc]);
+set(btnRoiExport, 'Position', [xLabel y btnW2 wideBtnHLoc]);
+set(btnScmExport, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+y = y - (wideBtnHLoc + gapLoc);
+
+set(btnTcPng, 'Position', [xLabel y btnW2 wideBtnHLoc]);
+set(btnScmSeries, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+y = y - (wideBtnHLoc + gapLoc);
+
+set(btnGroupBundle, 'Position', [xLabel y btnW2 wideBtnHLoc]);
+set(btnOpenGroupBundle, 'Position', [xLabel + btnW2 + 10 y btnW2 wideBtnHLoc]);
+y = y - (wideBtnHLoc + groupGapLoc);
+
+set(btnUnfreeze, 'Position', [xLabel y (w-2*pad) smallBtnHLoc]);
 
     function setRowEditOverlay(lbl, ed)
         set(lbl, 'Position', [xLabel y wLabel rowHLoc]);
@@ -1041,9 +1046,17 @@ function loadMaskCB(~,~)
          '*.*', 'All files (*.*)'}, ...
         'Select overlay mask / bundle', startPath);
     if isequal(f,0), return; end
-    fullf = fullfile(p,f);
-    try
-        B = [];
+fullf = fullfile(p,f);
+try
+    % If user accidentally selects an SCM_GroupExport bundle via LOAD MASK,
+    % load it properly as a full SCM bundle instead of trying to read it as a mask.
+    if isScmGroupBundleFileLocal(fullf)
+        G = loadScmGroupBundleLocal(fullf);
+        applyScmGroupBundleLocal(G, fullf);
+        return;
+    end
+
+    B = [];
         [~,~,ext] = fileparts(fullf); ext = lower(ext);
         if strcmp(ext, '.mat')
             B = readScmBundleFile(fullf);
@@ -1057,14 +1070,21 @@ function loadMaskCB(~,~)
                 [passedMask, passedMaskIsInclude] = readMask(fullf, 'overlayPreferred');
                 passedMask = fitBundleMaskToCurrentScm(passedMask);
             end
-            if ~isempty(B) && ~isempty(B.brainImage)
-                U = squeeze(B.brainImage);
-                if size(U,1) == nY && size(U,2) == nX
-                    bg = double(U);
-                    applyUnderlayMeta(defaultUnderlayMeta(), bg);
-                    origBG = bg;
-                end
-            end
+           if ~isempty(B) && isstruct(B) && ~isempty(B.brainImage)
+    U = squeeze(double(B.brainImage));
+
+    if isValidBundleUnderlayForCurrentScm(U)
+        bg = prepareBundleUnderlayForCurrentScm(U);
+        applyUnderlayMeta(defaultUnderlayMeta(), bg);
+        origBG = bg;
+
+        fprintf('[SCM] Loaded bundle underlay with size: %s\n', mat2str(size(bg)));
+    else
+        fprintf(['[SCM] Bundle underlay ignored because it is not a true slice-matched underlay.\n' ...
+                 '      Underlay size: %s | SCM expects Y X Z = [%d %d %d]\n'], ...
+                 mat2str(size(U)), nY, nX, nZ);
+    end
+end
         else
             [passedMask, passedMaskIsInclude] = readMask(fullf, 'overlayPreferred');
             passedMask = fitBundleMaskToCurrentScm(passedMask);
@@ -1414,35 +1434,32 @@ regList = askAndApply2DWarpDirectionToRegList(regList, 'Step Motor atlas warp');
         state.stepMotorAtlasSourceIdx = report.sourceIdx;
         state.stepMotorAtlasAtlasIdx = report.atlasIdx;
 
-           % ---------------------------------------------------------
-        % Build atlas-space underlay.
-        %
-        % IMPORTANT:
-        % For Step Motor, the correct behavior should mimic the
-        % working single-slice behavior:
-        %
-        %   functional slice -> transform -> atlas space
-        %   atlas/histology underlay from the same Registration2D file
-        %   should be used directly, NOT warped again.
-        %
-        % Only if no atlas/histology underlay is stored in the
-        % registration MAT files do we fall back to warping the native
-        % Doppler underlay.
-        % ---------------------------------------------------------
-        [bgNew, bgMsg] = buildStepMotorAtlasUnderlay(origBG, bg, regList, report, origPSC, PSC);
+       % ---------------------------------------------------------
+% Build FIXED atlas/histology underlay.
+%
+% Do NOT open another file selector here.
+% The user already selected the Step Motor Registration2D folder.
+% ---------------------------------------------------------
+[bgNew, bgMsg] = buildStepMotorFixedAtlasUnderlayOnly(report.usedRegList, report.outSize, bg);
 
-        if isempty(bgNew)
-            bgNew = makeFunctionalContrastFallbackUnderlay(PSC);
-            bgMsg = 'functional contrast fallback';
-        end
+% If no fixed atlas/histology image was found inside the Reg2D MAT files,
+% try to keep the already-loaded underlay if it matches atlas output size.
+if isempty(bgNew)
+    [bgNew, bgMsg] = keepAlreadyLoadedAtlasUnderlayIfPossible(bg, report.outSize, report.nUsed);
+end
 
-        bg = bgNew;
+% Last fallback:
+% Do NOT use a blank black canvas.
+% If fixed histology is not saved in the Reg2D files, use the warped
+% functional contrast as a temporary diagnostic underlay.
+if isempty(bgNew)
+    bgNew = makeFunctionalContrastFallbackUnderlay(PSCnew);
+    bgMsg = 'functional contrast fallback; fixed histology was not saved in Reg2D files';
+end
 
-        % Force Step Motor atlas underlay to grayscale stack.
-        % This prevents [Y X 3] from being misread as RGB/rainbow when
-        % nZ == 3, and prevents RGB histology from being treated as
-        % a 3-slice volume.
-        forceStepMotorAtlasGrayUnderlay();
+bg = bgNew;
+
+forceStepMotorAtlasGrayUnderlay();
         try
             set(btnWarpAtlas, 'String', 'STEP MOTOR ATLAS-WARPED');
         catch
@@ -2337,8 +2354,18 @@ function exportForGroupAnalysisCB(~,~)
         G.isAtlasWarped = logical(state.isAtlasWarped); G.atlasTransformFile = state.atlasTransformFile; G.atlasSliceIndex = state.z;
         G.baseWindowStr = getStr(ebBase); G.sigWindowStr = getStr(ebSig); G.baseWindowSec = [b0 b1]; G.sigWindowSec = [s0 s1]; G.sigma = sigma;
         G.display = struct('threshold',thr,'caxis',state.cax,'alphaPercent',get(slAlpha,'Value'), ...
-            'alphaModOn',logical(state.alphaModOn),'modMin',state.modMin,'modMax',state.modMax, ...
-            'colormapName',getCurrentPopupStringLocal(popMap),'signMode',state.signMode);
+    'alphaModOn',logical(state.alphaModOn),'modMin',state.modMin,'modMax',state.modMax, ...
+    'colormapName',getCurrentPopupStringLocal(popMap),'signMode',state.signMode);
+
+% Store exact SCM colormap for GroupAnalysis PPT export.
+try
+    G.display.cmapMatrix = colormap(ax);
+catch
+    G.display.cmapMatrix = getCmap(getCurrentPopupStringLocal(popMap), 256);
+end
+
+% Useful marker so GroupAnalysis knows this bundle can be exported SCM-style.
+G.display.exportStyle = 'SCM_gui_6tile_black_editable_ppt';
         G.TR = TR; G.tsec = tsec; G.tmin = tmin; G.nY = nY; G.nX = nX; G.nZ = nZ; G.nT = nT;
         G.pscAtlas4D = PSC; G.scmMapSignedAtlas = state.lastSignedMap; G.scmMapDisplayAtlas = get(hOV,'CData'); G.alphaAtlas = get(hOV,'AlphaData');
         G.underlayAtlas = bg; G.underlayInfo = struct();
@@ -2351,6 +2378,404 @@ function exportForGroupAnalysisCB(~,~)
         msgbox(sprintf('Saved GroupAnalysis bundle:\n%s', outFile), 'SCM group export');
     catch ME
         errordlg(ME.message, 'Export for Group Analysis failed');
+    end
+end
+
+
+function openGroupBundleCB(~,~)
+    startPath = getGroupBundleOpenStartPathLocal();
+
+    [f,p] = uigetfileStartIn( ...
+        {'SCM_GroupExport*.mat;*.mat', 'SCM Group bundle (*.mat)'; ...
+         '*.mat', 'MAT files (*.mat)'; ...
+         '*.*', 'All files (*.*)'}, ...
+        'Open SCM GroupAnalysis bundle', startPath);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fullf = fullfile(p,f);
+
+    try
+        G = loadScmGroupBundleLocal(fullf);
+        applyScmGroupBundleLocal(G, fullf);
+    catch ME
+        errordlg(ME.message, 'Open SCM group bundle failed');
+    end
+end
+
+
+function tf = isScmGroupBundleFileLocal(fullf)
+    tf = false;
+
+    try
+        if isempty(fullf) || exist(fullf,'file') ~= 2
+            return;
+        end
+
+        W = whos('-file', fullf);
+        names = {W.name};
+
+        if any(strcmp(names, 'G'))
+            tf = true;
+            return;
+        end
+
+        % Fallback: detect by filename.
+        [~,nm,~] = fileparts(fullf);
+        nm = lower(nm);
+
+        if ~isempty(strfind(nm, 'scm_groupexport')) || ...
+                ~isempty(strfind(nm, 'group_export')) || ...
+                ~isempty(strfind(nm, 'scm_group'))
+            tf = true;
+        end
+
+    catch
+        tf = false;
+    end
+end
+
+
+function G = loadScmGroupBundleLocal(fullf)
+    if isempty(fullf) || exist(fullf,'file') ~= 2
+        error('Group bundle file not found: %s', fullf);
+    end
+
+    S = load(fullf);
+
+    if isfield(S,'G') && isstruct(S.G)
+        G = S.G;
+    else
+        % Fallback: search for a struct that looks like an SCM group export.
+        G = [];
+        fn = fieldnames(S);
+
+        for ii = 1:numel(fn)
+            v = S.(fn{ii});
+
+            if isstruct(v)
+                if isfield(v,'kind') && strcmpi(char(v.kind), 'SCM_GROUP_EXPORT')
+                    G = v;
+                    break;
+                end
+
+                if isfield(v,'pscAtlas4D') || isfield(v,'underlayAtlas') || isfield(v,'scmMapSignedAtlas')
+                    G = v;
+                    break;
+                end
+            end
+        end
+
+        if isempty(G)
+            error(['This MAT file does not look like an SCM GroupAnalysis bundle.' newline ...
+                   'Expected variable G with fields like G.pscAtlas4D and G.underlayAtlas.']);
+        end
+    end
+
+    if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
+        error(['The selected bundle has no G.pscAtlas4D field.' newline ...
+               'This means it cannot be reopened as a full SCM dataset.']);
+    end
+end
+
+
+function applyScmGroupBundleLocal(G, fullf)
+
+    % ---------------------------------------------------------
+    % 1) Load PSC data from bundle
+    % ---------------------------------------------------------
+    PSC = G.pscAtlas4D;
+
+    if ~(isnumeric(PSC) || islogical(PSC))
+        error('G.pscAtlas4D is not numeric.');
+    end
+
+    if ~(ndims(PSC) == 3 || ndims(PSC) == 4)
+        error('G.pscAtlas4D must be [Y X T] or [Y X Z T].');
+    end
+
+    % Treat loaded bundle as the new native/base state for this SCM session.
+    origPSC = PSC;
+
+    % ---------------------------------------------------------
+    % 2) Load TR if present
+    % ---------------------------------------------------------
+    if isfield(G,'TR') && ~isempty(G.TR) && isnumeric(G.TR) && isscalar(G.TR) && isfinite(G.TR) && G.TR > 0
+        TR = double(G.TR);
+    end
+
+    % Refresh nY/nX/nZ/nT/tsec/tmin after replacing PSC.
+    refreshDimsAfterPSCChange();
+
+    % ---------------------------------------------------------
+    % 3) Load underlay
+    % ---------------------------------------------------------
+    if isfield(G,'underlayAtlas') && ~isempty(G.underlayAtlas)
+        bg = G.underlayAtlas;
+    else
+        bg = makeNativeFallbackUnderlayFromPSC(PSC);
+    end
+
+    origBG = bg;
+
+    % ---------------------------------------------------------
+    % 4) Restore underlay metadata if present
+    % ---------------------------------------------------------
+    ensureUnderlayStateFields();
+
+    state.isColorUnderlay = false;
+    state.regionLabelUnderlay = [];
+    state.regionColorLUT = [];
+    state.regionInfo = struct();
+
+    if isfield(G,'underlayInfo') && isstruct(G.underlayInfo)
+        UI = G.underlayInfo;
+
+        if isfield(UI,'isColorUnderlay') && ~isempty(UI.isColorUnderlay)
+            state.isColorUnderlay = logical(UI.isColorUnderlay);
+        end
+
+        if isfield(UI,'regionLabelUnderlay') && ~isempty(UI.regionLabelUnderlay)
+            state.regionLabelUnderlay = UI.regionLabelUnderlay;
+        end
+
+        if isfield(UI,'regionInfo') && ~isempty(UI.regionInfo)
+            state.regionInfo = UI.regionInfo;
+        end
+    else
+        applyUnderlayMeta(defaultUnderlayMeta(), bg);
+    end
+
+    % Important for Step Motor nZ == 3:
+    % avoid interpreting Y X 3 grayscale slices as one RGB image.
+    try
+        if nZ > 1 && ndims(bg) == 3 && size(bg,3) == nZ
+            state.isColorUnderlay = false;
+        end
+    catch
+    end
+
+    % ---------------------------------------------------------
+    % 5) Load mask if present
+    % ---------------------------------------------------------
+    passedMask = [];
+    passedMaskIsInclude = true;
+
+    if isfield(G,'maskAtlas') && ~isempty(G.maskAtlas)
+        passedMask = fitBundleMaskToCurrentScm(G.maskAtlas);
+    elseif isfield(G,'mask2DCurrentSlice') && ~isempty(G.mask2DCurrentSlice)
+        passedMask = fitBundleMaskToCurrentScm(G.mask2DCurrentSlice);
+    end
+
+    if isfield(G,'maskIsInclude') && ~isempty(G.maskIsInclude)
+        passedMaskIsInclude = logical(G.maskIsInclude);
+    end
+
+    origPassedMask = passedMask;
+
+    % ---------------------------------------------------------
+    % 6) Restore label/title/meta
+    % ---------------------------------------------------------
+    if isfield(G,'fileLabel') && ~isempty(G.fileLabel)
+        try
+            fileLabel = char(G.fileLabel);
+        catch
+        end
+    else
+        [~,nm,~] = fileparts(fullf);
+        fileLabel = nm;
+    end
+
+    state.isAtlasWarped = true;
+    state.isStepMotorAtlasWarped = false;
+
+    if isfield(G,'atlasTransformFile') && ~isempty(G.atlasTransformFile)
+        try
+            state.atlasTransformFile = char(G.atlasTransformFile);
+            state.lastAtlasTransformFile = char(G.atlasTransformFile);
+        catch
+            state.atlasTransformFile = '';
+            state.lastAtlasTransformFile = '';
+        end
+    else
+        state.atlasTransformFile = fullf;
+        state.lastAtlasTransformFile = fullf;
+    end
+
+    try
+        if isfield(G,'atlasSliceIndex') && ~isempty(G.atlasSliceIndex) && isfinite(G.atlasSliceIndex)
+            state.z = clamp(round(G.atlasSliceIndex), 1, nZ);
+        else
+            state.z = clamp(state.z, 1, nZ);
+        end
+    catch
+        state.z = clamp(state.z, 1, nZ);
+    end
+
+    % ---------------------------------------------------------
+    % 7) Restore GUI windows/settings
+    % ---------------------------------------------------------
+    if isfield(G,'baseWindowStr') && ~isempty(G.baseWindowStr)
+        set(ebBase, 'String', char(G.baseWindowStr));
+    elseif isfield(G,'baseWindowSec') && numel(G.baseWindowSec) >= 2
+        set(ebBase, 'String', sprintf('%g-%g', G.baseWindowSec(1), G.baseWindowSec(2)));
+    end
+
+    if isfield(G,'sigWindowStr') && ~isempty(G.sigWindowStr)
+        set(ebSig, 'String', char(G.sigWindowStr));
+    elseif isfield(G,'sigWindowSec') && numel(G.sigWindowSec) >= 2
+        set(ebSig, 'String', sprintf('%g-%g', G.sigWindowSec(1), G.sigWindowSec(2)));
+    end
+
+    if isfield(G,'sigma') && ~isempty(G.sigma) && isnumeric(G.sigma) && isscalar(G.sigma) && isfinite(G.sigma)
+        set(ebSigma, 'String', sprintf('%g', G.sigma));
+    end
+
+    if isfield(G,'display') && isstruct(G.display)
+        applyDisplaySettingsFromGroupBundleLocal(G.display);
+    end
+
+    % ---------------------------------------------------------
+    % 8) Reset ROIs and redraw
+    % ---------------------------------------------------------
+    try
+        set(btnWarpAtlas, 'String', 'GROUP BUNDLE LOADED');
+    catch
+    end
+
+    try
+        set(txtTitle, 'String', sprintf('%s | loaded SCM group bundle', makeFullTitle(fileLabel)));
+    catch
+        set(txtTitle, 'String', 'Loaded SCM group bundle');
+    end
+
+    resetRoisAndRefreshAfterDataChange();
+
+    if isfield(G,'display') && isstruct(G.display)
+        applyDisplaySettingsFromGroupBundleLocal(G.display);
+        updateView();
+    end
+
+    mask2D = getMaskForCurrentSlice();
+
+    try
+        set(hBG, 'CData', renderUnderlayRGB(getBg2DForSlice(state.z)));
+    catch
+    end
+
+    updateSliceIndicators();
+    updateInfoLines();
+    computeSCM();
+
+    set(info1, 'String', ['Loaded SCM group bundle: ' shortenPath(fullf,85)], ...
+        'TooltipString', fullf);
+
+    fprintf('[SCM] Loaded GroupAnalysis SCM bundle:\n%s\n', fullf);
+end
+
+
+function applyDisplaySettingsFromGroupBundleLocal(D)
+
+    if isempty(D) || ~isstruct(D)
+        return;
+    end
+
+    try
+        if isfield(D,'threshold') && ~isempty(D.threshold) && isfinite(D.threshold)
+            set(ebThr, 'String', sprintf('%g', D.threshold));
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'caxis') && numel(D.caxis) >= 2 && all(isfinite(D.caxis(1:2)))
+            state.cax = double(D.caxis(1:2));
+            if state.cax(2) < state.cax(1)
+                state.cax = fliplr(state.cax);
+            end
+            set(ebCax, 'String', sprintf('%g %g', state.cax(1), state.cax(2)));
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'alphaPercent') && ~isempty(D.alphaPercent) && isfinite(D.alphaPercent)
+            set(slAlpha, 'Value', clamp(double(D.alphaPercent), 0, 100));
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'alphaModOn') && ~isempty(D.alphaModOn)
+            state.alphaModOn = logical(D.alphaModOn);
+            set(cbAlphaMod, 'Value', double(state.alphaModOn));
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'modMin') && ~isempty(D.modMin) && isfinite(D.modMin)
+            state.modMin = double(D.modMin);
+            set(ebModMin, 'String', sprintf('%g', state.modMin));
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'modMax') && ~isempty(D.modMax) && isfinite(D.modMax)
+            state.modMax = double(D.modMax);
+            set(ebModMax, 'String', sprintf('%g', state.modMax));
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'signMode') && ~isempty(D.signMode) && isfinite(D.signMode)
+            state.signMode = clamp(round(double(D.signMode)), 1, 3);
+            state.prevSignMode = state.signMode;
+            set(popSignMode, 'Value', state.signMode);
+        end
+    catch
+    end
+
+    try
+        if isfield(D,'colormapName') && ~isempty(D.colormapName)
+            cmName = char(D.colormapName);
+            set(popMap, 'Value', findPopupIndexByName(popMap, cmName));
+        end
+    catch
+    end
+
+    alphaModToggled();
+
+    try
+        if isfield(D,'cmapMatrix') && ~isempty(D.cmapMatrix) && size(D.cmapMatrix,2) == 3
+            colormap(ax, D.cmapMatrix);
+        end
+    catch
+    end
+end
+
+
+function startPath = getGroupBundleOpenStartPathLocal()
+    try
+        root = getDatasetRootForSelectors();
+        root = guessAnalysedRoot(root);
+
+        cand = { ...
+            fullfile(root,'GroupAnalysis','Bundles','SCM'), ...
+            fullfile(root,'GroupAnalysis','Bundles'), ...
+            fullfile(root,'SCM'), ...
+            fullfile(root,'Bundles'), ...
+            root, ...
+            getStartPath(), ...
+            pwd};
+
+        startPath = firstExistingDir(cand);
+    catch
+        startPath = pwd;
     end
 end
 
@@ -2617,6 +3042,92 @@ function PSCz = getPSCForSlice(z)
         PSCz = squeeze(PSC(:,:,clamp(round(z),1,nZ),:));
     end
 end
+
+function tf = isValidBundleUnderlayForCurrentScm(U)
+    tf = false;
+
+    try
+        if isempty(U)
+            return;
+        end
+
+        U = squeeze(U);
+
+        % 2D underlay is valid only for single-slice SCM.
+        % For multi-slice data, accepting 2D is exactly what causes
+        % the same underlay to appear on all slices.
+        if ndims(U) == 2
+            tf = (nZ == 1 && size(U,1) == nY && size(U,2) == nX);
+            return;
+        end
+
+        % Grayscale stack: Y x X x Z
+        if ndims(U) == 3
+            if size(U,1) ~= nY || size(U,2) ~= nX
+                return;
+            end
+
+            % Correct multi-slice underlay stack.
+            if size(U,3) == nZ
+                tf = true;
+                return;
+            end
+
+            % RGB image is allowed only for single-slice display.
+            if nZ == 1 && size(U,3) == 3
+                tf = true;
+                return;
+            end
+
+            return;
+        end
+
+        % RGB stack: Y x X x 3 x Z
+        if ndims(U) == 4
+            tf = (size(U,1) == nY && ...
+                  size(U,2) == nX && ...
+                  size(U,3) == 3  && ...
+                  size(U,4) == nZ);
+            return;
+        end
+
+    catch
+        tf = false;
+    end
+end
+
+
+function Uout = prepareBundleUnderlayForCurrentScm(U)
+    U = squeeze(double(U));
+    U(~isfinite(U)) = 0;
+
+    if ndims(U) == 2
+        Uout = U;
+        return;
+    end
+
+    if ndims(U) == 3
+        Uout = U;
+        return;
+    end
+
+    % Convert RGB stack Y x X x 3 x Z to grayscale stack Y x X x Z.
+    if ndims(U) == 4 && size(U,3) == 3 && size(U,4) == nZ
+        Uout = zeros(nY,nX,nZ);
+
+        for zz0 = 1:nZ
+            RGB = squeeze(U(:,:,:,zz0));
+            Uout(:,:,zz0) = 0.2989 .* RGB(:,:,1) + ...
+                             0.5870 .* RGB(:,:,2) + ...
+                             0.1140 .* RGB(:,:,3);
+        end
+
+        return;
+    end
+
+    error('prepareBundleUnderlayForCurrentScm: unsupported underlay size %s', mat2str(size(U)));
+end
+
 
 function bg2 = getBg2DForSlice(z)
     ensureUnderlayStateFields(); z = clamp(round(z),1,nZ);
@@ -3169,7 +3680,22 @@ function [U, meta] = extractUnderlayFromMatStruct(S)
         elseif isfield(S,'infoRegions') && ~isempty(S.infoRegions), meta.regionInfo = S.infoRegions; end
         return;
     end
-    pref = {'atlasUnderlayRGB','underlay','bg','brainImage','img','I','atlasUnderlay','vascular','histology','regions','Data'};
+ pref = { ...
+    'sliceUnderlayRaw', ...
+    'sliceUnderlayProcessed', ...
+    'anatomical_reference_raw', ...
+    'anatomical_reference', ...
+    'atlasUnderlayRGB', ...
+    'atlasUnderlay', ...
+    'underlay', ...
+    'bg', ...
+    'brainImage', ...
+    'img', ...
+    'I', ...
+    'vascular', ...
+    'histology', ...
+    'regions', ...
+    'Data'};
     for ii = 1:numel(pref)
         if isfield(S,pref{ii})
             v = S.(pref{ii});
@@ -3254,12 +3780,29 @@ function B = readScmBundleFile(fullf)
             B.brainMask = logical(S.(fn)); break;
         end
     end
-    underlayFields = {'brainImage','underlay','bg','anatomical_reference','anatomical_reference_raw','brain_image'};
-    for k = 1:numel(underlayFields)
-        fn = underlayFields{k};
-        if isfield(R,fn) && ~isempty(R.(fn)) && isnumeric(R.(fn)), B.brainImage = double(R.(fn)); break;
-        elseif isfield(S,fn) && ~isempty(S.(fn)) && isnumeric(S.(fn)), B.brainImage = double(S.(fn)); break; end
+    % Prefer full saved underlay stacks from Mask Editor.
+% brainImage can be masked or accidentally 2D, so use it only after
+% anatomical_reference / anatomical_reference_raw.
+underlayFields = { ...
+    'anatomical_reference', ...
+    'anatomical_reference_raw', ...
+    'brainImage', ...
+    'underlay', ...
+    'bg', ...
+    'brain_image'};
+
+for k = 1:numel(underlayFields)
+    fn = underlayFields{k};
+
+    if isfield(R,fn) && ~isempty(R.(fn)) && (isnumeric(R.(fn)) || islogical(R.(fn)))
+        B.brainImage = double(R.(fn));
+        break;
+
+    elseif isfield(S,fn) && ~isempty(S.(fn)) && (isnumeric(S.(fn)) || islogical(S.(fn)))
+        B.brainImage = double(S.(fn));
+        break;
     end
+end
     if isfield(R,'overlayMaskIsInclude') && ~isempty(R.overlayMaskIsInclude), B.overlayMaskIsInclude = logical(R.overlayMaskIsInclude);
     elseif isfield(S,'overlayMaskIsInclude') && ~isempty(S.overlayMaskIsInclude), B.overlayMaskIsInclude = logical(S.overlayMaskIsInclude);
     elseif isfield(R,'loadedMaskIsInclude') && ~isempty(R.loadedMaskIsInclude), B.overlayMaskIsInclude = logical(R.loadedMaskIsInclude);
@@ -3268,6 +3811,175 @@ function B = readScmBundleFile(fullf)
     elseif isfield(S,'maskIsInclude') && ~isempty(S.maskIsInclude), B.overlayMaskIsInclude = logical(S.maskIsInclude); end
     if isfield(R,'brainMaskIsInclude') && ~isempty(R.brainMaskIsInclude), B.brainMaskIsInclude = logical(R.brainMaskIsInclude);
     elseif isfield(S,'brainMaskIsInclude') && ~isempty(S.brainMaskIsInclude), B.brainMaskIsInclude = logical(S.brainMaskIsInclude); end
+end
+
+
+function [Ubg, pickedField] = readMaskEditorUnderlayStackStrict(fullf)
+    Ubg = [];
+    pickedField = '';
+
+    if isempty(fullf) || exist(fullf,'file') ~= 2
+        return;
+    end
+
+    try
+        S0 = load(fullf);
+    catch
+        return;
+    end
+
+    sources = {};
+    sourceNames = {};
+
+    if isfield(S0,'maskBundle') && isstruct(S0.maskBundle)
+        sources{end+1} = S0.maskBundle;
+        sourceNames{end+1} = 'maskBundle';
+    end
+
+    sources{end+1} = S0;
+    sourceNames{end+1} = 'top';
+
+    % Strict priority:
+    % These are real underlay fields.
+    % Do NOT add mask / loadedMask / overlayMask here.
+    pref = { ...
+        'sliceUnderlayRaw', ...
+        'sliceUnderlayProcessed', ...
+        'anatomical_reference_raw', ...
+        'anatomical_reference', ...
+        'brainImage'};
+
+    for ss = 1:numel(sources)
+        R = sources{ss};
+
+        for kk = 1:numel(pref)
+            fn = pref{kk};
+
+            if isfield(R,fn) && ~isempty(R.(fn)) && ...
+                    (isnumeric(R.(fn)) || islogical(R.(fn)))
+
+                U = squeeze(double(R.(fn)));
+
+                if isValidStrictBundleUnderlay(U)
+                    Ubg = prepareStrictBundleUnderlay(U);
+                    pickedField = [sourceNames{ss} '.' fn];
+                    return;
+                else
+                    fprintf('[SCM] Rejected bundle underlay candidate %s.%s with size %s\n', ...
+                        sourceNames{ss}, fn, mat2str(size(U)));
+                end
+            end
+        end
+    end
+end
+
+
+function tf = isValidStrictBundleUnderlay(U)
+    tf = false;
+
+    try
+        if isempty(U)
+            return;
+        end
+
+        U = squeeze(U);
+
+        % ---------------------------------------------------------
+        % Single-slice SCM:
+        % 2D underlay is okay.
+        % ---------------------------------------------------------
+        if nZ == 1
+            if ndims(U) == 2 && size(U,1) == nY && size(U,2) == nX
+                tf = true;
+                return;
+            end
+
+            if ndims(U) == 3 && size(U,1) == nY && size(U,2) == nX
+                % Could be RGB or Y X 1 after squeeze.
+                tf = true;
+                return;
+            end
+        end
+
+        % ---------------------------------------------------------
+        % Multi-slice / Step Motor SCM:
+        % 2D underlay is NOT okay because it would be reused for all slices.
+        % Require true Y X Z stack.
+        % ---------------------------------------------------------
+        if nZ > 1
+            if ndims(U) == 3 && ...
+                    size(U,1) == nY && ...
+                    size(U,2) == nX && ...
+                    size(U,3) == nZ
+
+                tf = true;
+                return;
+            end
+
+            % RGB stack: Y X 3 Z
+            if ndims(U) == 4 && ...
+                    size(U,1) == nY && ...
+                    size(U,2) == nX && ...
+                    size(U,3) == 3 && ...
+                    size(U,4) == nZ
+
+                tf = true;
+                return;
+            end
+        end
+
+    catch
+        tf = false;
+    end
+end
+
+
+function Uout = prepareStrictBundleUnderlay(U)
+    U = squeeze(double(U));
+    U(~isfinite(U)) = 0;
+
+    if ndims(U) == 2
+        Uout = U;
+        return;
+    end
+
+    if ndims(U) == 3
+        Uout = U;
+        return;
+    end
+
+    % RGB stack: Y X 3 Z -> grayscale Y X Z
+    if ndims(U) == 4 && size(U,3) == 3 && size(U,4) == nZ
+        Uout = zeros(nY,nX,nZ);
+
+        for zz0 = 1:nZ
+            RGB = squeeze(U(:,:,:,zz0));
+            Uout(:,:,zz0) = 0.2989 .* RGB(:,:,1) + ...
+                             0.5870 .* RGB(:,:,2) + ...
+                             0.1140 .* RGB(:,:,3);
+        end
+
+        return;
+    end
+
+    error('Unsupported bundle underlay size: %s', mat2str(size(U)));
+end
+
+
+function forceLoadedBundleUnderlayToGrayStackIfNeeded()
+    ensureUnderlayStateFields();
+
+    try
+        if nZ > 1 && ndims(bg) == 3 && size(bg,3) == nZ
+            % Important for nZ == 3:
+            % Prevent SCM from mistaking Y X 3 grayscale slices for one RGB image.
+            state.isColorUnderlay = false;
+            state.regionLabelUnderlay = [];
+            state.regionColorLUT = [];
+            state.regionInfo = struct();
+        end
+    catch
+    end
 end
 
 function [M, maskIsInclude, pickedField] = readMask(f, mode)
@@ -3338,6 +4050,15 @@ function T = askAndApply2DWarpDirection(T, dlgTitle)
     % For your current symptom, inverse is the first thing to test.
 
     try
+                % Simple coronal 2D Reg2D files from registration_coronal_2d.m
+        % are already saved as MATLAB affine2d source -> atlas matrices.
+        % Do not ask saved/inverse and do not invert.
+        if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d')
+            T.scmWarpDirection = 'as_saved';
+            T.scmAffineChoice = 'row_saved';
+            state.atlas2DWarpDirection = 'as_saved';
+            return;
+        end
         if isempty(T) || ~isfield(T,'warpA') || isempty(T.warpA)
             return;
         end
@@ -3429,6 +4150,19 @@ end
     % For those, MATLAB needs Araw'.
 
     Araw = double(Araw);
+        % New Reg2D files save A directly in MATLAB affine2d row-vector format.
+    % Use it directly.
+    try
+        if isfield(T,'scmAffineChoice') && strcmpi(char(T.scmAffineChoice), 'row_saved')
+            if ~isValidMatlabAffine2D(Araw)
+                error('Saved Reg2D.A is not a valid MATLAB affine2d row-vector matrix.');
+            end
+            Ause = Araw;
+            return;
+        end
+    catch ME
+        error(ME.message);
+    end
 
     if ~isequal(size(Araw), [3 3])
         error('2D affine matrix must be 3x3.');
@@ -3551,6 +4285,19 @@ function T = extractAtlasWarpStruct(S)
     if ~isfield(T,'type') || isempty(T.type), T.type = 'unknown'; end
     if ~isfield(T,'atlasSliceIndex') || isempty(T.atlasSliceIndex), T.atlasSliceIndex = NaN; end
     if ~isfield(T,'atlasMode') || isempty(T.atlasMode), T.atlasMode = ''; end
+   % Do NOT rebuild simple_coronal_2d transforms here.
+% registration_coronal_2d.m already saved a valid MATLAB affine2d matrix.
+if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d')
+    if isfield(T,'A') && ~isempty(T.A)
+        T.warpA = double(T.A);
+    end
+
+    if isfield(T,'outputSize') && ~isempty(T.outputSize)
+        T.outSize = double(T.outputSize);
+    end
+
+    T.scmAffineChoice = 'row_saved';
+end
 end
 
 function Y = warpFunctionalSeriesToAtlas(X, T)
@@ -3776,7 +4523,23 @@ function regList = collectStepMotorRegistration2DTransforms(folderPath)
     for ii = 1:numel(files)
 
         f = files{ii};
+        [~,nameOnly,extOnly] = fileparts(f);
+        nameL = lower(nameOnly);
 
+        if ~strcmpi(extOnly,'.mat')
+            continue;
+        end
+
+        % The StepMotor session file is only an index.
+        % It is NOT a transform file and must not be used by SCM.
+        if ~isempty(strfind(nameL,'stepmotor_reg2d_session')) %#ok<STREMP>
+            continue;
+        end
+
+        % For step-motor SCM, only use per-source-slice transform files.
+        if isempty(strfind(nameL,'coronalregistration2d_source')) %#ok<STREMP>
+            continue;
+        end
         try
             S = load(f);
             T = extractAtlasWarpStruct(S);
@@ -4513,7 +5276,99 @@ function Uplane = acceptAtlasUnderlayCandidate(v, T, outSize2)
         end
     end
 end
+function T = repairSimpleCoronal2DTransformForSCM(T)
+    % Rebuild simple_coronal_2d transform for MATLAB imwarp/affine2d.
+    %
+    % Reason:
+    % Registration GUI stores sourceSize/outputSize and manual parameters.
+    % Directly using A can miss the initial source->atlas canvas scaling.
+    %
+    % MATLAB affine2d uses row-vector convention:
+    % [x y 1] * A = [x2 y2 1]
 
+    try
+        if ~isfield(T,'type') || ~strcmpi(char(T.type), 'simple_coronal_2d')
+            return;
+        end
+
+        if ~isfield(T,'sourceSize') || isempty(T.sourceSize) || numel(T.sourceSize) < 2
+            return;
+        end
+
+        if ~isfield(T,'outputSize') || isempty(T.outputSize) || numel(T.outputSize) < 2
+            return;
+        end
+
+        srcSize = round(double(T.sourceSize(1:2)));   % [Y X]
+        outSize = round(double(T.outputSize(1:2)));   % [Y X]
+
+        srcY = srcSize(1);
+        srcX = srcSize(2);
+        outY = outSize(1);
+        outX = outSize(2);
+
+        if any(srcSize < 1) || any(outSize < 1)
+            return;
+        end
+
+        tx = 0;
+        ty = 0;
+        rotDeg = 0;
+        sx = 1;
+        sy = 1;
+
+        if isfield(T,'tx') && ~isempty(T.tx) && isfinite(T.tx), tx = double(T.tx); end
+        if isfield(T,'ty') && ~isempty(T.ty) && isfinite(T.ty), ty = double(T.ty); end
+        if isfield(T,'rotDeg') && ~isempty(T.rotDeg) && isfinite(T.rotDeg), rotDeg = double(T.rotDeg); end
+        if isfield(T,'sx') && ~isempty(T.sx) && isfinite(T.sx), sx = double(T.sx); end
+        if isfield(T,'sy') && ~isempty(T.sy) && isfinite(T.sy), sy = double(T.sy); end
+
+        % ---------------------------------------------------------
+        % Important:
+        % Use anisotropic base scaling by default:
+        % native source [267 256] -> atlas canvas [160 228].
+        %
+        % This matches a GUI where the source image was first displayed
+        % across the atlas canvas before manual sx/sy/rotation/translation.
+        % ---------------------------------------------------------
+        baseSx = outX / srcX;
+        baseSy = outY / srcY;
+
+        cxSrc = (srcX + 1) / 2;
+        cySrc = (srcY + 1) / 2;
+        cxOut = (outX + 1) / 2;
+        cyOut = (outY + 1) / 2;
+
+        A_centerSrc = [1 0 0; 0 1 0; -cxSrc -cySrc 1];
+        A_base      = [baseSx 0 0; 0 baseSy 0; 0 0 1];
+        A_manual    = [sx 0 0; 0 sy 0; 0 0 1];
+
+        c = cosd(rotDeg);
+        s = sind(rotDeg);
+
+        % Row-vector rotation.
+        A_rot = [c s 0; -s c 0; 0 0 1];
+
+        A_toOut = [1 0 0; 0 1 0; cxOut + tx cyOut + ty 1];
+
+        A_scm = A_centerSrc * A_base * A_manual * A_rot * A_toOut;
+
+        T.warpA = A_scm;
+        T.outSize = outSize;
+        T.outputSize = outSize;
+        T.scmRebuiltFromSimpleCoronal2D = true;
+
+        fprintf('\n[SCM] Rebuilt simple_coronal_2d transform for imwarp.\n');
+        fprintf('[SCM] sourceSize = [%d %d], outputSize = [%d %d]\n', srcY, srcX, outY, outX);
+        fprintf('[SCM] baseSx/baseSy = %.6f / %.6f\n', baseSx, baseSy);
+        fprintf('[SCM] tx/ty/rot/sx/sy = %.4f / %.4f / %.4f / %.4f / %.4f\n', tx, ty, rotDeg, sx, sy);
+        fprintf('[SCM] MATLAB affine2d matrix:\n');
+        disp(A_scm);
+
+    catch ME
+        warning('[SCM] Could not rebuild simple_coronal_2d transform: %s', ME.message);
+    end
+end
 
 function G = rgbToGrayLocal(RGB)
 
@@ -4552,7 +5407,423 @@ function U2 = fitPlaneToSizeLocal(U2, yy, xx)
         U2 = tmp;
     end
 end
+function [Uatlas, msg] = buildStepMotorFixedAtlasUnderlayOnly(usedRegList, outSize2, currentUnderlay)
+    % Use ONLY fixed atlas/histology target images.
+    % Never warp native underlay here.
 
+    Uatlas = [];
+    msg = 'none';
+
+    if isempty(usedRegList) || isempty(outSize2)
+        return;
+    end
+
+    yy = round(outSize2(1));
+    xx = round(outSize2(2));
+    nUse = numel(usedRegList);
+
+    % ---------------------------------------------------------
+    % First: if current underlay already is a true atlas-space stack,
+    % keep it. Do NOT transform it.
+    % ---------------------------------------------------------
+    try
+        U = squeeze(currentUnderlay);
+
+        if ~isempty(U)
+            if ndims(U) == 2 && nUse == 1 && size(U,1) == yy && size(U,2) == xx
+                Uatlas = double(U);
+                msg = 'kept current fixed atlas underlay';
+                return;
+            end
+
+            if ndims(U) == 3 && size(U,1) == yy && size(U,2) == xx
+                % Avoid mistaking one RGB image [Y X 3] for 3 Step Motor slices.
+                if size(U,3) == nUse && ~state.isColorUnderlay
+                    Uatlas = double(U);
+                    msg = 'kept current fixed atlas underlay stack';
+                    return;
+                end
+            end
+        end
+    catch
+    end
+
+    % ---------------------------------------------------------
+    % Second: read fixed target underlays saved inside Reg2D files.
+    % This only accepts fields that look like target/fixed/atlas images.
+    % It intentionally does NOT use sourcePath / brainImage / source image.
+    % ---------------------------------------------------------
+    Utmp = zeros(yy, xx, nUse, 'single');
+    got = false(1, nUse);
+
+    for rr = 1:nUse
+        try
+            T = usedRegList(rr).T;
+            Uplane = extractFixedAtlasUnderlayFromReg2DFile(usedRegList(rr).file, T, [yy xx]);
+
+            if isempty(Uplane)
+                continue;
+            end
+
+            Uplane = fitPlaneToSizeLocal(Uplane, yy, xx);
+            Uplane(~isfinite(Uplane)) = 0;
+
+            if hasUsableUnderlaySignal(Uplane)
+                Utmp(:,:,rr) = single(Uplane);
+                got(rr) = true;
+            end
+        catch
+        end
+    end
+
+    if all(got)
+        Uatlas = double(Utmp);
+        msg = 'used fixed atlas/histology underlays saved in Registration2D files';
+        return;
+    end
+end
+
+
+function Uplane = extractFixedAtlasUnderlayFromReg2DFile(matFile, T, outSize2)
+    % Strict target/fixed underlay extraction.
+    % Do not accept generic source fields like brainImage, I, Data, bg.
+
+    Uplane = [];
+
+    if isempty(matFile) || exist(matFile,'file') ~= 2
+        return;
+    end
+
+    try
+        S = load(matFile);
+    catch
+        return;
+    end
+
+    pref = { ...
+        'fixedImage', ...
+        'fixedUnderlay', ...
+        'targetImage', ...
+        'targetUnderlay', ...
+        'atlasFixedImage', ...
+        'atlasImage', ...
+        'atlasImage2D', ...
+        'atlasSliceImage', ...
+        'atlasUnderlay', ...
+        'atlasUnderlay2D', ...
+        'histologyFixed', ...
+        'histologyImage', ...
+        'histologyUnderlay', ...
+        'vascularFixed', ...
+        'vascularImage', ...
+        'regionsFixed', ...
+        'regionsImage'};
+
+    % Top-level target fields.
+    for ii = 1:numel(pref)
+        if isfield(S, pref{ii})
+            Uplane = acceptFixedAtlasCandidate(S.(pref{ii}), T, outSize2);
+            if ~isempty(Uplane)
+                return;
+            end
+        end
+    end
+
+    % Common registration structs.
+    wrappers = {'Transf','Reg2D','RegOut','Registration2D'};
+
+    for ww = 1:numel(wrappers)
+        if isfield(S, wrappers{ww}) && isstruct(S.(wrappers{ww}))
+            R = S.(wrappers{ww});
+
+            for ii = 1:numel(pref)
+                if isfield(R, pref{ii})
+                    Uplane = acceptFixedAtlasCandidate(R.(pref{ii}), T, outSize2);
+                    if ~isempty(Uplane)
+                        return;
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+function Uplane = acceptFixedAtlasCandidate(v, T, outSize2)
+    Uplane = [];
+
+    if isempty(v)
+        return;
+    end
+
+    if isstruct(v)
+        subPref = { ...
+            'fixedImage', ...
+            'targetImage', ...
+            'atlasImage', ...
+            'atlasUnderlay', ...
+            'histologyImage', ...
+            'vascularImage', ...
+            'regionsImage', ...
+            'Data', ...
+            'image', ...
+            'img'};
+
+        for ss = 1:numel(subPref)
+            if isfield(v, subPref{ss})
+                Uplane = acceptFixedAtlasCandidate(v.(subPref{ss}), T, outSize2);
+                if ~isempty(Uplane)
+                    return;
+                end
+            end
+        end
+        return;
+    end
+
+    if ~(isnumeric(v) || islogical(v))
+        return;
+    end
+
+    U = squeeze(double(v));
+
+    if isempty(U) || ndims(U) < 2
+        return;
+    end
+
+    if size(U,1) < 16 || size(U,2) < 16
+        return;
+    end
+
+    % Fixed target must already match atlas output canvas.
+    if size(U,1) ~= outSize2(1) || size(U,2) ~= outSize2(2)
+        return;
+    end
+
+    if ndims(U) == 2
+        Uplane = U;
+        return;
+    end
+
+    if ndims(U) == 3
+        if size(U,3) == 3
+            Uplane = rgbToGrayLocal(U);
+            return;
+        end
+
+        zPick = round(size(U,3) / 2);
+
+        try
+            if isfield(T,'atlasSliceIndex') && ~isempty(T.atlasSliceIndex) && isfinite(T.atlasSliceIndex)
+                zPick = round(T.atlasSliceIndex);
+            end
+        catch
+        end
+
+        zPick = max(1, min(size(U,3), zPick));
+        Uplane = U(:,:,zPick);
+        return;
+    end
+
+    if ndims(U) == 4
+        if size(U,3) == 3
+            zPick = 1;
+
+            try
+                if isfield(T,'atlasSliceIndex') && ~isempty(T.atlasSliceIndex) && isfinite(T.atlasSliceIndex)
+                    zPick = round(T.atlasSliceIndex);
+                end
+            catch
+            end
+
+            zPick = max(1, min(size(U,4), zPick));
+            Uplane = rgbToGrayLocal(squeeze(U(:,:,:,zPick)));
+            return;
+        end
+    end
+end
+
+function [Uatlas, msg] = keepAlreadyLoadedAtlasUnderlayIfPossible(Uin, outSize2, nUse)
+
+    Uatlas = [];
+    msg = 'none';
+
+    try
+        if isempty(Uin) || isempty(outSize2) || numel(outSize2) < 2
+            return;
+        end
+
+        yy = round(outSize2(1));
+        xx = round(outSize2(2));
+
+        U = squeeze(double(Uin));
+        U(~isfinite(U)) = 0;
+
+        if isempty(U)
+            return;
+        end
+
+        % Case 1: one 2D atlas/histology underlay.
+               if ndims(U) == 2
+            if size(U,1) == yy && size(U,2) == xx
+                if nUse <= 1
+                    Uatlas = U;
+                    msg = 'kept already-loaded atlas underlay';
+                    return;
+                else
+                    % Do NOT reuse one 2D underlay for all step-motor slices.
+                    % Each source slice has its own atlas slice/background.
+                    Uatlas = [];
+                    msg = 'single 2D underlay not reused for step-motor stack';
+                    return;
+                end
+            end
+        end
+
+        % Case 2: grayscale atlas stack [Y X Z].
+        if ndims(U) == 3
+            if size(U,1) == yy && size(U,2) == xx
+                if size(U,3) == nUse
+                    Uatlas = U;
+                    msg = 'kept already-loaded atlas underlay stack';
+                    return;
+                end
+
+                % Avoid interpreting RGB [Y X 3] as a 3-slice stack unless
+                % SCM currently treats it as grayscale.
+                if size(U,3) == 3 && nUse == 3 && ~state.isColorUnderlay
+                    Uatlas = U;
+                    msg = 'kept already-loaded 3-slice atlas underlay stack';
+                    return;
+                end
+            end
+        end
+
+        % Case 3: RGB atlas image [Y X 3], single fixed underlay.
+        if ndims(U) == 3 && size(U,3) == 3 && state.isColorUnderlay
+            if size(U,1) == yy && size(U,2) == xx
+                Ugray = rgbToGrayLocal(U);
+                if nUse <= 1
+                    Uatlas = Ugray;
+                else
+                    Uatlas = repmat(Ugray, [1 1 nUse]);
+                end
+                msg = 'kept already-loaded RGB atlas underlay as grayscale';
+                return;
+            end
+        end
+
+    catch
+        Uatlas = [];
+        msg = 'already-loaded underlay could not be reused';
+    end
+end
+
+function [Uatlas, msg] = askStepMotorFixedAtlasUnderlayStack(outSize2, nUse)
+    % Manual fallback: user selects fixed atlas/histology images.
+    % These are NOT warped. They are only used as the background target.
+
+    Uatlas = [];
+    msg = 'none';
+
+    if isempty(outSize2) || numel(outSize2) < 2
+        return;
+    end
+
+    yy = round(outSize2(1));
+    xx = round(outSize2(2));
+
+    try
+        startPath = getTransformStartPath();
+
+        oldDir = pwd;
+        cleanupObj = onCleanup(@()scmSafeCdBack(oldDir)); %#ok<NASGU>
+        try, cd(startPath); catch, end
+
+        [f,p] = uigetfile( ...
+            {'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp', ...
+             'Fixed atlas/histology underlay files'}, ...
+            sprintf('Select %d fixed atlas/histology underlay file(s)', nUse), ...
+            'MultiSelect', 'on');
+
+        if isequal(f,0)
+            return;
+        end
+
+        if ischar(f)
+            f = {f};
+        end
+
+        if numel(f) == 1
+            fullf = fullfile(p, f{1});
+            [Uraw, ~] = readUnderlayFile(fullf);
+            Uraw = squeeze(double(Uraw));
+
+            if ndims(Uraw) == 2
+                if nUse == 1
+                    Uatlas = fitPlaneToSizeLocal(Uraw, yy, xx);
+                    msg = 'selected one fixed atlas/histology underlay';
+                    return;
+                else
+                    Uplane = fitPlaneToSizeLocal(Uraw, yy, xx);
+                    Uatlas = repmat(Uplane, [1 1 nUse]);
+                    msg = 'selected one fixed atlas/histology underlay and reused it for all slices';
+                    return;
+                end
+            end
+
+            if ndims(Uraw) == 3
+                if size(Uraw,3) == 3 && nUse ~= 3
+                    Uatlas = fitPlaneToSizeLocal(rgbToGrayLocal(Uraw), yy, xx);
+                    if nUse > 1
+                        Uatlas = repmat(Uatlas, [1 1 nUse]);
+                    end
+                    msg = 'selected RGB fixed atlas/histology underlay';
+                    return;
+                end
+
+                if size(Uraw,3) == nUse
+                    Uatlas = zeros(yy, xx, nUse);
+                    for zz0 = 1:nUse
+                        Uatlas(:,:,zz0) = fitPlaneToSizeLocal(Uraw(:,:,zz0), yy, xx);
+                    end
+                    msg = 'selected fixed atlas/histology underlay stack';
+                    return;
+                end
+            end
+        end
+
+        nFiles = numel(f);
+        nStack = min(nFiles, nUse);
+        Uatlas = zeros(yy, xx, nUse);
+
+        for rr = 1:nStack
+            fullf = fullfile(p, f{rr});
+            [Uraw, ~] = readUnderlayFile(fullf);
+            Uraw = squeeze(double(Uraw));
+
+            if ndims(Uraw) == 3 && size(Uraw,3) == 3
+                Uraw = rgbToGrayLocal(Uraw);
+            elseif ndims(Uraw) > 2
+                Uraw = Uraw(:,:,1);
+            end
+
+            Uatlas(:,:,rr) = fitPlaneToSizeLocal(Uraw, yy, xx);
+        end
+
+        if nStack < nUse
+            for rr = nStack+1:nUse
+                Uatlas(:,:,rr) = Uatlas(:,:,nStack);
+            end
+        end
+
+        msg = 'selected fixed atlas/histology underlay files manually';
+
+    catch ME
+        warning('[SCM] Could not select fixed atlas underlay: %s', ME.message);
+        Uatlas = [];
+        msg = 'manual fixed atlas underlay selection failed';
+    end
+end
 
 function forceStepMotorAtlasGrayUnderlay()
 

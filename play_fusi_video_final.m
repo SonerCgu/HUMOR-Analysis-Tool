@@ -87,6 +87,16 @@ state = struct();
 state.isAtlasWarped      = false;
 state.atlasTransformFile = '';
 state.lastAtlasTransformFile = '';
+
+% Step-motor atlas warp metadata
+state.isStepMotorAtlasWarped = false;
+state.stepMotorAtlasFolder = '';
+state.stepMotorAtlasTransformFiles = {};
+state.stepMotorAtlasSourceIdx = [];
+state.stepMotorAtlasAtlasIdx = [];
+
+% 2D affine direction setting
+state.atlas2DWarpDirection = 'ask';
 state.isColorUnderlay = false;
 if (nZ == 1) && ndims(bgDefaultFull) == 3 && size(bgDefaultFull,3) == 3
     state.isColorUnderlay = true;   % true RGB image for single-slice data
@@ -3668,7 +3678,51 @@ end
     end
 
    function warpFunctionalToAtlasCB(~,~)
-    startDir = getUnderlayStartPath();
+
+    if state.isAtlasWarped
+        choice0 = questdlg(['Functional data is already in atlas space.' char(10) char(10) ...
+            'Reapply atlas warp from original native data?'], ...
+            'Already atlas-warped', ...
+            'Reapply from native', 'Cancel', 'Cancel');
+
+        if isempty(choice0) || strcmpi(choice0,'Cancel')
+            return;
+        end
+    end
+
+    if nZ > 1
+        defaultMode = 'Step Motor folder';
+    else
+        defaultMode = 'Single transform';
+    end
+
+    modeChoice = questdlg([ ...
+        'Choose atlas warp mode:' char(10) char(10) ...
+        'Single transform:' char(10) ...
+        '  Uses one CoronalRegistration2D / Transformation MAT file.' char(10) ...
+        '  For 4D data with a 2D transform, this warps one source slice.' char(10) char(10) ...
+        'Step Motor folder:' char(10) ...
+        '  Select the Registration2D folder.' char(10) ...
+        '  Video GUI searches all CoronalRegistration2D_sourceXXX files.' char(10) ...
+        '  Each source slice is warped with its own transform.'], ...
+        'Warp functional to atlas', ...
+        'Single transform', 'Step Motor folder', 'Cancel', defaultMode);
+
+    if isempty(modeChoice) || strcmpi(modeChoice,'Cancel')
+        return;
+    end
+
+    if strcmpi(modeChoice,'Step Motor folder')
+        warpFunctionalToAtlasStepMotorFolder();
+    else
+        warpFunctionalToAtlasSingleFile();
+    end
+end
+
+
+function warpFunctionalToAtlasSingleFile()
+
+    startDir = getTransformStartPathVideo();
 
     [f,p] = uigetfile({'*.mat','Transform files (*.mat)'}, ...
         'Select atlas Transformation / CoronalRegistration2D', startDir);
@@ -3678,30 +3732,32 @@ end
     end
 
     try
-        S = load(fullfile(p,f));
+        tfFile = fullfile(p,f);
+
+        S = load(tfFile);
         T = extractAtlasWarpStruct(S);
+        T = askAndApply2DWarpDirection(T, 'Video single atlas warp');
 
-        % Warp ONLY the functional data
-        Inew        = warpDataSeriesToAtlas(origI,        T, sliceIdx);
-        IinterpNew  = warpDataSeriesToAtlas(origI_interp, T, sliceIdx);
-        PSCnew      = warpDataSeriesToAtlas(origPSC,      T, sliceIdx);
+        Inew       = warpDataSeriesToAtlas(origI,        T, sliceIdx);
+        IinterpNew = warpDataSeriesToAtlas(origI_interp, T, sliceIdx);
+        PSCnew     = warpDataSeriesToAtlas(origPSC,      T, sliceIdx);
 
-        % Commit only after successful warp
         I        = Inew;
         I_interp = IinterpNew;
         PSC      = PSCnew;
 
-        % IMPORTANT:
-        % Keep currently loaded underlay unchanged.
-        % Do NOT warp bgDefaultFull here, because it may already be atlas-space.
-        % This was the source of the mismatch vs SCM GUI.
-
         state.isAtlasWarped = true;
-        state.atlasTransformFile = fullfile(p,f);
-        state.lastAtlasTransformFile = state.atlasTransformFile;
+        state.isStepMotorAtlasWarped = false;
 
-        % Recompute dimensions after PSC warp
-        resetAfterDataSpaceChange(false);
+        state.atlasTransformFile = tfFile;
+        state.lastAtlasTransformFile = tfFile;
+
+        state.stepMotorAtlasFolder = '';
+        state.stepMotorAtlasTransformFiles = {};
+        state.stepMotorAtlasSourceIdx = [];
+        state.stepMotorAtlasAtlasIdx = [];
+
+        resetAfterDataSpaceChange(true);
 
         underSrc = 1;
         underSrcLabel = 'Default(bg)';
@@ -3725,10 +3781,134 @@ end
         render();
 
     catch ME
-        errordlg(ME.message,'Atlas warp failed');
+        errordlg(ME.message,'Single atlas warp failed');
     end
 end
 
+
+function warpFunctionalToAtlasStepMotorFolder()
+
+    startDir = getTransformStartPathVideo();
+
+    folderPath = uigetdir(startDir, ...
+        'Select Step Motor Registration2D folder containing source001/source002 transforms');
+
+    if isequal(folderPath,0)
+        return;
+    end
+
+    try
+        regList = collectStepMotorRegistration2DTransformsVideo(folderPath);
+
+        if isempty(regList)
+            error(['No valid Step Motor Registration2D transforms found in:' char(10) ...
+                   folderPath char(10) char(10) ...
+                   'Expected files like:' char(10) ...
+                   '  CoronalRegistration2D_source001_atlas112_histology.mat' char(10) ...
+                   '  CoronalRegistration2D_source002_atlas115_histology.mat']);
+        end
+
+        regList = askAndApply2DWarpDirectionToRegListVideo(regList, 'Video Step Motor atlas warp');
+
+        if ndims(origPSC) == 4
+            nSourceSlices = size(origPSC,3);
+        else
+            nSourceSlices = 1;
+        end
+
+        foundIdx = [regList.sourceIdx];
+        foundIdx = foundIdx(isfinite(foundIdx));
+        foundIdx = unique(foundIdx(:).');
+
+        missingIdx = setdiff(1:nSourceSlices, foundIdx);
+
+        if nSourceSlices > 1 && ~isempty(missingIdx)
+            msg = sprintf([ ...
+                'Found transforms for %d/%d source slices.\n\n' ...
+                'Found source slices:\n%s\n\n' ...
+                'Missing source slices:\n%s\n\n' ...
+                'Continue using only the found slices?'], ...
+                numel(foundIdx), nSourceSlices, ...
+                compactIndexListVideo(foundIdx), ...
+                compactIndexListVideo(missingIdx));
+
+            ch = questdlg(msg, ...
+                'Missing Step Motor transforms', ...
+                'Continue', 'Cancel', 'Cancel');
+
+            if isempty(ch) || strcmpi(ch,'Cancel')
+                return;
+            end
+        end
+
+        [Inew, report]        = warpDataSeriesToAtlasStepMotorVideo(origI,        regList);
+        [IinterpNew, ~]       = warpDataSeriesToAtlasStepMotorVideo(origI_interp, regList);
+        [PSCnew, reportPSC]   = warpDataSeriesToAtlasStepMotorVideo(origPSC,      regList);
+
+        if isempty(PSCnew) || reportPSC.nUsed < 1
+            error('No slices were warped. Check source001/source002 numbering and transform files.');
+        end
+
+        I        = Inew;
+        I_interp = IinterpNew;
+        PSC      = PSCnew;
+
+        state.isAtlasWarped = true;
+        state.isStepMotorAtlasWarped = true;
+
+        state.atlasTransformFile = folderPath;
+        state.lastAtlasTransformFile = reportPSC.files{1};
+
+        state.stepMotorAtlasFolder = folderPath;
+        state.stepMotorAtlasTransformFiles = reportPSC.files;
+        state.stepMotorAtlasSourceIdx = reportPSC.sourceIdx;
+        state.stepMotorAtlasAtlasIdx = reportPSC.atlasIdx;
+
+        [bgNew, bgMsg] = buildStepMotorFixedAtlasUnderlayOnlyVideo( ...
+            reportPSC.usedRegList, reportPSC.outSize, bgDefaultFull);
+
+        if isempty(bgNew)
+            bgNew = makeFunctionalContrastFallbackUnderlayVideo(PSCnew);
+            bgMsg = 'functional contrast fallback; fixed histology was not found inside Reg2D files';
+        end
+
+        bgDefaultFull = bgNew;
+        applyUnderlayMeta(defaultUnderlayMeta(), bgDefaultFull);
+        forceStepMotorAtlasGrayUnderlayVideo();
+
+        underSrc = 1;
+        underSrcLabel = 'Default(bg)';
+        if ishandle(popUSrc)
+            set(popUSrc,'Value',1);
+        end
+
+        resetAfterDataSpaceChange(true);
+
+        try
+            srcTxt = compactIndexListVideo(reportPSC.sourceIdx);
+            a = reportPSC.atlasIdx;
+            a = a(isfinite(a));
+            if ~isempty(a)
+                atlasTxt = [' | atlas slices ' compactIndexListVideo(a)];
+            else
+                atlasTxt = '';
+            end
+
+            set(txtTitle,'String',sprintf('%s | Step Motor atlas warp | source %s%s', ...
+                safeStr(fileLabel), srcTxt, atlasTxt));
+        catch
+            set(txtTitle,'String',sprintf('%s | Step Motor atlas warp', safeStr(fileLabel)));
+        end
+
+        statusLine = sprintf('Step Motor atlas warp complete: %d slices warped. Underlay: %s', ...
+            reportPSC.nUsed, bgMsg);
+
+        render();
+
+    catch ME
+        errordlg(ME.message,'Step Motor atlas warp failed');
+    end
+end
 function resetWarpToNativeCB(~,~)
     try
         I            = origI;
@@ -3738,6 +3918,15 @@ function resetWarpToNativeCB(~,~)
 
         state.isAtlasWarped = false;
         state.atlasTransformFile = '';
+
+        state.lastAtlasTransformFile = '';
+
+state.isStepMotorAtlasWarped = false;
+state.stepMotorAtlasFolder = '';
+state.stepMotorAtlasTransformFiles = {};
+state.stepMotorAtlasSourceIdx = [];
+state.stepMotorAtlasAtlasIdx = [];
+state.atlas2DWarpDirection = 'ask';
 
         applyUnderlayMeta(defaultUnderlayMeta(), bgDefaultFull);
 
@@ -3818,11 +4007,16 @@ end
     end
 end
 
-function T = extractAtlasWarpStruct(S)
+    function T = extractAtlasWarpStruct(S)
+
     if isfield(S,'Transf') && isstruct(S.Transf)
         T = S.Transf;
     elseif isfield(S,'Reg2D') && isstruct(S.Reg2D)
         T = S.Reg2D;
+    elseif isfield(S,'RegOut') && isstruct(S.RegOut)
+        T = S.RegOut;
+    elseif isfield(S,'Registration2D') && isstruct(S.Registration2D)
+        T = S.Registration2D;
     else
         T = S;
     end
@@ -3834,9 +4028,13 @@ function T = extractAtlasWarpStruct(S)
     elseif isfield(T,'T') && ~isempty(T.T)
         T.warpA = T.T;
     elseif isfield(T,'tform') && ~isempty(T.tform)
-        T.warpA = T.tform.T;
+        try
+            T.warpA = T.tform.T;
+        catch
+            error('Found tform field, but could not extract numeric matrix.');
+        end
     else
-        error('Transform file has no usable matrix field.');
+        error('Transform file has no usable matrix field. Expected A, M, T, or tform.T.');
     end
 
     if isfield(T,'outputSize') && ~isempty(T.outputSize)
@@ -3854,12 +4052,32 @@ function T = extractAtlasWarpStruct(S)
     if ~isfield(T,'type') || isempty(T.type)
         T.type = 'unknown';
     end
+
     if ~isfield(T,'atlasSliceIndex') || isempty(T.atlasSliceIndex)
         T.atlasSliceIndex = NaN;
     end
+
+    if ~isfield(T,'atlasMode') || isempty(T.atlasMode)
+        T.atlasMode = '';
+    end
+
+    % New registration_coronal_2d.m saves Reg2D.A directly in MATLAB affine2d row-vector format.
+    if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d')
+        if isfield(T,'A') && ~isempty(T.A)
+            T.warpA = double(T.A);
+        end
+
+        if isfield(T,'outputSize') && ~isempty(T.outputSize)
+            T.outSize = double(T.outputSize);
+        end
+
+        T.scmAffineChoice = 'row_saved';
+        T.scmWarpDirection = 'as_saved';
+    end
 end
 
-function Y = warpDataSeriesToAtlas(X, T, zSel)
+    function Y = warpDataSeriesToAtlas(X, T, zSel)
+
     A = double(T.warpA);
 
     if isequal(size(A), [4 4])
@@ -3874,8 +4092,10 @@ function Y = warpDataSeriesToAtlas(X, T, zSel)
         if ndims(X) == 4
             nTT = size(X,4);
             Y = zeros([outSize3 nTT], 'single');
+
             for tt = 1:nTT
-                Y(:,:,:,tt) = imwarp(single(X(:,:,:,tt)), tform3, 'linear', 'OutputView', Rout3);
+                Y(:,:,:,tt) = imwarp(single(X(:,:,:,tt)), ...
+                    tform3, 'linear', 'OutputView', Rout3);
             end
             return;
         end
@@ -3884,30 +4104,60 @@ function Y = warpDataSeriesToAtlas(X, T, zSel)
     end
 
     if isequal(size(A), [3 3])
+
         if isempty(T.outSize) || numel(T.outSize) < 2
             error('2D atlas warp requires output size.');
         end
 
-        outSize2 = round(T.outSize(1:2));
-        tform2 = affine2d(A);
+        outSize2 = round(double(T.outSize(1:2)));
+
+        if any(outSize2 < 1)
+            error('Invalid 2D output size.');
+        end
+
+        Ause = apply2DWarpDirectionToMatrixVideo(A, T);
+        tform2 = affine2d(Ause);
         Rout2  = imref2d(outSize2);
 
         if ndims(X) == 3
-            nTT = size(X,3);
-            Y = zeros([outSize2 nTT], 'single');
-            for tt = 1:nTT
-                Y(:,:,tt) = imwarp(single(X(:,:,tt)), tform2, 'linear', 'OutputView', Rout2);
-            end
-            return;
-        elseif ndims(X) == 4
-            zSel = max(1, min(size(X,3), zSel));
-            X2   = squeeze(X(:,:,zSel,:));
+            X2 = X;
+            zUse = 1;
+
+            X2 = prepareFunctionalSliceForReg2DVideo(X2, T, zUse);
+
             nTT = size(X2,3);
             Y = zeros([outSize2 nTT], 'single');
+
             for tt = 1:nTT
-                Y(:,:,tt) = imwarp(single(X2(:,:,tt)), tform2, 'linear', 'OutputView', Rout2);
+                Y(:,:,tt) = imwarp(single(X2(:,:,tt)), ...
+                    tform2, 'linear', 'OutputView', Rout2);
             end
             return;
+
+        elseif ndims(X) == 4
+
+            if isfield(T,'sourceSliceIndex') && ~isempty(T.sourceSliceIndex) && isfinite(T.sourceSliceIndex)
+                zUse = round(T.sourceSliceIndex);
+            elseif isfield(T,'sourceSlice') && ~isempty(T.sourceSlice) && isfinite(T.sourceSlice)
+                zUse = round(T.sourceSlice);
+            else
+                zUse = zSel;
+            end
+
+            zUse = max(1, min(size(X,3), zUse));
+
+            X2 = squeeze(X(:,:,zUse,:));
+            X2 = prepareFunctionalSliceForReg2DVideo(X2, T, zUse);
+
+            nTT = size(X2,3);
+            Y = zeros([outSize2 nTT], 'single');
+
+            for tt = 1:nTT
+                Y(:,:,tt) = imwarp(single(X2(:,:,tt)), ...
+                    tform2, 'linear', 'OutputView', Rout2);
+            end
+            return;
+
         elseif ndims(X) == 2
             Y = imwarp(single(X), tform2, 'linear', 'OutputView', Rout2);
             return;
@@ -3915,6 +4165,346 @@ function Y = warpDataSeriesToAtlas(X, T, zSel)
     end
 
     error('Unsupported transform matrix size.');
+    end
+
+
+function [Y, report] = warpDataSeriesToAtlasStepMotorVideo(X, regList)
+
+    Y = [];
+
+    report = struct();
+    report.nUsed = 0;
+    report.sourceIdx = [];
+    report.atlasIdx = [];
+    report.files = {};
+    report.outSize = [];
+    report.usedRegList = [];
+
+    if isempty(regList)
+        return;
+    end
+
+    if ndims(X) == 3
+        nSrc = 1;
+        nTT = size(X,3);
+    elseif ndims(X) == 4
+        nSrc = size(X,3);
+        nTT = size(X,4);
+    else
+        error('Step Motor atlas warp requires [Y X T] or [Y X Z T].');
+    end
+
+    srcIdxAll = [regList.sourceIdx];
+    valid = find(isfinite(srcIdxAll) & srcIdxAll >= 1 & srcIdxAll <= nSrc);
+
+    if isempty(valid)
+        error('No transform source index matches available functional slices.');
+    end
+
+    regList = regList(valid);
+    srcIdxAll = [regList.sourceIdx];
+
+    [~,ord] = sort(srcIdxAll);
+    regList = regList(ord);
+
+    srcSorted = [regList.sourceIdx];
+    [~,ia] = unique(srcSorted, 'stable');
+    regList = regList(ia);
+
+    T0 = regList(1).T;
+
+    if ~isfield(T0,'outSize') || isempty(T0.outSize) || numel(T0.outSize) < 2
+        error('First Step Motor transform has no valid outputSize/outSize.');
+    end
+
+    outSize2 = round(double(T0.outSize(1:2)));
+
+    if any(outSize2 < 1)
+        error('Invalid atlas output size in first Step Motor transform.');
+    end
+
+    nUse = numel(regList);
+    Y = zeros([outSize2 nUse nTT], 'single');
+
+    for rr = 1:nUse
+
+        T = regList(rr).T;
+        A = double(T.warpA);
+
+        if ~isequal(size(A), [3 3])
+            error('Transform for source %d is not a 2D 3x3 transform.', regList(rr).sourceIdx);
+        end
+
+        if ~isfield(T,'outSize') || isempty(T.outSize) || numel(T.outSize) < 2
+            error('Transform for source %d has no valid output size.', regList(rr).sourceIdx);
+        end
+
+        thisOut = round(double(T.outSize(1:2)));
+
+        if any(thisOut ~= outSize2)
+            error(['All Step Motor transforms must have the same atlas output size.' char(10) ...
+                   'First output size: [%d %d]' char(10) ...
+                   'Source %d output size: [%d %d]'], ...
+                   outSize2(1), outSize2(2), regList(rr).sourceIdx, thisOut(1), thisOut(2));
+        end
+
+        zSrc = regList(rr).sourceIdx;
+
+        if ndims(X) == 3
+            X2 = X;
+        else
+            X2 = squeeze(X(:,:,zSrc,:));
+        end
+
+        X2 = prepareFunctionalSliceForReg2DVideo(X2, T, zSrc);
+
+        Ause = apply2DWarpDirectionToMatrixVideo(A, T);
+        tform2 = affine2d(Ause);
+        Rout2 = imref2d(outSize2);
+
+        for tt = 1:nTT
+            Y(:,:,rr,tt) = imwarp(single(X2(:,:,tt)), ...
+                tform2, 'linear', 'OutputView', Rout2);
+        end
+    end
+
+    report.nUsed = nUse;
+    report.outSize = outSize2;
+    report.sourceIdx = [regList.sourceIdx];
+    report.atlasIdx = nan(1,nUse);
+    report.files = cell(1,nUse);
+
+    for rr = 1:nUse
+        report.files{rr} = regList(rr).file;
+
+        try
+            if isfield(regList(rr).T,'atlasSliceIndex') && ...
+                    ~isempty(regList(rr).T.atlasSliceIndex) && ...
+                    isfinite(regList(rr).T.atlasSliceIndex)
+                report.atlasIdx(rr) = round(regList(rr).T.atlasSliceIndex);
+            end
+        catch
+        end
+    end
+
+    report.usedRegList = regList;
+end
+
+
+function regList = collectStepMotorRegistration2DTransformsVideo(folderPath)
+
+    regList = struct('sourceIdx',{},'file',{},'T',{},'score',{});
+
+    if isempty(folderPath) || exist(folderPath,'dir') ~= 7
+        return;
+    end
+
+    files = listMatFilesRecursiveVideo(folderPath, 4);
+
+    if isempty(files)
+        return;
+    end
+
+    cand = struct('sourceIdx',{},'file',{},'T',{},'score',{});
+
+    for ii = 1:numel(files)
+
+        f = files{ii};
+        [~,nameOnly,extOnly] = fileparts(f);
+        nameL = lower(nameOnly);
+
+        if ~strcmpi(extOnly,'.mat')
+            continue;
+        end
+
+        % The StepMotor session file is only an index, not the transform used for warping.
+        if ~isempty(strfind(nameL,'stepmotor_reg2d_session'))
+            continue;
+        end
+
+        % Use only per-source-slice Reg2D transform files.
+        if isempty(strfind(nameL,'coronalregistration2d_source'))
+            continue;
+        end
+
+        try
+            S = load(f);
+            T = extractAtlasWarpStruct(S);
+        catch
+            continue;
+        end
+
+        if ~isfield(T,'warpA') || isempty(T.warpA)
+            continue;
+        end
+
+        A = double(T.warpA);
+
+        if ~isequal(size(A), [3 3])
+            continue;
+        end
+
+        if ~isfield(T,'outSize') || isempty(T.outSize) || numel(T.outSize) < 2
+            continue;
+        end
+
+        srcIdx = parseStepMotorSourceIndexVideo(f, T);
+
+        if ~isfinite(srcIdx) || srcIdx < 1
+            continue;
+        end
+
+        c = struct();
+        c.sourceIdx = round(srcIdx);
+        c.file = f;
+        c.T = T;
+        c.score = scoreStepMotorTransformFileVideo(f, T);
+
+        cand(end+1) = c; %#ok<AGROW>
+    end
+
+    if isempty(cand)
+        return;
+    end
+
+    srcAll = [cand.sourceIdx];
+    srcUni = unique(srcAll);
+
+    for ss = 1:numel(srcUni)
+        idx = find(srcAll == srcUni(ss));
+        scores = [cand(idx).score];
+        [~,bestLocal] = max(scores);
+        regList(end+1) = cand(idx(bestLocal)); %#ok<AGROW>
+    end
+
+    [~,ord] = sort([regList.sourceIdx]);
+    regList = regList(ord);
+end
+
+
+function files = listMatFilesRecursiveVideo(rootDir, maxDepth)
+
+    files = {};
+
+    if nargin < 2 || isempty(maxDepth)
+        maxDepth = 4;
+    end
+
+    walkDir(rootDir, 0);
+
+    function walkDir(d, depth)
+
+        if depth > maxDepth || exist(d,'dir') ~= 7
+            return;
+        end
+
+        dd = dir(fullfile(d,'*.mat'));
+
+        for kk = 1:numel(dd)
+            if ~dd(kk).isdir
+                files{end+1} = fullfile(dd(kk).folder, dd(kk).name); %#ok<AGROW>
+            end
+        end
+
+        sub = dir(d);
+
+        for kk = 1:numel(sub)
+
+            if ~sub(kk).isdir
+                continue;
+            end
+
+            nm = sub(kk).name;
+
+            if strcmp(nm,'.') || strcmp(nm,'..')
+                continue;
+            end
+
+            walkDir(fullfile(d,nm), depth + 1);
+        end
+    end
+end
+
+
+function idx = parseStepMotorSourceIndexVideo(f, T)
+
+    idx = NaN;
+
+    try
+        [~,nameOnly,~] = fileparts(f);
+        s = lower(nameOnly);
+
+        patterns = { ...
+            'source[_\- ]*0*(\d+)', ...
+            'src[_\- ]*0*(\d+)', ...
+            'slice[_\- ]*0*(\d+)', ...
+            'sl[_\- ]*0*(\d+)', ...
+            'z[_\- ]*0*(\d+)'};
+
+        for pp = 1:numel(patterns)
+            tok = regexp(s, patterns{pp}, 'tokens', 'once');
+
+            if ~isempty(tok)
+                idx = str2double(tok{1});
+
+                if isfinite(idx)
+                    return;
+                end
+            end
+        end
+    catch
+    end
+
+    try
+        if isfield(T,'sourceSliceIndex') && ~isempty(T.sourceSliceIndex) && isfinite(T.sourceSliceIndex)
+            idx = double(T.sourceSliceIndex);
+            return;
+        end
+    catch
+    end
+
+    try
+        if isfield(T,'sourceSlice') && ~isempty(T.sourceSlice) && isfinite(T.sourceSlice)
+            idx = double(T.sourceSlice);
+            return;
+        end
+    catch
+    end
+
+    try
+        if isfield(T,'sourceIndex') && ~isempty(T.sourceIndex) && isfinite(T.sourceIndex)
+            idx = double(T.sourceIndex);
+            return;
+        end
+    catch
+    end
+end
+
+
+function score = scoreStepMotorTransformFileVideo(f, T)
+
+    score = 0;
+
+    try
+        [folder0,name0,~] = fileparts(f);
+        s = lower([folder0 filesep name0]);
+
+        if ~isempty(strfind(s,'coronalregistration2d')), score = score + 120; end
+        if ~isempty(strfind(s,'registration2d')),        score = score + 100; end
+        if ~isempty(strfind(s,'source')),                score = score + 50;  end
+        if ~isempty(strfind(s,'atlas')),                 score = score + 20;  end
+        if ~isempty(strfind(s,'histology')),             score = score + 15;  end
+        if ~isempty(strfind(s,'vascular')),              score = score + 15;  end
+        if ~isempty(strfind(s,'regions')),               score = score + 15;  end
+    catch
+    end
+
+    try
+        if isfield(T,'atlasSliceIndex') && ~isempty(T.atlasSliceIndex) && isfinite(T.atlasSliceIndex)
+            score = score + 20;
+        end
+    catch
+    end
 end
 
 function loadNewUnderlayCB(~,~)
@@ -4263,59 +4853,210 @@ function tf = doesUnderlayMatchTransformOutput(U, T)
     end
 end
 
-function tfFile = getBestTransformForUnderlay(underlayFile)
+    function tfFile = getBestTransformForUnderlay(underlayFile)
+
     tfFile = '';
-    cand = {};
+    candFiles = {};
+    candScore = [];
+    candDirs = {};
 
     try
         if ~isempty(state.atlasTransformFile) && exist(state.atlasTransformFile,'file') == 2
-            cand{end+1} = char(state.atlasTransformFile);
+            addFileCandidate(char(state.atlasTransformFile),300);
         end
     catch
     end
 
     try
         if ~isempty(state.lastAtlasTransformFile) && exist(state.lastAtlasTransformFile,'file') == 2
-            cand{end+1} = char(state.lastAtlasTransformFile);
+            addFileCandidate(char(state.lastAtlasTransformFile),250);
         end
     catch
     end
 
     try
-        udir = fileparts(char(underlayFile));
-        cand{end+1} = fullfile(udir,'CoronalRegistration2D.mat');
-        cand{end+1} = fullfile(udir,'Transformation.mat');
+        if nargin >= 1 && ~isempty(underlayFile)
+            udir = fileparts(char(underlayFile));
+            p1 = fileparts(udir);
+            p2 = fileparts(p1);
 
-        p1 = fileparts(udir);
-        cand{end+1} = fullfile(p1,'Registration2D','CoronalRegistration2D.mat');
-        cand{end+1} = fullfile(p1,'Registration','Transformation.mat');
-        cand{end+1} = fullfile(p1,'CoronalRegistration2D.mat');
-        cand{end+1} = fullfile(p1,'Transformation.mat');
-    catch
-    end
+            addDirCandidate(udir);
+            addDirCandidate(fullfile(udir,'Registration2D'));
+            addDirCandidate(fullfile(udir,'Registration'));
 
-    try
-        if isstruct(par) && isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(par.exportPath,'dir') == 7
-            ep = char(par.exportPath);
-            cand{end+1} = fullfile(ep,'Registration2D','CoronalRegistration2D.mat');
-            cand{end+1} = fullfile(ep,'Registration','Transformation.mat');
+            addDirCandidate(fullfile(p1,'Registration2D'));
+            addDirCandidate(fullfile(p1,'Registration'));
+            addDirCandidate(p1);
+
+            addDirCandidate(fullfile(p2,'Registration2D'));
+            addDirCandidate(fullfile(p2,'Registration'));
+            addDirCandidate(p2);
         end
     catch
     end
 
-    for ii = 1:numel(cand)
+    try
+        root = getDatasetRootForVideoSelectors();
+        addDirCandidate(fullfile(root,'Registration2D'));
+        addDirCandidate(fullfile(root,'Registration'));
+        addDirCandidate(root);
+    catch
+    end
+
+    exactNames = {'CoronalRegistration2D.mat','Transformation.mat'};
+    wildNames = { ...
+        'CoronalRegistration2D*.mat', ...
+        '*CoronalRegistration2D*.mat', ...
+        '*Registration2D*.mat', ...
+        'Transformation*.mat', ...
+        '*Transformation*.mat', ...
+        '*source*_atlas*.mat', ...
+        '*histology*.mat', ...
+        '*atlas*.mat'};
+
+    for ii = 1:numel(candDirs)
+        d0 = candDirs{ii};
+
+        if isempty(d0) || exist(d0,'dir') ~= 7
+            continue;
+        end
+
+        for kk = 1:numel(exactNames)
+            addFileCandidate(fullfile(d0, exactNames{kk}),120);
+        end
+
+        for kk = 1:numel(wildNames)
+            dd = dir(fullfile(d0, wildNames{kk}));
+
+            for jj = 1:numel(dd)
+                if ~dd(jj).isdir
+                    addFileCandidate(fullfile(dd(jj).folder,dd(jj).name),60);
+                end
+            end
+        end
+    end
+
+    if isempty(candFiles)
+        return;
+    end
+
+    [candFiles, ia] = uniquePathListVideo(candFiles);
+    candScore = candScore(ia);
+
+    bestScore = -Inf;
+    bestFile = '';
+
+    for ii = 1:numel(candFiles)
+        [ok, extraScore] = scoreTransformCandidateVideo(candFiles{ii});
+
+        if ~ok
+            continue;
+        end
+
+        totalScore = candScore(ii) + extraScore;
+
+        if totalScore > bestScore
+            bestScore = totalScore;
+            bestFile = candFiles{ii};
+        end
+    end
+
+    tfFile = bestFile;
+
+    function addDirCandidate(d)
         try
-            if ~isempty(cand{ii}) && exist(cand{ii},'file') == 2
-                tfFile = cand{ii};
-                return;
+            if ~isempty(d) && exist(char(d),'dir') == 7
+                candDirs{end+1} = char(d); %#ok<AGROW>
+            end
+        catch
+        end
+    end
+
+    function addFileCandidate(f, baseScore)
+        try
+            if ~isempty(f) && exist(char(f),'file') == 2
+                [~,nm,~] = fileparts(char(f));
+                if ~isempty(strfind(lower(nm),'stepmotor_reg2d_session'))
+                    return;
+                end
+                candFiles{end+1} = char(f); %#ok<AGROW>
+                candScore(end+1) = baseScore; %#ok<AGROW>
             end
         catch
         end
     end
 end
 
-function startPath = getUnderlayStartPath()
-    startPath = getStartPath();
+
+function [ok, score] = scoreTransformCandidateVideo(f)
+
+    ok = false;
+    score = -Inf;
+
+    try
+        S = load(f);
+        T = extractAtlasWarpStruct(S);
+    catch
+        return;
+    end
+
+    if ~isfield(T,'warpA') || isempty(T.warpA)
+        return;
+    end
+
+    A = double(T.warpA);
+
+    if ~(isequal(size(A),[3 3]) || isequal(size(A),[4 4]))
+        return;
+    end
+
+    ok = true;
+    score = 0;
+
+    [folder0,name0,~] = fileparts(f);
+    nameL = lower(name0);
+    folderL = lower(folder0);
+
+    if ~isempty(strfind(nameL,'coronalregistration2d')), score = score + 100; end
+    if ~isempty(strfind(nameL,'registration2d')),        score = score + 80;  end
+    if ~isempty(strfind(nameL,'transformation')),         score = score + 60;  end
+    if ~isempty(strfind(nameL,'source')),                 score = score + 20;  end
+    if ~isempty(strfind(nameL,'atlas')),                  score = score + 20;  end
+    if ~isempty(strfind(nameL,'histology')),              score = score + 25;  end
+    if ~isempty(strfind(folderL,'registration2d')) && isequal(size(A),[3 3])
+        score = score + 80;
+    end
+end
+
+
+function [u, ia] = uniquePathListVideo(c)
+
+    keys = cell(size(c));
+
+    for qq = 1:numel(c)
+        keys{qq} = char(c{qq});
+        keys{qq} = strrep(keys{qq}, '/', filesep);
+        keys{qq} = strrep(keys{qq}, '\', filesep);
+
+        if ispc
+            keys{qq} = lower(keys{qq});
+        end
+    end
+
+    [~,ia] = unique(keys,'stable');
+    u = c(ia);
+end
+
+    function startPath = getUnderlayStartPath()
+
+    try
+        if isstruct(par) && isfield(par,'underlayStartPath') && ...
+                ~isempty(par.underlayStartPath) && exist(char(par.underlayStartPath),'dir') == 7
+            startPath = char(par.underlayStartPath);
+            return;
+        end
+    catch
+    end
 
     try
         if state.isAtlasWarped && ~isempty(state.atlasTransformFile) && exist(state.atlasTransformFile,'file') == 2
@@ -4324,6 +5065,20 @@ function startPath = getUnderlayStartPath()
         end
     catch
     end
+
+    root = getDatasetRootForVideoSelectors();
+
+    cand = { ...
+        fullfile(root,'Registration2D'), ...
+        fullfile(root,'Registration'), ...
+        fullfile(root,'Visualization'), ...
+        fullfile(root,'Masks'), ...
+        fullfile(root,'Mask'), ...
+        root, ...
+        getStartPath(), ...
+        pwd};
+
+    startPath = firstExistingDirVideo(cand);
 end
 
 function [U, meta] = readUnderlayFile(f)
@@ -4584,7 +5339,8 @@ function Uout = warpUnderlayForCurrentDisplay(Uin, T, zSel)
         end
 
         outSize2 = round(T.outSize(1:2));
-        tform2 = affine2d(A);
+        Ause = apply2DWarpDirectionToMatrixVideo(A, T);
+tform2 = affine2d(Ause);
         Rout2  = imref2d(outSize2);
 
         if ndims(Uin) == 2
@@ -4755,7 +5511,669 @@ function setPopupByName(hPop, targetName)
     catch
     end
 end
+function T = askAndApply2DWarpDirection(T, dlgTitle)
 
+    try
+        if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d')
+            T.scmWarpDirection = 'as_saved';
+            T.scmAffineChoice = 'row_saved';
+            state.atlas2DWarpDirection = 'as_saved';
+            return;
+        end
+
+        if isempty(T) || ~isfield(T,'warpA') || isempty(T.warpA)
+            return;
+        end
+
+        A = double(T.warpA);
+
+        if ~isequal(size(A), [3 3])
+            return;
+        end
+
+        if nargin < 2 || isempty(dlgTitle)
+            dlgTitle = '2D atlas transform direction';
+        end
+
+        if isfield(state,'atlas2DWarpDirection') && ...
+                ~isempty(state.atlas2DWarpDirection) && ...
+                ~strcmpi(state.atlas2DWarpDirection,'ask')
+
+            T.scmWarpDirection = state.atlas2DWarpDirection;
+            return;
+        end
+
+        msg = [ ...
+            'Choose how Video GUI should apply the 2D affine transform.' char(10) char(10) ...
+            'For new CoronalRegistration2D_sourceXXX files from your updated registration GUI,' char(10) ...
+            'the correct choice is usually: Use saved matrix.' char(10) char(10) ...
+            'Try inverse only for older Transformation files if alignment is wrong.'];
+
+        ch = questdlg(msg, dlgTitle, ...
+            'Use saved matrix', 'Use inverse matrix', 'Cancel', ...
+            'Use saved matrix');
+
+        if isempty(ch) || strcmpi(ch,'Cancel')
+            error('Atlas warp cancelled.');
+        end
+
+        if strcmpi(ch,'Use inverse matrix')
+            state.atlas2DWarpDirection = 'inverse';
+        else
+            state.atlas2DWarpDirection = 'as_saved';
+        end
+
+        T.scmWarpDirection = state.atlas2DWarpDirection;
+
+    catch ME
+        if strcmpi(ME.message,'Atlas warp cancelled.')
+            rethrow(ME);
+        end
+        T.scmWarpDirection = 'as_saved';
+    end
+end
+
+
+function regList = askAndApply2DWarpDirectionToRegListVideo(regList, dlgTitle)
+
+    if isempty(regList)
+        return;
+    end
+
+    T0 = regList(1).T;
+    T0 = askAndApply2DWarpDirection(T0, dlgTitle);
+    dirUse = T0.scmWarpDirection;
+
+    for rr = 1:numel(regList)
+        regList(rr).T.scmWarpDirection = dirUse;
+
+        if isfield(T0,'scmAffineChoice')
+            regList(rr).T.scmAffineChoice = T0.scmAffineChoice;
+        end
+    end
+end
+
+
+function Ause = apply2DWarpDirectionToMatrixVideo(Araw, T)
+
+    Araw = double(Araw);
+
+    if ~isequal(size(Araw), [3 3])
+        error('2D affine matrix must be 3x3.');
+    end
+
+    if any(~isfinite(Araw(:)))
+        error('2D affine matrix contains NaN/Inf.');
+    end
+
+    % New Reg2D files save A directly in MATLAB affine2d row-vector format.
+    try
+        if isfield(T,'scmAffineChoice') && strcmpi(char(T.scmAffineChoice), 'row_saved')
+            if ~isValidMatlabAffine2DVideo(Araw)
+                error('Saved Reg2D.A is not a valid MATLAB affine2d row-vector matrix.');
+            end
+            Ause = Araw;
+            return;
+        end
+    catch ME
+        error(ME.message);
+    end
+
+    if isfield(T,'scmWarpDirection') && strcmpi(char(T.scmWarpDirection),'inverse')
+        if abs(det(Araw(1:2,1:2))) < eps
+            error('Cannot invert 2D affine matrix.');
+        end
+        Ause = inv(Araw);
+    else
+        Ause = Araw;
+    end
+
+    if ~isValidMatlabAffine2DVideo(Ause)
+        At = Araw.';
+
+        if isValidMatlabAffine2DVideo(At)
+            Ause = At;
+        else
+            error('Could not convert saved matrix to MATLAB affine2d format.');
+        end
+    end
+end
+
+
+function tf = isValidMatlabAffine2DVideo(A)
+
+    tf = false;
+
+    try
+        A = double(A);
+
+        if ~isequal(size(A), [3 3])
+            return;
+        end
+
+        if any(~isfinite(A(:)))
+            return;
+        end
+
+        tf = norm(A(:,3) - [0;0;1]) < 1e-8;
+    catch
+        tf = false;
+    end
+end
+
+
+function X2 = prepareFunctionalSliceForReg2DVideo(X2, T, zSrc)
+
+    if ndims(X2) == 2
+        X2 = reshape(X2, size(X2,1), size(X2,2), 1);
+    end
+
+    if ~isfield(T,'sourceSize') || isempty(T.sourceSize) || numel(T.sourceSize) < 2
+        return;
+    end
+
+    srcSize = round(double(T.sourceSize(1:2)));
+    thisSize = [size(X2,1) size(X2,2)];
+
+    if isequal(thisSize, srcSize)
+        return;
+    end
+
+    if isequal(thisSize, fliplr(srcSize))
+        choice = questdlg(sprintf([ ...
+            'Functional source slice %d has size [%d %d], but the transform was made for [%d %d].\n\n' ...
+            'This usually means X/Y are transposed between PSC and the registration source image.\n\n' ...
+            'Transpose functional frames before warping?'], ...
+            zSrc, thisSize(1), thisSize(2), srcSize(1), srcSize(2)), ...
+            'Video source-size mismatch', ...
+            'Transpose frames', 'Cancel', 'Transpose frames');
+
+        if isempty(choice) || strcmpi(choice,'Cancel')
+            error('Atlas warp cancelled because PSC size does not match transform sourceSize.');
+        end
+
+        X2 = permute(X2, [2 1 3]);
+        return;
+    end
+
+    error(['Functional source slice %d has size [%d %d], but transform sourceSize is [%d %d].' char(10) ...
+           'Register the exact same native source dimensions, or fix the orientation before registration.'], ...
+           zSrc, thisSize(1), thisSize(2), srcSize(1), srcSize(2));
+end
+
+
+function [Uatlas, msg] = buildStepMotorFixedAtlasUnderlayOnlyVideo(usedRegList, outSize2, currentUnderlay)
+
+    Uatlas = [];
+    msg = 'none';
+
+    if isempty(usedRegList) || isempty(outSize2)
+        return;
+    end
+
+    yy = round(outSize2(1));
+    xx = round(outSize2(2));
+    nUse = numel(usedRegList);
+
+    % If current underlay already is a true atlas-space stack, keep it.
+    try
+        U = squeeze(currentUnderlay);
+
+        if ~isempty(U)
+            if ndims(U) == 2 && nUse == 1 && size(U,1) == yy && size(U,2) == xx
+                Uatlas = double(U);
+                msg = 'kept current fixed atlas underlay';
+                return;
+            end
+
+            if ndims(U) == 3 && size(U,1) == yy && size(U,2) == xx
+                if size(U,3) == nUse && ~state.isColorUnderlay
+                    Uatlas = double(U);
+                    msg = 'kept current fixed atlas underlay stack';
+                    return;
+                end
+            end
+        end
+    catch
+    end
+
+    Utmp = zeros(yy, xx, nUse, 'single');
+    got = false(1, nUse);
+
+    for rr = 1:nUse
+        try
+            T = usedRegList(rr).T;
+            Uplane = extractFixedAtlasUnderlayFromReg2DFileVideo(usedRegList(rr).file, T, [yy xx]);
+
+            if isempty(Uplane)
+                continue;
+            end
+
+            Uplane = fitPlaneToSizeVideo(Uplane, yy, xx);
+            Uplane(~isfinite(Uplane)) = 0;
+
+            if hasUsableUnderlaySignalVideo(Uplane)
+                Utmp(:,:,rr) = single(Uplane);
+                got(rr) = true;
+            end
+        catch
+        end
+    end
+
+    if all(got)
+        Uatlas = double(Utmp);
+        msg = 'used fixed atlas/histology underlays saved in Registration2D files';
+        return;
+    end
+end
+
+
+function Uplane = extractFixedAtlasUnderlayFromReg2DFileVideo(matFile, T, outSize2)
+
+    Uplane = [];
+
+    if isempty(matFile) || exist(matFile,'file') ~= 2
+        return;
+    end
+
+    try
+        S = load(matFile);
+    catch
+        return;
+    end
+
+    pref = { ...
+        'fixedImage', ...
+        'fixedUnderlay', ...
+        'targetImage', ...
+        'targetUnderlay', ...
+        'atlasFixedImage', ...
+        'atlasImage', ...
+        'atlasImage2D', ...
+        'atlasSliceImage', ...
+        'atlasUnderlay', ...
+        'atlasUnderlay2D', ...
+        'histologyFixed', ...
+        'histologyImage', ...
+        'histologyUnderlay', ...
+        'vascularFixed', ...
+        'vascularImage', ...
+        'regionsFixed', ...
+        'regionsImage'};
+
+    for ii = 1:numel(pref)
+        if isfield(S, pref{ii})
+            Uplane = acceptFixedAtlasCandidateVideo(S.(pref{ii}), T, outSize2);
+            if ~isempty(Uplane)
+                return;
+            end
+        end
+    end
+
+    wrappers = {'Transf','Reg2D','RegOut','Registration2D'};
+
+    for ww = 1:numel(wrappers)
+        if isfield(S, wrappers{ww}) && isstruct(S.(wrappers{ww}))
+            R = S.(wrappers{ww});
+
+            for ii = 1:numel(pref)
+                if isfield(R, pref{ii})
+                    Uplane = acceptFixedAtlasCandidateVideo(R.(pref{ii}), T, outSize2);
+                    if ~isempty(Uplane)
+                        return;
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+function Uplane = acceptFixedAtlasCandidateVideo(v, T, outSize2)
+
+    Uplane = [];
+
+    if isempty(v)
+        return;
+    end
+
+    if isstruct(v)
+        subPref = { ...
+            'fixedImage', ...
+            'targetImage', ...
+            'atlasImage', ...
+            'atlasUnderlay', ...
+            'histologyImage', ...
+            'vascularImage', ...
+            'regionsImage', ...
+            'Data', ...
+            'image', ...
+            'img'};
+
+        for ss = 1:numel(subPref)
+            if isfield(v, subPref{ss})
+                Uplane = acceptFixedAtlasCandidateVideo(v.(subPref{ss}), T, outSize2);
+                if ~isempty(Uplane)
+                    return;
+                end
+            end
+        end
+        return;
+    end
+
+    if ~(isnumeric(v) || islogical(v))
+        return;
+    end
+
+    U = squeeze(double(v));
+
+    if isempty(U) || ndims(U) < 2
+        return;
+    end
+
+    if size(U,1) < 16 || size(U,2) < 16
+        return;
+    end
+
+    if size(U,1) ~= outSize2(1) || size(U,2) ~= outSize2(2)
+        return;
+    end
+
+    if ndims(U) == 2
+        Uplane = U;
+        return;
+    end
+
+    if ndims(U) == 3
+        if size(U,3) == 3
+            Uplane = rgbToGrayVideo(U);
+            return;
+        end
+
+        zPick = round(size(U,3) / 2);
+
+        try
+            if isfield(T,'atlasSliceIndex') && ~isempty(T.atlasSliceIndex) && isfinite(T.atlasSliceIndex)
+                zPick = round(T.atlasSliceIndex);
+            end
+        catch
+        end
+
+        zPick = max(1, min(size(U,3), zPick));
+        Uplane = U(:,:,zPick);
+        return;
+    end
+
+    if ndims(U) == 4
+        if size(U,3) == 3
+            zPick = 1;
+
+            try
+                if isfield(T,'atlasSliceIndex') && ~isempty(T.atlasSliceIndex) && isfinite(T.atlasSliceIndex)
+                    zPick = round(T.atlasSliceIndex);
+                end
+            catch
+            end
+
+            zPick = max(1, min(size(U,4), zPick));
+            Uplane = rgbToGrayVideo(squeeze(U(:,:,:,zPick)));
+            return;
+        end
+    end
+end
+
+
+function G = rgbToGrayVideo(RGB)
+
+    RGB = double(RGB);
+
+    if ndims(RGB) ~= 3 || size(RGB,3) ~= 3
+        G = double(RGB);
+        return;
+    end
+
+    G = 0.2989 .* RGB(:,:,1) + ...
+        0.5870 .* RGB(:,:,2) + ...
+        0.1140 .* RGB(:,:,3);
+end
+
+
+function U2 = fitPlaneToSizeVideo(U2, yy, xx)
+
+    U2 = squeeze(double(U2));
+
+    if ndims(U2) > 2
+        U2 = U2(:,:,1);
+    end
+
+    if size(U2,1) == yy && size(U2,2) == xx
+        return;
+    end
+
+    try
+        U2 = imresize(U2, [yy xx], 'bilinear');
+    catch
+        tmp = zeros(yy, xx);
+        y0 = min(yy, size(U2,1));
+        x0 = min(xx, size(U2,2));
+        tmp(1:y0,1:x0) = U2(1:y0,1:x0);
+        U2 = tmp;
+    end
+end
+
+
+function tf = hasUsableUnderlaySignalVideo(U)
+
+    tf = false;
+
+    try
+        if isempty(U)
+            return;
+        end
+
+        v = double(U(:));
+        v = v(isfinite(v));
+
+        if isempty(v)
+            return;
+        end
+
+        lo = prctile_fallback(v, 1);
+        hi = prctile_fallback(v, 99);
+
+        tf = isfinite(lo) && isfinite(hi) && hi > lo && abs(hi - lo) > eps;
+    catch
+        tf = false;
+    end
+end
+
+
+function U = makeFunctionalContrastFallbackUnderlayVideo(X)
+
+    X = double(X);
+    X(~isfinite(X)) = 0;
+
+    if ndims(X) == 4
+        U = std(X, 0, 4);
+
+        if ~hasUsableUnderlaySignalVideo(U)
+            U = mean(abs(X), 4);
+        end
+
+    elseif ndims(X) == 3
+        U = std(X, 0, 3);
+
+        if ~hasUsableUnderlaySignalVideo(U)
+            U = mean(abs(X), 3);
+        end
+
+    else
+        U = X;
+    end
+
+    U(~isfinite(U)) = 0;
+end
+
+
+function forceStepMotorAtlasGrayUnderlayVideo()
+
+    ensureUnderlayStateFields();
+
+    state.isColorUnderlay = false;
+    state.regionLabelUnderlay = [];
+    state.regionColorLUT = [];
+    state.regionInfo = struct();
+
+    uState.mode = 2;
+    uState.brightness = 0;
+    uState.contrast = 1;
+    uState.gamma = 1;
+
+    try
+        set(popUMode, 'Value', uState.mode);
+        set(slBri, 'Value', uState.brightness);
+        set(slCon, 'Value', uState.contrast);
+        set(slGam, 'Value', uState.gamma);
+
+        set(txtBri, 'String', sprintf('%.2f', uState.brightness));
+        set(txtCon, 'String', sprintf('%.2f', uState.contrast));
+        set(txtGam, 'String', sprintf('%.2f', uState.gamma));
+
+        updateUnderlayEnable();
+    catch
+    end
+end
+
+function startPath = getTransformStartPathVideo()
+
+    startPath = getStartPath();
+
+    try
+        if isstruct(par) && isfield(par,'transformStartPath') && ...
+                ~isempty(par.transformStartPath) && exist(char(par.transformStartPath),'dir') == 7
+            startPath = char(par.transformStartPath);
+            return;
+        end
+    catch
+    end
+
+    root = getDatasetRootForVideoSelectors();
+
+    cand = { ...
+        fullfile(root,'Registration2D'), ...
+        fullfile(root,'Registration'), ...
+        root, ...
+        getStartPath(), ...
+        pwd};
+
+    startPath = firstExistingDirVideo(cand);
+end
+
+
+function root = getDatasetRootForVideoSelectors()
+
+    root = '';
+
+    try
+        if isstruct(par)
+            if isfield(par,'selectorRoot') && ~isempty(par.selectorRoot) && exist(char(par.selectorRoot),'dir') == 7
+                root = char(par.selectorRoot);
+            elseif isfield(par,'exportPath') && ~isempty(par.exportPath) && exist(char(par.exportPath),'dir') == 7
+                root = char(par.exportPath);
+            elseif isfield(par,'loadedPath') && ~isempty(par.loadedPath) && exist(char(par.loadedPath),'dir') == 7
+                root = char(par.loadedPath);
+            elseif isfield(par,'loadedFile') && ~isempty(par.loadedFile)
+                lf = char(par.loadedFile);
+                if exist(lf,'file') == 2
+                    root = fileparts(lf);
+                end
+            elseif isfield(par,'rawPath') && ~isempty(par.rawPath) && exist(char(par.rawPath),'dir') == 7
+                root = char(par.rawPath);
+            end
+        end
+    catch
+        root = '';
+    end
+
+    if isempty(root)
+        root = pwd;
+    end
+
+    root = normalizeSelectorRootVideo(root);
+end
+
+
+function root = normalizeSelectorRootVideo(root)
+
+    if isempty(root) || exist(root,'dir') ~= 7
+        root = pwd;
+        return;
+    end
+
+    leafFolders = {'Visualization','Masks','Mask','ROI','Registration2D','Registration','SCM','Images','Series','Timecourse','PSC','Preprocessing','QC','Bundles','Videos'};
+
+    for kk = 1:4
+        [parentDir, leafName] = fileparts(root);
+
+        if isempty(parentDir) || strcmp(parentDir,root)
+            break;
+        end
+
+        if any(strcmpi(leafName, leafFolders))
+            root = parentDir;
+        else
+            break;
+        end
+    end
+end
+
+
+function d = firstExistingDirVideo(cand)
+
+    d = pwd;
+
+    for ii = 1:numel(cand)
+        try
+            c0 = cand{ii};
+
+            if ~isempty(c0) && exist(c0,'dir') == 7
+                d = c0;
+                return;
+            end
+        catch
+        end
+    end
+end
+function s = compactIndexListVideo(v)
+
+    if isempty(v)
+        s = '<none>';
+        return;
+    end
+
+    v = unique(sort(round(v(:).')));
+
+    parts = {};
+    i = 1;
+
+    while i <= numel(v)
+        j = i;
+
+        while j < numel(v) && v(j+1) == v(j) + 1
+            j = j + 1;
+        end
+
+        if i == j
+            parts{end+1} = sprintf('%d', v(i)); %#ok<AGROW>
+        else
+            parts{end+1} = sprintf('%d-%d', v(i), v(j)); %#ok<AGROW>
+        end
+
+        i = j + 1;
+    end
+
+    s = strjoin(parts, ', ');
+end
 
     function s = safeStr(x)
         s = '';
