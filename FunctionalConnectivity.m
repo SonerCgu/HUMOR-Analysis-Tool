@@ -1448,6 +1448,28 @@ refreshAll();
             out.guiState = s;
             matFile = fullfile(s.qcDir,['FunctionalConnectivity_' s.tag '.mat']);
             save(matFile,'out','-v7.3');
+            % -------------------------------------------------------------
+% Save standardized Functional Connectivity group bundle
+% This file is what GroupAnalysis will load later.
+% -------------------------------------------------------------
+try
+    fcBundle = fc_make_group_bundle(s);
+
+    bundleFile1 = fullfile(s.qcDir, ['FC_GroupBundle_' s.tag '.mat']);
+    save(bundleFile1, 'fcBundle', '-v7.3');
+
+    bundleDir = fullfile(s.saveRoot, 'Connectivity', 'GroupBundles');
+    if ~exist(bundleDir, 'dir')
+        mkdir(bundleDir);
+    end
+
+    bundleFile2 = fullfile(bundleDir, ['FC_GroupBundle_' s.tag '.mat']);
+    save(bundleFile2, 'fcBundle', '-v7.3');
+
+    setStatus(['Saved FC group bundle: ' bundleFile2], C.good);
+catch MEbundle
+    setStatus(['Could not save FC group bundle: ' MEbundle.message], C.warn);
+end
             fc_save_axis(axMap,fig,fullfile(s.qcDir,['FC_seed_map_' s.tag '.png']));
             fc_save_axis(axHeat,fig,fullfile(s.qcDir,['FC_heatmap_' s.tag '.png']));
             fc_save_axis(axCompareBar,fig,fullfile(s.qcDir,['FC_compare_bar_' s.tag '.png']));
@@ -3438,6 +3460,94 @@ catch
 end
 end
 
+function fcBundle = fc_make_group_bundle(s)
+% FC_MAKE_GROUP_BUNDLE
+% Standardized subject-level FC export for GroupAnalysis.
+%
+% Important:
+%   - Pearson r is stored as R.
+%   - Fisher z = atanh(r) is stored as Z.
+%   - Group analysis should average/statistically compare Z, not R.
+
+fcBundle = struct();
+
+fcBundle.version = 'FC_GroupBundle_v1';
+fcBundle.created = datestr(now);
+fcBundle.tag = s.tag;
+fcBundle.saveRoot = s.saveRoot;
+fcBundle.qcDir = s.qcDir;
+
+fcBundle.settings = struct();
+fcBundle.settings.roiMinVox = s.opts.roiMinVox;
+fcBundle.settings.roiOrder = s.roiOrder;
+fcBundle.settings.analysisStartSec = s.analysisStartSec;
+fcBundle.settings.analysisEndSec = s.analysisEndSec;
+fcBundle.settings.currentEpoch = s.currentEpoch;
+fcBundle.settings.epochName = s.epochs(s.currentEpoch).name;
+fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use tanh(Z) only for display.';
+
+fcBundle.subjects = struct([]);
+
+for i = 1:s.nSub
+
+    subj = s.subjects(i);
+
+    fcBundle.subjects(i).name = subj.name;
+    fcBundle.subjects(i).group = subj.group;
+    fcBundle.subjects(i).TR = subj.TR;
+    fcBundle.subjects(i).analysisDir = subj.analysisDir;
+
+    fcBundle.subjects(i).hasROI = false;
+    fcBundle.subjects(i).epochName = '';
+    fcBundle.subjects(i).timeIdx = [];
+    fcBundle.subjects(i).labels = [];
+    fcBundle.subjects(i).names = {};
+    fcBundle.subjects(i).counts = [];
+    fcBundle.subjects(i).meanTS = [];
+    fcBundle.subjects(i).R = [];
+    fcBundle.subjects(i).Z = [];
+
+    % Prefer current epoch result.
+    res = [];
+    if i <= size(s.roiResults,1) && s.currentEpoch <= size(s.roiResults,2)
+        res = s.roiResults{i,s.currentEpoch};
+    end
+
+    % Fallback: find any available ROI result for this subject.
+    if isempty(res)
+        for e = 1:size(s.roiResults,2)
+            if ~isempty(s.roiResults{i,e})
+                res = s.roiResults{i,e};
+                break;
+            end
+        end
+    end
+
+    if isempty(res)
+        continue;
+    end
+
+    fcBundle.subjects(i).hasROI = true;
+    fcBundle.subjects(i).epochName = res.epochName;
+    fcBundle.subjects(i).timeIdx = res.timeIdx;
+    fcBundle.subjects(i).labels = res.labels;
+    fcBundle.subjects(i).names = res.names;
+    fcBundle.subjects(i).counts = res.counts;
+    fcBundle.subjects(i).meanTS = res.meanTS;
+    fcBundle.subjects(i).R = res.M;
+
+    Z = double(res.M);
+    Z = max(-0.999999, min(0.999999, Z));
+    Z = atanh(Z);
+
+    % The diagonal is self-correlation. Keep R diagonal as 1,
+    % but set Z diagonal to 0 so group plots/statistics are cleaner.
+    Z(1:size(Z,1)+1:end) = 0;
+
+    fcBundle.subjects(i).Z = Z;
+end
+
+end
 function fc_help_dialog(C) %#ok<INUSD>
 bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
 helpFig = figure('Name','Functional Connectivity - Help', ...

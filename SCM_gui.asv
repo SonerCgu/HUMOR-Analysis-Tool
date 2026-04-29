@@ -115,7 +115,7 @@ state.tcXLim = [0 max(tmin)];
 state.isAtlasWarped = false;
 state.atlasTransformFile = '';
 state.lastAtlasTransformFile = '';
-state.atlas2DWarpDirection = 'ask';   % 'as_saved' or 'inverse'
+
 % Step-motor multi-slice atlas warp metadata
 state.isStepMotorAtlasWarped = false;
 state.stepMotorAtlasFolder = '';
@@ -1143,10 +1143,8 @@ if doesUnderlayMatchCurrentDisplay(Uraw)
 
         if ~isempty(tfFile0) && exist(tfFile0,'file') == 2
             try
-           S0 = load(tfFile0);
-T0 = extractAtlasWarpStruct(S0);
-T0 = force2DOutputSizeFromTargetUnderlay(T0, Uraw);
-T0 = askAndApply2DWarpDirection(T0, 'Atlas/histology underlay warp');
+                S0 = load(tfFile0);
+                T0 = extractAtlasWarpStruct(S0);
 
                 if doesUnderlayMatchTransformOutput(Uraw, T0)
                     PSC = warpFunctionalSeriesToAtlas(origPSC, T0);
@@ -1209,10 +1207,7 @@ end
             if isequal(ft,0), return; end
             tfFile = fullfile(pt,ft);
         end
-       S = load(tfFile);
-T = extractAtlasWarpStruct(S);
-T = force2DOutputSizeFromTargetUnderlay(T, Uraw);
-T = askAndApply2DWarpDirection(T, 'Atlas/histology underlay warp');
+        S = load(tfFile); T = extractAtlasWarpStruct(S);
         if ~doesUnderlayMatchTransformOutput(Uraw, T)
             error(['Selected underlay size [%d %d] does not match current native SCM size [%d %d] ' ...
                    'and also does not match transform output size.'], size(Uraw,1), size(Uraw,2), nY, nX);
@@ -1297,10 +1292,9 @@ function warpFunctionalToAtlasSingleFile()
         tfFile = fullfile(p,f);
 
         S = load(tfFile);
-T = extractAtlasWarpStruct(S);
-T = askAndApply2DWarpDirection(T, 'Single atlas warp');
+        T = extractAtlasWarpStruct(S);
 
-PSC = warpFunctionalSeriesToAtlas(origPSC, T);
+        PSC = warpFunctionalSeriesToAtlas(origPSC, T);
 
         passedMask = [];
         passedMaskIsInclude = true;
@@ -1351,7 +1345,7 @@ function warpFunctionalToAtlasStepMotorFolder()
 
     try
         regList = collectStepMotorRegistration2DTransforms(folderPath);
-regList = askAndApply2DWarpDirectionToRegList(regList, 'Step Motor atlas warp');
+
         if isempty(regList)
             error(['No valid Step Motor Registration2D transforms found in:' newline ...
                    folderPath newline newline ...
@@ -3303,226 +3297,6 @@ function [M, maskIsInclude, pickedField] = readMask(f, mode)
     M = logical(niftiread(f)); pickedField = 'nifti';
 end
 
-    function T = force2DOutputSizeFromTargetUnderlay(T, Utarget)
-    try
-        if isempty(T) || ~isfield(T,'warpA') || isempty(T.warpA)
-            return;
-        end
-
-        if ~isequal(size(double(T.warpA)), [3 3])
-            return;
-        end
-
-        hasOut = isfield(T,'outSize') && ~isempty(T.outSize) && ...
-            numel(T.outSize) >= 2 && all(isfinite(T.outSize(1:2))) && ...
-            all(round(T.outSize(1:2)) > 0);
-
-        if hasOut
-            return;
-        end
-
-        if nargin >= 2 && ~isempty(Utarget)
-            U = squeeze(Utarget);
-            if ndims(U) >= 2
-                T.outSize = [size(U,1) size(U,2)];
-                T.outputSize = T.outSize;
-            end
-        end
-    catch
-    end
-end
-
-
-function T = askAndApply2DWarpDirection(T, dlgTitle)
-    % Ask once whether to use saved affine matrix or its inverse.
-    % For your current symptom, inverse is the first thing to test.
-
-    try
-        if isempty(T) || ~isfield(T,'warpA') || isempty(T.warpA)
-            return;
-        end
-
-        A = double(T.warpA);
-
-        if ~isequal(size(A), [3 3])
-            return;
-        end
-
-        if nargin < 2 || isempty(dlgTitle)
-            dlgTitle = '2D atlas transform direction';
-        end
-
-        if isfield(state,'atlas2DWarpDirection') && ...
-                ~isempty(state.atlas2DWarpDirection) && ...
-                ~strcmpi(state.atlas2DWarpDirection,'ask')
-
-            T.scmWarpDirection = state.atlas2DWarpDirection;
-            return;
-        end
-
-        msg = [ ...
-            'Choose how SCM should apply the 2D affine transform.' newline newline ...
-            'Use saved matrix:' newline ...
-            '  Functional image is warped using T directly.' newline newline ...
-            'Use inverse matrix:' newline ...
-            '  Functional image is warped using inv(T).' newline ...
-            '  Try this if histology appears in the right place but functional data does not align.' newline newline ...
-            'Recommendation for your current problem: Use inverse matrix first.'];
-
-        ch = questdlg(msg, dlgTitle, ...
-            'Use saved matrix', 'Use inverse matrix', 'Cancel', ...
-            'Use inverse matrix');
-
-        if isempty(ch) || strcmpi(ch,'Cancel')
-            error('Atlas warp cancelled.');
-        end
-
-        if strcmpi(ch,'Use inverse matrix')
-            state.atlas2DWarpDirection = 'inverse';
-        else
-            state.atlas2DWarpDirection = 'as_saved';
-        end
-
-        T.scmWarpDirection = state.atlas2DWarpDirection;
-
-    catch ME
-        if strcmpi(ME.message,'Atlas warp cancelled.')
-            rethrow(ME);
-        end
-        T.scmWarpDirection = 'as_saved';
-    end
-end
-
-
-function regList = askAndApply2DWarpDirectionToRegList(regList, dlgTitle)
-    if isempty(regList)
-        return;
-    end
-
-    try
-        T0 = regList(1).T;
-        T0 = askAndApply2DWarpDirection(T0, dlgTitle);
-        dirUse = T0.scmWarpDirection;
-
-        for rr = 1:numel(regList)
-            regList(rr).T.scmWarpDirection = dirUse;
-        end
-    catch ME
-        rethrow(ME);
-    end
-end
-
-
-    function Ause = apply2DWarpDirectionToMatrix(Araw, T)
-    % Convert saved 2D transform to a MATLAB affine2d-compatible matrix.
-    %
-    % MATLAB affine2d requires translation in the LAST ROW:
-    %   [a b 0
-    %    c d 0
-    %    tx ty 1]
-    %
-    % Many manual registration tools save column-vector matrices:
-    %   [a b tx
-    %    c d ty
-    %    0 0 1]
-    %
-    % For those, MATLAB needs Araw'.
-
-    Araw = double(Araw);
-
-    if ~isequal(size(Araw), [3 3])
-        error('2D affine matrix must be 3x3.');
-    end
-
-    if any(~isfinite(Araw(:)))
-        error('2D affine matrix contains NaN/Inf.');
-    end
-
-    cand = {};
-    label = {};
-    key = {};
-
-    % Candidate 1: raw already valid for MATLAB affine2d.
-    if isValidMatlabAffine2D(Araw)
-        cand{end+1} = Araw; %#ok<AGROW>
-        label{end+1} = 'saved matrix, MATLAB row-vector format'; %#ok<AGROW>
-        key{end+1} = 'row_saved'; %#ok<AGROW>
-
-        if abs(det(Araw(1:2,1:2))) > eps
-            Ai = inv(Araw);
-            if isValidMatlabAffine2D(Ai)
-                cand{end+1} = Ai; %#ok<AGROW>
-                label{end+1} = 'inverse saved matrix, MATLAB row-vector format'; %#ok<AGROW>
-                key{end+1} = 'row_inverse'; %#ok<AGROW>
-            end
-        end
-    end
-
-    % Candidate 2: raw is column-vector style, transpose for affine2d.
-    At = Araw.';
-    if isValidMatlabAffine2D(At)
-        cand{end+1} = At; %#ok<AGROW>
-        label{end+1} = 'transpose saved matrix, column-vector source -> atlas'; %#ok<AGROW>
-        key{end+1} = 'col_saved_transpose'; %#ok<AGROW>
-
-        if abs(det(At(1:2,1:2))) > eps
-            Ati = inv(At);
-            if isValidMatlabAffine2D(Ati)
-                cand{end+1} = Ati; %#ok<AGROW>
-                label{end+1} = 'inverse transpose, column-vector atlas -> source'; %#ok<AGROW>
-                key{end+1} = 'col_inverse_transpose'; %#ok<AGROW>
-            end
-        end
-    end
-
-    if isempty(cand)
-        error(['No valid affine2d matrix could be made from saved A.' newline ...
-               'This means A is not in a valid 2D affine format.']);
-    end
-
-    % Strong default:
-    % If raw is invalid but transpose is valid, use transpose.
-    useIdx = 1;
-    if ~isValidMatlabAffine2D(Araw) && isValidMatlabAffine2D(At)
-        hit = find(strcmp(key, 'col_saved_transpose'), 1);
-        if ~isempty(hit), useIdx = hit; end
-    end
-
-    % Optional override stored in T.
-    try
-        if isfield(T,'scmAffineChoice') && ~isempty(T.scmAffineChoice)
-            hit = find(strcmp(key, char(T.scmAffineChoice)), 1);
-            if ~isempty(hit), useIdx = hit; end
-        end
-    catch
-    end
-
-    Ause = cand{useIdx};
-
-    try
-        fprintf('\n[SCM affine2d] Using %s\n', label{useIdx});
-        fprintf('[SCM affine2d] Raw saved A:\n');
-        disp(Araw);
-        fprintf('[SCM affine2d] MATLAB affine2d Ause:\n');
-        disp(Ause);
-    catch
-    end
-end
-
-
-function tf = isValidMatlabAffine2D(A)
-    tf = false;
-    try
-        A = double(A);
-        if ~isequal(size(A), [3 3]), return; end
-        if any(~isfinite(A(:))), return; end
-
-        % affine2d requires third column [0;0;1]
-        tf = norm(A(:,3) - [0;0;1]) < 1e-8;
-    catch
-        tf = false;
-    end
-end
 function T = extractAtlasWarpStruct(S)
     if isfield(S,'Transf') && isstruct(S.Transf)
         T = S.Transf;
@@ -3563,68 +3337,26 @@ function Y = warpFunctionalSeriesToAtlas(X, T)
         return;
     end
     if isequal(size(A), [3 3])
-    if isempty(T.outSize) || numel(T.outSize) < 2
-        error('2D atlas warp requires output size.');
-    end
-
-    outSize2 = round(double(T.outSize(1:2)));
-    if any(outSize2 < 1)
-        error('Invalid 2D output size.');
-    end
-
-    Ause = apply2DWarpDirectionToMatrix(A, T);
-    tform2 = affine2d(Ause);
-    Rout2 = imref2d(outSize2);
-
-    if ndims(X) == 3
-        X2 = X;
-        zSel = 1;
-
-        X2 = prepareFunctionalSliceForReg2D(X2, T, zSel);
-
-        nTT = size(X2,3);
-        Y = zeros([outSize2 nTT], 'single');
-
-        for tt = 1:nTT
-            Y(:,:,tt) = imwarp(single(X2(:,:,tt)), ...
-                tform2, 'linear', 'OutputView', Rout2);
-        end
-        return;
-
-    elseif ndims(X) == 4
-        if isfield(T,'sourceSliceIndex') && ~isempty(T.sourceSliceIndex) && isfinite(T.sourceSliceIndex)
-            zSel = round(T.sourceSliceIndex);
-        elseif isfield(T,'sourceSlice') && ~isempty(T.sourceSlice) && isfinite(T.sourceSlice)
-            zSel = round(T.sourceSlice);
+        if isempty(T.outSize) || numel(T.outSize) < 2, error('2D atlas warp requires output size.'); end
+        outSize2 = round(T.outSize(1:2)); if any(outSize2 < 1), error('Invalid 2D output size.'); end
+        tform2 = affine2d(A); Rout2 = imref2d(outSize2);
+        if ndims(X) == 3
+            nTT = size(X,3); Y = zeros([outSize2 nTT], 'single');
+            for tt = 1:nTT, Y(:,:,tt) = imwarp(single(X(:,:,tt)), tform2, 'linear', 'OutputView', Rout2); end
+            return;
+        elseif ndims(X) == 4
+            if isfield(T,'sourceSliceIndex') && ~isempty(T.sourceSliceIndex) && isfinite(T.sourceSliceIndex), zSel = round(T.sourceSliceIndex);
+            elseif isfield(T,'sourceSlice') && ~isempty(T.sourceSlice) && isfinite(T.sourceSlice), zSel = round(T.sourceSlice);
+            else, zSel = state.z; end
+            zSel = max(1,min(size(X,3),zSel)); X2 = squeeze(X(:,:,zSel,:)); nTT = size(X2,3);
+            Y = zeros([outSize2 nTT], 'single');
+            for tt = 1:nTT, Y(:,:,tt) = imwarp(single(X2(:,:,tt)), tform2, 'linear', 'OutputView', Rout2); end
+            try, set(info1,'String',sprintf('Applied 2D coronal atlas warp using source slice %d. SCM now displays one atlas slice.', zSel)); catch, end
+            return;
         else
-            zSel = state.z;
+            error('For 2D atlas warp, PSC must be [Y X T] or [Y X Z T].');
         end
-
-        zSel = max(1,min(size(X,3),zSel));
-        X2 = squeeze(X(:,:,zSel,:));
-
-        X2 = prepareFunctionalSliceForReg2D(X2, T, zSel);
-
-        nTT = size(X2,3);
-        Y = zeros([outSize2 nTT], 'single');
-
-        for tt = 1:nTT
-            Y(:,:,tt) = imwarp(single(X2(:,:,tt)), ...
-                tform2, 'linear', 'OutputView', Rout2);
-        end
-
-        try
-            set(info1,'String',sprintf( ...
-                'Applied 2D atlas warp: source slice %d -> atlas slice %d | output [%d %d]', ...
-                zSel, round(T.atlasSliceIndex), outSize2(1), outSize2(2)));
-        catch
-        end
-
-        return;
-    else
-        error('For 2D atlas warp, PSC must be [Y X T] or [Y X Z T].');
     end
-end
     error('Unsupported transform matrix size: %dx%d', size(A,1), size(A,2));
 end
 
@@ -3715,22 +3447,24 @@ function [Y, report] = warpFunctionalSeriesToAtlasStepMotor(X, regList)
         end
 
         zSrc = regList(rr).sourceIdx;
-A = apply2DWarpDirectionToMatrix(A, T);
+
         tform2 = affine2d(A);
         Rout2 = imref2d(outSize2);
 
-      if ndims(X) == 3
-    X2 = X;
-else
-    X2 = squeeze(X(:,:,zSrc,:));
-end
+        if ndims(X) == 3
+            X2 = X;
+        else
+            X2 = squeeze(X(:,:,zSrc,:));
+        end
 
-X2 = prepareFunctionalSliceForReg2D(X2, T, zSrc);
+        if ndims(X2) == 2
+            X2 = reshape(X2, size(X2,1), size(X2,2), 1);
+        end
 
-for tt = 1:nTT
-    Y(:,:,rr,tt) = imwarp(single(X2(:,:,tt)), ...
-        tform2, 'linear', 'OutputView', Rout2);
-end
+        for tt = 1:nTT
+            Y(:,:,rr,tt) = imwarp(single(X2(:,:,tt)), ...
+                tform2, 'linear', 'OutputView', Rout2);
+        end
     end
 
     report.nUsed = nUse;
@@ -4016,7 +3750,7 @@ function startPath = getStepMotorTransformStartPath()
 end
 
 
-function tf = underlayMatchesTargetDims(U, yy, xx, zz)
+ffunction tf = underlayMatchesTargetDims(U, yy, xx, zz)
 
     tf = false;
 
@@ -4148,7 +3882,7 @@ function setTitleAtlasStepMotor(report)
 end
 
 
-function [Uatlas, msg] = buildStepMotorAtlasUnderlay(origUnderlay, currentUnderlay, regList, report, Xnative, Xatlas)
+ffunction [Uatlas, msg] = buildStepMotorAtlasUnderlay(origUnderlay, currentUnderlay, regList, report, Xnative, Xatlas)
 
     Uatlas = [];
     msg = 'none';
@@ -4588,48 +4322,7 @@ function forceStepMotorAtlasGrayUnderlay()
     end
 end
 
-function X2 = prepareFunctionalSliceForReg2D(X2, T, zSrc)
-    % Ensure functional slice matches the source image used during registration.
-    % Your metadata says sourceSize = [267 256].
-    % If PSC slice is [256 267], SCM is using transposed orientation.
 
-    if ndims(X2) == 2
-        X2 = reshape(X2, size(X2,1), size(X2,2), 1);
-    end
-
-    if ~isfield(T,'sourceSize') || isempty(T.sourceSize) || numel(T.sourceSize) < 2
-        return;
-    end
-
-    srcSize = round(double(T.sourceSize(1:2)));
-    thisSize = [size(X2,1) size(X2,2)];
-
-    if isequal(thisSize, srcSize)
-        return;
-    end
-
-    if isequal(thisSize, fliplr(srcSize))
-        choice = questdlg(sprintf([ ...
-            'Functional source slice %d has size [%d %d], but the transform was made for [%d %d].\n\n' ...
-            'This means X/Y are probably transposed between PSC and the registration source image.\n\n' ...
-            'Transpose functional frames before warping?'], ...
-            zSrc, thisSize(1), thisSize(2), srcSize(1), srcSize(2)), ...
-            'SCM source-size mismatch', ...
-            'Transpose frames', 'Cancel', 'Transpose frames');
-
-        if isempty(choice) || strcmpi(choice,'Cancel')
-            error('Atlas warp cancelled because PSC size does not match transform sourceSize.');
-        end
-
-        X2 = permute(X2, [2 1 3]);
-        return;
-    end
-
-    error(['Functional source slice %d has size [%d %d], but transform sourceSize is [%d %d].' newline ...
-           'Do not resize here. The registration was made on a different source image.' newline ...
-           'Register the exact SCM/PSC native underlay or fix the MaskEditor source dimensions.'], ...
-           zSrc, thisSize(1), thisSize(2), srcSize(1), srcSize(2));
-end
 function [Ustack, ok] = prepareNativeUnderlayStackForStepMotor(Uin, Xnative)
 
     Ustack = [];
@@ -4772,7 +4465,7 @@ function Uatlas = warpNativeUnderlayStackToAtlasStepMotor(Ustack, usedRegList, r
 
         zSrc = usedRegList(rr).sourceIdx;
         zSrc = max(1, min(size(Ustack,3), round(zSrc)));
-A = apply2DWarpDirectionToMatrix(A, T);
+
         tform2 = affine2d(A);
         Rout2 = imref2d(outSize2);
 
