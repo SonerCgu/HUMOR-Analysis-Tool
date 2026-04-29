@@ -124,8 +124,20 @@ S.selectedRows = [];
 S.isClosing = false;
 S.lastROI = struct();
 S.lastMAP = struct();
+S.lastFC  = struct();
 S.lastMapDisplay = struct();   % currently visible map in Group Maps tab
 S.mode = 'ROI Timecourse';
+
+% Functional Connectivity group-analysis state
+S.FC = struct();
+S.FC.files = {};
+S.FC.subjects = struct([]);
+S.FC.loaded = false;
+
+S.fcDisplayValue = 'Pearson r';
+S.fcThreshold = 0;
+S.fcGroupA = 'PACAP';
+S.fcGroupB = 'Vehicle';
 
 S.groupList = {'PACAP','Vehicle','Control','GroupA','GroupB'};
 S.condList  = {'CondA','CondB','Baseline','Post'};
@@ -153,10 +165,12 @@ try
     S.cache.roiTC = containers.Map('KeyType','char','ValueType','any');
     S.cache.pscMap = containers.Map('KeyType','char','ValueType','any');
     S.cache.groupBundle = containers.Map('KeyType','char','ValueType','any');
+    S.cache.fcBundle = containers.Map('KeyType','char','ValueType','any');
 catch
     S.cache.roiTC = [];
     S.cache.pscMap = [];
     S.cache.groupBundle = [];
+    S.cache.fcBundle = [];
 end
 
 %%% ROI defaults
@@ -431,14 +445,17 @@ S.hAnalysisTitle = uicontrol(pRight,'Style','text','String','Analysis', ...
 S.hTabBar = uipanel(pRight,'Units','normalized','Position',[0.02 0.935 0.96 0.035], ...
     'BorderType','none','BackgroundColor',C.panel);
 
-S.hTabROI   = mkTabBtn(S.hTabBar,'ROI Timecourse',      [0.00  0.05 0.19 0.90],@(s,e) onTabClicked('ROI'));
-S.hTabMAP   = mkTabBtn(S.hTabBar,'Group Maps',          [0.205 0.05 0.15 0.90],@(s,e) onTabClicked('MAP'));
-S.hTabSTATS = mkTabBtn(S.hTabBar,'Statistics / Export', [0.370 0.05 0.23 0.90],@(s,e) onTabClicked('STATS'));
-S.hTabPREV  = mkTabBtn(S.hTabBar,'ROI Preview', [0.615 0.05 0.12 0.90],@(s,e) onTabClicked('PREV'));
+S.hTabROI   = mkTabBtn(S.hTabBar,'ROI Timecourse',      [0.000 0.05 0.175 0.90],@(s,e) onTabClicked('ROI'));
+S.hTabMAP   = mkTabBtn(S.hTabBar,'Group Maps',          [0.185 0.05 0.135 0.90],@(s,e) onTabClicked('MAP'));
+S.hTabFC    = mkTabBtn(S.hTabBar,'Functional Conn.',    [0.330 0.05 0.185 0.90],@(s,e) onTabClicked('FC'));
+S.hTabSTATS = mkTabBtn(S.hTabBar,'Statistics / Export', [0.525 0.05 0.225 0.90],@(s,e) onTabClicked('STATS'));
+S.hTabPREV  = mkTabBtn(S.hTabBar,'ROI Preview',         [0.760 0.05 0.130 0.90],@(s,e) onTabClicked('PREV'));
 
 S.tabROI   = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
     'BorderType','none','BackgroundColor',C.bg);
 S.tabMAP   = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
+    'BorderType','none','BackgroundColor',C.bg,'Visible','off');
+S.tabFC    = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
     'BorderType','none','BackgroundColor',C.bg,'Visible','off');
 S.tabSTATS = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90], ...
     'BorderType','none','BackgroundColor',C.bg,'Visible','off');
@@ -447,12 +464,83 @@ S.tabPREV  = uipanel(pRight,'Units','normalized','Position',[0.02 0.02 0.96 0.90
 
 pROIBG   = uipanel(S.tabROI,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
 pMAPBG   = uipanel(S.tabMAP,  'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
+pFCBG    = uipanel(S.tabFC,   'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
 pSTATSBG = uipanel(S.tabSTATS,'Units','normalized','Position',[0 0 1 1], 'BorderType','none','BackgroundColor',C.bg);
+bg2 = C.panel2;
+
+%%% =====================================================================
+%%% FUNCTIONAL CONNECTIVITY TAB
+%%% =====================================================================
+pFCTop = uipanel(pFCBG,'Units','normalized','Position',[0.02 0.875 0.96 0.115], ...
+    'Title','Functional Connectivity group analysis', ...
+    'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
+
+S.hFCLoad = mkBtn(pFCTop,'Load FC Bundles',[0.015 0.52 0.145 0.34],C.btnAction,@onLoadFCGroupBundles);
+S.hFCScan = mkBtn(pFCTop,'Scan Folder',[0.175 0.52 0.125 0.34],C.btnSecondary,@onScanFCGroupFolder);
+
+uicontrol(pFCTop,'Style','text','String','Group A:', ...
+    'Units','normalized','Position',[0.325 0.60 0.075 0.25], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hFCGroupA = uicontrol(pFCTop,'Style','popupmenu','String',S.groupList, ...
+    'Units','normalized','Position',[0.405 0.59 0.125 0.27], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w');
+
+uicontrol(pFCTop,'Style','text','String','Group B:', ...
+    'Units','normalized','Position',[0.545 0.60 0.075 0.25], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hFCGroupB = uicontrol(pFCTop,'Style','popupmenu','String',S.groupList, ...
+    'Units','normalized','Position',[0.625 0.59 0.125 0.27], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w');
+
+uicontrol(pFCTop,'Style','text','String','Display:', ...
+    'Units','normalized','Position',[0.765 0.60 0.065 0.25], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hFCDisplay = uicontrol(pFCTop,'Style','popupmenu','String',{'Pearson r','Fisher z'}, ...
+    'Units','normalized','Position',[0.835 0.59 0.145 0.27], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w');
+
+uicontrol(pFCTop,'Style','text','String','Abs threshold:', ...
+    'Units','normalized','Position',[0.325 0.16 0.120 0.25], ...
+    'BackgroundColor',bg2,'ForegroundColor','w', ...
+    'HorizontalAlignment','left','FontWeight','bold');
+
+S.hFCThreshold = uicontrol(pFCTop,'Style','edit','String','0', ...
+    'Units','normalized','Position',[0.450 0.14 0.080 0.28], ...
+    'BackgroundColor',C.editBg,'ForegroundColor','w');
+
+S.hFCCompute = mkBtn(pFCTop,'Compute Group FC',[0.560 0.10 0.170 0.36],C.btnPrimary,@onComputeGroupFC);
+S.hFCExport  = mkBtn(pFCTop,'Export FC Results',[0.750 0.10 0.170 0.36],C.btnAction,@onExportGroupFC);
+
+S.hFCInfo = uicontrol(pFCBG,'Style','text', ...
+    'String','Load FC_GroupBundle_*.mat files exported from FunctionalConnectivity.m.', ...
+    'Units','normalized','Position',[0.02 0.825 0.96 0.035], ...
+    'BackgroundColor',C.bg,'ForegroundColor',C.muted, ...
+    'HorizontalAlignment','left','FontName','Consolas','FontSize',10);
+
+pFCAx = uipanel(pFCBG,'Units','normalized','Position',[0.02 0.02 0.96 0.790], ...
+    'Title','FC matrices', ...
+    'BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
+
+S.axFCA = axes('Parent',pFCAx,'Units','normalized','Position',[0.060 0.565 0.365 0.360]);
+S.axFCB = axes('Parent',pFCAx,'Units','normalized','Position',[0.570 0.565 0.365 0.360]);
+S.axFCD = axes('Parent',pFCAx,'Units','normalized','Position',[0.060 0.090 0.365 0.360]);
+S.axFCP = axes('Parent',pFCAx,'Units','normalized','Position',[0.570 0.090 0.365 0.360]);
+
+fcNoData(S.axFCA,'Group A mean FC',C);
+fcNoData(S.axFCB,'Group B mean FC',C);
+fcNoData(S.axFCD,'Difference: A - B',C);
+fcNoData(S.axFCP,'p-value map',C);
 
 %%% =====================================================================
 %%% ROI TAB
 %%% =====================================================================
-bg2 = C.panel2;
+
 
 pROItop = uipanel(pROIBG,'Units','normalized','Position',[0.02 0.92 0.96 0.07], ...
     'Title','','BorderType','none','BackgroundColor',bg2,'ForegroundColor','w','FontWeight','bold');
@@ -2312,7 +2400,7 @@ S0.lastMAP = struct();
     S0 = guidata(hFig);
     tabName = upper(strtrimSafe(tabName));
 
-    switch tabName
+        switch tabName
         case 'ROI'
             S0.mode = 'ROI Timecourse';
             try, set(S0.hMode,'Value',1); catch, end
@@ -2326,6 +2414,15 @@ S0.lastMAP = struct();
             try, updateMapSideSummaryTable(); catch, end
             try, updateMapAlignmentLabel(); catch, end
 
+        case 'FC'
+            S0.mode = 'Functional Connectivity';
+            guidata(hFig,S0);
+
+            try
+                refreshFCGroupPopups();
+            catch
+            end
+
         case 'PREV'
             % ROI Preview should always show ROI results, not group maps
             S0.mode = 'ROI Timecourse';
@@ -2336,20 +2433,25 @@ S0.lastMAP = struct();
             S0.mode = 'ROI Timecourse';
             try, set(S0.hMode,'Value',1); catch, end
     end
-
     S0.activeTab = tabName;
     guidata(hFig,S0);
     updateManualTabs();
 
-    if strcmpi(tabName,'PREV')
+      if strcmpi(tabName,'PREV')
         if isfield(S0,'lastROI') && ~isempty(fieldnames(S0.lastROI))
             updatePreview();
         else
             clearPreview();
         end
+
     elseif strcmpi(tabName,'MAP')
         if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
             updateMapTabPreview();
+        end
+
+    elseif strcmpi(tabName,'FC')
+        if isfield(S0,'lastFC') && ~isempty(fieldnames(S0.lastFC))
+            updateFCTabPreview();
         end
     end
 end
@@ -2357,20 +2459,22 @@ end
     function updateManualTabs()
         S0 = guidata(hFig);
 
-        set(S0.tabROI,'Visible','off');
+           set(S0.tabROI,'Visible','off');
         set(S0.tabMAP,'Visible','off');
+        set(S0.tabFC,'Visible','off');
         set(S0.tabSTATS,'Visible','off');
         set(S0.tabPREV,'Visible','off');
 
         tabOff = [0.18 0.18 0.18];
         tabOn  = [0.34 0.34 0.34];
 
-        set(S0.hTabROI,  'BackgroundColor',tabOff,'ForegroundColor','w');
+              set(S0.hTabROI,  'BackgroundColor',tabOff,'ForegroundColor','w');
         set(S0.hTabMAP,  'BackgroundColor',tabOff,'ForegroundColor','w');
+        set(S0.hTabFC,   'BackgroundColor',tabOff,'ForegroundColor','w');
         set(S0.hTabSTATS,'BackgroundColor',tabOff,'ForegroundColor','w');
         set(S0.hTabPREV, 'BackgroundColor',tabOff,'ForegroundColor','w');
 
-        switch upper(S0.activeTab)
+                switch upper(S0.activeTab)
             case 'ROI'
                 set(S0.tabROI,'Visible','on');
                 set(S0.hTabROI,'BackgroundColor',tabOn);
@@ -2378,6 +2482,10 @@ end
             case 'MAP'
                 set(S0.tabMAP,'Visible','on');
                 set(S0.hTabMAP,'BackgroundColor',tabOn);
+
+            case 'FC'
+                set(S0.tabFC,'Visible','on');
+                set(S0.hTabFC,'BackgroundColor',tabOn);
 
             case 'STATS'
                 set(S0.tabSTATS,'Visible','on');
@@ -3476,6 +3584,309 @@ end
             catch
             end
         end
+    end
+%%% =====================================================================
+%%% FUNCTIONAL CONNECTIVITY CALLBACKS
+%%% =====================================================================
+
+    function onLoadFCGroupBundles(~,~)
+        S0 = guidata(hFig);
+
+        startPath = getSmartBrowseDir(S0,'add');
+        if exist(fullfile(startPath,'Connectivity','GroupBundles'),'dir') == 7
+            startPath = fullfile(startPath,'Connectivity','GroupBundles');
+        elseif exist(fullfile(S0.outDir,'Connectivity','GroupBundles'),'dir') == 7
+            startPath = fullfile(S0.outDir,'Connectivity','GroupBundles');
+        end
+
+        [f,p] = uigetfile({'FC_GroupBundle_*.mat;*.mat','FC group bundles (*.mat)'}, ...
+            'Select FC_GroupBundle MAT files', ...
+            startPath, ...
+            'MultiSelect','on');
+
+        if isequal(f,0)
+            return;
+        end
+
+        if ischar(f)
+            f = {f};
+        end
+
+        fileList = cell(numel(f),1);
+        for ii = 1:numel(f)
+            fileList{ii} = fullfile(p,f{ii});
+        end
+
+        loadFCFileListIntoState(fileList);
+    end
+
+    function onScanFCGroupFolder(~,~)
+        S0 = guidata(hFig);
+
+        startPath = getSmartBrowseDir(S0,'add');
+        rootDir = uigetdir(startPath,'Select folder to scan for FC_GroupBundle_*.mat');
+
+        if isequal(rootDir,0)
+            return;
+        end
+
+        fileList = findFCBundlesRecursive(rootDir);
+
+        if isempty(fileList)
+            errordlg('No FC_GroupBundle_*.mat files found in the selected folder.','Functional Connectivity');
+            return;
+        end
+
+        loadFCFileListIntoState(fileList);
+    end
+
+    function loadFCFileListIntoState(fileList)
+        S0 = guidata(hFig);
+
+        if isempty(fileList)
+            return;
+        end
+
+        setStatus(false);
+        setStatusText('Loading Functional Connectivity group bundles...');
+        drawnow;
+
+        try
+            [FC, cacheOut] = loadFCGroupBundlesFromFiles(fileList, S0.cache);
+
+            if FC.nSubjects < 1
+                error('No valid subjects with ROI FC matrices were found in the selected FC bundles.');
+            end
+
+            S0.cache = cacheOut;
+            S0.FC = FC;
+            S0.FC.loaded = true;
+            S0.lastFC = struct();
+            S0.activeTab = 'FC';
+            S0.mode = 'Functional Connectivity';
+
+            guidata(hFig,S0);
+
+            refreshFCGroupPopups();
+            updateManualTabs();
+
+            fcNoData(S0.axFCA,'Group A mean FC',S0.C);
+            fcNoData(S0.axFCB,'Group B mean FC',S0.C);
+            fcNoData(S0.axFCD,'Difference: A - B',S0.C);
+            fcNoData(S0.axFCP,'p-value map',S0.C);
+
+            set(S0.hFCInfo,'String',sprintf('Loaded %d FC subject(s) from %d bundle file(s). Choose groups and click Compute Group FC.', ...
+                FC.nSubjects, numel(fileList)));
+
+        catch ME
+            errordlg(ME.message,'Load FC bundles');
+            setStatusText(['FC loading failed: ' ME.message]);
+        end
+
+        setStatus(true);
+    end
+
+    function refreshFCGroupPopups()
+        S0 = guidata(hFig);
+
+        groups = S0.groupList;
+
+        if isfield(S0,'FC') && isfield(S0.FC,'subjects') && ~isempty(S0.FC.subjects)
+            g2 = cell(numel(S0.FC.subjects),1);
+            for ii = 1:numel(S0.FC.subjects)
+                g2{ii} = strtrimSafe(S0.FC.subjects(ii).group);
+                if isempty(g2{ii})
+                    g2{ii} = 'Unassigned';
+                end
+            end
+            groups = mergeUniqueStable(groups, uniqueStable(g2));
+        end
+
+        if isempty(groups)
+            groups = {'PACAP','Vehicle'};
+        end
+
+        try
+            oldA = getSelectedPopupString(S0.hFCGroupA);
+            oldB = getSelectedPopupString(S0.hFCGroupB);
+        catch
+            oldA = '';
+            oldB = '';
+        end
+
+        set(S0.hFCGroupA,'String',groups);
+        set(S0.hFCGroupB,'String',groups);
+
+        if ~isempty(oldA)
+            setPopupToString(S0.hFCGroupA, oldA);
+        elseif any(strcmpi(groups,'PACAP'))
+            setPopupToString(S0.hFCGroupA, 'PACAP');
+        else
+            set(S0.hFCGroupA,'Value',1);
+        end
+
+        if ~isempty(oldB)
+            setPopupToString(S0.hFCGroupB, oldB);
+        elseif any(strcmpi(groups,'Vehicle'))
+            setPopupToString(S0.hFCGroupB, 'Vehicle');
+        elseif numel(groups) >= 2
+            set(S0.hFCGroupB,'Value',2);
+        else
+            set(S0.hFCGroupB,'Value',1);
+        end
+    end
+
+    function onComputeGroupFC(~,~)
+        S0 = guidata(hFig);
+
+        if ~isfield(S0,'FC') || ~isfield(S0.FC,'loaded') || ~S0.FC.loaded
+            errordlg('Load FC_GroupBundle files first.','Functional Connectivity');
+            return;
+        end
+
+        groupA = getSelectedPopupString(S0.hFCGroupA);
+        groupB = getSelectedPopupString(S0.hFCGroupB);
+
+        if isempty(groupA) || isempty(groupB)
+            errordlg('Choose Group A and Group B first.','Functional Connectivity');
+            return;
+        end
+
+        if strcmpi(groupA,groupB)
+            errordlg('Group A and Group B must be different.','Functional Connectivity');
+            return;
+        end
+
+        thr = safeNum(get(S0.hFCThreshold,'String'),0);
+        if ~isfinite(thr) || thr < 0
+            thr = 0;
+        end
+        S0.fcThreshold = thr;
+        set(S0.hFCThreshold,'String',num2str(thr));
+
+        dispItems = get(S0.hFCDisplay,'String');
+        S0.fcDisplayValue = dispItems{get(S0.hFCDisplay,'Value')};
+
+        setStatus(false);
+        setStatusText('Computing group Functional Connectivity...');
+        drawnow;
+
+        try
+            G = alignFCSubjectsToCommonROIs(S0.FC);
+            R = computeGroupFCStats(G, groupA, groupB);
+
+            S0.lastFC = R;
+            S0.mode = 'Functional Connectivity';
+            S0.activeTab = 'FC';
+
+            guidata(hFig,S0);
+            updateManualTabs();
+            updateFCTabPreview();
+
+            set(S0.hFCInfo,'String',sprintf('Computed FC: %s n=%d, %s n=%d, common ROIs=%d. Stats are on Fisher z.', ...
+                groupA, R.nA, groupB, R.nB, numel(R.labels)));
+
+            setStatusText('Functional Connectivity group analysis complete.');
+
+        catch ME
+            errordlg(ME.message,'Functional Connectivity');
+            setStatusText(['FC analysis failed: ' ME.message]);
+        end
+
+        setStatus(true);
+    end
+
+    function updateFCTabPreview()
+        S0 = guidata(hFig);
+
+        if ~isfield(S0,'lastFC') || isempty(fieldnames(S0.lastFC))
+            return;
+        end
+
+        R = S0.lastFC;
+
+        thr = safeNum(get(S0.hFCThreshold,'String'), S0.fcThreshold);
+        if ~isfinite(thr) || thr < 0
+            thr = 0;
+        end
+
+        dispItems = get(S0.hFCDisplay,'String');
+        dispMode = dispItems{get(S0.hFCDisplay,'Value')};
+
+        if strcmpi(dispMode,'Fisher z')
+            A = R.meanZA;
+            B = R.meanZB;
+            D = R.diffZ;
+            climMain = [-2.5 2.5];
+            climDiff = [-1.0 1.0];
+            valTxt = 'Fisher z';
+        else
+            A = R.meanRA;
+            B = R.meanRB;
+            D = R.diffR;
+            climMain = [-1 1];
+            climDiff = [-1 1];
+            valTxt = 'Pearson r';
+        end
+
+        if thr > 0
+            A(abs(A) < thr) = 0;
+            B(abs(B) < thr) = 0;
+            D(abs(D) < thr) = 0;
+        end
+
+        fcPlotMatrix(S0.axFCA,A,climMain,['Mean FC: ' R.groupA ' (' valTxt ')'],R.names,S0.C);
+        fcPlotMatrix(S0.axFCB,B,climMain,['Mean FC: ' R.groupB ' (' valTxt ')'],R.names,S0.C);
+        fcPlotMatrix(S0.axFCD,D,climDiff,[R.groupA ' - ' R.groupB],R.names,S0.C);
+        fcPlotPMatrix(S0.axFCP,R.pMat,['p-values: ' R.groupA ' vs ' R.groupB],R.names,S0.C);
+    end
+
+    function onExportGroupFC(~,~)
+        S0 = guidata(hFig);
+
+        if ~isfield(S0,'lastFC') || isempty(fieldnames(S0.lastFC))
+            errordlg('Compute group FC first.','Functional Connectivity export');
+            return;
+        end
+
+        startDir = getAnalysedBrowseDir(S0);
+        outDir = fullfile(startDir,'GroupAnalysis','FunctionalConnectivity');
+
+        if exist(outDir,'dir') ~= 7
+            mkdir(outDir);
+        end
+
+        tag = datestr(now,'yyyymmdd_HHMMSS');
+
+        setStatus(false);
+        setStatusText('Exporting Functional Connectivity results...');
+        drawnow;
+
+        try
+            R = S0.lastFC;
+
+            matFile = fullfile(outDir,['GroupFC_' tag '.mat']);
+            save(matFile,'R','-v7.3');
+
+            writeFCMatrixCSV(fullfile(outDir,['GroupFC_meanR_' sanitizeFilename(R.groupA) '_' tag '.csv']),R.meanRA,R.names);
+            writeFCMatrixCSV(fullfile(outDir,['GroupFC_meanR_' sanitizeFilename(R.groupB) '_' tag '.csv']),R.meanRB,R.names);
+            writeFCMatrixCSV(fullfile(outDir,['GroupFC_diffR_' sanitizeFilename(R.groupA) '_minus_' sanitizeFilename(R.groupB) '_' tag '.csv']),R.diffR,R.names);
+            writeFCMatrixCSV(fullfile(outDir,['GroupFC_pvalues_' sanitizeFilename(R.groupA) '_vs_' sanitizeFilename(R.groupB) '_' tag '.csv']),R.pMat,R.names);
+
+            saveFCAxisPNG(S0.axFCA,fullfile(outDir,['GroupFC_mean_' sanitizeFilename(R.groupA) '_' tag '.png']),S0.C);
+            saveFCAxisPNG(S0.axFCB,fullfile(outDir,['GroupFC_mean_' sanitizeFilename(R.groupB) '_' tag '.png']),S0.C);
+            saveFCAxisPNG(S0.axFCD,fullfile(outDir,['GroupFC_diff_' sanitizeFilename(R.groupA) '_minus_' sanitizeFilename(R.groupB) '_' tag '.png']),S0.C);
+            saveFCAxisPNG(S0.axFCP,fullfile(outDir,['GroupFC_pvalues_' sanitizeFilename(R.groupA) '_vs_' sanitizeFilename(R.groupB) '_' tag '.png']),S0.C);
+
+            set(S0.hFCInfo,'String',['Exported FC results to: ' outDir]);
+            setStatusText(['Functional Connectivity exported: ' outDir]);
+
+        catch ME
+            errordlg(ME.message,'Functional Connectivity export');
+            setStatusText(['FC export failed: ' ME.message]);
+        end
+
+        setStatus(true);
     end
 
 
@@ -4755,7 +5166,14 @@ end
     syncSubjFromTable();
     S0 = guidata(hFig);
 
-    runTab = upper(strtrimSafe(S0.activeTab));
+      runTab = upper(strtrimSafe(S0.activeTab));
+
+    % Functional Connectivity tab has its own loader and does not require
+    % the ROI / SCM subject table to be populated.
+    if strcmpi(runTab,'FC')
+        onComputeGroupFC([],[]);
+        return;
+    end
 
     if isempty(S0.subj)
         errordlg('Add subject files first.','Group Analysis');
@@ -5042,12 +5460,15 @@ end
         errordlg(ME.message,'Group Analysis');
     end
 
-    setStatus(true);
+        setStatus(true);
   end
 
   function onExport(~,~)
     S0 = guidata(hFig);
-
+    if isfield(S0,'activeTab') && strcmpi(S0.activeTab,'FC')
+        onExportGroupFC([],[]);
+        return;
+    end
     R = struct();
     if strcmpi(S0.mode,'Group Maps')
         if isfield(S0,'lastMAP') && ~isempty(fieldnames(S0.lastMAP))
@@ -11714,6 +12135,555 @@ function s = mapAlignmentShortTitle(S)
             s = '';
     end
 end
+end
+%%% =====================================================================
+%%% FUNCTIONAL CONNECTIVITY HELPERS
+%%% =====================================================================
+
+function fileList = findFCBundlesRecursive(rootDir)
+fileList = {};
+
+if nargin < 1 || isempty(rootDir) || exist(rootDir,'dir') ~= 7
+    return;
+end
+
+d = dir(fullfile(rootDir,'FC_GroupBundle_*.mat'));
+for i = 1:numel(d)
+    fileList{end+1,1} = fullfile(d(i).folder,d(i).name); %#ok<AGROW>
+end
+
+sub = dir(rootDir);
+for i = 1:numel(sub)
+    if ~sub(i).isdir
+        continue;
+    end
+
+    nm = sub(i).name;
+    if strcmp(nm,'.') || strcmp(nm,'..')
+        continue;
+    end
+
+    more = findFCBundlesRecursive(fullfile(rootDir,nm));
+    if ~isempty(more)
+        fileList = [fileList; more(:)]; %#ok<AGROW>
+    end
+end
+end
+
+function tf = isFCGroupBundleFile(fp)
+tf = false;
+
+if nargin < 1 || isempty(fp) || exist(fp,'file') ~= 2
+    return;
+end
+
+try
+    info = whos('-file',fp);
+    vars = {info.name};
+    if any(strcmp(vars,'fcBundle'))
+        tf = true;
+        return;
+    end
+catch
+end
+
+[~,nm,ext] = fileparts(fp);
+if strcmpi(ext,'.mat') && ~isempty(regexpi(nm,'^FC_GroupBundle_','once'))
+    tf = true;
+end
+end
+
+function [B, cache] = getCachedFCBundle(cache, fp)
+key = makeCacheKey('FCBUNDLE',fp);
+
+if isstruct(cache) && isfield(cache,'fcBundle') && isa(cache.fcBundle,'containers.Map')
+    try
+        if isKey(cache.fcBundle,key)
+            B = cache.fcBundle(key);
+            return;
+        end
+    catch
+    end
+end
+
+L = load(fp);
+
+if isfield(L,'fcBundle')
+    B = L.fcBundle;
+else
+    error('File does not contain variable fcBundle: %s', fp);
+end
+
+if ~isstruct(B) || ~isfield(B,'subjects')
+    error('Invalid FC group bundle: %s', fp);
+end
+
+if isstruct(cache) && isfield(cache,'fcBundle') && isa(cache.fcBundle,'containers.Map')
+    try
+        cache.fcBundle(key) = B;
+    catch
+    end
+end
+end
+
+function [FC, cache] = loadFCGroupBundlesFromFiles(fileList, cache)
+FC = struct();
+FC.files = fileList(:);
+FC.subjects = struct([]);
+FC.nSubjects = 0;
+
+idx = 0;
+
+for i = 1:numel(fileList)
+    fp = fileList{i};
+
+    if ~isFCGroupBundleFile(fp)
+        continue;
+    end
+
+    [B, cache] = getCachedFCBundle(cache, fp);
+
+    for j = 1:numel(B.subjects)
+        subj = B.subjects(j);
+
+        if ~isfield(subj,'labels') || isempty(subj.labels)
+            continue;
+        end
+
+        if ~isfield(subj,'R') || isempty(subj.R)
+            continue;
+        end
+
+        idx = idx + 1;
+
+        FC.subjects(idx).sourceFile = fp;
+
+        if isfield(subj,'name') && ~isempty(subj.name)
+            FC.subjects(idx).name = strtrimSafe(subj.name);
+        else
+            FC.subjects(idx).name = sprintf('FC_Subject_%02d',idx);
+        end
+
+        if isfield(subj,'group') && ~isempty(subj.group)
+            FC.subjects(idx).group = strtrimSafe(subj.group);
+        else
+            FC.subjects(idx).group = inferFCGroupFromText([FC.subjects(idx).name ' ' fp]);
+        end
+
+        if isempty(FC.subjects(idx).group) || strcmpi(FC.subjects(idx).group,'All')
+            FC.subjects(idx).group = inferFCGroupFromText([FC.subjects(idx).name ' ' fp]);
+        end
+
+        FC.subjects(idx).labels = double(subj.labels(:));
+
+        if isfield(subj,'names') && ~isempty(subj.names)
+            FC.subjects(idx).names = subj.names(:);
+        else
+            FC.subjects(idx).names = makeDefaultFCNames(FC.subjects(idx).labels);
+        end
+
+        FC.subjects(idx).R = double(subj.R);
+
+        if isfield(subj,'Z') && ~isempty(subj.Z)
+            FC.subjects(idx).Z = double(subj.Z);
+        else
+            Rtmp = double(subj.R);
+            Rtmp = max(-0.999999,min(0.999999,Rtmp));
+            Ztmp = atanh(Rtmp);
+            Ztmp(1:size(Ztmp,1)+1:end) = 0;
+            FC.subjects(idx).Z = Ztmp;
+        end
+    end
+end
+
+FC.nSubjects = idx;
+end
+
+function names = makeDefaultFCNames(labels)
+names = cell(numel(labels),1);
+for i = 1:numel(labels)
+    names{i} = sprintf('ROI_%g',labels(i));
+end
+end
+
+function g = inferFCGroupFromText(txt)
+g = 'Unassigned';
+
+u = upper(strtrimSafe(txt));
+
+if contains(u,'PACAP') || contains(u,'GROUPA') || contains(u,'CONDA')
+    g = 'PACAP';
+elseif contains(u,'VEHICLE') || contains(u,'VEH') || contains(u,'CONTROL') || contains(u,'GROUPB') || contains(u,'CONDB')
+    g = 'Vehicle';
+end
+end
+
+function G = alignFCSubjectsToCommonROIs(FC)
+if ~isfield(FC,'subjects') || isempty(FC.subjects)
+    error('No FC subjects loaded.');
+end
+
+nSub = numel(FC.subjects);
+
+commonLabels = FC.subjects(1).labels(:);
+
+for i = 2:nSub
+    commonLabels = intersect(commonLabels,FC.subjects(i).labels(:));
+end
+
+commonLabels = sort(commonLabels(:));
+
+if isempty(commonLabels)
+    error('No common ROI labels found across FC subjects.');
+end
+
+nR = numel(commonLabels);
+Zstack = nan(nR,nR,nSub);
+Rstack = nan(nR,nR,nSub);
+names = cell(nR,1);
+
+for i = 1:nSub
+    labs = FC.subjects(i).labels(:);
+
+    idx = nan(nR,1);
+    for k = 1:nR
+        hit = find(double(labs) == double(commonLabels(k)),1,'first');
+        if ~isempty(hit)
+            idx(k) = hit;
+        end
+    end
+
+    if any(~isfinite(idx))
+        error('Internal FC ROI alignment error.');
+    end
+
+    idx = double(idx(:));
+
+    Zstack(:,:,i) = FC.subjects(i).Z(idx,idx);
+    Rstack(:,:,i) = FC.subjects(i).R(idx,idx);
+
+    if i == 1
+        for k = 1:nR
+            srcIdx = idx(k);
+            if srcIdx <= numel(FC.subjects(i).names)
+                names{k} = strtrimSafe(FC.subjects(i).names{srcIdx});
+            else
+                names{k} = sprintf('ROI_%g',commonLabels(k));
+            end
+        end
+    end
+end
+
+G = struct();
+G.labels = commonLabels;
+G.names = names;
+G.Zstack = Zstack;
+G.Rstack = Rstack;
+G.nSubjects = nSub;
+
+G.subjectNames = cell(nSub,1);
+G.groups = cell(nSub,1);
+G.sourceFiles = cell(nSub,1);
+
+for i = 1:nSub
+    G.subjectNames{i} = FC.subjects(i).name;
+    G.groups{i} = FC.subjects(i).group;
+    G.sourceFiles{i} = FC.subjects(i).sourceFile;
+end
+end
+
+function R = computeGroupFCStats(G, groupA, groupB)
+idxA = strcmpi(G.groups,groupA);
+idxB = strcmpi(G.groups,groupB);
+
+if ~any(idxA)
+    error(['No FC subjects found for Group A: ' groupA]);
+end
+
+if ~any(idxB)
+    error(['No FC subjects found for Group B: ' groupB]);
+end
+
+ZA = G.Zstack(:,:,idxA);
+ZB = G.Zstack(:,:,idxB);
+
+meanZA = fcNanMean3(ZA);
+meanZB = fcNanMean3(ZB);
+
+diffZ = meanZA - meanZB;
+
+[nR,~,~] = size(G.Zstack);
+pMat = nan(nR,nR);
+tMat = nan(nR,nR);
+
+for r = 1:nR
+    for c = 1:nR
+        a = squeeze(ZA(r,c,:));
+        b = squeeze(ZB(r,c,:));
+
+        a = a(isfinite(a));
+        b = b(isfinite(b));
+
+        if numel(a) >= 2 && numel(b) >= 2
+            [t,p,~] = welchT_vec(a,b);
+            tMat(r,c) = t;
+            pMat(r,c) = p;
+        end
+    end
+end
+
+R = struct();
+R.mode = 'Functional Connectivity';
+R.groupA = groupA;
+R.groupB = groupB;
+R.nA = sum(idxA);
+R.nB = sum(idxB);
+
+R.labels = G.labels;
+R.names = G.names;
+
+R.meanZA = meanZA;
+R.meanZB = meanZB;
+R.meanRA = tanh(meanZA);
+R.meanRB = tanh(meanZB);
+
+R.diffZ = diffZ;
+R.diffR = tanh(meanZA) - tanh(meanZB);
+
+R.pMat = pMat;
+R.tMat = tMat;
+
+R.subjectNames = G.subjectNames;
+R.groups = G.groups;
+R.sourceFiles = G.sourceFiles;
+R.note = 'Statistics are computed on Fisher z. Pearson r matrices are tanh(mean z) for display.';
+end
+
+function M = fcNanMean3(X)
+[n1,n2,~] = size(X);
+M = nan(n1,n2);
+
+for r = 1:n1
+    for c = 1:n2
+        v = squeeze(X(r,c,:));
+        v = v(isfinite(v));
+        if ~isempty(v)
+            M(r,c) = mean(v);
+        end
+    end
+end
+end
+
+function fcNoData(ax,titleStr,C)
+cla(ax);
+
+text(ax,0.5,0.5,'No data', ...
+    'HorizontalAlignment','center', ...
+    'VerticalAlignment','middle', ...
+    'Color',C.txt, ...
+    'FontName','Arial', ...
+    'FontSize',12, ...
+    'FontWeight','bold');
+
+set(ax,'Color',C.axisBg, ...
+    'XColor',C.muted, ...
+    'YColor',C.muted, ...
+    'XTick',[], ...
+    'YTick',[]);
+
+title(ax,titleStr,'Color',C.txt,'FontWeight','bold','Interpreter','none');
+end
+
+function fcPlotMatrix(ax,M,climVal,titleStr,names,C)
+cla(ax);
+
+if isempty(M)
+    fcNoData(ax,titleStr,C);
+    return;
+end
+
+imagesc(ax,M);
+axis(ax,'image');
+caxis(ax,climVal);
+colormap(ax,fcBlueWhiteRed(256));
+cb = colorbar(ax);
+try, set(cb,'Color',[1 1 1]); catch, end
+
+set(ax,'Color',C.axisBg, ...
+    'XColor',C.muted, ...
+    'YColor',C.muted, ...
+    'FontName','Arial', ...
+    'FontSize',8, ...
+    'TickLength',[0 0]);
+
+title(ax,titleStr,'Color',C.txt,'FontWeight','bold','Interpreter','none');
+
+nR = size(M,1);
+tickIdx = fcTickIdx(nR);
+
+set(ax,'XTick',tickIdx,'YTick',tickIdx, ...
+    'XTickLabel',fcAbbrevNames(names(tickIdx),10), ...
+    'YTickLabel',fcAbbrevNames(names(tickIdx),10));
+
+try
+    xtickangle(ax,90);
+catch
+end
+end
+
+function fcPlotPMatrix(ax,P,titleStr,names,C)
+cla(ax);
+
+if isempty(P)
+    fcNoData(ax,titleStr,C);
+    return;
+end
+
+Plog = -log10(P);
+Plog(~isfinite(Plog)) = NaN;
+
+imagesc(ax,Plog);
+axis(ax,'image');
+caxis(ax,[0 3]);
+colormap(ax,hot(256));
+cb = colorbar(ax);
+try, set(cb,'Color',[1 1 1]); catch, end
+
+set(ax,'Color',C.axisBg, ...
+    'XColor',C.muted, ...
+    'YColor',C.muted, ...
+    'FontName','Arial', ...
+    'FontSize',8, ...
+    'TickLength',[0 0]);
+
+title(ax,[titleStr ' (-log10 p)'],'Color',C.txt,'FontWeight','bold','Interpreter','none');
+
+nR = size(P,1);
+tickIdx = fcTickIdx(nR);
+
+set(ax,'XTick',tickIdx,'YTick',tickIdx, ...
+    'XTickLabel',fcAbbrevNames(names(tickIdx),10), ...
+    'YTickLabel',fcAbbrevNames(names(tickIdx),10));
+
+try
+    xtickangle(ax,90);
+catch
+end
+end
+
+function idx = fcTickIdx(nR)
+if nR <= 35
+    step = 1;
+elseif nR <= 70
+    step = 2;
+elseif nR <= 120
+    step = 4;
+elseif nR <= 200
+    step = 6;
+else
+    step = max(8,ceil(nR/30));
+end
+
+idx = 1:step:nR;
+end
+
+function out = fcAbbrevNames(names,n)
+if nargin < 2
+    n = 10;
+end
+
+out = names;
+
+for i = 1:numel(out)
+    s = strtrimSafe(out{i});
+    s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+    parts = regexp(s,'\s+','split');
+
+    if ~isempty(parts)
+        s = parts{1};
+    end
+
+    if numel(s) > n
+        s = [s(1:max(1,n-3)) '...'];
+    end
+
+    out{i} = s;
+end
+end
+
+function cmap = fcBlueWhiteRed(n)
+if nargin < 1
+    n = 256;
+end
+
+n1 = floor(n/2);
+n2 = n - n1;
+
+b = [0.00 0.25 0.95];
+w = [1.00 1.00 1.00];
+r = [0.95 0.20 0.20];
+
+c1 = [linspace(b(1),w(1),n1)' linspace(b(2),w(2),n1)' linspace(b(3),w(3),n1)'];
+c2 = [linspace(w(1),r(1),n2)' linspace(w(2),r(2),n2)' linspace(w(3),r(3),n2)'];
+
+cmap = [c1; c2];
+end
+
+function writeFCMatrixCSV(fileName,M,names)
+fid = fopen(fileName,'w');
+
+if fid < 0
+    error(['Could not write CSV: ' fileName]);
+end
+
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+fprintf(fid,'ROI');
+
+for j = 1:numel(names)
+    fprintf(fid,',%s',csvEscapeFC(names{j}));
+end
+
+fprintf(fid,'\n');
+
+for i = 1:size(M,1)
+    fprintf(fid,'%s',csvEscapeFC(names{i}));
+
+    for j = 1:size(M,2)
+        fprintf(fid,',%.10g',M(i,j));
+    end
+
+    fprintf(fid,'\n');
+end
+end
+
+function s = csvEscapeFC(s0)
+s = char(s0);
+s = strrep(s,'"','""');
+s = ['"' s '"'];
+end
+
+function saveFCAxisPNG(ax,fileName,C)
+try
+    f = figure('Visible','off', ...
+        'Color',C.bg, ...
+        'InvertHardcopy','off', ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'NumberTitle','off');
+
+    set(f,'Position',[100 100 1100 900]);
+
+    ax2 = copyobj(ax,f);
+    set(ax2,'Units','normalized','Position',[0.10 0.13 0.74 0.74]);
+
+    set(f,'PaperPositionMode','auto');
+    print(f,fileName,'-dpng','-r250');
+    close(f);
+catch
+end
+end
+
 function safeMkdirIfNeeded(d)
 if isempty(d), return; end
 if exist(d,'dir') ~= 7
@@ -11722,6 +12692,51 @@ end
 end
 
 function s = sanitizeName(s)
-s = sanitizeFilename(s);
+% Standalone safe filename/folder sanitizer.
+% Do not call sanitizeFilename here, because sanitizeFilename may be nested
+% inside GroupAnalysis and invisible to file-level helper functions.
+
+if nargin < 1 || isempty(s)
+    s = 'export';
+    return;
+end
+
+try
+    if isstring(s)
+        s = char(s);
+    end
+    if ~ischar(s)
+        s = char(string(s));
+    end
+catch
+    s = 'export';
+    return;
+end
+
+s = strtrim(s);
+
+if isempty(s)
+    s = 'export';
+    return;
+end
+
+% Remove Windows/macOS-invalid filename characters
+s = regexprep(s,'[<>:"/\\|?*\x00-\x1F]','_');
+
+% Keep ASCII-safe folder/file names
+s = regexprep(s,'[^A-Za-z0-9_\-]','_');
+
+% Clean repeated and edge underscores/dots
+s = regexprep(s,'_+','_');
+s = regexprep(s,'^[\._]+','');
+s = regexprep(s,'[\._]+$','');
+
+if isempty(s)
+    s = 'export';
+end
+
+maxLen = 60;
+if numel(s) > maxLen
+    s = s(1:maxLen);
 end
 end

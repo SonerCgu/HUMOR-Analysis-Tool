@@ -36,6 +36,12 @@ studio.anatomicalReferenceFile = '';
 
 % FC / atlas / registration helper path
 studio.registrationPath = '';
+studio.registration2DPath = '';
+studio.visualizationPath = '';
+studio.maskStartPath = '';
+studio.underlayStartPath = '';
+studio.transformStartPath = '';
+studio.lastScmUnderlayInfo = [];
 
 studio.pipeline = struct( ...
     'loadDone', false, ...
@@ -570,8 +576,14 @@ end
         studio.loadedName = datasetName;
         studio.exportPath = datasetFolder;
         studio.pipeline.loadDone = true;
-        studio.registrationPath = regFolder;
-        studio.registration2DPath = reg2DFolder;
+     studio.registrationPath = regFolder;
+studio.registration2DPath = reg2DFolder;
+studio.visualizationPath = visFolder;
+
+% Preferred picker start folders
+studio.maskStartPath = visFolder;
+studio.underlayStartPath = reg2DFolder;
+studio.transformStartPath = reg2DFolder;
 if isempty(studio.meta) || ~isstruct(studio.meta)
     studio.meta = struct();
 end
@@ -6123,7 +6135,7 @@ function scmCallback(~,~)
     % -----------------------------------------------------
     % Launch setup popup: baseline + underlay selection
     % -----------------------------------------------------
-    launchCfg = showScmVideoSetupDialog('SCM GUI', 30, 240, 5, studio, data.I);
+  launchCfg = showScmVideoSetupDialog('SCM GUI', 30, 240, 5, studio, data.I);
     if isempty(launchCfg) || ~isstruct(launchCfg) || ...
             ~isfield(launchCfg,'cancelled') || launchCfg.cancelled
         addLog('SCM cancelled.');
@@ -6145,7 +6157,15 @@ function scmCallback(~,~)
     par.previewCaxis = [];
     par.exportPath = studio.exportPath;
     par.datasetTag = studio.activeDataset;
+par.selectorRoot = studio.exportPath;
 
+par.visualizationPath = fullfile(studio.exportPath,'Visualization');
+par.registrationPath   = fullfile(studio.exportPath,'Registration');
+par.registration2DPath = fullfile(studio.exportPath,'Registration2D');
+
+par.maskStartPath      = par.visualizationPath;
+par.underlayStartPath  = par.registration2DPath;
+par.transformStartPath = par.registration2DPath;
     if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
         par.loadedPath = studio.loadedPath;
         par.rawPath = studio.loadedPath;
@@ -6190,20 +6210,82 @@ function scmCallback(~,~)
         end
     end
 
-    % -----------------------------------------------------
-    % Resolve underlay from popup choice
-    % -----------------------------------------------------
-if isfield(launchCfg,'precomputedUnderlayDisplay') && ~isempty(launchCfg.precomputedUnderlayDisplay)
+ % -----------------------------------------------------
+% Resolve underlay from SCM/Video setup popup
+% -----------------------------------------------------
+underlayInfo = scmVideoEmptyUnderlayInfo();
+
+if isfield(launchCfg,'precomputedUnderlayDisplay') && ...
+        ~isempty(launchCfg.precomputedUnderlayDisplay)
+
     bgUnderlay = launchCfg.precomputedUnderlayDisplay;
-    underlayLabel = launchCfg.underlayLabel;
+
+    if isfield(launchCfg,'underlayLabel') && ~isempty(launchCfg.underlayLabel)
+        underlayLabel = launchCfg.underlayLabel;
+    else
+        underlayLabel = 'Selected underlay';
+    end
+
+    % IMPORTANT:
+    % If showScmVideoSetupDialog created detailed underlayInfo
+    % for Step Motor Registration2D, preserve it here.
+    if isfield(launchCfg,'underlayInfo') && ...
+            isstruct(launchCfg.underlayInfo) && ...
+            isfield(launchCfg.underlayInfo,'mode') && ...
+            ~isempty(launchCfg.underlayInfo.mode)
+
+        underlayInfo = launchCfg.underlayInfo;
+
+    else
+        % Backward-compatible fallback for older launchCfg outputs.
+        underlayInfo = scmVideoEmptyUnderlayInfo();
+        underlayInfo.label = underlayLabel;
+        underlayInfo.isDisplayReady = true;
+
+        if isfield(launchCfg,'underlayChoice')
+            switch launchCfg.underlayChoice
+                case 2
+                    underlayInfo.mode = 'step_motor_registration2D';
+                    underlayInfo.selectedFile = underlayLabel;
+
+                case 4
+                    underlayInfo.mode = 'external_registration2D_file_preloaded';
+                    underlayInfo.selectedFile = underlayLabel;
+
+                case 5
+                    underlayInfo.mode = 'recommended_standard_mask_editor_style';
+                    underlayInfo.isDisplayReady = true;
+
+                otherwise
+                    underlayInfo.mode = 'precomputed_underlay';
+            end
+        else
+            underlayInfo.mode = 'precomputed_underlay';
+        end
+    end
+
 else
-    [bgUnderlay, underlayLabel] = resolveScmVideoUnderlayChoice( ...
+
+    [bgUnderlay, underlayLabel, underlayInfo] = resolveScmVideoUnderlayChoice( ...
         studio, data, bgDefault, launchCfg.underlayChoice);
 end
 
 if isempty(bgUnderlay)
-    addLog('SCM cancelled (no underlay selected).');
+    addLog([winTitleForLog() ' cancelled (no underlay selected).']);
     return;
+end
+
+par.scmInitialUnderlayInfo = underlayInfo;
+if isstruct(underlayInfo) && isfield(underlayInfo,'isMulti') && underlayInfo.isMulti
+    par.scmPerSliceUnderlayFiles = underlayInfo.files;
+    par.scmPerSliceUnderlaySourceIdx = underlayInfo.sourceIdx;
+    par.scmInitialUnderlayMode = underlayInfo.mode;
+
+    addLog(sprintf('SCM per-slice underlay mode: %d files selected.', numel(underlayInfo.files)));
+
+    for uu = 1:numel(underlayInfo.files)
+        addLog(sprintf('  Slice/source %d -> %s', underlayInfo.sourceIdx(uu), underlayInfo.files{uu}));
+    end
 end
 
     % -----------------------------------------------------
@@ -6262,9 +6344,10 @@ function videoGUICallback(~,~)
     data = getActiveData();
 
     addLog(['Opening Video GUI (Dataset: ' studio.activeDataset ')']);
-
 launchCfg = showScmVideoSetupDialog('Video GUI', 30, 240, 5, studio, data.I);
-if launchCfg.cancelled
+
+if isempty(launchCfg) || ~isstruct(launchCfg) || ...
+        ~isfield(launchCfg,'cancelled') || launchCfg.cancelled
     addLog('Video GUI cancelled.');
     return;
 end
@@ -6285,7 +6368,15 @@ baseline = struct( ...
     par.exportPath = studio.exportPath;
     par.datasetTag = studio.activeDataset;
     par.activeDataset = studio.activeDataset;
+par.selectorRoot = studio.exportPath;
 
+par.visualizationPath = fullfile(studio.exportPath,'Visualization');
+par.registrationPath   = fullfile(studio.exportPath,'Registration');
+par.registration2DPath = fullfile(studio.exportPath,'Registration2D');
+
+par.maskStartPath      = par.visualizationPath;
+par.underlayStartPath  = par.registration2DPath;
+par.transformStartPath = par.registration2DPath;
     if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath)
         par.loadedPath = studio.loadedPath;
         par.rawPath = studio.loadedPath;
@@ -6326,17 +6417,83 @@ baseline = struct( ...
         bgDefault = proc.bg;
     end
 
-if isfield(launchCfg,'precomputedUnderlayDisplay') && ~isempty(launchCfg.precomputedUnderlayDisplay)
+% -----------------------------------------------------
+% Resolve underlay from SCM/Video setup popup
+% -----------------------------------------------------
+underlayInfo = scmVideoEmptyUnderlayInfo();
+
+if isfield(launchCfg,'precomputedUnderlayDisplay') && ...
+        ~isempty(launchCfg.precomputedUnderlayDisplay)
+
     bgUnderlay = launchCfg.precomputedUnderlayDisplay;
-    underlayLabel = launchCfg.underlayLabel;
+
+    if isfield(launchCfg,'underlayLabel') && ~isempty(launchCfg.underlayLabel)
+        underlayLabel = launchCfg.underlayLabel;
+    else
+        underlayLabel = 'Selected underlay';
+    end
+
+    % IMPORTANT:
+    % If showScmVideoSetupDialog created detailed underlayInfo
+    % for Step Motor Registration2D, preserve it here.
+    if isfield(launchCfg,'underlayInfo') && ...
+            isstruct(launchCfg.underlayInfo) && ...
+            isfield(launchCfg.underlayInfo,'mode') && ...
+            ~isempty(launchCfg.underlayInfo.mode)
+
+        underlayInfo = launchCfg.underlayInfo;
+
+    else
+        % Backward-compatible fallback for older launchCfg outputs.
+        underlayInfo = scmVideoEmptyUnderlayInfo();
+        underlayInfo.label = underlayLabel;
+        underlayInfo.isDisplayReady = true;
+
+        if isfield(launchCfg,'underlayChoice')
+            switch launchCfg.underlayChoice
+                case 2
+                    underlayInfo.mode = 'step_motor_registration2D';
+                    underlayInfo.selectedFile = underlayLabel;
+
+                case 4
+                    underlayInfo.mode = 'external_registration2D_file_preloaded';
+                    underlayInfo.selectedFile = underlayLabel;
+
+                case 5
+                    underlayInfo.mode = 'recommended_standard_mask_editor_style';
+                    underlayInfo.isDisplayReady = true;
+
+                otherwise
+                    underlayInfo.mode = 'precomputed_underlay';
+            end
+        else
+            underlayInfo.mode = 'precomputed_underlay';
+        end
+    end
+
 else
-    [bgUnderlay, underlayLabel] = resolveScmVideoUnderlayChoice( ...
+
+    [bgUnderlay, underlayLabel, underlayInfo] = resolveScmVideoUnderlayChoice( ...
         studio, data, bgDefault, launchCfg.underlayChoice);
 end
 
 if isempty(bgUnderlay)
-    addLog('Video GUI cancelled (no underlay selected).');
+    addLog([winTitleForLog() ' cancelled (no underlay selected).']);
     return;
+end
+
+par.scmInitialUnderlayInfo = underlayInfo;
+
+if isstruct(underlayInfo) && isfield(underlayInfo,'isMulti') && underlayInfo.isMulti
+    par.scmPerSliceUnderlayFiles = underlayInfo.files;
+    par.scmPerSliceUnderlaySourceIdx = underlayInfo.sourceIdx;
+    par.scmInitialUnderlayMode = underlayInfo.mode;
+
+    addLog(sprintf('Video GUI per-slice underlay mode: %d files selected.', numel(underlayInfo.files)));
+
+    for uu = 1:numel(underlayInfo.files)
+        addLog(sprintf('  Slice/source %d -> %s', underlayInfo.sourceIdx(uu), underlayInfo.files{uu}));
+    end
 end
 
     if isfield(studio,'mask') && ~isempty(studio.mask)
@@ -7408,8 +7565,779 @@ function tag = makeFilterTag(opts)
         end
     end
 end
+
+function cfg = showScmVideoSetupDialog(winTitle, defaultBaseStart, defaultBaseEnd, defaultChoice, studio, I)
+
+    cfg = struct();
+    cfg.cancelled = true;
+    cfg.baselineStart = defaultBaseStart;
+    cfg.baselineEnd   = defaultBaseEnd;
+    cfg.underlayChoice = defaultChoice;
+    cfg.precomputedUnderlayDisplay = [];
+    cfg.underlayLabel = '';
+    cfg.recommendedStyle = scmVideoDefaultRecommendedStyle();
+cfg.underlayInfo = scmVideoEmptyUnderlayInfo();
+cfg.stepMotorUnderlayKind = 'histology';
+    if nargin < 4 || isempty(defaultChoice)
+        defaultChoice = 5;
+    end
+
+    defaultChoice = max(1,min(5,round(defaultChoice)));
+
+ loadedFileUnderlay = [];
+loadedFileLabel = '';
+loadedFileInfo = scmVideoEmptyUnderlayInfo();
+
+stepMotorUnderlayKind = 'histology';
+
+    recStyle = scmVideoDefaultRecommendedStyle();
+
+    sz = size(I);
+    nd = ndims(I);
+
+    if nd == 3
+        dimTxt = sprintf('%d x %d x %d', sz(1), sz(2), sz(3));
+    elseif nd >= 4
+        dimTxt = sprintf('%d x %d x %d x %d', sz(1), sz(2), sz(3), sz(4));
+    else
+        dimTxt = mat2str(sz);
+    end
+
+    datasetTxt = 'Active dataset detected.';
+    try
+        if isfield(studio,'activeDataset') && ~isempty(studio.activeDataset)
+            datasetTxt = ['Active dataset: ' getDatasetDisplayName(studio, studio.activeDataset)];
+        end
+    catch
+    end
+
+    startDirTxt = scmVideoGetRegistration2DStartDir(studio);
+
+    bg      = [0.045 0.045 0.052];
+    panel   = [0.085 0.085 0.098];
+    panel2  = [0.120 0.120 0.135];
+    panel3  = [0.060 0.060 0.070];
+    fg      = [0.96 0.96 0.96];
+    fgDim   = [0.74 0.76 0.80];
+    blue    = [0.20 0.48 0.95];
+    green   = [0.14 0.68 0.34];
+    red     = [0.78 0.24 0.24];
+    orange  = [0.95 0.58 0.18];
+    yellow  = [0.95 0.84 0.35];
+
+    dlg = figure( ...
+        'Name',[winTitle ' Setup'], ...
+        'Color',bg, ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'NumberTitle','off', ...
+        'Resize','off', ...
+        'Units','pixels', ...
+        'Position',[40 20 1500 930], ...
+        'WindowStyle','modal', ...
+        'Visible','off', ...
+        'CloseRequestFcn',@onCancel, ...
+        'KeyPressFcn',@onKey);
+
+    try
+        movegui(dlg,'center');
+    catch
+    end
+
+    uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.035 0.940 0.93 0.040], ...
+        'String',[winTitle ' Setup'], ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',28, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.037 0.905 0.93 0.030], ...
+        'String','Choose baseline, underlay source, and Recommended Standard display parameters before opening SCM / Video.', ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',15, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    infoPanel = uipanel('Parent',dlg, ...
+        'Units','normalized', ...
+        'Position',[0.035 0.815 0.93 0.075], ...
+        'BackgroundColor',panel3, ...
+        'ForegroundColor',[0.35 0.35 0.38], ...
+        'BorderType','line');
+
+    uicontrol('Parent',infoPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.025 0.52 0.95 0.34], ...
+        'String',shortenMiddle(datasetTxt,150), ...
+        'TooltipString',datasetTxt, ...
+        'BackgroundColor',panel3, ...
+        'ForegroundColor',[0.45 1.00 0.62], ...
+        'FontName','Arial', ...
+        'FontSize',14, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    uicontrol('Parent',infoPanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.025 0.13 0.95 0.32], ...
+        'String',sprintf('Input size: %s     |     Registration2D folder: %s', dimTxt, startDirTxt), ...
+        'TooltipString',startDirTxt, ...
+        'BackgroundColor',panel3, ...
+        'ForegroundColor',[0.72 0.86 1.00], ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    basePanel = uipanel('Parent',dlg, ...
+        'Title','Baseline window', ...
+        'Units','normalized', ...
+        'Position',[0.035 0.670 0.93 0.120], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',15, ...
+        'FontWeight','bold', ...
+        'BorderType','line');
+
+    makeLabel(basePanel,[0.035 0.47 0.21 0.28],'Baseline START (sec)',14,fg);
+    edBaseStart = makeEdit(basePanel,[0.255 0.49 0.13 0.28],num2str(defaultBaseStart));
+
+    makeLabel(basePanel,[0.420 0.47 0.19 0.28],'Baseline END (sec)',14,fg);
+    edBaseEnd = makeEdit(basePanel,[0.615 0.49 0.13 0.28],num2str(defaultBaseEnd));
+
+    uicontrol('Parent',basePanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.770 0.18 0.20 0.62], ...
+        'String',{'Default: 30-240 sec', 'Change only if needed.'}, ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',yellow, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    underPanel = uipanel('Parent',dlg, ...
+        'Title','Startup underlay source', ...
+        'Units','normalized', ...
+        'Position',[0.035 0.270 0.50 0.375], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',15, ...
+        'FontWeight','bold', ...
+        'BorderType','line');
+
+    bgGroup = uibuttongroup('Parent',underPanel, ...
+        'Units','normalized', ...
+        'Position',[0.025 0.055 0.95 0.89], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'BorderType','none', ...
+        'SelectionChangedFcn',@onUnderlaySelectionChanged);
+
+    rb = zeros(1,5);
+
+  labels = { ...
+    'Default current reference bg from PSC', ...
+    'Step Motor Registration2D per-slice underlay', ...
+    'Median of ACTIVE dataset', ...
+    'Select external underlay / histology from Registration2D', ...
+    'Recommended Standard - same logic as Mask Editor'};
+
+descriptions = { ...
+    'Fast fallback. Uses the bg created during computePSC.', ...
+    'For step-motor: choose histology / vascular / regions and load several source folders.', ...
+    'Computes robust median from the current active dataset.', ...
+    'Manual single underlay file selection. Good for one histology image.', ...
+    'Mean(T) -> standardized Doppler equalized -> fixed window -> display FX.'};
+
+    yVals = [0.81 0.62 0.43 0.24 0.05];
+
+    for ii = 1:5
+        rb(ii) = uicontrol('Parent',bgGroup,'Style','radiobutton', ...
+            'Units','normalized', ...
+            'Position',[0.025 yVals(ii)+0.055 0.93 0.085], ...
+            'String',labels{ii}, ...
+            'BackgroundColor',panel, ...
+            'ForegroundColor',fg, ...
+            'FontName','Arial', ...
+            'FontSize',14, ...
+            'FontWeight','bold', ...
+            'HorizontalAlignment','left', ...
+            'UserData',ii);
+
+        uicontrol('Parent',bgGroup,'Style','text', ...
+            'Units','normalized', ...
+            'Position',[0.070 yVals(ii)-0.005 0.88 0.060], ...
+            'String',descriptions{ii}, ...
+            'BackgroundColor',panel, ...
+            'ForegroundColor',fgDim, ...
+            'FontName','Arial', ...
+            'FontSize',11, ...
+            'HorizontalAlignment','left');
+    end
+
+    set(bgGroup,'SelectedObject',rb(defaultChoice));
+
+    stylePanel = uipanel('Parent',dlg, ...
+        'Title','Recommended Standard parameters', ...
+        'Units','normalized', ...
+        'Position',[0.555 0.270 0.410 0.375], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',15, ...
+        'FontWeight','bold', ...
+        'BorderType','line');
+
+    uicontrol('Parent',stylePanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.040 0.895 0.920 0.060], ...
+        'String','These match Mask Editor mode 7. Change here only if you want a different SCM/Video startup look.', ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',yellow, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    makeLabel(stylePanel,[0.045 0.760 0.180 0.060],'Std low',13,fg);
+    edStdLow = makeEdit(stylePanel,[0.235 0.755 0.120 0.075],num2str(recStyle.stdLow,'%.2f'));
+
+    makeLabel(stylePanel,[0.390 0.760 0.180 0.060],'Std high',13,fg);
+    edStdHigh = makeEdit(stylePanel,[0.585 0.755 0.120 0.075],num2str(recStyle.stdHigh,'%.2f'));
+
+    makeLabel(stylePanel,[0.735 0.760 0.100 0.060],'Gain',13,fg);
+    edGain = makeEdit(stylePanel,[0.835 0.755 0.110 0.075],num2str(recStyle.stdGain,'%.2f'));
+
+    makeLabel(stylePanel,[0.045 0.615 0.180 0.060],'Brightness',13,fg);
+    edBright = makeEdit(stylePanel,[0.235 0.610 0.120 0.075],num2str(recStyle.brightness,'%.2f'));
+
+    makeLabel(stylePanel,[0.390 0.615 0.180 0.060],'Contrast',13,fg);
+    edContrast = makeEdit(stylePanel,[0.585 0.610 0.120 0.075],num2str(recStyle.contrast,'%.2f'));
+
+    makeLabel(stylePanel,[0.735 0.615 0.100 0.060],'Gamma',13,fg);
+    edGamma = makeEdit(stylePanel,[0.835 0.610 0.110 0.075],num2str(recStyle.gamma,'%.2f'));
+
+    makeLabel(stylePanel,[0.045 0.470 0.180 0.060],'Sharpness',13,fg);
+    edSharp = makeEdit(stylePanel,[0.235 0.465 0.120 0.075],num2str(recStyle.sharpness,'%.2f'));
+
+    hSoftTone = uicontrol('Parent',stylePanel,'Style','checkbox', ...
+        'Units','normalized', ...
+        'Position',[0.390 0.465 0.300 0.075], ...
+        'String','Soft tone', ...
+        'Value',double(recStyle.softToneEnable), ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'FontWeight','bold');
+
+    makeLabel(stylePanel,[0.705 0.470 0.130 0.060],'Strength',13,fg);
+    edSoftTone = makeEdit(stylePanel,[0.835 0.465 0.110 0.075],num2str(recStyle.softToneStrength,'%.2f'));
+
+    uicontrol('Parent',stylePanel,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.045 0.285 0.900 0.105], ...
+        'String',{'Mask Editor defaults:', ...
+                  'stdLow 0.40 | stdHigh 0.80 | gain 2.00 | brightness 0.10 | contrast 0.50 | gamma 1.10 | sharpness 75 | soft tone 0.40'}, ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fgDim, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    uicontrol('Parent',stylePanel,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.045 0.115 0.410 0.105], ...
+        'String','RESET MASK EDITOR DEFAULTS', ...
+        'BackgroundColor',blue, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'Callback',@onResetRecommendedDefaults);
+
+    uicontrol('Parent',stylePanel,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.535 0.115 0.410 0.105], ...
+        'String','USE RECOMMENDED', ...
+        'BackgroundColor',green, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'Callback',@onRecommendedPreset);
+
+    filePanel = uipanel('Parent',dlg, ...
+        'Title','Manual file loading', ...
+        'Units','normalized', ...
+        'Position',[0.035 0.165 0.930 0.080], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',14, ...
+        'FontWeight','bold', ...
+        'BorderType','line');
+
+    txtUnderlayStatus = uicontrol('Parent',filePanel,'Style','text', ...
+    'Units','normalized', ...
+    'Position',[0.025 0.18 0.450 0.55], ...
+    'String','No Step Motor / external underlay loaded yet.', ...
+    'BackgroundColor',panel, ...
+    'ForegroundColor',fgDim, ...
+    'FontName','Arial', ...
+    'FontSize',12, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','left');
+
+uicontrol('Parent',filePanel,'Style','text', ...
+    'Units','normalized', ...
+    'Position',[0.490 0.62 0.120 0.25], ...
+    'String','Step kind', ...
+    'BackgroundColor',panel, ...
+    'ForegroundColor',yellow, ...
+    'FontName','Arial', ...
+    'FontSize',10, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','left');
+
+hStepKind = uicontrol('Parent',filePanel,'Style','popupmenu', ...
+    'Units','normalized', ...
+    'Position',[0.490 0.18 0.120 0.45], ...
+    'String',{'histology','vascular','regions'}, ...
+    'Value',1, ...
+    'BackgroundColor',panel2, ...
+    'ForegroundColor','w', ...
+    'FontName','Arial', ...
+    'FontSize',11, ...
+    'FontWeight','bold', ...
+    'Callback',@onStepKindChanged);
+
+uicontrol('Parent',filePanel,'Style','pushbutton', ...
+    'Units','normalized', ...
+    'Position',[0.625 0.18 0.205 0.58], ...
+    'String','LOAD / AUTO-FIND', ...
+    'BackgroundColor',blue, ...
+    'ForegroundColor','w', ...
+    'FontName','Arial', ...
+    'FontSize',12, ...
+    'FontWeight','bold', ...
+    'Callback',@onManualLoadUnderlay);
+
+uicontrol('Parent',filePanel,'Style','text', ...
+    'Units','normalized', ...
+    'Position',[0.845 0.18 0.130 0.55], ...
+    'String','Step mode: select parent folder, then subfolders.', ...
+    'BackgroundColor',panel, ...
+    'ForegroundColor',yellow, ...
+    'FontName','Arial', ...
+    'FontSize',10, ...
+    'FontWeight','bold', ...
+    'HorizontalAlignment','left');
+
+    txtStatus = uicontrol('Parent',dlg,'Style','text', ...
+        'Units','normalized', ...
+        'Position',[0.035 0.085 0.930 0.060], ...
+        'String','', ...
+        'BackgroundColor',[0.030 0.030 0.036], ...
+        'ForegroundColor',[0.70 1.00 0.80], ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.500 0.025 0.260 0.045], ...
+        'String',['OPEN ' upper(winTitle)], ...
+        'BackgroundColor',green, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',15, ...
+        'FontWeight','bold', ...
+        'Callback',@onOpen);
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'Units','normalized', ...
+        'Position',[0.790 0.025 0.175 0.045], ...
+        'String','CANCEL', ...
+        'BackgroundColor',red, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',15, ...
+        'FontWeight','bold', ...
+        'Callback',@onCancel);
+
+    setStatusForChoice(defaultChoice);
+
+    set(dlg,'Visible','on');
+    waitfor(dlg);
+
+    function h = makeLabel(parent,pos,str,fs,col)
+        h = uicontrol('Parent',parent,'Style','text', ...
+            'Units','normalized', ...
+            'Position',pos, ...
+            'String',str, ...
+            'BackgroundColor',get(parent,'BackgroundColor'), ...
+            'ForegroundColor',col, ...
+            'FontName','Arial', ...
+            'FontSize',fs, ...
+            'FontWeight','bold', ...
+            'HorizontalAlignment','left');
+    end
+
+    function h = makeEdit(parent,pos,str)
+        h = uicontrol('Parent',parent,'Style','edit', ...
+            'Units','normalized', ...
+            'Position',pos, ...
+            'String',str, ...
+            'BackgroundColor',panel2, ...
+            'ForegroundColor',fg, ...
+            'FontName','Arial', ...
+            'FontSize',14, ...
+            'FontWeight','bold', ...
+            'HorizontalAlignment','center');
+    end
+
+    function onUnderlaySelectionChanged(~,event)
+        try
+            selectedIdx = get(event.NewValue,'UserData');
+        catch
+            selectedIdx = defaultChoice;
+        end
+
+        cfg.underlayChoice = selectedIdx;
+        setStatusForChoice(selectedIdx);
+    end
+
+    function setStatusForChoice(idx)
+    switch idx
+        case 1
+            setStatus('Default bg selected. Fast fallback.', [0.70 1.00 0.80]);
+
+        case 2
+            stepMotorUnderlayKind = getStepKindFromPopup();
+            setStatus(['Step Motor Registration2D selected. Kind = ' stepMotorUnderlayKind ...
+                '. Click LOAD / AUTO-FIND, or it will ask on Open.'], [0.78 0.90 1.00]);
+
+        case 3
+            setStatus('Median active dataset selected. It will be computed on Open.', [0.70 1.00 0.80]);
+
+        case 4
+            setStatus('Single external underlay selected. Click LOAD / AUTO-FIND, or it will ask on Open.', [0.78 0.90 1.00]);
+
+        case 5
+            setStatus('Recommended Standard selected. This uses the same calculation as Mask Editor standardized mode.', [0.70 1.00 0.80]);
+
+        otherwise
+            setStatus('Ready.', [0.70 1.00 0.80]);
+    end
+end
+function kind = getStepKindFromPopup()
+    kindList = get(hStepKind,'String');
+    kind = kindList{get(hStepKind,'Value')};
+    kind = lower(strtrim(kind));
+end
+
+function onStepKindChanged(~,~)
+    stepMotorUnderlayKind = getStepKindFromPopup();
+    cfg.stepMotorUnderlayKind = stepMotorUnderlayKind;
+
+    selectedObj = get(bgGroup,'SelectedObject');
+    selectedIdx = get(selectedObj,'UserData');
+
+    if selectedIdx == 2
+        setStatus(['Step Motor Registration2D selected: ' stepMotorUnderlayKind], [0.78 0.90 1.00]);
+    end
+end
+    function onManualLoadUnderlay(~,~)
+
+    selectedObj = get(bgGroup,'SelectedObject');
+    selectedIdx = get(selectedObj,'UserData');
+
+    try
+        if selectedIdx == 2
+
+            stepMotorUnderlayKind = getStepKindFromPopup();
+            cfg.stepMotorUnderlayKind = stepMotorUnderlayKind;
+
+            [U,labelText,ok,info] = scmVideoAskAndLoadStepMotorRegistration2D( ...
+                studio, I, stepMotorUnderlayKind);
+
+        elseif selectedIdx == 4
+
+            [U,labelText,ok] = scmVideoAskAndLoadUnderlayFromRegistration2D(studio, I, 'external');
+
+            info = scmVideoEmptyUnderlayInfo();
+            info.mode = 'external_registration2D_file_preloaded';
+            info.label = labelText;
+            info.selectedFile = labelText;
+            info.isMulti = false;
+            info.isDisplayReady = true;
+
+        else
+
+            set(bgGroup,'SelectedObject',rb(2));
+            cfg.underlayChoice = 2;
+
+            stepMotorUnderlayKind = getStepKindFromPopup();
+            cfg.stepMotorUnderlayKind = stepMotorUnderlayKind;
+
+            [U,labelText,ok,info] = scmVideoAskAndLoadStepMotorRegistration2D( ...
+                studio, I, stepMotorUnderlayKind);
+        end
+
+        if ~ok || isempty(U)
+            loadedFileUnderlay = [];
+            loadedFileLabel = '';
+            loadedFileInfo = scmVideoEmptyUnderlayInfo();
+
+            set(txtUnderlayStatus,'String','No underlay loaded.');
+            setStatus('No underlay loaded.', orange);
+            return;
+        end
+
+        loadedFileUnderlay = U;
+        loadedFileLabel = labelText;
+        loadedFileInfo = info;
+
+        set(txtUnderlayStatus,'String',shortenMiddle(['Loaded: ' labelText],90));
+        setStatus(['Loaded underlay: ' labelText], [0.70 1.00 0.80]);
+
+    catch ME
+        loadedFileUnderlay = [];
+        loadedFileLabel = '';
+        loadedFileInfo = scmVideoEmptyUnderlayInfo();
+
+        set(txtUnderlayStatus,'String','Load failed.');
+        setStatus(['Underlay load failed: ' ME.message], orange);
+    end
+end
+
+    function onRecommendedPreset(~,~)
+        set(bgGroup,'SelectedObject',rb(5));
+        cfg.underlayChoice = 5;
+        setStatusForChoice(5);
+    end
+
+    function onResetRecommendedDefaults(~,~)
+        recStyle = scmVideoDefaultRecommendedStyle();
+
+        set(edStdLow,  'String',num2str(recStyle.stdLow,'%.2f'));
+        set(edStdHigh, 'String',num2str(recStyle.stdHigh,'%.2f'));
+        set(edGain,    'String',num2str(recStyle.stdGain,'%.2f'));
+
+        set(edBright,   'String',num2str(recStyle.brightness,'%.2f'));
+        set(edContrast, 'String',num2str(recStyle.contrast,'%.2f'));
+        set(edGamma,    'String',num2str(recStyle.gamma,'%.2f'));
+        set(edSharp,    'String',num2str(recStyle.sharpness,'%.2f'));
+
+        set(hSoftTone,  'Value',double(recStyle.softToneEnable));
+        set(edSoftTone, 'String',num2str(recStyle.softToneStrength,'%.2f'));
+
+        setStatus('Mask Editor defaults restored.', [0.70 1.00 0.80]);
+    end
+
+    function style = collectRecommendedStyle()
+
+        style = scmVideoDefaultRecommendedStyle();
+
+        style.stdLow   = str2double(get(edStdLow,'String'));
+        style.stdHigh  = str2double(get(edStdHigh,'String'));
+        style.stdGain  = str2double(get(edGain,'String'));
+
+        style.brightness = str2double(get(edBright,'String'));
+        style.contrast   = str2double(get(edContrast,'String'));
+        style.gamma      = str2double(get(edGamma,'String'));
+        style.sharpness  = str2double(get(edSharp,'String'));
+
+        style.softToneEnable = logical(get(hSoftTone,'Value'));
+        style.softToneStrength = str2double(get(edSoftTone,'String'));
+
+        if ~isfinite(style.stdLow)
+            error('Std low must be numeric.');
+        end
+
+        if ~isfinite(style.stdHigh) || style.stdHigh <= style.stdLow
+            error('Std high must be numeric and larger than Std low.');
+        end
+
+        if ~isfinite(style.stdGain)
+            error('Gain must be numeric.');
+        end
+
+        style.stdGain = max(0,min(5,style.stdGain));
+
+        if ~isfinite(style.brightness)
+            error('Brightness must be numeric.');
+        end
+
+        if ~isfinite(style.contrast) || style.contrast < 0
+            error('Contrast must be numeric and >= 0.');
+        end
+
+        if ~isfinite(style.gamma) || style.gamma <= 0
+            error('Gamma must be numeric and > 0.');
+        end
+
+        if ~isfinite(style.sharpness)
+            error('Sharpness must be numeric.');
+        end
+
+        style.sharpness = max(0,min(300,style.sharpness));
+
+        if ~isfinite(style.softToneStrength)
+            error('Soft tone strength must be numeric.');
+        end
+
+        style.softToneStrength = max(0,min(1,style.softToneStrength));
+    end
+
+    function onOpen(~,~)
+
+        b0 = str2double(get(edBaseStart,'String'));
+        b1 = str2double(get(edBaseEnd,'String'));
+
+        if ~isfinite(b0) || b0 < 0
+            setStatus('Baseline START must be a valid number >= 0.', orange);
+            return;
+        end
+
+        if ~isfinite(b1) || b1 <= b0
+            setStatus('Baseline END must be larger than START.', orange);
+            return;
+        end
+
+        selectedObj = get(bgGroup,'SelectedObject');
+        selectedIdx = get(selectedObj,'UserData');
+
+        cfg.cancelled = false;
+        cfg.baselineStart = b0;
+        cfg.baselineEnd = b1;
+        cfg.underlayChoice = selectedIdx;
+        cfg.precomputedUnderlayDisplay = [];
+        cfg.underlayLabel = '';
+
+       if selectedIdx == 2
+
+    if isempty(loadedFileUnderlay)
+
+        stepMotorUnderlayKind = getStepKindFromPopup();
+        cfg.stepMotorUnderlayKind = stepMotorUnderlayKind;
+
+        [U,labelText,ok,info] = scmVideoAskAndLoadStepMotorRegistration2D( ...
+            studio, I, stepMotorUnderlayKind);
+
+        if ~ok || isempty(U)
+            setStatus('No Step Motor Registration2D underlay selected. Load folders or choose Recommended Standard.', orange);
+            return;
+        end
+
+        loadedFileUnderlay = U;
+        loadedFileLabel = labelText;
+        loadedFileInfo = info;
+    end
+
+    cfg.precomputedUnderlayDisplay = loadedFileUnderlay;
+    cfg.underlayLabel = loadedFileLabel;
+    cfg.underlayInfo = loadedFileInfo;
+
+elseif selectedIdx == 4
+
+    if isempty(loadedFileUnderlay)
+
+        [U,labelText,ok] = scmVideoAskAndLoadUnderlayFromRegistration2D(studio, I, 'external');
+
+        if ~ok || isempty(U)
+            setStatus('No external underlay selected. Load a file or choose Recommended Standard.', orange);
+            return;
+        end
+
+        loadedFileUnderlay = U;
+        loadedFileLabel = labelText;
+
+        loadedFileInfo = scmVideoEmptyUnderlayInfo();
+        loadedFileInfo.mode = 'external_registration2D_file_preloaded';
+        loadedFileInfo.label = labelText;
+        loadedFileInfo.selectedFile = labelText;
+        loadedFileInfo.isMulti = false;
+        loadedFileInfo.isDisplayReady = true;
+    end
+
+    cfg.precomputedUnderlayDisplay = loadedFileUnderlay;
+    cfg.underlayLabel = loadedFileLabel;
+    cfg.underlayInfo = loadedFileInfo;
+
+elseif selectedIdx == 5
+
+    try
+        recStyle = collectRecommendedStyle();
+
+        setStatus('Computing Recommended Standard underlay with Mask Editor logic...', [0.78 0.90 1.00]);
+        drawnow;
+
+        cfg.recommendedStyle = recStyle;
+        cfg.precomputedUnderlayDisplay = scmVideoMakeRecommendedStandardUnderlay(I, recStyle);
+        cfg.underlayLabel = sprintf( ...
+            'Recommended Standard | B%.2f C%.2f G%.2f S%.0f Tone%.2f', ...
+            recStyle.brightness, recStyle.contrast, recStyle.gamma, ...
+            recStyle.sharpness, recStyle.softToneStrength);
+
+        cfg.underlayInfo = scmVideoEmptyUnderlayInfo();
+        cfg.underlayInfo.mode = 'recommended_standard_mask_editor_style';
+        cfg.underlayInfo.label = cfg.underlayLabel;
+        cfg.underlayInfo.isDisplayReady = true;
+
+    catch ME
+        setStatus(['Recommended Standard failed: ' ME.message], orange);
+        cfg.cancelled = true;
+        return;
+    end
+end
+
+        if ishghandle(dlg)
+            delete(dlg);
+        end
+    end
+
+    function onCancel(~,~)
+        cfg.cancelled = true;
+        if ishghandle(dlg)
+            delete(dlg);
+        end
+    end
+
+    function onKey(~,ev)
+        try
+            if strcmpi(ev.Key,'escape')
+                onCancel();
+            elseif strcmpi(ev.Key,'return')
+                onOpen();
+            end
+        catch
+        end
+    end
+
+    function setStatus(msg,col)
+        if ishghandle(txtStatus)
+            set(txtStatus,'String',msg,'ForegroundColor',col);
+        end
+    end
+end
+    
 %% =========================================================
-%  SCM UNDERLAY CHOOSER
+%  BACKWARD-COMPATIBLE MENU CHOOSER
 % =========================================================
 function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
 
@@ -7417,116 +8345,625 @@ function [bg, label] = chooseSCMUnderlay(studio, data, bgDefault)
     label = '';
 
     opts = { ...
-        'Default (Video GUI reference / PSC bg)', ...
-        'Mean of ACTIVE dataset', ...
+        'Default (current SCM / Video reference bg)', ...
+        'Atlas multi-slice / registered underlay from Registration2D', ...
         'Median of ACTIVE dataset (robust)', ...
-        'Select external underlay file (DP/anatomy) from RAW folder...', ...
+        'Select external underlay file from Registration2D', ...
+        'Recommended Standard (same as Mask Editor default)', ...
         'Cancel'};
 
     idx = menu('Choose SCM underlay image:', opts{:});
 
-    if idx == 0 || idx == 5
+    if idx == 0 || idx == 6
         return;
     end
 
-    switch idx
-        case 1
-            bg = bgDefault;
-            label = 'Default (VideoGUI bg)';
-
-        case 2
-            bg = computeUnderlayFromActive(data,'mean');
-            label = 'Mean(I)';
-
-        case 3
-            bg = computeUnderlayFromActive(data,'median');
-            label = 'Median(I)';
-
-        case 4
-            startPath = pwd;
-
-            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
-                visFolder = fullfile(studio.exportPath,'Visualization');
-                if exist(visFolder,'dir')
-                    startPath = visFolder;
-                else
-                    startPath = studio.exportPath;
-                end
-            elseif isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-                startPath = studio.loadedPath;
-            end
-
-            [f,p] = uigetfile({'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
-                               'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif)'}, ...
-                               'Select underlay (DP/anatomy)', startPath);
-            if isequal(f,0)
-                return;
-            end
-
-            bg = loadUnderlayFile(fullfile(p,f));
-            if isempty(bg)
-                return;
-            end
-
-            [~,nm,ext] = fileparts(f);
-            label = ['File: ' nm ext];
-    end
+    [bg,label] = resolveScmVideoUnderlayChoice(studio, data, bgDefault, idx);
 end
 
-function [bg, label] = resolveScmVideoUnderlayChoice(studio, data, bgDefault, idx)
+
+%% =========================================================
+%  RESOLVE SCM / VIDEO UNDERLAY CHOICE
+% =========================================================
+%% =========================================================
+%  RESOLVE SCM / VIDEO UNDERLAY CHOICE
+% =========================================================
+function [bg, label, underlayInfo] = resolveScmVideoUnderlayChoice(studio, data, bgDefault, idx)
 
     bg = [];
     label = '';
+   underlayInfo = scmVideoEmptyUnderlayInfo();
 
     switch idx
+
         case 1
             bg = bgDefault;
-            label = 'Default (VideoGUI bg)';
+            label = 'Default reference bg';
+
+            underlayInfo.mode = 'default_bg';
+            underlayInfo.label = label;
 
         case 2
-            bg = computeUnderlayFromActive(data,'mean');
-            label = 'Mean(I)';
+    [U,labelText,ok,info] = scmVideoAskAndLoadStepMotorRegistration2D(studio, data.I, 'histology');
+    if ~ok || isempty(U)
+        return;
+    end
+
+    bg = U;
+    label = labelText;
+    underlayInfo = info;
 
         case 3
             bg = computeUnderlayFromActive(data,'median');
-            label = 'Median(I)';
+            bg = scmVideoFitUnderlayToData(bg, data.I);
+            label = 'Median active dataset';
+
+            underlayInfo.mode = 'median_active';
+            underlayInfo.label = label;
 
         case 4
-            startPath = pwd;
-
-            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
-                visFolder = fullfile(studio.exportPath,'Visualization');
-                if exist(visFolder,'dir')
-                    startPath = visFolder;
-                else
-                    startPath = studio.exportPath;
-                end
-            elseif isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
-                startPath = studio.loadedPath;
-            end
-
-            [f,p] = uigetfile( ...
-                {'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.tif;*.tiff', ...
-                 'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif)'}, ...
-                'Select underlay (DP/anatomy)', startPath);
-
-            if isequal(f,0)
+            [U,labelText,ok] = scmVideoAskAndLoadUnderlayFromRegistration2D(studio, data.I, 'external');
+            if ~ok || isempty(U)
                 return;
             end
 
-            bg = loadUnderlayFile(fullfile(p,f));
-            if isempty(bg)
-                return;
-            end
+            bg = U;
+            label = labelText;
 
-            [~,nm,ext] = fileparts(f);
-            label = ['File: ' nm ext];
+            underlayInfo.mode = 'external_registration2D_file';
+            underlayInfo.label = labelText;
+            underlayInfo.selectedFile = labelText;
+            underlayInfo.isMulti = false;
+
+        case 5
+            bg = scmVideoMakeRecommendedStandardUnderlay(data.I);
+            label = 'Recommended Standard';
+
+            underlayInfo.mode = 'recommended_standard';
+            underlayInfo.label = label;
+
+        otherwise
+            bg = bgDefault;
+            label = 'Default reference bg';
+
+            underlayInfo.mode = 'default_bg';
+            underlayInfo.label = label;
     end
 end
 
+%% =========================================================
+%  LOAD UNDERLAY FROM REGISTRATION2D
+% =========================================================
+function [U,labelText,ok] = scmVideoAskAndLoadUnderlayFromRegistration2D(studio, I, kind)
+
+    U = [];
+    labelText = '';
+    ok = false;
+
+    startDir = scmVideoGetRegistration2DStartDir(studio);
+
+    if strcmpi(kind,'atlas')
+        titleStr = 'Select atlas multi-slice / registered underlay from Registration2D';
+    else
+        titleStr = 'Select external underlay / histology from Registration2D';
+    end
+
+    [f,p] = scmVideo_uigetfile_start( ...
+        {'*.mat;*.nii;*.nii.gz;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp', ...
+         'Underlay files (*.mat,*.nii,*.nii.gz,*.png,*.jpg,*.tif,*.bmp)'}, ...
+        titleStr, startDir);
+
+    if isequal(f,0)
+        return;
+    end
+
+    fullFile = fullfile(p,f);
+
+    Uraw = loadUnderlayFile(fullFile);
+
+    if isempty(Uraw)
+        return;
+    end
+
+    U = scmVideoFitUnderlayToData(Uraw, I);
+
+    [~,nm,ext] = fileparts(f);
+    if strcmpi(ext,'.gz')
+        [~,nm2,ext2] = fileparts(nm);
+        labelText = ['File: ' nm2 ext2 ext];
+    else
+        labelText = ['File: ' nm ext];
+    end
+
+    ok = true;
+end
+
+%% =========================================================
+%  STEP MOTOR REGISTRATION2D PER-SLICE UNDERLAY LOADER
+% =========================================================
+function [U,labelText,ok,info] = scmVideoAskAndLoadStepMotorRegistration2D(studio, I, kind)
+
+    U = [];
+    labelText = '';
+    ok = false;
+    info = scmVideoEmptyUnderlayInfo();
+
+    kind = lower(strtrim(kind));
+    if isempty(kind)
+        kind = 'histology';
+    end
+
+    [Y,X,Z] = scmVideoGetFunctionalYXZ(I);
+
+    startDir = scmVideoGetStepMotorKindStartDir(studio, kind);
+
+    parentDir = uigetdir(startDir, ...
+        ['Select parent folder containing Step Motor source folders for ' kind]);
+
+    if isequal(parentDir,0)
+        return;
+    end
+
+    [selectedDirs, okDirs] = scmVideoSelectStepMotorSubfolders(parentDir, kind);
+
+    if ~okDirs || isempty(selectedDirs)
+        return;
+    end
+
+    files = {};
+    sourceIdx = [];
+
+    for ii = 1:numel(selectedDirs)
+
+        thisDir = selectedDirs{ii};
+
+        f = scmVideoFindBestStepMotorUnderlayFile(thisDir, kind);
+
+        if isempty(f)
+            continue;
+        end
+
+        idx = scmVideoParseSourceIndex([thisDir filesep f]);
+
+        if ~isfinite(idx) || idx < 1
+            idx = ii;
+        end
+
+        files{end+1} = fullfile(thisDir,f); %#ok<AGROW>
+        sourceIdx(end+1) = idx; %#ok<AGROW>
+    end
+
+    if isempty(files)
+        uiwait(errordlg({ ...
+            ['No matching AtlasUnderlay_' kind '_slice*.mat files found.'], ...
+            '', ...
+            'Expected examples:', ...
+            ['  AtlasUnderlay_' kind '_slice001.mat'], ...
+            ['  AtlasUnderlay_' kind '_source001.mat'], ...
+            ['  source001\AtlasUnderlay_' kind '_slice001.mat']}, ...
+            'Step Motor Registration2D'));
+        return;
+    end
+
+    % Sort by parsed source/slice index.
+    [sourceIdx, ord] = sort(sourceIdx);
+    files = files(ord);
+
+    U = zeros(Y,X,Z,'double');
+    have = false(1,Z);
+
+    usedFiles = {};
+    usedIdx = [];
+
+    for ii = 1:numel(files)
+
+        z = sourceIdx(ii);
+
+        if z < 1 || z > Z
+            continue;
+        end
+
+        try
+            Uraw = loadUnderlayFile(files{ii});
+            U2 = scmVideoFitOneUnderlayToSlice(Uraw,Y,X);
+
+            U(:,:,z) = U2;
+            have(z) = true;
+
+            usedFiles{end+1} = files{ii}; %#ok<AGROW>
+            usedIdx(end+1) = z; %#ok<AGROW>
+
+        catch ME
+            warning('Could not load Step Motor underlay file: %s\n%s', files{ii}, ME.message);
+        end
+    end
+
+    if ~any(have)
+        U = [];
+        return;
+    end
+
+    % Fill missing slices by nearest available underlay so SCM/Video never starts with black slices.
+    missing = find(~have);
+    available = find(have);
+
+    if ~isempty(missing)
+        for mm = 1:numel(missing)
+            zMiss = missing(mm);
+            [~,nearestPos] = min(abs(available - zMiss));
+            zNear = available(nearestPos);
+            U(:,:,zMiss) = U(:,:,zNear);
+        end
+
+        uiwait(warndlg(sprintf([ ...
+            'Found %d Step Motor underlay files for %d functional slices.\n\n' ...
+            'Missing slices were filled using the nearest available source underlay.'], ...
+            numel(available), Z), ...
+            'Step Motor Registration2D'));
+    end
+
+    info = scmVideoEmptyUnderlayInfo();
+    info.mode = ['step_motor_registration2D_' kind];
+    info.kind = kind;
+    info.isMulti = true;
+    info.files = usedFiles;
+    info.sourceIdx = usedIdx;
+    info.selectedPath = parentDir;
+    info.isDisplayReady = true;
+
+    labelText = sprintf('Step Motor Reg2D %s: %d files -> sources %s', ...
+        kind, numel(usedFiles), mat2str(usedIdx));
+
+    info.label = labelText;
+
+    ok = true;
+end
+
+
+function startDir = scmVideoGetStepMotorKindStartDir(studio, kind)
+
+    reg2D = scmVideoGetRegistration2DStartDir(studio);
+    kind = lower(strtrim(kind));
+
+    candidates = { ...
+        fullfile(reg2D, kind), ...
+        fullfile(reg2D, upperFirst(kind)), ...
+        fullfile(reg2D, ['AtlasUnderlay_' kind]), ...
+        fullfile(reg2D, ['AtlasUnderlay_' upperFirst(kind)]), ...
+        reg2D};
+
+    startDir = reg2D;
+
+    for ii = 1:numel(candidates)
+        if exist(candidates{ii},'dir')
+            startDir = candidates{ii};
+            return;
+        end
+    end
+end
+
+
+function [dirsOut, ok] = scmVideoSelectStepMotorSubfolders(parentDir, kind)
+
+    dirsOut = {};
+    ok = false;
+
+    d = dir(parentDir);
+    isGood = [d.isdir] & ~ismember({d.name},{'.','..'});
+    d = d(isGood);
+
+    listNames = {};
+    listDirs = {};
+
+    % Include current folder in case files are directly inside parentDir.
+    if ~isempty(scmVideoFindBestStepMotorUnderlayFile(parentDir, kind))
+        listNames{end+1} = '<current folder>'; %#ok<AGROW>
+        listDirs{end+1} = parentDir; %#ok<AGROW>
+    end
+
+    for ii = 1:numel(d)
+        p = fullfile(parentDir,d(ii).name);
+
+        % Show all subfolders, but preselect likely source folders below.
+        listNames{end+1} = d(ii).name; %#ok<AGROW>
+        listDirs{end+1} = p; %#ok<AGROW>
+    end
+
+    if isempty(listDirs)
+        dirsOut = {parentDir};
+        ok = true;
+        return;
+    end
+
+    preselect = [];
+
+    for ii = 1:numel(listDirs)
+        nm = lower(listNames{ii});
+        hasFile = ~isempty(scmVideoFindBestStepMotorUnderlayFile(listDirs{ii}, kind));
+
+        if hasFile || ~isempty(strfind(nm,'source')) || ~isempty(strfind(nm,'slice'))
+            preselect(end+1) = ii; %#ok<AGROW>
+        end
+    end
+
+    if isempty(preselect)
+        preselect = 1:numel(listDirs);
+    end
+
+    [idx,tf] = listdlg( ...
+        'PromptString',{ ...
+            ['Select Step Motor source folders for ' kind '.'], ...
+            'source001 maps to z=1, source002 maps to z=2, etc.'}, ...
+        'SelectionMode','multiple', ...
+        'ListString',listNames, ...
+        'InitialValue',preselect, ...
+        'ListSize',[650 420], ...
+        'Name','Step Motor Registration2D source folders');
+
+    if ~tf || isempty(idx)
+        return;
+    end
+
+    dirsOut = listDirs(idx);
+    ok = true;
+end
+
+
+function fileName = scmVideoFindBestStepMotorUnderlayFile(folderPath, kind)
+
+    fileName = '';
+
+    if ~exist(folderPath,'dir')
+        return;
+    end
+
+    kind = lower(strtrim(kind));
+
+    exactPatterns = { ...
+        ['AtlasUnderlay_' kind '_slice*.mat'], ...
+        ['AtlasUnderlay_' kind '_source*.mat'], ...
+        ['AtlasUnderlay_' kind '*.mat'], ...
+        ['*' kind '*slice*.mat'], ...
+        ['*' kind '*source*.mat'], ...
+        ['*' kind '*.mat']};
+
+    for pp = 1:numel(exactPatterns)
+        d = dir(fullfile(folderPath,exactPatterns{pp}));
+        d = scmVideoRemoveBadTransformFiles(d);
+
+        if ~isempty(d)
+            fileName = d(1).name;
+            return;
+        end
+    end
+
+    d = dir(fullfile(folderPath,'*.mat'));
+    d = scmVideoRemoveBadTransformFiles(d);
+
+    if isempty(d)
+        return;
+    end
+
+    scores = -Inf(1,numel(d));
+
+    for ii = 1:numel(d)
+        nm = lower(d(ii).name);
+        sc = 0;
+
+        if ~isempty(strfind(nm,'atlasunderlay')), sc = sc + 50; end
+        if ~isempty(strfind(nm,kind)), sc = sc + 40; end
+        if ~isempty(strfind(nm,'slice')), sc = sc + 20; end
+        if ~isempty(strfind(nm,'source')), sc = sc + 20; end
+        if ~isempty(strfind(nm,'underlay')), sc = sc + 15; end
+
+        scores(ii) = sc;
+    end
+
+    [bestScore,bestIdx] = max(scores);
+
+    if isfinite(bestScore) && bestScore > 0
+        fileName = d(bestIdx).name;
+    end
+end
+
+
+function d2 = scmVideoRemoveBadTransformFiles(d)
+
+    keep = true(1,numel(d));
+
+    bad = { ...
+        'transformation', ...
+        'coronalregistration2d', ...
+        'transform', ...
+        'transf', ...
+        'trafo', ...
+        'affine', ...
+        'registrationmatrix'};
+
+    for ii = 1:numel(d)
+        nm = lower(d(ii).name);
+
+        for bb = 1:numel(bad)
+            if ~isempty(strfind(nm,bad{bb}))
+                keep(ii) = false;
+                break;
+            end
+        end
+    end
+
+    d2 = d(keep);
+end
+
+
+function idx = scmVideoParseSourceIndex(s)
+
+    idx = NaN;
+    s = lower(char(s));
+
+    tok = regexp(s,'source[_\-\s]*0*([0-9]+)','tokens','once');
+    if isempty(tok)
+        tok = regexp(s,'slice[_\-\s]*0*([0-9]+)','tokens','once');
+    end
+    if isempty(tok)
+        tok = regexp(s,'z[_\-\s]*0*([0-9]+)','tokens','once');
+    end
+
+    if ~isempty(tok)
+        idx = str2double(tok{1});
+    end
+end
+
+
+function [Y,X,Z] = scmVideoGetFunctionalYXZ(I)
+
+    sz = size(I);
+
+    Y = sz(1);
+    X = sz(2);
+
+    if ndims(I) >= 4
+        Z = sz(3);
+    else
+        Z = 1;
+    end
+end
+
+
+function U2 = scmVideoFitOneUnderlayToSlice(Uraw,Y,X)
+
+    Uraw = double(squeeze(Uraw));
+    Uraw = toGray(Uraw);
+
+    while ndims(Uraw) > 3
+        Uraw = mean(Uraw, ndims(Uraw));
+        Uraw = squeeze(Uraw);
+    end
+
+    if ndims(Uraw) == 3
+        if size(Uraw,3) == 3
+            Uraw = toGray(Uraw);
+        else
+            mid = max(1,round(size(Uraw,3)/2));
+            Uraw = Uraw(:,:,mid);
+        end
+    end
+
+    Uraw = double(squeeze(Uraw));
+
+    if ndims(Uraw) ~= 2
+        error('Selected Step Motor underlay could not be converted to a 2D slice.');
+    end
+
+    U2 = scmVideoResize2D(Uraw,Y,X);
+end
+
+
+function s = upperFirst(s)
+
+    if isempty(s)
+        return;
+    end
+
+    s = lower(char(s));
+    s(1) = upper(s(1));
+end
+%% =========================================================
+%  REGISTRATION2D START FOLDER
+% =========================================================
+function startDir = scmVideoGetRegistration2DStartDir(studio)
+
+    startDir = pwd;
+
+    % 1) Preferred: analysed dataset Registration2D folder
+    try
+        if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+            reg2DDir = fullfile(studio.exportPath,'Registration2D');
+
+            if ~exist(reg2DDir,'dir')
+                try
+                    mkdir(reg2DDir);
+                catch
+                end
+            end
+
+            if exist(reg2DDir,'dir')
+                startDir = reg2DDir;
+                return;
+            end
+        end
+    catch
+    end
+
+    % 2) Explicit studio.registration2DPath
+    try
+        if isfield(studio,'registration2DPath') && ~isempty(studio.registration2DPath) && exist(studio.registration2DPath,'dir')
+            startDir = studio.registration2DPath;
+            return;
+        end
+    catch
+    end
+
+    % 3) Registration folder fallback
+    try
+        if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+            regDir = fullfile(studio.exportPath,'Registration');
+            if exist(regDir,'dir')
+                startDir = regDir;
+                return;
+            end
+
+            startDir = studio.exportPath;
+            return;
+        end
+    catch
+    end
+
+    % 4) Raw folder fallback
+    try
+        if isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
+            startDir = studio.loadedPath;
+            return;
+        end
+    catch
+    end
+end
+
+
+function [f,p] = scmVideo_uigetfile_start(filterSpec, titleStr, startDir)
+
+    if nargin < 3 || isempty(startDir) || ~exist(startDir,'dir')
+        startDir = pwd;
+    end
+
+    oldDir = pwd;
+    cleanupObj = onCleanup(@() cd(oldDir)); %#ok<NASGU>
+
+    try
+        cd(startDir);
+    catch
+    end
+
+    try
+        [f,p] = uigetfile(filterSpec, titleStr, startDir);
+    catch
+        [f,p] = uigetfile(filterSpec, titleStr);
+    end
+end
+
+
+%% =========================================================
+%  COMPUTE BASIC UNDERLAY FROM ACTIVE DATA
+% =========================================================
 function bg = computeUnderlayFromActive(data, method)
 
     I = data.I;
+    bg = scmVideoComputeUnderlayFromArray(I, method);
+end
+
+
+function bg = scmVideoComputeUnderlayFromArray(I, method)
+
+    I = single(I);
     dimT = ndims(I);
 
     if strcmpi(method,'mean')
@@ -7552,6 +8989,599 @@ function bg = computeUnderlayFromActive(data, method)
     bg = median(Isub, dimT);
 end
 
+
+%% =========================================================
+%  SCM / VIDEO RECOMMENDED STANDARD STYLE
+%  This matches Mask Editor mode 7 defaults.
+% =========================================================
+function style = scmVideoDefaultRecommendedStyle()
+
+    style = struct();
+
+    % Mask Editor standardized Doppler equalized mode
+    style.stdLow  = 0.40;
+    style.stdHigh = 0.80;
+    style.stdGain = 2.00;
+
+    % Mask Editor display preset for mode 7
+    style.brightness = 0.10;
+style.contrast   = 0.50;
+style.gamma      = 1.10;
+style.sharpness  = 75.0;
+
+style.softToneEnable = true;
+style.softToneStrength = 0.40;
+style.softToneMid = 0.48;
+style.softToneToe = 0.08;
+
+style.stdLow  = 0.40;
+style.stdHigh = 0.80;
+style.stdGain = 2.00;
+end
+
+
+%% =========================================================
+%  RECOMMENDED STANDARD UNDERLAY
+%  Exact Mask Editor logic:
+%  mean(T) -> equalizeImageVasc_local -> scaleFixed(0.40,0.80)
+%  -> brightness/contrast/gamma/sharpness -> soft tone
+% =========================================================
+function Udisp = scmVideoMakeRecommendedStandardUnderlay(I, style)
+
+    if nargin < 2 || isempty(style) || ~isstruct(style)
+        style = scmVideoDefaultRecommendedStyle();
+    end
+
+    Ueq = scmVideoMaskEditorEqualizedMean(I, style.stdGain);
+
+    Udisp = scmVideoMaskEditorDisplayPipeline(Ueq, style);
+end
+
+
+function Ueq = scmVideoMaskEditorEqualizedMean(Iin, gain)
+
+    gain = max(0,min(5,double(gain)));
+
+    if ndims(Iin) == 3
+        % Mask Editor mode 7 for 2D data:
+        % I = Y x X x T, use mean over time
+        a0 = mean(double(Iin),3);
+        U2 = scmVideoEqualizeImageVascLocal2D(a0,gain);
+        Ueq = reshape(U2,[size(a0,1) size(a0,2) 1]);
+        return;
+    end
+
+    if ndims(Iin) >= 4
+        % Mask Editor mode 7 for 3D data:
+        % I = Y x X x Z x T, use mean over time
+        a0 = mean(double(Iin),4);
+
+        nY = size(a0,1);
+        nX = size(a0,2);
+        nZ = size(a0,3);
+
+        Ueq = zeros(nY,nX,nZ,'double');
+
+        for zz = 1:nZ
+            Ueq(:,:,zz) = scmVideoEqualizeImageVascLocal2D(a0(:,:,zz),gain);
+        end
+
+        return;
+    end
+
+    error('Recommended Standard requires 3D [Y X T] or 4D [Y X Z T] data.');
+end
+
+
+function ae = scmVideoEqualizeImageVascLocal2D(a, gain)
+
+    a = double(a);
+    a(~isfinite(a)) = 0;
+
+    [nz_, nx_] = size(a);
+
+    mx = max(a(:));
+
+    if ~isfinite(mx) || mx <= 0
+        ae = zeros(size(a));
+        return;
+    end
+
+    a = a ./ mx;
+    ae = zeros(nz_, nx_);
+
+    g = 1 + (0:nz_-1)' / max(1,nz_) * gain;
+    gg = g * ones(1,nx_);
+
+    tmp = a;
+    tmp = tmp - min(tmp(:));
+    tmp = tmp .* gg;
+
+    mx2 = max(tmp(:));
+
+    if ~isfinite(mx2) || mx2 <= 0
+        ae = zeros(size(a));
+        return;
+    end
+
+    tmp = tmp ./ mx2;
+
+    m = median(tmp(:));
+
+    if ~isfinite(m) || m <= 0
+        m = eps;
+    end
+
+    comp = -1 / log2(m);
+
+    if ~isfinite(comp) || comp <= 0
+        comp = 1;
+    end
+
+    tmp = tmp .^ comp;
+
+    mx3 = max(tmp(:));
+
+    if ~isfinite(mx3) || mx3 <= 0
+        ae = zeros(size(a));
+        return;
+    end
+
+    tmp = tmp ./ mx3;
+
+    ae = tmp;
+    ae = ae - min(ae(:));
+
+    mx4 = max(ae(:));
+
+    if ~isfinite(mx4) || mx4 <= 0
+        ae = zeros(size(a));
+        return;
+    end
+
+    ae = ae ./ mx4;
+end
+
+
+function Udisp = scmVideoMaskEditorDisplayPipeline(Ueq, style)
+
+    Ueq = double(squeeze(Ueq));
+    Ueq(~isfinite(Ueq)) = 0;
+
+    if ndims(Ueq) == 2
+        Udisp = scmVideoMaskEditorDisplay2D(Ueq, style);
+        return;
+    end
+
+    if ndims(Ueq) == 3
+        Udisp = zeros(size(Ueq),'double');
+
+        for zz = 1:size(Ueq,3)
+            Udisp(:,:,zz) = scmVideoMaskEditorDisplay2D(Ueq(:,:,zz), style);
+        end
+
+        return;
+    end
+
+    error('Display pipeline received unsupported underlay dimensions.');
+end
+
+
+function U01 = scmVideoMaskEditorDisplay2D(U, style)
+
+    % Mask Editor buildDisplayUnderlay for mode 7:
+    % scaleFixed -> vessel maybe -> display adjust -> soft tone maybe
+
+    U01 = scmVideoScaleFixedLocal(U, style.stdLow, style.stdHigh);
+
+    if isfield(style,'vesselEnable') && style.vesselEnable
+        U01 = scmVideoApplyVesselEnhanceLocal(U01, style);
+    end
+
+    U01 = scmVideoApplyDisplayAdjustLocal( ...
+        U01, ...
+        style.brightness, ...
+        style.contrast, ...
+        style.gamma, ...
+        style.sharpness);
+
+    if isfield(style,'softToneEnable') && style.softToneEnable
+        U01 = scmVideoApplySoftToneLocal( ...
+            U01, ...
+            style.softToneStrength, ...
+            style.softToneMid, ...
+            style.softToneToe);
+    end
+
+    U01 = min(max(U01,0),1);
+end
+
+
+function U01 = scmVideoScaleFixedLocal(U, lo, hi)
+
+    U = double(U);
+
+    if ~isfinite(lo)
+        lo = min(U(:));
+    end
+
+    if ~isfinite(hi)
+        hi = max(U(:));
+    end
+
+    if hi <= lo + eps
+        hi = lo + 1;
+    end
+
+    U(~isfinite(U)) = lo;
+    U = min(max(U,lo),hi);
+
+    U01 = (U - lo) ./ max(eps,(hi - lo));
+    U01 = min(max(U01,0),1);
+end
+
+
+function U01 = scmVideoApplyDisplayAdjustLocal(U01, bright, cont, gam, sharp)
+
+    U01 = double(U01);
+    U01(~isfinite(U01)) = 0;
+
+    U01 = U01 .* cont + bright;
+    U01 = min(max(U01,0),1);
+
+    U01 = U01 .^ (1 / max(eps,gam));
+    U01 = min(max(U01,0),1);
+
+    sharp = max(0,min(300,double(sharp)));
+
+    if sharp > 0
+        amountMax = 4.5;
+        amount = amountMax * (1 - exp(-sharp/60));
+        sigma = 1.10 + 0.90 * (sharp/300);
+
+        B = scmVideoGaussBlur2DLocal(U01, sigma);
+        hi = U01 - B;
+        hi = 0.35 * tanh(hi / 0.35);
+
+        U01 = U01 + amount * hi;
+        U01 = min(max(U01,0),1);
+    end
+end
+
+
+function U01 = scmVideoApplySoftToneLocal(U01, strength, mid, toe)
+
+    U01 = double(U01);
+    U01 = min(max(U01,0),1);
+
+    a = max(0,min(1,double(strength)));
+    mid = max(0.05,min(0.95,double(mid)));
+    toe = max(0,min(0.35,double(toe)));
+
+    gain = 1 + 10*a;
+
+    L = 0.5 + 0.5*tanh(gain*(U01 - mid));
+    L0 = 0.5 + 0.5*tanh(gain*(0 - mid));
+    L1 = 0.5 + 0.5*tanh(gain*(1 - mid));
+
+    L = (L - L0) ./ max(eps,(L1 - L0));
+    L = min(max(L,0),1);
+
+    L = (1 - toe) .* L + toe .* sqrt(L);
+
+    U01 = (1 - a) .* U01 + a .* L;
+    U01 = min(max(U01,0),1);
+end
+
+
+function U01 = scmVideoApplyVesselEnhanceLocal(U01, style)
+
+    U01 = double(U01);
+    U01 = min(max(U01,0),1);
+
+    sig = max(0,min(5,double(style.vesselSigma)));
+    gain = max(0,double(style.vesselGain));
+    thr = max(0,min(1,double(style.vesselThresh)));
+
+    b1 = scmVideoGaussBlur2DLocal(U01, sig);
+    b2 = scmVideoGaussBlur2DLocal(U01, max(sig*2.5, sig+0.35));
+
+    detail = max(0, b1 - b2);
+
+    d99 = scmVideoLocalPercentile(detail(:),99.0);
+
+    if d99 <= 0
+        d99 = max(detail(:));
+    end
+
+    if d99 > 0
+        detail = detail ./ d99;
+    end
+
+    detail = min(max(detail,0),1);
+
+    boost = min(1, U01 + gain * detail .* (0.20 + 0.80*U01));
+
+    maskV = detail >= thr;
+
+    if isfield(style,'vesselConnect') && style.vesselConnect
+        maskV = scmVideoBinaryCloseLocal(maskV, max(1,round(sig)));
+    end
+
+    if any(maskV(:))
+        boost(maskV) = min(1, boost(maskV) + 0.15 + 0.20*gain*detail(maskV));
+    end
+
+    U01 = 0.55*U01 + 0.45*boost;
+    U01 = min(max(U01,0),1);
+end
+
+
+function B = scmVideoGaussBlur2DLocal(A, sigma)
+
+    sigma = max(0,double(sigma));
+
+    if sigma <= 0
+        B = A;
+        return;
+    end
+
+    try
+        B = imgaussfilt(A, sigma);
+    catch
+        rad = max(1,ceil(3*sigma));
+        x = -rad:rad;
+        g = exp(-(x.^2)/(2*sigma^2));
+        g = g ./ sum(g);
+
+        B = conv2(conv2(A,g,'same'),g','same');
+    end
+end
+
+
+function p = scmVideoLocalPercentile(v,q)
+
+    v = double(v(:));
+    v = v(isfinite(v));
+
+    if isempty(v)
+        p = 0;
+        return;
+    end
+
+    q = max(0,min(100,double(q)));
+
+    try
+        p = prctile(v,q);
+    catch
+        v = sort(v);
+
+        if numel(v) == 1
+            p = v(1);
+            return;
+        end
+
+        pos = 1 + (numel(v)-1) * (q/100);
+        i0 = floor(pos);
+        i1 = ceil(pos);
+
+        i0 = max(1,min(numel(v),i0));
+        i1 = max(1,min(numel(v),i1));
+
+        if i0 == i1
+            p = v(i0);
+        else
+            p = v(i0) + (pos - i0) * (v(i1) - v(i0));
+        end
+    end
+end
+
+
+function M = scmVideoBinaryCloseLocal(M, rad)
+
+    M = logical(M);
+    rad = max(1,round(rad));
+
+    try
+        se = strel('disk',rad);
+        M = imclose(M,se);
+    catch
+        K = ones(2*rad+1);
+        D = conv2(double(M),K,'same') > 0;
+        E = conv2(double(D),K,'same') >= numel(K);
+        M = E;
+    end
+end
+
+
+%% =========================================================
+%  FIT UNDERLAY TO FUNCTIONAL DIMENSIONS
+% =========================================================
+function U = scmVideoFitUnderlayToData(Uraw, I)
+
+    Uraw = double(squeeze(Uraw));
+    Uraw = toGray(Uraw);
+
+    sz = size(I);
+    Y = sz(1);
+    X = sz(2);
+
+    if ndims(I) >= 4
+        Z = sz(3);
+    else
+        Z = 1;
+    end
+
+    % Remove extra dimensions safely
+    while ndims(Uraw) > 3
+        Uraw = mean(Uraw, ndims(Uraw));
+        Uraw = squeeze(Uraw);
+    end
+
+    if ndims(Uraw) == 2
+        U2 = scmVideoResize2D(Uraw,Y,X);
+
+        if Z == 1
+            U = reshape(U2,Y,X,1);
+        else
+            U = repmat(U2,[1 1 Z]);
+        end
+
+        return;
+    end
+
+    if ndims(Uraw) == 3
+
+        % RGB after toGray should not remain, but keep safety.
+        if size(Uraw,3) == 3 && Z ~= 3
+            Uraw = toGray(Uraw);
+            Uraw = scmVideoResize2D(Uraw,Y,X);
+            if Z == 1
+                U = reshape(Uraw,Y,X,1);
+            else
+                U = repmat(Uraw,[1 1 Z]);
+            end
+            return;
+        end
+
+        Utmp = zeros(Y,X,size(Uraw,3));
+
+        for zz = 1:size(Uraw,3)
+            Utmp(:,:,zz) = scmVideoResize2D(Uraw(:,:,zz),Y,X);
+        end
+
+        if size(Utmp,3) == Z
+            U = Utmp;
+            return;
+        end
+
+        if Z == 1
+            mid = round(size(Utmp,3)/2);
+            U = reshape(Utmp(:,:,mid),Y,X,1);
+            return;
+        end
+
+        zi = round(linspace(1,size(Utmp,3),Z));
+        zi = max(1,min(size(Utmp,3),zi));
+        U = Utmp(:,:,zi);
+        return;
+    end
+
+    error('Could not fit underlay to functional dimensions.');
+end
+
+
+function B = scmVideoResize2D(A,Y,X)
+
+    A = double(A);
+
+    if size(A,1) == Y && size(A,2) == X
+        B = A;
+        return;
+    end
+
+    if exist('imresize','file') == 2
+        try
+            B = imresize(A,[Y X],'bilinear');
+        catch
+            B = imresize(A,[Y X]);
+        end
+    else
+        yy = round(linspace(1,size(A,1),Y));
+        xx = round(linspace(1,size(A,2),X));
+        yy = max(1,min(size(A,1),yy));
+        xx = max(1,min(size(A,2),xx));
+        B = A(yy,xx);
+    end
+end
+
+
+function U = scmVideoNormalizeUnderlayDisplay(U)
+
+    U = double(U);
+    U(~isfinite(U)) = 0;
+
+    if ndims(U) == 2
+        U = scmVideoNormalize2D(U);
+        return;
+    end
+
+    if ndims(U) == 3
+        for zz = 1:size(U,3)
+            U(:,:,zz) = scmVideoNormalize2D(U(:,:,zz));
+        end
+    end
+end
+
+
+function B = scmVideoNormalize2D(A)
+
+    A = double(A);
+    A(~isfinite(A)) = 0;
+
+    vals = A(isfinite(A));
+
+    if isempty(vals)
+        B = zeros(size(A));
+        return;
+    end
+
+    lo = scmVideoPercentile(vals,1);
+    hi = scmVideoPercentile(vals,99);
+
+    if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
+        lo = min(vals);
+        hi = max(vals);
+    end
+
+    if hi <= lo
+        B = zeros(size(A));
+        return;
+    end
+
+    B = (A - lo) ./ (hi - lo);
+    B(B < 0) = 0;
+    B(B > 1) = 1;
+end
+
+
+function p = scmVideoPercentile(x,prc)
+
+    x = double(x(:));
+    x = x(isfinite(x));
+
+    if isempty(x)
+        p = NaN;
+        return;
+    end
+
+    x = sort(x);
+    n = numel(x);
+
+    if n == 1
+        p = x(1);
+        return;
+    end
+
+    pos = 1 + (prc/100) * (n-1);
+    lo = floor(pos);
+    hi = ceil(pos);
+
+    lo = max(1,min(n,lo));
+    hi = max(1,min(n,hi));
+
+    if lo == hi
+        p = x(lo);
+    else
+        w = pos - lo;
+        p = x(lo) * (1-w) + x(hi) * w;
+    end
+end
+
+
+%% =========================================================
+%  LOAD UNDERLAY FILE
+% =========================================================
 function U = loadUnderlayFile(f)
 
     if ~exist(f,'file')
@@ -7564,17 +9594,17 @@ function U = loadUnderlayFile(f)
         if isNiiGz
             tmpDir = tempname;
             mkdir(tmpDir);
+
+            cleanupObj = onCleanup(@() cleanupTmpDir(tmpDir)); %#ok<NASGU>
+
             gunzip(f, tmpDir);
             d = dir(fullfile(tmpDir,'*.nii'));
+
             if isempty(d)
                 error('gunzip failed for %s', f);
             end
-            niiFile = fullfile(tmpDir, d(1).name);
-            V = niftiread(niiFile);
-            try
-                rmdir(tmpDir,'s');
-            catch
-            end
+
+            V = niftiread(fullfile(tmpDir, d(1).name));
             U = double(V);
             U = squeezeTo2Dor3D(U);
             U = toGray(U);
@@ -7582,6 +9612,7 @@ function U = loadUnderlayFile(f)
         end
 
         [~,~,ext] = fileparts(f);
+        ext = lower(ext);
 
         if strcmpi(ext,'.nii')
             V = niftiread(f);
@@ -7591,14 +9622,14 @@ function U = loadUnderlayFile(f)
             return;
         end
 
-      if strcmpi(ext,'.mat')
-    S = load(f);
-    U = studio_pickUnderlayFromMat(S);
-    U = double(U);
-    U = squeezeTo2Dor3D(U);
-    U = toGray(U);
-    return;
-end
+        if strcmpi(ext,'.mat')
+            S = load(f);
+            U = studio_pickUnderlayFromMat(S);
+            U = double(U);
+            U = squeezeTo2Dor3D(U);
+            U = toGray(U);
+            return;
+        end
 
         A = imread(f);
         U = double(A);
@@ -7611,7 +9642,22 @@ end
     end
 end
 
-    function U = studio_pickUnderlayFromMat(S)
+
+function cleanupTmpDir(tmpDir)
+
+    try
+        if exist(tmpDir,'dir')
+            rmdir(tmpDir,'s');
+        end
+    catch
+    end
+end
+
+
+%% =========================================================
+%  PICK UNDERLAY FROM MAT
+% =========================================================
+function U = studio_pickUnderlayFromMat(S)
 
     hasBundle = isfield(S,'maskBundle') && isstruct(S.maskBundle) && ~isempty(S.maskBundle);
 
@@ -7621,17 +9667,31 @@ end
         B = S;
     end
 
+    % Prefer display-ready / registered / multi-slice underlays.
     pref = { ...
         'savedUnderlayDisplay', ...
-        'brainImage', ...
-        'anatomical_reference_raw', ...
         'savedUnderlayForReload', ...
+        'anatomical_reference', ...
+        'anatomicalReference', ...
+        'brainImage', ...
+        'atlasUnderlayMultiSlice', ...
+        'atlasUnderlayStack', ...
+        'registeredUnderlay', ...
+        'registeredHistology', ...
+        'registeredHistologyStack', ...
+        'warpedUnderlay', ...
+        'warpedHistology', ...
+        'histologyStack', ...
+        'histology', ...
+        'Histology', ...
+        'anatomical_reference_raw', ...
+        'anatomicalReferenceRaw', ...
         'underlay', ...
         'bg', ...
-        'anatomical_reference', ...
         'atlasUnderlayRGB', ...
         'atlasUnderlay', ...
         'img', ...
+        'image', ...
         'I', ...
         'Data'};
 
@@ -7657,7 +9717,16 @@ end
         'signalMask', ...
         'maskIsInclude', ...
         'loadedMaskIsInclude', ...
-        'overlayMaskIsInclude'};
+        'overlayMaskIsInclude', ...
+        'M', ...
+        'A', ...
+        'T', ...
+        'Transformation', ...
+        'Transf', ...
+        'RegOut', ...
+        'Reg2D', ...
+        'outputSize', ...
+        'atlasSliceIndex'};
 
     [ok,U] = studio_findAnyNonMaskNumericField(B, skip);
     if ok
@@ -7671,20 +9740,26 @@ end
         end
     end
 
-    error('No usable underlay variable found in MAT file.');
+    error(['No usable underlay variable found in MAT file. ' ...
+           'Avoid selecting tiny transformation-only MAT files. ' ...
+           'Select a saved histology / atlas-underlay / brainImage MAT instead.']);
 end
 
+
 function [ok,U] = studio_findPreferredNumericField(Sx, names)
+
     ok = false;
     U = [];
 
     for ii = 1:numel(names)
         fn = names{ii};
+
         if ~isfield(Sx, fn)
             continue;
         end
 
         [ok1, val] = studio_unwrapNumericCandidate(Sx.(fn));
+
         if ok1
             ok = true;
             U = val;
@@ -7693,11 +9768,14 @@ function [ok,U] = studio_findPreferredNumericField(Sx, names)
     end
 end
 
+
 function [ok,U] = studio_findAnyNonMaskNumericField(Sx, skip)
+
     ok = false;
     U = [];
 
     fn = fieldnames(Sx);
+
     for ii = 1:numel(fn)
         name = fn{ii};
 
@@ -7706,6 +9784,7 @@ function [ok,U] = studio_findAnyNonMaskNumericField(Sx, skip)
         end
 
         [ok1, val] = studio_unwrapNumericCandidate(Sx.(name));
+
         if ~ok1
             continue;
         end
@@ -7720,31 +9799,66 @@ function [ok,U] = studio_findAnyNonMaskNumericField(Sx, skip)
     end
 end
 
+
 function [ok,U] = studio_unwrapNumericCandidate(v)
+
     ok = false;
     U = [];
 
     if isstruct(v)
         if isfield(v,'Data') && isnumeric(v.Data) && ~isempty(v.Data)
-            ok = true;
-            U = v.Data;
+            v = v.Data;
+        elseif isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
+            v = v.I;
+        else
             return;
         end
-        if isfield(v,'I') && isnumeric(v.I) && ~isempty(v.I)
-            ok = true;
-            U = v.I;
-            return;
-        end
+    end
+
+    if ~(isnumeric(v) || islogical(v)) || isempty(v)
         return;
     end
 
-    if isnumeric(v) && ~isempty(v)
-        ok = true;
-        U = v;
+    if ~studio_isImageLikeNumeric(v)
+        return;
+    end
+
+    ok = true;
+    U = v;
+end
+
+
+function tf = studio_isImageLikeNumeric(A)
+
+    tf = false;
+
+    try
+        A = squeeze(A);
+        sz = size(A);
+
+        % Reject tiny transform matrices like 3x3 / 4x4 / affine matrices.
+        if numel(A) < 1000
+            return;
+        end
+
+        if ndims(A) < 2
+            return;
+        end
+
+        if sz(1) < 16 || sz(2) < 16
+            return;
+        end
+
+        tf = true;
+
+    catch
+        tf = false;
     end
 end
 
+
 function tf = studio_looksLikeMaskArray(A)
+
     tf = false;
 
     try
@@ -7756,34 +9870,66 @@ function tf = studio_looksLikeMaskArray(A)
             return;
         end
 
+        if numel(A) > 200000
+            idx = round(linspace(1,numel(A),200000));
+            A = A(idx);
+        end
+
         u = unique(A);
 
         if numel(u) <= 2 && all(ismember(u, [0 1]))
             tf = true;
             return;
         end
+
     catch
         tf = false;
     end
 end
 
+
 function X = squeezeTo2Dor3D(X)
+
+    X = squeeze(X);
+
     while ndims(X) > 3
         X = mean(X, ndims(X));
+        X = squeeze(X);
     end
 end
 
+
 function G = toGray(X)
+
+    X = squeeze(X);
+
     if ndims(X) == 3 && size(X,3) == 3
-        R = X(:,:,1);
-        Gc = X(:,:,2);
-        B = X(:,:,3);
+        R = double(X(:,:,1));
+        Gc = double(X(:,:,2));
+        B = double(X(:,:,3));
         G = 0.2989*R + 0.5870*Gc + 0.1140*B;
         return;
     end
+
     G = X;
 end
 
+%% =========================================================
+%  EMPTY SCM / VIDEO UNDERLAY INFO
+% =========================================================
+function info = scmVideoEmptyUnderlayInfo()
+
+    info = struct();
+
+    info.mode = '';
+    info.isMulti = false;
+    info.files = {};
+    info.sourceIdx = [];
+    info.selectedFile = '';
+    info.selectedPath = '';
+    info.label = '';
+    info.isDisplayReady = false;
+end
 %% =========================================================
 %  SAVE PUBLICATION READY FILE
 % =========================================================
