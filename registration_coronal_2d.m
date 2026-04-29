@@ -41,6 +41,7 @@ end
 
 Reg2Dout = [];
 savedFile = '';
+savedReg2DFiles = {};
 didExplicitSave = false;
 
 %% ---------------------------------------------------------------------
@@ -529,11 +530,10 @@ uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
     'FontWeight','bold', ...
     'FontSize',FS.button, ...
     'Callback',@onClose);
-
 uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
     'Position',[0.08 row2Y 0.38 btnH2], ...
-    'String','Save Trafo', ...
-    'TooltipString','Saves only the current 2D affine transformation Reg2D for this source/atlas slice.', ...
+    'String','Save Current Slice', ...
+    'TooltipString','Saves transform + vascular + histology + regions + regions TXT for the current source slice.', ...
     'BackgroundColor',greenBtn, ...
     'ForegroundColor','w', ...
     'FontWeight','bold', ...
@@ -542,13 +542,13 @@ uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
 
 uicontrol('Style','pushbutton','Parent',ctrl,'Units','normalized', ...
     'Position',[0.54 row2Y 0.38 btnH2], ...
-    'String','Save Underlays + Regions', ...
-    'TooltipString','Saves atlas vascular/histology/regions underlays and region list. Also refreshes current Reg2D.', ...
+    'String','Save ALL Visited', ...
+    'TooltipString','Saves the full package for every visited/aligned source slice.', ...
     'BackgroundColor',greenBtn, ...
     'ForegroundColor','w', ...
     'FontWeight','bold', ...
     'FontSize',FS.button, ...
-    'Callback',@onSaveUnderlaysRegions);
+    'Callback',@onSaveAllTrafos);
 
 %% ---------------------------------------------------------------------
 % Images
@@ -927,74 +927,177 @@ uiwait(fig);
         set(hStatus,'String','Transform reset.');
     end
 
-    function onSaveTrafo(~, ~)
-        saveCurrentTrafoOnly();
-    end
+   function onSaveTrafo(~, ~)
+    saveCurrentFullPackage();
+end
 
-    function onSaveUnderlaysRegions(~, ~)
-        saveUnderlaysAndRegionsForCurrentSlice();
-    end
+function onSaveAllTrafos(~, ~)
+    saveAllVisitedFullPackages();
+end
 
-    function saveCurrentTrafoOnly()
-        try
-            saveCurrentSourceState();
-            sliceDir = getCurrentSliceDir();
-            if ~exist(sliceDir,'dir'), mkdir(sliceDir); end
-            sliceFile = getCurrentRegFile();
-            savedFile = sliceFile;
-            Reg2D = buildReg2D();
-            Reg2D.savedFile = sliceFile;
-            save(sliceFile,'Reg2D');
-            verifyFilesExist({sliceFile});
-            Reg2Dout = Reg2D;
-            didExplicitSave = true;
-            set(hStatus,'String',sprintf('Saved TRAFO | source slice %d | atlas slice %03d | %s', ...
-                getSourceSliceIndexForStatus(), round(S.slice), S.atlasMode));
-            logMessage(['Saved TRAFO Reg2D        -> ' sliceFile]);
-            logTrafoDetails();
-        catch ME
-            set(hStatus,'String',['Save trafo failed: ' ME.message]);
-            logMessage(['Save trafo failed: ' ME.message]);
+    
+
+
+
+    function saveCurrentFullPackage()
+    try
+        saveCurrentSourceState();
+
+        Reg2D = buildReg2D();
+
+        [sliceFile, extraFiles] = saveReg2DFullPackage(Reg2D);
+
+        savedFile = sliceFile;
+        Reg2Dout = Reg2D;
+        didExplicitSave = true;
+
+        savedReg2DFiles{end+1} = sliceFile;
+
+        set(hStatus,'String',sprintf('Saved FULL package | source %d | atlas %03d | %s', ...
+            Reg2D.sourceSliceIndex, Reg2D.atlasSliceIndex, Reg2D.atlasMode));
+
+        logMessage(['Saved FULL Reg2D package -> ' sliceFile]);
+        logTrafoDetails();
+
+        msgbox(sprintf(['Saved current source slice.\n\n' ...
+            'Transform MAT:\n%s\n\n' ...
+            'Extra atlas files:\n%s'], ...
+            sliceFile, strjoin(extraFiles(:), newline)), ...
+            'Save Current Slice complete');
+
+    catch ME
+        set(hStatus,'String',['Save Current Slice failed: ' ME.message]);
+        logMessage(['Save Current Slice failed: ' ME.message]);
+        errordlg(ME.message, 'Save Current Slice failed');
+    end
+end
+
+
+function saveAllVisitedFullPackages()
+    try
+        saveCurrentSourceState();
+
+        visited = false(sourceNSlices,1);
+
+        for ii = 1:sourceNSlices
+            visited(ii) = ~isempty(sourceStates{ii});
         end
+
+        visitedIdx = find(visited);
+
+        if isempty(visitedIdx)
+            error('No source-slice states were found. Align at least one slice first.');
+        end
+
+        if sourceNSlices > 1 && numel(visitedIdx) < sourceNSlices
+            missingIdx = setdiff(1:sourceNSlices, visitedIdx);
+
+            msg = sprintf([ ...
+                'Only %d / %d source slices have been visited/aligned.\n\n' ...
+                'Visited slices: %s\n' ...
+                'Missing slices: %s\n\n' ...
+                'Save only visited slices?'], ...
+                numel(visitedIdx), sourceNSlices, ...
+                compactIndexListLocal(visitedIdx), ...
+                compactIndexListLocal(missingIdx));
+
+            ch = questdlg(msg, ...
+                'Save ALL Visited', ...
+                'Save visited only', 'Cancel', 'Cancel');
+
+            if isempty(ch) || strcmpi(ch,'Cancel')
+                return;
+            end
+        end
+
+        Reg2DList = cell(numel(visitedIdx),1);
+        filesOut  = cell(numel(visitedIdx),1);
+
+        for kk = 1:numel(visitedIdx)
+
+            sourceIdx = visitedIdx(kk);
+            st = sourceStates{sourceIdx};
+
+            Reg2D = buildReg2DFromState(st, sourceIdx);
+
+            [sliceFile, ~] = saveReg2DFullPackage(Reg2D);
+
+            Reg2DList{kk} = Reg2D;
+            filesOut{kk} = sliceFile;
+
+            logMessage(sprintf('Saved FULL package -> source %03d | atlas %03d | %s', ...
+                sourceIdx, Reg2D.atlasSliceIndex, sliceFile));
+        end
+
+        stamp = datestr(now,'yyyymmdd_HHMMSS');
+        bundleFile = fullfile(saveDir, sprintf('StepMotor_Reg2D_Session_%s.mat', stamp));
+
+        StepMotorReg2D = struct();
+        StepMotorReg2D.kind = 'STEP_MOTOR_REG2D_SESSION_INDEX_ONLY';
+        StepMotorReg2D.created = datestr(now,'yyyy-mm-dd HH:MM:SS');
+        StepMotorReg2D.note = 'Index only. SCM should use the CoronalRegistration2D_sourceXXX_atlasYYY_*.mat files, not this file.';
+        StepMotorReg2D.sourceNSlices = sourceNSlices;
+        StepMotorReg2D.savedSourceIdx = visitedIdx(:).';
+        StepMotorReg2D.files = filesOut;
+        StepMotorReg2D.Reg2DList = Reg2DList;
+
+        if isstruct(sourceInfo) && isfield(sourceInfo,'path')
+            StepMotorReg2D.sourcePath = sourceInfo.path;
+        else
+            StepMotorReg2D.sourcePath = '';
+        end
+
+        save(bundleFile, 'StepMotorReg2D', '-v7');
+
+        savedReg2DFiles = filesOut;
+        savedFile = bundleFile;
+        Reg2Dout = StepMotorReg2D;
+        didExplicitSave = true;
+
+        set(hStatus,'String',sprintf('Saved ALL visited source slices: %d full package(s)', numel(visitedIdx)));
+
+        logMessage(['Saved StepMotor index only -> ' bundleFile]);
+
+        msgbox(sprintf(['Saved %d full step-motor slice package(s).\n\n' ...
+            'Session index file:\n%s\n\n' ...
+            'SCM should use the CoronalRegistration2D_sourceXXX_atlasYYY files.'], ...
+            numel(visitedIdx), bundleFile), ...
+            'Save ALL Visited complete');
+
+    catch ME
+        set(hStatus,'String',['Save ALL Visited failed: ' ME.message]);
+        logMessage(['Save ALL Visited failed: ' ME.message]);
+        errordlg(ME.message, 'Save ALL Visited failed');
+    end
+end
+
+
+function [sliceFile, extraFiles] = saveReg2DFullPackage(Reg2D)
+
+    sliceFile = Reg2D.savedFile;
+    sliceDir = fileparts(sliceFile);
+
+    if ~exist(sliceDir,'dir')
+        mkdir(sliceDir);
     end
 
-    function saveUnderlaysAndRegionsForCurrentSlice()
-        try
-            saveCurrentSourceState();
-            sliceDir = getCurrentSliceDir();
-            if ~exist(sliceDir,'dir'), mkdir(sliceDir); end
-            sliceFile = getCurrentRegFile();
-            savedFile = sliceFile;
-            Reg2D = buildReg2D();
-            Reg2D.savedFile = sliceFile;
-            save(sliceFile,'Reg2D');
-            files = saveAtlasUnderlaysLocal(atlas, Reg2D, sliceDir);
-            expectedFiles = {sliceFile};
-            if isstruct(files)
-                if isfield(files,'vascular'),   expectedFiles{end+1} = files.vascular;   end %#ok<AGROW>
-                if isfield(files,'histology'),  expectedFiles{end+1} = files.histology;  end %#ok<AGROW>
-                if isfield(files,'regions'),    expectedFiles{end+1} = files.regions;    end %#ok<AGROW>
-                if isfield(files,'regionsTxt'), expectedFiles{end+1} = files.regionsTxt; end %#ok<AGROW>
-            end
-            verifyFilesExist(expectedFiles);
-            Reg2Dout = Reg2D;
-            didExplicitSave = true;
-            set(hStatus,'String',sprintf('Saved UNDERLAYS + REGIONS | source slice %d | atlas slice %03d | %s', ...
-                getSourceSliceIndexForStatus(), round(S.slice), S.atlasMode));
-            logMessage(['Saved/refreshed TRAFO    -> ' sliceFile]);
-            logTrafoDetails();
-            logMessage(['Saved atlas output folder -> ' sliceDir]);
-            if isstruct(files)
-                if isfield(files,'vascular'),   logMessage(['Vascular underlay        -> ' files.vascular]); end
-                if isfield(files,'histology'),  logMessage(['Histology underlay       -> ' files.histology]); end
-                if isfield(files,'regions'),    logMessage(['Regions underlay         -> ' files.regions]); end
-                if isfield(files,'regionsTxt'), logMessage(['Regions TXT list         -> ' files.regionsTxt]); end
-            end
-        catch ME
-            set(hStatus,'String',['Save underlays/regions failed: ' ME.message]);
-            logMessage(['Save underlays/regions failed: ' ME.message]);
-        end
+    % Save main transform MAT.
+    saveReg2DWithFixedAtlas(sliceFile, Reg2D);
+
+    % Save separate atlas underlay MAT files + region TXT.
+    files = saveAtlasUnderlaysLocal(atlas, Reg2D, sliceDir);
+
+    extraFiles = {};
+
+    if isstruct(files)
+        if isfield(files,'vascular'),   extraFiles{end+1} = files.vascular;   end %#ok<AGROW>
+        if isfield(files,'histology'),  extraFiles{end+1} = files.histology;  end %#ok<AGROW>
+        if isfield(files,'regions'),    extraFiles{end+1} = files.regions;    end %#ok<AGROW>
+        if isfield(files,'regionsTxt'), extraFiles{end+1} = files.regionsTxt; end %#ok<AGROW>
     end
+
+    verifyFilesExist([{sliceFile} extraFiles]);
+end
 
     function verifyFilesExist(fileCell)
         if isempty(fileCell), return; end
@@ -1152,45 +1255,148 @@ uiwait(fig);
     end
 
     function Reg2D = buildReg2D()
-        Reg2D = struct();
-        Reg2D.type = 'simple_coronal_2d';
-        Reg2D.A = buildAffine2D(S, [srcH srcW]);
-        Reg2D.atlasSliceIndex = round(S.slice);
-        Reg2D.atlasMode = S.atlasMode;
-        Reg2D.outputSize = [targetH targetW];
-        Reg2D.sourceSize = [srcH srcW];
-        Reg2D.tx = S.tx;
-        Reg2D.ty = S.ty;
-        Reg2D.rotDeg = S.rotDeg;
-        Reg2D.sx = S.sx;
-        Reg2D.sy = S.sy;
-        Reg2D.opacity = S.opacity;
-        Reg2D.winMin = S.winMin;
-        Reg2D.winMax = S.winMax;
-        Reg2D.invert = S.invert;
-        Reg2D.cmapName = S.cmapName;
-        Reg2D.timestamp = datestr(now,'yyyymmdd_HHMMSS');
-        Reg2D.sourceSliceIndex = getSourceSliceIndexForStatus();
-        Reg2D.sourceWas3D = isSourceMultiSlice();
-        Reg2D.sourceNSlices = sourceNSlices;
-        if isfield(sourceInfo,'path')
-            Reg2D.sourcePath = sourceInfo.path;
-        else
-            Reg2D.sourcePath = '';
-        end
-        if isfield(sourceInfo,'label')
-            Reg2D.sourceLabel = sourceInfo.label;
-        else
-            Reg2D.sourceLabel = '';
-        end
-        if isfield(sourceInfo,'baseLabel')
-            Reg2D.sourceBaseLabel = sourceInfo.baseLabel;
-        else
-            Reg2D.sourceBaseLabel = '';
-        end
-        Reg2D.savedFile = getCurrentRegFile();
+    Reg2D = buildReg2DFromState(S, getSourceSliceIndexForStatus());
+end
+
+
+function Reg2D = buildReg2DFromState(st, sourceIdx)
+
+    sourceIdx = max(1, min(sourceNSlices, round(sourceIdx)));
+
+    srcHlocal = size(sourceStack3D,1);
+    srcWlocal = size(sourceStack3D,2);
+
+    Reg2D = struct();
+
+    Reg2D.type = 'simple_coronal_2d';
+
+    % This A is already MATLAB affine2d-compatible.
+    % SCM should use it directly.
+    Reg2D.A = buildAffine2D(st, [srcHlocal srcWlocal]);
+
+    Reg2D.atlasSliceIndex = round(st.slice);
+    Reg2D.atlasMode = st.atlasMode;
+
+    Reg2D.outputSize = [targetH targetW];
+    Reg2D.sourceSize = [srcHlocal srcWlocal];
+
+    Reg2D.tx = st.tx;
+    Reg2D.ty = st.ty;
+    Reg2D.rotDeg = st.rotDeg;
+    Reg2D.sx = st.sx;
+    Reg2D.sy = st.sy;
+
+    Reg2D.opacity = st.opacity;
+    Reg2D.winMin = st.winMin;
+    Reg2D.winMax = st.winMax;
+    Reg2D.invert = st.invert;
+    Reg2D.cmapName = st.cmapName;
+
+    Reg2D.timestamp = datestr(now,'yyyymmdd_HHMMSS');
+
+    Reg2D.sourceSliceIndex = sourceIdx;
+    Reg2D.sourceWas3D = isSourceMultiSlice();
+    Reg2D.sourceNSlices = sourceNSlices;
+
+    if isfield(sourceInfo,'path')
+        Reg2D.sourcePath = sourceInfo.path;
+    else
+        Reg2D.sourcePath = '';
     end
 
+    if isfield(sourceInfo,'baseLabel') && ~isempty(sourceInfo.baseLabel)
+        Reg2D.sourceBaseLabel = sourceInfo.baseLabel;
+        Reg2D.sourceLabel = sprintf('%s | source slice %03d', sourceInfo.baseLabel, sourceIdx);
+    elseif isfield(sourceInfo,'label')
+        Reg2D.sourceBaseLabel = sourceInfo.label;
+        Reg2D.sourceLabel = sourceInfo.label;
+    else
+        Reg2D.sourceBaseLabel = '';
+        Reg2D.sourceLabel = '';
+    end
+
+    sliceDir = getSliceSaveDir(saveDir, st.slice, sourceIdx, isSourceMultiSlice());
+
+    if ~exist(sliceDir,'dir')
+        mkdir(sliceDir);
+    end
+
+    Reg2D.savedFile = fullfile(sliceDir, ...
+        sprintf('CoronalRegistration2D_source%03d_atlas%03d_%s.mat', ...
+        sourceIdx, round(st.slice), lower(st.atlasMode)));
+
+    % ---------------------------------------------------------
+    % Fixed atlas target images saved inside the same Reg2D file.
+    % This prevents SCM from losing the histology background.
+    % ---------------------------------------------------------
+    Reg2D.fixedImage = getAtlasSliceNumeric(atlas, st.atlasMode, st.slice);
+    Reg2D.fixedUnderlay = Reg2D.fixedImage;
+    Reg2D.atlasUnderlay = Reg2D.fixedImage;
+    Reg2D.atlasUnderlayRGB = getAtlasSliceRGB(atlas, st.atlasMode, st.slice);
+
+    Reg2D.histologyImage = getAtlasSliceNumeric(atlas, 'histology', st.slice);
+    Reg2D.histologyUnderlay = Reg2D.histologyImage;
+
+    Reg2D.vascularImage = getAtlasSliceNumeric(atlas, 'vascular', st.slice);
+    Reg2D.vascularUnderlay = Reg2D.vascularImage;
+
+    Reg2D.regionsImage = getAtlasSliceNumeric(atlas, 'regions', st.slice);
+    Reg2D.regionsUnderlay = Reg2D.regionsImage;
+end
+
+    function saveReg2DWithFixedAtlas(sliceFile, Reg2D)
+
+    outDir = fileparts(sliceFile);
+
+    if ~exist(outDir,'dir')
+        mkdir(outDir);
+    end
+
+    fixedImage       = Reg2D.fixedImage;          %#ok<NASGU>
+    fixedUnderlay    = Reg2D.fixedUnderlay;       %#ok<NASGU>
+    atlasUnderlay    = Reg2D.atlasUnderlay;       %#ok<NASGU>
+    atlasUnderlayRGB = Reg2D.atlasUnderlayRGB;    %#ok<NASGU>
+
+    histologyImage    = Reg2D.histologyImage;     %#ok<NASGU>
+    histologyUnderlay = Reg2D.histologyUnderlay;  %#ok<NASGU>
+
+    vascularImage    = Reg2D.vascularImage;       %#ok<NASGU>
+    vascularUnderlay = Reg2D.vascularUnderlay;    %#ok<NASGU>
+
+    regionsImage    = Reg2D.regionsImage;         %#ok<NASGU>
+    regionsUnderlay = Reg2D.regionsUnderlay;      %#ok<NASGU>
+
+    sourceImage = []; %#ok<NASGU>
+    sourceMask  = []; %#ok<NASGU>
+
+    try
+        sourceImage = squeeze(sourceStack3D(:,:,Reg2D.sourceSliceIndex));
+    catch
+        sourceImage = [];
+    end
+
+    try
+        sourceMask = sourceMask2D;
+    catch
+        sourceMask = [];
+    end
+
+    save(sliceFile, ...
+        'Reg2D', ...
+        'fixedImage', ...
+        'fixedUnderlay', ...
+        'atlasUnderlay', ...
+        'atlasUnderlayRGB', ...
+        'histologyImage', ...
+        'histologyUnderlay', ...
+        'vascularImage', ...
+        'vascularUnderlay', ...
+        'regionsImage', ...
+        'regionsUnderlay', ...
+        'sourceImage', ...
+        'sourceMask', ...
+        '-v7');
+end
     function logMessage(msg)
         try
             if ~isempty(logFcn) && isa(logFcn,'function_handle')
@@ -1391,7 +1597,36 @@ if ~isfinite(v)
 end
 end
 
+function s = compactIndexListLocal(v)
 
+    if isempty(v)
+        s = '<none>';
+        return;
+    end
+
+    v = unique(sort(round(v(:).')));
+
+    parts = {};
+    i = 1;
+
+    while i <= numel(v)
+        j = i;
+
+        while j < numel(v) && v(j+1) == v(j) + 1
+            j = j + 1;
+        end
+
+        if i == j
+            parts{end+1} = sprintf('%d', v(i)); %#ok<AGROW>
+        else
+            parts{end+1} = sprintf('%d-%d', v(i), v(j)); %#ok<AGROW>
+        end
+
+        i = j + 1;
+    end
+
+    s = strjoin(parts, ', ');
+end
 function A = buildAffine2D(S, srcSize)
 srcH = srcSize(1);
 srcW = srcSize(2);

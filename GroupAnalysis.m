@@ -4730,14 +4730,18 @@ end
     end
 
     outFile = fullfile(p,f);
-    stamp   = datestr(now,'yyyymmdd_HHMMSSFFF');
-    tmpRoot = fullfile(tempdir, ['GA_GroupMapSeries_' stamp]);
+stamp   = datestr(now,'yyyymmdd_HHMMSSFFF');
 
-    oldState   = struct();
-    tilePNGs   = {};
-    tileLBLs   = {};
-    slidePNGs  = {};
-    lastRender = struct();
+% IMPORTANT:
+% Store individual map PNGs next to the PPT, like SCM GUI export.
+% Do not use tempdir, otherwise the individual exported panels are lost.
+[~, pptBase, ~] = fileparts(outFile);
+tmpRoot = fullfile(p, [pptBase '_individual_PNGs']);
+
+oldState   = struct();
+tilePNGs   = {};
+tileLBLs   = {};
+lastRender = struct();
 
     setStatus(false);
     setStatusText('Exporting group map PPT series...');
@@ -4852,27 +4856,10 @@ end
                 error('Could not build group-map display for window %.0f-%.0fs.', s0, s1);
             end
 
-            phase = '';
-            if isfinite(injSec)
-                if s1 <= injSec
-                    phase = 'Baseline';
-                elseif s0 < injSec && s1 > injSec
-                    phase = 'Injection';
-                else
-                    pi = floor((s0 - injSec) / winLen) + 1;
-                    if pi < 1
-                        pi = 1;
-                    end
-                    phase = sprintf('%d min PI', pi);
-                end
-            end
-
-            minIdx = floor(s0 / winLen) + 1;
-            if isempty(phase)
-                lbl = sprintf('%.0f-%.0fs | %d min', s0, s1, minIdx);
-            else
-                lbl = sprintf('%.0f-%.0fs | %d min (%s)', s0, s1, minIdx, phase);
-            end
+          % SCM-style label:
+% Show signal window in seconds, baseline window in seconds,
+% and PI timing in minutes relative to injection/PI zero.
+lbl = makeSCMStyleTileLabelGA(s0, s1, baseSec, injSec);
 
             tileFile = fullfile(tmpRoot, sprintf('tile_%03d.png', wi));
 
@@ -4897,44 +4884,37 @@ end
             baseSec(1), baseSec(2), winLen);
 
         % -----------------------------------------------------------------
-        % First slide: overview / side-assignment table
-        % -----------------------------------------------------------------
-        infoSlide = fullfile(tmpRoot, 'slide_00_info.png');
-        renderGroupMapInfoSlidePNG(infoSlide, guidata(hFig), footerStr, 220);
-        slidePNGs{end+1} = infoSlide; %#ok<AGROW>
+% Editable PPT export:
+%   - each brain/map tile is inserted as an individual Picture object
+%   - labels/footer are editable PPT text boxes
+%   - individual PNGs remain saved beside the PPT
+% -----------------------------------------------------------------
+Sfinal = guidata(hFig);
 
-        % -----------------------------------------------------------------
-        % Montage slides
-        % -----------------------------------------------------------------
-        perSlide = 6;
-        nSlides  = ceil(numel(tilePNGs) / perSlide);
+[animalIDsUsed, animalDetailsUsed] = getGroupMapAnimalsUsedGA(Sfinal);
 
-        for si = 1:nSlides
-            i0 = (si - 1) * perSlide + 1;
-            i1 = min(si * perSlide, numel(tilePNGs));
-            idx = i0:i1;
+footerStr = makeGroupMapPPTFooterGA( ...
+    Sfinal, ...
+    baseSec, ...
+    winLen, ...
+    injSec, ...
+    animalIDsUsed);
 
-            setStatusText(sprintf('Building slide %d/%d ...', si, nSlides));
-            try
-                pushMapExportLog(sprintf('Building slide %d/%d ...', si, nSlides), false);
-            catch
-            end
-            drawnow;
+setStatusText('Building editable PowerPoint with individual map panels...');
+try
+    pushMapExportLog('Building editable PowerPoint with individual map panels...', false);
+catch
+end
+drawnow;
 
-            outSlide = fullfile(tmpRoot, sprintf('slide_%02d.png', si));
-            renderGroupMapMontageSlidePNG( ...
-                outSlide, ...
-                tilePNGs(idx), ...
-                tileLBLs(idx), ...
-                'Group signal change maps', ...
-                footerStr, ...
-                220, ...
-                lastRender);
-
-            slidePNGs{end+1} = outSlide; %#ok<AGROW>
-        end
-
-        writePptFromSlidePNGsGA(outFile, slidePNGs);
+writeGroupMapSeriesPPTEditableGA( ...
+    outFile, ...
+    tilePNGs, ...
+    tileLBLs, ...
+    Sfinal, ...
+    footerStr, ...
+    lastRender, ...
+    tmpRoot);
 
         try
             pushMapExportLog(['Done saved: ' outFile], false);
@@ -4949,12 +4929,7 @@ end
         catch
         end
 
-        try
-            if exist(tmpRoot,'dir') == 7
-                rmdir(tmpRoot,'s');
-            end
-        catch
-        end
+    
 
         try
             pushMapExportLog(['PPT export failed: ' ME.message], false);
@@ -4971,12 +4946,7 @@ end
     catch
     end
 
-    try
-        if exist(tmpRoot,'dir') == 7
-            rmdir(tmpRoot,'s');
-        end
-    catch
-    end
+   
 
     setStatus(true);
 end
@@ -9338,6 +9308,630 @@ function tf = canUsePptApiGA()
     catch
         tf = false;
     end
+end
+
+
+function lbl = makeSCMStyleTileLabelGA(s0, s1, baseSec, injSec)
+% Label shown above each exported PPT map panel.
+% SCM-style: signal seconds + PI minutes + baseline seconds.
+
+    if nargin < 4
+        injSec = NaN;
+    end
+
+    if nargin < 3 || isempty(baseSec) || numel(baseSec) < 2
+        baseSec = [NaN NaN];
+    end
+
+    sigTxt = sprintf('Signal %.0f-%.0fs', s0, s1);
+
+    if isfinite(injSec)
+        if s1 <= injSec
+            piTxt = sprintf('pre-PI %.1f-%.1f min', ...
+                (s0 - injSec) / 60, ...
+                (s1 - injSec) / 60);
+        elseif s0 < injSec && s1 > injSec
+            piTxt = sprintf('PI crossing %.1f-%.1f min', ...
+                (s0 - injSec) / 60, ...
+                (s1 - injSec) / 60);
+        else
+            piTxt = sprintf('PI %.1f-%.1f min', ...
+                (s0 - injSec) / 60, ...
+                (s1 - injSec) / 60);
+        end
+    else
+        piTxt = sprintf('%.1f-%.1f min', s0/60, s1/60);
+    end
+
+    if all(isfinite(baseSec(1:2)))
+        baseTxt = sprintf('Base %.0f-%.0fs', baseSec(1), baseSec(2));
+    else
+        baseTxt = 'Base unknown';
+    end
+
+    lbl = sprintf('%s | %s\n%s', sigTxt, piTxt, baseTxt);
+end
+
+
+function footerStr = makeGroupMapPPTFooterGA(S0, baseSec, winLen, injSec, animalIDsUsed)
+% Footer shown on all exported PPT slides.
+
+    if nargin < 5 || isempty(animalIDsUsed)
+        animalIDsUsed = {'unknown'};
+    end
+
+    animalTxt = strjoin(animalIDsUsed(:).', ', ');
+
+    % Avoid ultra-long footer if many animals
+    if numel(animalTxt) > 150
+        animalTxt = [animalTxt(1:147) '...'];
+    end
+
+    if isfinite(injSec)
+        piTxt = sprintf('PI zero/injection %.0fs (%.2f min)', injSec, injSec/60);
+    else
+        piTxt = 'PI zero/injection not set';
+    end
+
+    footerStr = sprintf([ ...
+        'Base %.0f-%.0fs | Window %.0fs | %s | ' ...
+        'Alpha mod min/max %.3g/%.3g | Caxis [%.3g %.3g] | Sigma %.3g | ' ...
+        'Animals n=%d: %s'], ...
+        baseSec(1), baseSec(2), ...
+        winLen, ...
+        piTxt, ...
+        S0.mapModMin, S0.mapModMax, ...
+        S0.mapCaxis(1), S0.mapCaxis(2), ...
+        S0.mapSigma, ...
+        numel(animalIDsUsed), ...
+        animalTxt);
+end
+
+
+function [animalIDsUsed, animalDetailsUsed] = getGroupMapAnimalsUsedGA(S0)
+% Return animal IDs and detailed labels used for current group-map export.
+
+    animalIDsUsed = {};
+    animalDetailsUsed = {};
+
+    rows = [];
+
+    try
+        [rows, ~] = findActiveBundleRowsGA(S0);
+    catch
+        rows = [];
+    end
+
+    if isempty(rows)
+        try
+            rows = findBundleDisplayRowsGA(S0);
+        catch
+            rows = 1:size(S0.subj,1);
+        end
+    end
+
+    if isempty(rows)
+        animalIDsUsed = {'unknown'};
+        animalDetailsUsed = {'unknown'};
+        return;
+    end
+
+    for ii = 1:numel(rows)
+        r = rows(ii);
+
+        if r < 1 || r > size(S0.subj,1)
+            continue;
+        end
+
+        useThis = true;
+        try
+            key = makeBundleEntityKeyForRow(S0, r);
+            if ~isempty(key)
+                useThis = entityUseStateForKey(S0, key);
+            else
+                useThis = logicalCellValue(S0.subj{r,1});
+            end
+        catch
+            try
+                useThis = logicalCellValue(S0.subj{r,1});
+            catch
+                useThis = true;
+            end
+        end
+
+        if ~useThis
+            continue;
+        end
+
+        try
+            info = extractRowMetaLight(S0.subj(r,:));
+        catch
+            info = struct();
+            info.animalID = strtrimSafe(S0.subj{r,2});
+            info.session  = '';
+            info.scanID   = '';
+        end
+
+        animalID = strtrimSafe(info.animalID);
+        if isempty(animalID) || strcmpi(animalID,'N/A')
+            animalID = strtrimSafe(S0.subj{r,2});
+        end
+        if isempty(animalID)
+            animalID = sprintf('row%d', r);
+        end
+
+        detail = makeBundleDisplayTitle(animalID, info.session, info.scanID);
+
+        if ~any(strcmpi(animalIDsUsed, animalID))
+            animalIDsUsed{end+1} = animalID; %#ok<AGROW>
+        end
+
+        if ~any(strcmpi(animalDetailsUsed, detail))
+            animalDetailsUsed{end+1} = detail; %#ok<AGROW>
+        end
+    end
+
+    if isempty(animalIDsUsed)
+        animalIDsUsed = {'unknown'};
+    end
+
+    if isempty(animalDetailsUsed)
+        animalDetailsUsed = animalIDsUsed;
+    end
+end
+
+
+function oneLine = makeGroupMapSlideInfoLineGA(S0, animalIDsUsed)
+% Compact subtitle for each PPT map slide.
+
+    if nargin < 2 || isempty(animalIDsUsed)
+        animalIDsUsed = {'unknown'};
+    end
+
+    animalTxt = strjoin(animalIDsUsed(:).', ', ');
+    if numel(animalTxt) > 120
+        animalTxt = [animalTxt(1:117) '...'];
+    end
+
+    oneLine = sprintf('Animals n=%d: %s | Alpha mod min/max %.3g/%.3g | Caxis [%.3g %.3g] | Colormap %s', ...
+        numel(animalIDsUsed), ...
+        animalTxt, ...
+        S0.mapModMin, S0.mapModMax, ...
+        S0.mapCaxis(1), S0.mapCaxis(2), ...
+        strtrimSafe(S0.mapColormap));
+end
+
+function writeGroupMapSeriesPPTEditableGA(pptPath, tilePNGs, tileLBLs, S0, footerStr, renderInfo, assetDir)
+% writeGroupMapSeriesPPTEditableGA
+% Editable PowerPoint export for GroupAnalysis group-map series.
+%
+% Main difference from old writePptFromSlidePNGsGA:
+%   OLD: each slide was one flattened PNG.
+%   NEW: each map tile is inserted as a separate PowerPoint Picture object.
+%
+% This makes the export behave like SCM GUI:
+%   - each brain/map panel can be clicked/copied separately
+%   - labels/footer are editable text boxes
+%   - individual tile PNGs remain saved beside the PPT
+
+    import mlreportgen.ppt.*
+
+    if nargin < 2 || isempty(tilePNGs)
+        error('No tile PNGs were provided for editable PPT export.');
+    end
+
+    if nargin < 3 || isempty(tileLBLs)
+        tileLBLs = cell(size(tilePNGs));
+        for i = 1:numel(tilePNGs)
+            tileLBLs{i} = sprintf('Window %d', i);
+        end
+    end
+
+    if nargin < 7 || isempty(assetDir)
+        assetDir = fileparts(pptPath);
+    end
+    if isempty(assetDir)
+        assetDir = pwd;
+    end
+    if exist(assetDir,'dir') ~= 7
+        mkdir(assetDir);
+    end
+
+    pptDir = fileparts(pptPath);
+    if ~isempty(pptDir) && exist(pptDir,'dir') ~= 7
+        mkdir(pptDir);
+    end
+
+    if exist(pptPath,'file') == 2
+        delete(pptPath);
+    end
+
+    % Basic 16:9 coordinates in inches
+    slideW = 13.333;
+    slideH = 7.500;
+
+    % Create reusable background and colorbar assets
+    bgPng = fullfile(assetDir, 'PPT_black_background.png');
+    makeSolidPngGA(bgPng, [0 0 0]);
+
+    cbPng = fullfile(assetDir, 'PPT_shared_colorbar.png');
+    renderSharedColorbarPNGGA(cbPng, renderInfo);
+[animalIDsUsed, animalDetailsUsed] = getGroupMapAnimalsUsedGA(S0);
+slideInfoLine = makeGroupMapSlideInfoLineGA(S0, animalIDsUsed);
+    ppt = [];
+    try
+        ppt = Presentation(pptPath);
+
+        try
+            ppt.Layout = 'widescreen';
+        catch
+        end
+
+        open(ppt);
+
+        % =========================================================
+        % Slide 1: editable overview slide
+        % =========================================================
+        slide = add(ppt,'Blank');
+        addPptPictureStretchGA(slide, bgPng, 0, 0, slideW, slideH);
+
+        addPptTextBoxGA(slide, ...
+            'Group map export overview', ...
+            0.35, 0.22, 12.60, 0.45, ...
+            22, true, 'FFFFFF', 'center', 'Arial');
+
+        [hdr, tbl, nKept, nRemoved] = buildGroupMapExportOverviewTableGA(S0);
+
+        winTxt = 'Per-bundle exported windows';
+        try
+            if isfield(S0,'mapUseGlobalWindows') && S0.mapUseGlobalWindows
+                winTxt = sprintf('Global windows | base %.0f-%.0fs | signal %.0f-%.0fs', ...
+                    S0.mapGlobalBaseSec(1), S0.mapGlobalBaseSec(2), ...
+                    S0.mapGlobalSigSec(1),  S0.mapGlobalSigSec(2));
+            end
+        catch
+        end
+
+     infoLines = { ...
+    sprintf('Animals kept for maps: %d', nKept), ...
+    sprintf('Animals removed / inactive: %d', nRemoved), ...
+    sprintf('Animal IDs used: %s', strjoin(animalIDsUsed(:).', ', ')), ...
+    sprintf('Animal/session/scan used: %s', strjoin(animalDetailsUsed(:).', '; ')), ...
+    sprintf('Summary: %s', strtrimSafe(S0.mapSummary)), ...
+            sprintf('Source: %s', strtrimSafe(S0.mapSource)), ...
+            sprintf('Windows: %s', winTxt), ...
+            sprintf('Alpha modulation: min %.3g | max %.3g', S0.mapModMin, S0.mapModMax), ...
+            sprintf('Spatial smoothing sigma: %.3g', S0.mapSigma), ...
+            sprintf('C-axis: [%.3g %.3g]', S0.mapCaxis(1), S0.mapCaxis(2)), ...
+            sprintf('Colormap: %s', strtrimSafe(S0.mapColormap)), ...
+            sprintf('Flip mode: %s', strtrimSafe(S0.mapFlipMode)), ...
+            sprintf('Reference hemisphere: %s', strtrimSafe(S0.mapRefPacapSide)), ...
+            sprintf('Underlay: %s', strtrimSafe(S0.mapUnderlayMode))};
+
+        addPptTextBoxGA(slide, ...
+            strjoin(infoLines, newline), ...
+            0.55, 0.95, 12.25, 1.65, ...
+            12, false, 'FFFFFF', 'left', 'Consolas');
+
+        tableLines = buildFixedWidthGroupMapInfoTable(hdr, tbl);
+
+        addPptTextBoxGA(slide, ...
+            strjoin(tableLines, newline), ...
+            0.55, 2.90, 12.25, 3.90, ...
+            11, false, 'FFFFFF', 'left', 'Consolas');
+
+        addPptTextBoxGA(slide, ...
+            footerStr, ...
+            0.35, 7.13, 12.60, 0.22, ...
+            9, false, 'CCCCCC', 'right', 'Arial');
+
+        % =========================================================
+        % Main map slides: 6 individual panels per slide
+        % =========================================================
+        perSlide = 6;
+        nSlides  = ceil(numel(tilePNGs) / perSlide);
+
+        for si = 1:nSlides
+            i0 = (si - 1) * perSlide + 1;
+            i1 = min(si * perSlide, numel(tilePNGs));
+            idx = i0:i1;
+
+            slide = add(ppt,'Blank');
+            addPptPictureStretchGA(slide, bgPng, 0, 0, slideW, slideH);
+
+           addPptTextBoxGA(slide, ...
+    sprintf('Group signal change maps | slide %d/%d', si, nSlides), ...
+    0.35, 0.14, 12.60, 0.34, ...
+    18, true, 'FFFFFF', 'center', 'Arial');
+
+addPptTextBoxGA(slide, ...
+    slideInfoLine, ...
+    0.35, 0.52, 12.60, 0.24, ...
+    9, false, 'CCCCCC', 'center', 'Arial');
+
+            % Shared colorbar as its own movable object
+           % Larger SCM-style shared colorbar
+addPptPictureFitGA(slide, cbPng, 0.10, 0.95, 1.08, 6.10);
+
+            % Grid geometry
+           % Leave more room for larger colorbar and two-line labels
+x0 = 1.32;
+xR = 13.05;
+y0 = 1.24;
+
+colGap = 0.18;
+rowGap = 0.55;
+
+tileW = (xR - x0 - 2*colGap) / 3;
+tileH = 2.45;
+
+labelH = 0.36;
+
+            for kk = 1:numel(idx)
+                localK = kk;
+                globalK = idx(kk);
+
+                row = floor((localK - 1) / 3);   % 0 or 1
+                col = mod(localK - 1, 3);        % 0,1,2
+
+                x = x0 + col * (tileW + colGap);
+                y = y0 + row * (tileH + rowGap);
+
+                lbl = tileLBLs{globalK};
+
+                % Editable label above each map tile
+                addPptTextBoxGA(slide, ...
+                    lbl, ...
+                   x, max(0.78, y - labelH - 0.05), tileW, labelH, ...
+9, true, 'FFFFFF', 'center', 'Arial');
+
+                % Individual image object
+                addPptPictureFitGA(slide, tilePNGs{globalK}, x, y, tileW, tileH);
+            end
+
+            addPptTextBoxGA(slide, ...
+                footerStr, ...
+                0.35, 7.13, 12.60, 0.22, ...
+                9, false, 'CCCCCC', 'right', 'Arial');
+        end
+
+        close(ppt);
+
+    catch ME
+        try
+            if ~isempty(ppt)
+                close(ppt);
+            end
+        catch
+        end
+        error('Editable PowerPoint export failed: %s', ME.message);
+    end
+
+    pause(0.25);
+
+    if exist(pptPath,'file') ~= 2
+        error('PowerPoint file was not created: %s', pptPath);
+    end
+end
+
+
+function addPptPictureStretchGA(slide, imgFile, x, y, w, h)
+% Add picture with exact stretch. Used for black background only.
+    import mlreportgen.ppt.*
+
+    pic = Picture(imgFile);
+    pic.X = inchStrGA(x);
+    pic.Y = inchStrGA(y);
+    pic.Width  = inchStrGA(w);
+    pic.Height = inchStrGA(h);
+    add(slide, pic);
+end
+
+function addPptPictureFitGA(slide, imgFile, x, y, boxW, boxH)
+% Add picture while preserving aspect ratio and centering inside box.
+    import mlreportgen.ppt.*
+
+    if exist(imgFile,'file') ~= 2
+        return;
+    end
+
+    try
+        info = imfinfo(imgFile);
+        imW = double(info.Width);
+        imH = double(info.Height);
+    catch
+        imW = boxW;
+        imH = boxH;
+    end
+
+    if imW <= 0 || imH <= 0
+        imW = boxW;
+        imH = boxH;
+    end
+
+    imAR  = imW / imH;
+    boxAR = boxW / boxH;
+
+    if boxAR > imAR
+        h = boxH;
+        w = h * imAR;
+    else
+        w = boxW;
+        h = w / imAR;
+    end
+
+    xx = x + 0.5 * (boxW - w);
+    yy = y + 0.5 * (boxH - h);
+
+    pic = Picture(imgFile);
+    pic.X = inchStrGA(xx);
+    pic.Y = inchStrGA(yy);
+    pic.Width  = inchStrGA(w);
+    pic.Height = inchStrGA(h);
+    add(slide, pic);
+end
+
+function addPptTextBoxGA(slide, txt, x, y, w, h, fontSizePt, isBold, colorHex, hAlign, fontName)
+% Add editable PPT text box.
+% Uses robust try/catch so older MATLAB/PPT API versions do not crash on style.
+
+    import mlreportgen.ppt.*
+
+    if nargin < 7 || isempty(fontSizePt), fontSizePt = 11; end
+    if nargin < 8 || isempty(isBold),     isBold = false; end
+    if nargin < 9 || isempty(colorHex),   colorHex = 'FFFFFF'; end
+    if nargin < 10 || isempty(hAlign),    hAlign = 'left'; end
+    if nargin < 11 || isempty(fontName),  fontName = 'Arial'; end
+
+    try
+        if iscell(txt)
+            txt = strjoin(txt, newline);
+        end
+    catch
+    end
+
+    txt = char(txt);
+
+    tb = TextBox();
+    tb.X = inchStrGA(x);
+    tb.Y = inchStrGA(y);
+    tb.Width  = inchStrGA(w);
+    tb.Height = inchStrGA(h);
+
+    lines = regexp(txt, '\r\n|\n|\r', 'split');
+    if isempty(lines)
+        lines = {txt};
+    end
+
+    for i = 1:numel(lines)
+        p = Paragraph(lines{i});
+
+        try
+            st = { ...
+                FontFamily(fontName), ...
+                FontSize(sprintf('%dpt', round(fontSizePt))), ...
+                Color(colorHex)};
+
+            if isBold
+                st{end+1} = Bold(true); %#ok<AGROW>
+            end
+
+            if ~isempty(hAlign)
+                st{end+1} = HAlign(hAlign); %#ok<AGROW>
+            end
+
+            p.Style = st;
+        catch
+        end
+
+        try
+            add(tb, p);
+        catch
+        end
+    end
+
+    add(slide, tb);
+end
+
+function s = inchStrGA(v)
+    s = sprintf('%.3fin', double(v));
+end
+
+function makeSolidPngGA(outFile, rgb)
+% Create tiny solid PNG used as slide background.
+    if nargin < 2 || isempty(rgb)
+        rgb = [0 0 0];
+    end
+
+    rgb = double(rgb(:)');
+    if max(rgb) <= 1
+        rgb = uint8(round(255 * rgb));
+    else
+        rgb = uint8(rgb);
+    end
+
+    I = zeros(20,20,3,'uint8');
+    I(:,:,1) = rgb(1);
+    I(:,:,2) = rgb(2);
+    I(:,:,3) = rgb(3);
+
+    try
+        imwrite(I, outFile);
+    catch
+    end
+end
+
+    function renderSharedColorbarPNGGA(outFile, renderInfo)
+% Render shared colorbar as a separate PNG object.
+% Larger SCM-style colorbar for editable PPT export.
+
+    cax = [0 100];
+    cmName = 'blackbdy_iso';
+
+    try
+        if isfield(renderInfo,'caxis') && numel(renderInfo.caxis) >= 2
+            cax = double(renderInfo.caxis(1:2));
+        end
+    catch
+    end
+
+    try
+        if isfield(renderInfo,'colormapName') && ~isempty(renderInfo.colormapName)
+            cmName = char(renderInfo.colormapName);
+        end
+    catch
+    end
+
+    if ~isfinite(cax(1)) || ~isfinite(cax(2)) || cax(2) <= cax(1)
+        cax = [0 100];
+    end
+
+    cm = getNamedCmapLocal(cmName, 512);
+    if isempty(cm) || size(cm,2) ~= 3
+        cm = hot(512);
+    end
+
+    f = figure('Visible','off', ...
+        'Color',[0 0 0], ...
+        'InvertHardcopy','off', ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'NumberTitle','off');
+
+    % Bigger source image = sharper and larger in PPT
+    set(f,'Position',[100 100 420 1250]);
+
+    ax = axes('Parent',f, ...
+        'Units','normalized', ...
+        'Position',[0.16 0.06 0.24 0.88]);
+
+    image(ax, [0 1], [cax(1) cax(2)], reshape(cm,[size(cm,1) 1 3]));
+    set(ax,'YDir','normal');
+    set(ax,'XTick',[]);
+    set(ax,'YAxisLocation','right');
+    set(ax,'YTick',linspace(cax(1), cax(2), 6));
+    set(ax,'YColor',[1 1 1]);
+    set(ax,'XColor',[1 1 1]);
+    set(ax,'Color',[0 0 0]);
+    set(ax,'FontName','Arial');
+    set(ax,'FontSize',17);
+    set(ax,'FontWeight','bold');
+    set(ax,'LineWidth',1.2);
+    box(ax,'on');
+
+    ylabel(ax,'Signal change (%)', ...
+        'Color',[1 1 1], ...
+        'FontName','Arial', ...
+        'FontSize',16, ...
+        'FontWeight','bold');
+
+    try
+        print(f, outFile, '-dpng', '-r300', '-opengl');
+    catch
+        print(f, outFile, '-dpng', '-r300');
+    end
+
+    close(f);
 end
 
 function writePptFromSlidePNGsGA(pptPath, slidePNGs)
