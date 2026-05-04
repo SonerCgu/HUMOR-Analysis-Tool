@@ -3731,21 +3731,38 @@ function segmentationCallback(~,~)
         return;
     end
 
-  has3D = isfield(studio,'atlasTransform') && ~isempty(studio.atlasTransform);
-has2D = isfield(studio,'atlasReg2D') && ~isempty(studio.atlasReg2D);
-
-if ~has3D && ~has2D
-    warndlg('Run Registration to Atlas first.');
-    addLog('Segmentation cancelled: no atlas registration found.');
-    return;
-end
     setProgramStatus(false);
     drawnow;
 
     try
-        addLog('Segmentation callback opened successfully.');
-        msgbox('Segmentation callback placeholder. Insert your segmentation .mat workflow here.', ...
-               'Segmentation');
+        data = getActiveData();
+
+        % Segmentation.m now contains a single modern setup GUI.
+        % It supports:
+        %   - active data.I / data.PSC
+        %   - registered 3D atlas-space MAT files
+        %   - manual atlas label maps from Registration2D
+        %   - step-motor Reg2D files from Registration2D
+        Seg = Segmentation(studio, data, @(m) addLog(m));
+
+        if isempty(Seg)
+            addLog('Segmentation cancelled or no output created.');
+        else
+            addLog('Segmentation completed.');
+
+            if isfield(Seg,'files') && isfield(Seg.files,'mat')
+                addLog(['Segmentation MAT: ' Seg.files.mat]);
+            end
+
+            if isfield(Seg,'files') && isfield(Seg.files,'csvBothZ')
+                addLog(['Region x time CSV: ' Seg.files.csvBothZ]);
+            end
+
+            if isfield(Seg,'files') && isfield(Seg.files,'csvRegionTable')
+                addLog(['Region table CSV: ' Seg.files.csvRegionTable]);
+            end
+        end
+
     catch ME
         addLog(['SEGMENTATION ERROR: ' ME.message]);
         errordlg(ME.message,'Segmentation Failed');

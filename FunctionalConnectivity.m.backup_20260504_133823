@@ -172,8 +172,6 @@ st.opts = opts;
 % Region-key bookkeeping. Used by the Region key button.
 st.loadedRegionNameFile = '';
 st.loadedSegmentationFile = '';
-st.showHemisphere = true;  % FC_LR_LABEL_DISPLAY_PATCH_V2_STATE
-st.roiHemiMode = 'both';   % both | left | right | merged
 
 % -------------------------------------------------------------------------
 % COLORS / FONT
@@ -218,13 +216,6 @@ fig = figure( ...
     'WindowScrollWheelFcn',@onMouseWheel);
 try, set(fig,'WindowState','maximized'); catch, end
 try, set(fig,'Renderer','opengl'); catch, end
-% FC_LR_LABEL_DISPLAY_PATCH_V2_INTERPRETER
-try
-    set(fig,'DefaultTextInterpreter','none');
-    set(fig,'DefaultAxesTickLabelInterpreter','none');
-    set(fig,'DefaultLegendInterpreter','none');
-catch
-end
 
 panelCtrl = uipanel('Parent',fig,'Units','normalized','Position',[0.006 0.015 0.350 0.97], ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
@@ -499,14 +490,6 @@ uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
     'BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onSaveAll);
 
-% FC_GROUP_ANALYSIS_EXPORT_BUTTON_20260504
-uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.02 0.045 0.14 0.13], 'String','Export GA', ...
-    'BackgroundColor',C.green,'ForegroundColor','w', ...
-    'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onExportGroupAnalysis);
-% FC_GROUP_ANALYSIS_EXPORT_BUTTON_20260504_END
-
-
 fc_label(pSave,[0.02 0.60 0.16 0.10],'Underlay style',C);
 ddUnderlayStyle = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized', ...
     'Position',[0.20 0.58 0.30 0.12], ...
@@ -538,26 +521,6 @@ edSeedAlpha = uicontrol('Parent',pSave,'Style','edit','Units','normalized', ...
     'Position',[0.59 0.38 0.08 0.12], 'String',sprintf('%.2f',st.seedAlpha), ...
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, 'FontName',C.font, ...
     'FontSize',C.fsTiny,'Callback',@onColorSettings);
-
-% FC_LR_LABEL_DISPLAY_PATCH_V2_CHECKBOX
-cbShowLR = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
-    'Position',[0.705 0.385 0.245 0.105], ...
-    'String','Show L/R', 'Value',1, ...
-    'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
-    'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
-    'Callback',@onShowHemisphere);
-
-% FC_REGION_MODE_PATCH_20260504_UI
-fc_label(pSave,[0.02 0.205 0.14 0.10],'Regions',C);
-ddRegionMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.16 0.19 0.34 0.12], ...
-    'String',{'Both L/R separate','Left only','Right only','All merged no L/R'}, ...
-    'Value',1, ...
-    'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
-    'FontName',C.font,'FontSize',C.fsTiny,'FontWeight','bold', ...
-    'Callback',@onRegionMode);
-% FC_REGION_MODE_PATCH_20260504_UI_END
-
 
 fc_label(pSave,[0.02 0.205 0.14 0.10],'',C);
 
@@ -811,24 +774,19 @@ refreshAll();
                 return;
             end
 
-            [~,namesOrdered,order,meta] = fc_current_matrix(s,res);
-            if exist('meta','var') && isfield(meta,'displayLabels')
-                labelsOrdered = double(meta.displayLabels(:));
-            else
-                labelsOrdered = double(res.labels(order));
-            end
+            [~,namesOrdered,order] = fc_current_matrix(s,res);
+            labelsOrdered = double(res.labels(order));
             namesOrdered = namesOrdered(:);
             n = numel(labelsOrdered);
 
-            abbr = fc_abbrev_only_list(namesOrdered,18);
-            displayNames = fc_abbrev_list(namesOrdered,22,false);
+            abbr = fc_abbrev_list(namesOrdered,18);
             abbr = abbr(:);
 
             fullNames = cell(n,1);
             for kk = 1:n
                 nm = char(namesOrdered{kk});
                 nm = regexprep(nm,'\s*\[[^\]]*\]\s*$','');
-                fullNames{kk} = fc_region_fullname_no_lr(strtrim(nm));
+                fullNames{kk} = strtrim(nm);
                 if isempty(fullNames{kk})
                     fullNames{kk} = char(namesOrdered{kk});
                 end
@@ -845,7 +803,7 @@ refreshAll();
                     T = s.opts.roiNameTable;
                     if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
                         for kk = 1:n
-                            idx = find(abs(double(T.labels(:))) == abs(labelsOrdered(kk)),1,'first');
+                            idx = find(double(T.labels(:)) == labelsOrdered(kk),1,'first');
                             if ~isempty(idx) && idx <= numel(T.names)
                                 nm = strtrim(char(T.names{idx}));
                                 if ~isempty(nm)
@@ -897,7 +855,7 @@ refreshAll();
                         end
 
                         for kk = 1:n
-                            idx = find(abs(labs0) == abs(labelsOrdered(kk)),1,'first');
+                            idx = find(labs0 == labelsOrdered(kk),1,'first');
                             if isempty(idx)
                                 continue;
                             end
@@ -905,7 +863,7 @@ refreshAll();
                             if idx <= numel(acr0)
                                 a0 = strtrim(char(acr0{idx}));
                                 if ~isempty(a0) && ~strcmpi(a0,'unknown')
-                                    abbr{kk} = fc_roi_abbrev_only(a0,18);
+                                    abbr{kk} = a0;
                                 end
                             end
 
@@ -923,7 +881,7 @@ refreshAll();
                 setStatus(['Region key full-name lookup warning: ' MEsegKey.message],C.warn);
             end
 
-            dataCell = [num2cell((1:n)'), num2cell(labelsOrdered(:)), displayNames(:), abbr(:), fullNames(:)];
+            dataCell = [num2cell((1:n)'), num2cell(labelsOrdered(:)), abbr(:), fullNames(:)];
 
             bg = [0.06 0.06 0.07];
             fg = [0.96 0.96 0.96];
@@ -949,10 +907,10 @@ refreshAll();
             uitable('Parent',fKey,'Units','normalized', ...
                 'Position',[0.025 0.085 0.95 0.815], ...
                 'Data',dataCell, ...
-                'ColumnName',{'#','Label','Display','Abbrev','Full region name'}, ...
+                'ColumnName',{'#','Label','Abbrev','Full region name'}, ...
                 'ColumnEditable',[false false false false], ...
                 'RowName',[], ...
-                'ColumnWidth',{55 90 160 130 820}, ...
+                'ColumnWidth',{55 90 150 950}, ...
                 'FontName','Arial','FontSize',13);
 
             uicontrol('Parent',fKey,'Style','pushbutton','Units','normalized', ...
@@ -987,8 +945,6 @@ refreshAll();
         s.compareSort = 'abs';
         s.cmapName = 'bwr';
         s.graphCmapName = 'bwr';
-        s.showHemisphere = true; % FC_LR_LABEL_DISPLAY_PATCH_V2_RESET_STATE
-        s.roiHemiMode = 'both'; % FC_REGION_MODE_PATCH_RESET
         try, set(ddOverlay,'Value',1); catch, end
         try, set(ddUnderlayStyle,'Value',1); catch, end
         try, set(ddCmapGlobal,'Value',1); catch, end
@@ -998,8 +954,6 @@ refreshAll();
         try, set(ddSort,'Value',1); catch, end
         try, set(cbAtlasLine,'Value',0); catch, end
         try, set(cbMaskLine,'Value',0); catch, end
-        try, set(cbShowLR,'Value',1); catch, end % FC_LR_LABEL_DISPLAY_PATCH_V2_RESET_CHECKBOX
-        try, set(ddRegionMode,'Value',1); catch, end % FC_REGION_MODE_PATCH_RESET_POPUP
         try, set(edSeedThr,'String','0.20'); catch, end
         try, set(edROIThr,'String','0.20'); catch, end
         try, set(edSeedCLim,'String','2.5'); catch, end
@@ -1368,55 +1322,6 @@ refreshAll();
         refreshSeedView();
     end
 
-    function onShowHemisphere(~,~)
-        s = guidata(fig);
-        if exist('cbShowLR','var') && ishandle(cbShowLR)
-            s.showHemisphere = logical(get(cbShowLR,'Value'));
-        else
-            s.showHemisphere = true;
-        end
-        guidata(fig,s);
-        refreshHeatmapView();
-        refreshCompareView();
-        refreshPairView();
-        refreshGraphView();
-        refreshSeedView();
-    end
-
-    function onRegionMode(~,~)
-        s = guidata(fig);
-        try
-            items = get(ddRegionMode,'String');
-            val = get(ddRegionMode,'Value');
-            if ischar(items), items = cellstr(items); end
-            val = fc_clip(round(val),1,numel(items));
-            choice = lower(strtrim(items{val}));
-            if ~isempty(strfind(choice,'left'))
-                s.roiHemiMode = 'left';
-            elseif ~isempty(strfind(choice,'right'))
-                s.roiHemiMode = 'right';
-            elseif ~isempty(strfind(choice,'merged')) || ~isempty(strfind(choice,'no l/r')) || ~isempty(strfind(choice,'all'))
-                s.roiHemiMode = 'merged';
-            else
-                s.roiHemiMode = 'both';
-            end
-
-            if ~strcmpi(s.roiHemiMode,'both')
-                s.showHemisphere = false;
-                try, set(cbShowLR,'Value',0); catch, end
-            end
-        catch
-            s.roiHemiMode = 'both';
-        end
-        guidata(fig,s);
-        refreshHeatmapView();
-        refreshCompareView();
-        refreshPairView();
-        refreshGraphView();
-        refreshSeedView();
-        setStatus(['Region mode: ' s.roiHemiMode],C.good);
-    end
-
     function onMapClick(~,~)
         s = guidata(fig);
         cp = get(axMap,'CurrentPoint');
@@ -1448,16 +1353,18 @@ refreshAll();
                 setStatus('ROI pick needs ROI current first. Compute ROI FC, then pick a region.',C.warn);
                 return;
             end
-            [~,names,order,meta] = fc_current_matrix(s,res); %#ok<ASGLU>
-            dispIdx = fc_display_index_from_raw_label(res,meta,lab);
-            if isempty(dispIdx)
-                setStatus(sprintf('Label %.0f was clicked, but it is not available in current region mode.',lab),C.warn);
+            [~,names,order] = fc_current_matrix(s,res);
+            rawIdx = find(round(double(res.labels(:))) == round(double(lab)),1,'first');
+            if isempty(rawIdx)
+                setStatus(sprintf('Label %.0f was clicked, but it is not in the current ROI result.',lab),C.warn);
                 return;
             end
+            dispIdx = find(order == rawIdx,1,'first');
+            if isempty(dispIdx), dispIdx = 1; end
             s.compareROI = dispIdx;
-            set(ddCompareROI,'String',fc_abbrev_list(names,18,s.showHemisphere),'Value',dispIdx);
+            set(ddCompareROI,'String',fc_abbrev_list(names,18),'Value',dispIdx);
             guidata(fig,s);
-            setStatus(['Selected ROI: ' fc_roi_abbrev(names{dispIdx},20,s.showHemisphere)],C.good);
+            setStatus(['Selected ROI: ' fc_roi_abbrev(names{dispIdx},20)],C.good);
             refreshCompareView();
             switchTab('compare');
             return;
@@ -1488,16 +1395,18 @@ refreshAll();
             setStatus('Clicked region map background/no-label area.',C.warn);
             return;
         end
-        [~,names,order,meta] = fc_current_matrix(s,res); %#ok<ASGLU>
-        dispIdx = fc_display_index_from_raw_label(res,meta,lab);
-        if isempty(dispIdx)
-            setStatus(sprintf('Clicked label %.0f is not available in current region mode.',lab),C.warn);
+        [~,names,order] = fc_current_matrix(s,res);
+        rawIdx = find(round(double(res.labels(:))) == round(double(lab)),1,'first');
+        if isempty(rawIdx)
+            setStatus(sprintf('Clicked label %.0f is not included in the current ROI result.',lab),C.warn);
             return;
         end
+        dispIdx = find(order == rawIdx,1,'first');
+        if isempty(dispIdx), dispIdx = 1; end
         s.compareROI = dispIdx;
-        try, set(ddCompareROI,'String',fc_abbrev_list(names,18,s.showHemisphere),'Value',dispIdx); catch, end
+        try, set(ddCompareROI,'String',fc_abbrev_list(names,18),'Value',dispIdx); catch, end
         guidata(fig,s);
-        setStatus(['Benchmark ROI changed to: ' fc_roi_abbrev(names{dispIdx},20,s.showHemisphere)],C.good);
+        setStatus(['Benchmark ROI changed to: ' fc_roi_abbrev(names{dispIdx},20)],C.good);
         refreshCompareView();
     end
 
@@ -1883,30 +1792,11 @@ end
         end
     end
 
-    function onExportGroupAnalysis(~,~)
-        s = guidata(fig);
-        try
-            outFile = fc_export_group_analysis_bundle_interactive(s);
-            if ~isempty(outFile)
-                setStatus(['Saved GroupAnalysis FC bundle: ' outFile],C.good);
-            end
-        catch ME
-            setStatus(['GroupAnalysis FC export failed: ' ME.message],C.warn);
-            errordlg(ME.message,'Export FC bundle for GroupAnalysis');
-        end
-    end
-
 % =========================================================================
 % REFRESH FUNCTIONS
 % =========================================================================
     function refreshAll()
         s = guidata(fig);
-        if ~isfield(s,'showHemisphere') || isempty(s.showHemisphere)
-            s.showHemisphere = true;
-        end % FC_LR_LABEL_DISPLAY_PATCH_V2_REFRESH_DEFAULT
-        if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
-            s.roiHemiMode = 'both';
-        end % FC_REGION_MODE_PATCH_REFRESH_DEFAULT
         s.slice = fc_clip(s.slice,1,s.Z);
         s.seedX = fc_clip(s.seedX,1,s.X);
         s.seedY = fc_clip(s.seedY,1,s.Y);
@@ -1919,8 +1809,6 @@ end
         set(cbSliceOnly,'Value',double(s.useSliceOnly));
         set(cbAtlasLine,'Value',double(s.showAtlasLines));
         set(cbMaskLine,'Value',double(s.showMaskLine));
-        try, set(cbShowLR,'Value',double(s.showHemisphere)); catch, end % FC_LR_LABEL_DISPLAY_PATCH_V2_REFRESH_CHECKBOX
-        try, set(ddRegionMode,'Value',fc_region_mode_to_popup_value(s.roiHemiMode)); catch, end % FC_REGION_MODE_PATCH_REFRESH_POPUP
         set(edSeedThr,'String',sprintf('%.2f',s.seedAbsThr));
         set(edROIThr,'String',sprintf('%.2f',s.roiAbsThr));
         set(edTopN,'String',num2str(s.compareTopN));
@@ -2077,7 +1965,7 @@ end
             return;
         end
 
-        [M,names,order,meta] = fc_current_matrix(s,res); %#ok<ASGLU>
+        [M,names,order] = fc_current_matrix(s,res); %#ok<ASGLU>
 
         Mshow = M;
         if strcmpi(s.roiDisplaySpace,'z')
@@ -2131,8 +2019,8 @@ end
         set(axHeat, ...
             'XTick',tickIdx, ...
             'YTick',tickIdx, ...
-            'XTickLabel',fc_abbrev_list(names(tickIdx),labelLen,s.showHemisphere), ...
-            'YTickLabel',fc_abbrev_list(names(tickIdx),labelLen,s.showHemisphere), ...
+            'XTickLabel',fc_abbrev_list(names(tickIdx),labelLen), ...
+            'YTickLabel',fc_abbrev_list(names(tickIdx),labelLen), ...
             'TickLength',[0 0], ...
             'FontName',C.font, ...
             'FontSize',tickFont, ...
@@ -2164,10 +2052,10 @@ end
             return;
         end
 
-        [M,names,order,meta] = fc_current_matrix(s,res);
+        [M,names,order] = fc_current_matrix(s,res);
         updateROIDropdowns(names);
         sel = fc_clip(get(ddCompareROI,'Value'),1,numel(names));
-        rawSel = order(sel); tsSel = fc_display_ts_for_index(res,meta,sel);
+        rawSel = order(sel);
         r = M(sel,:);
         r(sel) = NaN;
         [idxAll,valAll] = fc_rank_vector(r,max(2,numel(names)-1),s.compareSort,names);
@@ -2198,9 +2086,9 @@ end
             xlabel(axCompareBar,'Pearson r to selected region','Color',C.dim);
             ylabel(axCompareBar,'Partner region','Color',C.dim);
             title(axCompareBar,sprintf('Selected ROI vs all regions: %s | ranks %d-%d of %d', ...
-                fc_roi_abbrev(names{sel},18,s.showHemisphere),i0,i1,nAll), ...
+                fc_roi_abbrev(names{sel},18),i0,i1,nAll), ...
                 'Color',C.fg,'Interpreter','none');
-            set(axCompareBar,'YTick',1:numel(idxShow),'YTickLabel',fc_abbrev_list(names(idxShow),18,s.showHemisphere),'YDir','reverse','FontSize',10);
+            set(axCompareBar,'YTick',1:numel(idxShow),'YTickLabel',fc_abbrev_list(names(idxShow),18),'YDir','reverse','FontSize',10);
             xlim(axCompareBar,[-1 1]);
         end
 
@@ -2220,7 +2108,7 @@ end
             title(axCompareMap,'Click a region to benchmark it','Color',C.fg,'Interpreter','none');
             try
                 subjNow = s.subjects(s.currentSubject);
-                fc_draw_roi_abbrev_on_map(axCompareMap,double(subjNow.roiAtlas(:,:,s.slice)),res.labels,res.names,C,s.showHemisphere);
+                fc_draw_roi_abbrev_on_map(axCompareMap,double(subjNow.roiAtlas(:,:,s.slice)),res.labels,res.names,C);
             catch
             end
         else
@@ -2236,14 +2124,13 @@ end
         t = t(:)';
         end
         t = t(:)';
-        plot(axCompareTS,t,fc_z(tsSel),'LineWidth',1.8,'Color',[0.2 0.75 1.0]);
+        plot(axCompareTS,t,fc_z(res.meanTS(:,rawSel)),'LineWidth',1.8,'Color',[0.2 0.75 1.0]);
         hold(axCompareTS,'on');
         if ~isempty(idxShow)
             rawBest = order(idxShow(1));
-            tsBest = fc_display_ts_for_index(res,meta,idxShow(1));
-            plot(axCompareTS,t,fc_z(tsBest),'LineWidth',1.4,'Color',[1.0 0.55 0.2]);
-            lgdC = legend(axCompareTS,{['Blue: ' fc_roi_abbrev(names{sel},18,s.showHemisphere)], ...
-                ['Orange: ' fc_roi_abbrev(names{idxShow(1)},18,s.showHemisphere)]}, ...
+            plot(axCompareTS,t,fc_z(res.meanTS(:,rawBest)),'LineWidth',1.4,'Color',[1.0 0.55 0.2]);
+            lgdC = legend(axCompareTS,{['Blue: ' fc_roi_abbrev(names{sel},18)], ...
+                ['Orange: ' fc_roi_abbrev(names{idxShow(1)},18)]}, ...
                 'Location','best','TextColor',C.fg,'Interpreter','none');
             try
                 set(lgdC,'Color',C.bgPane,'EdgeColor',C.dim,'TextColor',C.fg, ...
@@ -2269,12 +2156,12 @@ end
             nList = min(6,numel(idxShow));
             lines = cell(nList,1);
             for k = 1:nList
-                lines{k} = sprintf('%s: r = %.3f',fc_roi_abbrev(names{idxShow(k)},16,s.showHemisphere),valShow(k));
+                lines{k} = sprintf('%s: r = %.3f',fc_roi_abbrev(names{idxShow(k)},16),valShow(k));
             end
             txtTop = fc_join(lines);
         end
         set(txtCompare,'String',sprintf('Selected: %s\nAtlas label: %g\nTop partners:\n%s', ...
-            fc_roi_abbrev(names{sel},20,s.showHemisphere),res.labels(rawSel),txtTop));
+            fc_roi_abbrev(names{sel},20),res.labels(rawSel),txtTop));
     end
 
     function refreshPairView()
@@ -2288,13 +2175,12 @@ end
             set(txtPair,'String','No ROI result yet. Compute ROI current first.');
             return;
         end
-        [~,names,order,meta] = fc_current_matrix(s,res);
+        [~,names,order] = fc_current_matrix(s,res);
         updateROIDropdowns(names);
         aSel = fc_clip(get(ddPairA,'Value'),1,numel(names));
         bSel = fc_clip(get(ddPairB,'Value'),1,numel(names));
-        a = order(aSel); b = order(bSel); %#ok<NASGU>
-        ta = fc_display_ts_for_index(res,meta,aSel);
-        tb = fc_display_ts_for_index(res,meta,bSel);
+        a = order(aSel); b = order(bSel);
+        ta = double(res.meanTS(:,a)); tb = double(res.meanTS(:,b));
         t = fc_result_time_min(res,s.subjects(s.currentSubject).TR);
         if numel(t) ~= numel(ta)
             t = fc_result_time_min(res,s.subjects(s.currentSubject).TR);
@@ -2320,8 +2206,8 @@ end
             end
         catch
         end
-        lgdP = legend(axPairTS,{['ROI A: ' fc_roi_abbrev(names{aSel},16,s.showHemisphere)], ...
-            ['ROI B: ' fc_roi_abbrev(names{bSel},16,s.showHemisphere)]},'Location','best','TextColor',C.fg);
+        lgdP = legend(axPairTS,{['ROI A: ' fc_roi_abbrev(names{aSel},16)], ...
+            ['ROI B: ' fc_roi_abbrev(names{bSel},16)]},'Location','best','TextColor',C.fg);
         try
             set(lgdP,'Color',C.bgPane,'EdgeColor',C.dim,'TextColor',C.fg, ...
                 'FontName',C.font,'FontSize',12,'FontWeight','bold','Interpreter','none');
@@ -2330,8 +2216,8 @@ end
 
         scatter(axPairScat,fc_z(ta),fc_z(tb),24,colA,'filled');
         fc_ax(axPairScat,C); grid(axPairScat,'on');
-        xlabel(axPairScat,['Z(' fc_roi_abbrev(names{aSel},16,s.showHemisphere) ')'],'Color',C.dim,'Interpreter','none');
-        ylabel(axPairScat,['Z(' fc_roi_abbrev(names{bSel},16,s.showHemisphere) ')'],'Color',C.dim,'Interpreter','none');
+        xlabel(axPairScat,['Z(' fc_roi_abbrev(names{aSel},16) ')'],'Color',C.dim,'Interpreter','none');
+        ylabel(axPairScat,['Z(' fc_roi_abbrev(names{bSel},16) ')'],'Color',C.dim,'Interpreter','none');
         title(axPairScat,'Scatter: ROI A vs ROI B','Color',C.fg,'Interpreter','none');
 
         maxLag = min(30,numel(ta)-1);
@@ -2348,7 +2234,7 @@ end
         r = fc_corr_scalar(ta,tb);
         set(txtPair,'String',sprintf(['Pair ROI inspection: %s  <->  %s\n' ...
             'Pearson r = %.4f. Trace plot shows z-scored mean signals; scatter shows pointwise relation.'], ...
-            fc_roi_abbrev(names{aSel},20,s.showHemisphere),fc_roi_abbrev(names{bSel},20,s.showHemisphere),r));
+            fc_roi_abbrev(names{aSel},20),fc_roi_abbrev(names{bSel},20),r));
     end
 
     function refreshGraphView()
@@ -2422,8 +2308,8 @@ end
         set(axAdj, ...
             'XTick',tickIdx, ...
             'YTick',tickIdx, ...
-            'XTickLabel',fc_abbrev_list(names(tickIdx),labelLen,s.showHemisphere), ...
-            'YTickLabel',fc_abbrev_list(names(tickIdx),labelLen,s.showHemisphere), ...
+            'XTickLabel',fc_abbrev_list(names(tickIdx),labelLen), ...
+            'YTickLabel',fc_abbrev_list(names(tickIdx),labelLen), ...
             'TickLength',[0 0], ...
             'FontName',C.font, ...
             'FontSize',tickFont, ...
@@ -2453,14 +2339,10 @@ end
     end
 
     function updateROIDropdowns(names)
-        sTmp = guidata(fig);
-        if ~isfield(sTmp,'showHemisphere') || isempty(sTmp.showHemisphere)
-            sTmp.showHemisphere = true;
-        end % FC_LR_LABEL_DISPLAY_PATCH_V2_DROPDOWN_STATE
         if isempty(names)
             names = {'n/a'};
         end
-        namesDisplay = fc_abbrev_list(names,18,sTmp.showHemisphere);
+        namesDisplay = fc_abbrev_list(names,18);
         oldC = get(ddCompareROI,'Value');
         oldA = get(ddPairA,'Value');
         oldB = get(ddPairB,'Value');
@@ -2475,13 +2357,16 @@ end
         subj = s.subjects(s.currentSubject);
         if isempty(res) || isempty(subj.roiAtlas), return; end
 
-        [M,~,~,meta] = fc_current_matrix(s,res);
-        sel = fc_clip(get(ddCompareROI,'Value'),1,size(M,1));
-        valsDisplay = M(sel,:);
-        valsRaw = fc_display_values_to_raw(res,meta,valsDisplay);
+        [M,~,order] = fc_current_matrix(s,res);
+        sel = fc_clip(get(ddCompareROI,'Value'),1,numel(order));
+        valsOrdered = M(sel,:);
+
+        valsRaw = nan(numel(res.labels),1);
+        valsRaw(order) = valsOrdered;
 
         atlasS = round(double(subj.roiAtlas(:,:,s.slice)));
-        mapS = nan(size(atlasS));
+
+        mapS = zeros(size(atlasS));
         for k = 1:numel(res.labels)
             labK = round(double(res.labels(k)));
             nameK = '';
@@ -2495,10 +2380,11 @@ end
             if ~isfinite(labK) || labK == 0 || fc_is_background_region(labK,nameK)
                 continue;
             end
-            if k <= numel(valsRaw) && isfinite(valsRaw(k))
-                mapS(atlasS == labK) = valsRaw(k);
-            end
+
+            mapS(atlasS == labK) = valsRaw(k);
         end
+
+        mapS(~isfinite(mapS)) = 0;
         ok = true;
     end
 end
@@ -3403,254 +3289,15 @@ M = max(-1,min(1,M));
 M(1:size(M,1)+1:end) = 1;
 end
 
-function [M,names,order,meta] = fc_current_matrix(s,res)
-% Region-mode aware matrix builder.
-% Modes:
-%   both   = L_ and R_ regions remain separate.
-%   left   = only L_ / negative-label regions.
-%   right  = only R_ / positive-label regions when signed LR exists.
-%   merged = L/R homologs are averaged into one bilateral region.
-M0 = double(res.M);
-names0 = res.names(:);
-labels0 = double(res.labels(:));
-n0 = numel(labels0);
-
-if numel(names0) < n0
-    tmp = cell(n0,1);
-    for ii = 1:n0
-        if ii <= numel(names0), tmp{ii} = names0{ii}; else, tmp{ii} = sprintf('ROI_%g',labels0(ii)); end
-    end
-    names0 = tmp;
+function [M,names,order] = fc_current_matrix(s,res)
+M0 = res.M; names0 = res.names; labels = res.labels;
+switch lower(s.roiOrder)
+    case 'name'
+        [~,order] = sort(lower(names0));
+    otherwise
+        [~,order] = sort(labels);
 end
-
-mode = fc_region_mode_from_state(s);
-hasSignedLR = any(labels0 < 0);
-
-if strcmpi(mode,'merged') && isfield(res,'meanTS') && ~isempty(res.meanTS) && size(res.meanTS,2) == n0
-    [TSmerge,names,labelsDisplay,groups,order] = fc_merge_lr_timecourses(res.meanTS,names0,labels0);
-    M = fc_corr_matrix(TSmerge);
-else
-    keep = true(n0,1);
-    if strcmpi(mode,'left') || strcmpi(mode,'right')
-        keep = false(n0,1);
-        for ii = 1:n0
-            sideNow = fc_region_side_from_name_label(names0{ii},labels0(ii),hasSignedLR);
-            if strcmpi(mode,'left') && strcmpi(sideNow,'L'), keep(ii) = true; end
-            if strcmpi(mode,'right') && strcmpi(sideNow,'R'), keep(ii) = true; end
-        end
-        if ~any(keep)
-            keep = true(n0,1);
-        end
-    end
-    order = find(keep);
-    M = M0(order,order);
-    names = names0(order);
-    labelsDisplay = labels0(order);
-    groups = cell(numel(order),1);
-    for ii = 1:numel(order)
-        groups{ii} = order(ii);
-    end
-end
-
-% Sort after filtering/merging.
-try
-    switch lower(s.roiOrder)
-        case 'name'
-            cleanNames = cell(size(names));
-            for ii = 1:numel(names)
-                cleanNames{ii} = lower(fc_region_fullname_no_lr(names{ii}));
-            end
-            [~,ord2] = sort(cleanNames);
-        otherwise
-            [~,ord2] = sort(labelsDisplay);
-    end
-catch
-    ord2 = 1:numel(names);
-end
-
-M = M(ord2,ord2);
-names = names(ord2);
-labelsDisplay = labelsDisplay(ord2);
-order = order(ord2);
-groups = groups(ord2);
-
-meta = struct();
-meta.mode = mode;
-meta.groups = groups(:);
-meta.displayLabels = labelsDisplay(:);
-meta.rawLabels = labels0(:);
-meta.rawNames = names0(:);
-end
-
-function mode = fc_region_mode_from_state(s)
-mode = 'both';
-try
-    if isfield(s,'roiHemiMode') && ~isempty(s.roiHemiMode)
-        mode = lower(strtrim(char(s.roiHemiMode)));
-    end
-catch
-    mode = 'both';
-end
-if strcmpi(mode,'all') || strcmpi(mode,'merge') || strcmpi(mode,'bilateral')
-    mode = 'merged';
-end
-if ~any(strcmpi(mode,{'both','left','right','merged'}))
-    mode = 'both';
-end
-end
-
-function val = fc_region_mode_to_popup_value(mode)
-mode = fc_region_mode_from_state(struct('roiHemiMode',mode));
-switch lower(mode)
-    case 'left',   val = 2;
-    case 'right',  val = 3;
-    case 'merged', val = 4;
-    otherwise,      val = 1;
-end
-end
-
-function side = fc_region_side_from_name_label(name,label,hasSignedLR)
-side = '';
-try
-    s = strtrim(char(name));
-    s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
-    tok = regexp(s,'^\s*([LR])[_\-\s]+','tokens','once');
-    if ~isempty(tok)
-        side = upper(tok{1});
-        return;
-    end
-catch
-end
-try
-    if hasSignedLR
-        if double(label) < 0
-            side = 'L';
-        elseif double(label) > 0
-            side = 'R';
-        end
-    end
-catch
-end
-end
-
-function [TSmerge,namesMerge,labelsMerge,groups,order] = fc_merge_lr_timecourses(meanTS,names0,labels0)
-n = numel(labels0);
-keys = cell(n,1);
-stems = cell(n,1);
-absLabs = zeros(n,1);
-for ii = 1:n
-    [keys{ii},stems{ii},absLabs(ii)] = fc_region_merge_key(names0{ii},labels0(ii));
-end
-
-uniqueKeys = {};
-groups = {};
-for ii = 1:n
-    hit = find(strcmp(uniqueKeys,keys{ii}),1,'first');
-    if isempty(hit)
-        uniqueKeys{end+1,1} = keys{ii}; %#ok<AGROW>
-        groups{end+1,1} = ii; %#ok<AGROW>
-    else
-        groups{hit}(end+1) = ii;
-    end
-end
-
-nG = numel(groups);
-TSmerge = zeros(size(meanTS,1),nG);
-namesMerge = cell(nG,1);
-labelsMerge = zeros(nG,1);
-order = zeros(nG,1);
-
-for gg = 1:nG
-    idx = groups{gg};
-    X = double(meanTS(:,idx));
-    good = isfinite(X);
-    X(~good) = 0;
-    cnt = sum(good,2);
-    TSmerge(:,gg) = sum(X,2) ./ max(1,cnt);
-    TSmerge(cnt == 0,gg) = 0;
-    order(gg) = idx(1);
-    labelsMerge(gg) = absLabs(idx(1));
-    namesMerge{gg} = sprintf('%s [%g]',stems{idx(1)},labelsMerge(gg));
-end
-end
-
-function [key,stem,absLab] = fc_region_merge_key(name,label)
-absLab = abs(round(double(label)));
-stem = fc_region_fullname_no_lr(name);
-stem = regexprep(stem,'\s*\[[^\]]*\]\s*$','');
-stem = strtrim(stem);
-if isempty(stem)
-    stem = sprintf('ROI_%g',absLab);
-end
-key = lower(regexprep(stem,'[^a-zA-Z0-9]+',''));
-if isempty(key)
-    key = sprintf('roi%g',absLab);
-end
-end
-
-function s = fc_region_fullname_no_lr(name)
-s = strtrim(char(name));
-s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
-s = regexprep(s,'^\s*-?\d+\s*','');
-s = regexprep(s,'^\s*[LR][_\-\s]+','');
-s = strrep(s,'_',' ');
-s = regexprep(s,'\s+',' ');
-s = strtrim(s);
-end
-
-function ts = fc_display_ts_for_index(res,meta,dispIdx)
-try
-    dispIdx = max(1,min(numel(meta.groups),round(dispIdx)));
-    idx = meta.groups{dispIdx};
-    X = double(res.meanTS(:,idx));
-    good = isfinite(X);
-    X(~good) = 0;
-    cnt = sum(good,2);
-    ts = sum(X,2) ./ max(1,cnt);
-    ts(cnt == 0) = 0;
-catch
-    ts = zeros(size(res.meanTS,1),1);
-end
-end
-
-function dispIdx = fc_display_index_from_raw_label(res,meta,rawLabel)
-dispIdx = [];
-try
-    rawIdx = find(round(double(res.labels(:))) == round(double(rawLabel)),1,'first');
-    if isempty(rawIdx)
-        rawIdx = find(abs(round(double(res.labels(:)))) == abs(round(double(rawLabel))),1,'first');
-    end
-    if isempty(rawIdx), return; end
-    for ii = 1:numel(meta.groups)
-        if any(meta.groups{ii} == rawIdx)
-            dispIdx = ii;
-            return;
-        end
-    end
-catch
-    dispIdx = [];
-end
-end
-
-function valsRaw = fc_display_values_to_raw(res,meta,valsDisplay)
-valsRaw = nan(numel(res.labels),1);
-try
-    valsDisplay = double(valsDisplay(:));
-    for ii = 1:min(numel(valsDisplay),numel(meta.groups))
-        idx = meta.groups{ii};
-        idx = idx(idx >= 1 & idx <= numel(valsRaw));
-        valsRaw(idx) = valsDisplay(ii);
-    end
-catch
-end
-end
-
-function labelsDisplay = fc_display_labels_from_meta(meta,res,order)
-try
-    labelsDisplay = meta.displayLabels(:);
-catch
-    labelsDisplay = res.labels(order);
-end
+M = M0(order,order); names = names0(order);
 end
 
 function name = fc_roi_name(label,opts)
@@ -3659,9 +3306,6 @@ try
     T = opts.roiNameTable;
     if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
         idx = find(double(T.labels(:)) == double(label),1,'first');
-        if isempty(idx)
-            idx = find(abs(double(T.labels(:))) == abs(double(label)),1,'first');
-        end
         if ~isempty(idx) && idx <= numel(T.names)
             nm = char(T.names{idx});
             if ~isempty(strtrim(nm)), name = sprintf('%s [%g]',nm,label); return; end
@@ -4018,9 +3662,9 @@ end
 
 function T = fc_compare_export_table(s,res)
 T = [];
-[M,names,order,meta] = fc_current_matrix(s,res);
+[M,names,order] = fc_current_matrix(s,res);
 sel = fc_clip(s.compareROI,1,numel(names));
-vals = M(sel,:)'; labels = fc_display_labels_from_meta(meta,res,order);
+vals = M(sel,:)'; labels = res.labels(order);
 T.selectedName = names{sel}; T.labels = labels(:); T.names = names(:); T.values = vals(:);
 end
 
@@ -4184,12 +3828,7 @@ if i1 == i2, x = a(i1); else, w = t - i1; x = (1-w)*a(i1) + w*a(i2); end
 end
 
 function fc_ax(ax,C)
-try
-    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10, ...
-        'TickLabelInterpreter','none');
-catch
-    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10);
-end
+set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10);
 end
 
 function fc_nodata(ax,titleStr,C)
@@ -4241,65 +3880,25 @@ for i = 1:numel(out)
 end
 end
 
-function out = fc_abbrev_list(c,n,showHemisphere)
-if nargin < 2 || isempty(n), n = 12; end
-if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+function out = fc_abbrev_list(c,n)
+if nargin < 2, n = 12; end
 out = c;
 for i = 1:numel(out)
-    out{i} = fc_roi_abbrev(out{i},n,showHemisphere);
+    out{i} = fc_roi_abbrev(out{i},n);
 end
 end
 
-function ab = fc_roi_abbrev(name,n,showHemisphere)
-if nargin < 2 || isempty(n), n = 12; end
-if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+function ab = fc_roi_abbrev(name,n)
+if nargin < 2, n = 12; end
 s = strtrim(char(name));
 s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
-s = regexprep(s,'^\s*-?\d+\s*','');
-s = strtrim(s);
-hemi = '';
-stem = s;
-tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
-if ~isempty(tok)
-    hemi = upper(strtrim(tok{1}));
-    stem = strtrim(tok{2});
-end
-stem = strrep(stem,'_',' ');
-stem = regexprep(stem,'\s+',' ');
-if showHemisphere && ~isempty(hemi)
-    ab = [hemi ' ' stem];
-else
-    ab = stem;
-end
-if isempty(strtrim(ab)), ab = s; end
-if numel(ab) > n
-    ab = [ab(1:max(1,n-3)) '...'];
-end
-end
-
-function out = fc_abbrev_only_list(c,n)
-if nargin < 2 || isempty(n), n = 12; end
-out = c;
-for i = 1:numel(out)
-    out{i} = fc_roi_abbrev_only(out{i},n);
-end
-end
-
-function ab = fc_roi_abbrev_only(name,n)
-if nargin < 2 || isempty(n), n = 12; end
-s = strtrim(char(name));
-s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
-s = regexprep(s,'^\s*-?\d+\s*','');
-s = strtrim(s);
-tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
-if ~isempty(tok)
-    ab = strtrim(tok{2});
-else
+parts = regexp(s,'\s+','split');
+if isempty(parts)
     ab = s;
+else
+    ab = strtrim(parts{1});
 end
-ab = strrep(ab,'_',' ');
-ab = regexprep(ab,'\s+',' ');
-if isempty(strtrim(ab)), ab = s; end
+if isempty(ab), ab = s; end
 if numel(ab) > n
     ab = [ab(1:max(1,n-3)) '...'];
 end
@@ -4334,8 +3933,7 @@ function A2 = fc_fill_empty_hemi_labels(A)
 A2 = A;
 end
 
-function fc_draw_roi_abbrev_on_map(ax,atlasS,labels,names,C,showHemisphere)
-if nargin < 6 || isempty(showHemisphere), showHemisphere = true; end
+function fc_draw_roi_abbrev_on_map(ax,atlasS,labels,names,C)
 try
     A = round(double(atlasS));
     labsInSlice = unique(A(:));
@@ -4353,7 +3951,7 @@ try
         [yy,xx] = find(A == round(double(lab)));
         if numel(xx) < 12, continue; end
         x = median(xx); y = median(yy);
-        text(ax,x,y,fc_roi_abbrev(names{idx},8,showHemisphere), ...
+        text(ax,x,y,fc_roi_abbrev(names{idx},8), ...
             'Color',C.fg,'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
             'HorizontalAlignment','center','VerticalAlignment','middle', ...
             'HitTest','off','Clipping','on');
@@ -4417,7 +4015,6 @@ fcBundle.settings.analysisEndSec = s.analysisEndSec;
 fcBundle.settings.currentEpoch = s.currentEpoch;
 fcBundle.settings.epochName = s.epochs(s.currentEpoch).name;
 fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use tanh(Z) only for display.';
-fcBundle.settings.regionMode = fc_region_mode_from_state(s);
 
 fcBundle.subjects = struct([]);
 
@@ -4478,27 +4075,6 @@ for i = 1:s.nSub
     Z(1:size(Z,1)+1:end) = 0;
 
     fcBundle.subjects(i).Z = Z;
-
-    % Current display-mode matrix for GroupAnalysis convenience.
-    try
-        [Rdisp,namesDisp,orderDisp,metaDisp] = fc_current_matrix(s,res); %#ok<ASGLU>
-        fcBundle.subjects(i).displayRegionMode = fc_region_mode_from_state(s);
-        fcBundle.subjects(i).displayNames = namesDisp;
-        fcBundle.subjects(i).displayLabels = metaDisp.displayLabels;
-        fcBundle.subjects(i).displayGroups = metaDisp.groups;
-        fcBundle.subjects(i).displayR = Rdisp;
-        Zdisp = max(-0.999999,min(0.999999,double(Rdisp)));
-        Zdisp = atanh(Zdisp);
-        Zdisp(1:size(Zdisp,1)+1:end) = 0;
-        fcBundle.subjects(i).displayZ = Zdisp;
-    catch
-        fcBundle.subjects(i).displayRegionMode = 'both';
-        fcBundle.subjects(i).displayNames = res.names;
-        fcBundle.subjects(i).displayLabels = res.labels;
-        fcBundle.subjects(i).displayGroups = {};
-        fcBundle.subjects(i).displayR = res.M;
-        fcBundle.subjects(i).displayZ = Z;
-    end
 end
 
 end
@@ -5010,7 +4586,7 @@ try
         T = s.opts.roiNameTable;
         if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
             for k = 1:n
-                idx = find(abs(double(T.labels(:))) == abs(labels(k)),1,'first');
+                idx = find(double(T.labels(:)) == labels(k),1,'first');
                 if ~isempty(idx) && idx <= numel(T.names)
                     nm = strtrim(char(T.names{idx}));
                     if ~isempty(nm)
@@ -5043,7 +4619,7 @@ try
                 if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms), acr0 = cellstr(Seg.region.acronyms(:)); end
                 if isfield(Seg.region,'names') && ~isempty(Seg.region.names), nam0 = cellstr(Seg.region.names(:)); end
                 for k = 1:n
-                    idx = find(abs(labs0) == abs(labels(k)),1,'first');
+                    idx = find(labs0 == labels(k),1,'first');
                     if ~isempty(idx)
                         if idx <= numel(acr0) && ~isempty(strtrim(char(acr0{idx})))
                             abbr{k} = strtrim(char(acr0{idx}));

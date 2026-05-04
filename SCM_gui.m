@@ -887,6 +887,8 @@ function computeSCM(~,~)
     sigMap = mean(PSCz(:,:,s0i:s1i), 3);
     map = sigMap - baseMap;
     if sig > 0, map = smooth2D_gauss(map, sig); end
+    % PATCH_COMPUTE_SCM_MASK_SIZE_20260504
+    mask2D = SCM_localMaskToMapSize_20260504(mask2D, map);
     map(~mask2D) = 0;
     state.lastSignedMap = map;
     set(hOV, 'CData', map);
@@ -937,6 +939,10 @@ function updateView(~,~)
 end
 
 function [dispMap, alpha] = buildDisplayedOverlay(rawMap, localMask)
+    % PATCH_BUILD_DISPLAY_MASK_SIZE_20260504
+    rawMap = double(rawMap);
+    localMask = SCM_localMaskToMapSize_20260504(localMask, rawMap);
+
     a = get(slAlpha, 'Value');
     thr = str2double(getStr(ebThr)); if ~isfinite(thr), thr = 0; end
     mMin = str2double(getStr(ebModMin)); if ~isfinite(mMin), mMin = state.modMin; end
@@ -2474,10 +2480,7 @@ function G = loadScmGroupBundleLocal(fullf)
         end
     end
 
-    if ~isfield(G,'pscAtlas4D') || isempty(G.pscAtlas4D)
-        error(['The selected bundle has no G.pscAtlas4D field.' newline ...
-               'This means it cannot be reopened as a full SCM dataset.']);
-    end
+    G = SCM_normalizeGroupBundlePSC_PATCH_V4(G, fullf);
 end
 
 
@@ -3231,6 +3234,61 @@ function M = fitBundleMaskToCurrentScm(M0)
     end
     while ndims(M0) > 3, M0 = any(M0, ndims(M0)); end
     M = fitBundleMaskToCurrentScm(M0);
+end
+
+
+function M = SCM_localMaskToMapSize_20260504(M, mapOrY, nx)
+    % Robust mask fitter for SCM maps loaded from GroupAnalysis bundles.
+    try
+        if nargin < 3
+            ny = size(mapOrY,1);
+            nx = size(mapOrY,2);
+        else
+            ny = mapOrY;
+        end
+
+        if isempty(M)
+            M = true(ny,nx);
+            return;
+        end
+
+        M = squeeze(M);
+
+        if ndims(M) > 2
+            % For a stack mask, use the current z if possible; otherwise collapse.
+            try
+                if exist('state','var') && isfield(state,'z') && size(M,3) >= state.z
+                    M = M(:,:,state.z);
+                else
+                    M = any(M,3);
+                end
+            catch
+                M = any(M,3);
+            end
+        end
+
+        M = logical(M);
+
+        if size(M,1) ~= ny || size(M,2) ~= nx
+            try
+                M = imresize(double(M), [ny nx], 'nearest') > 0.5;
+            catch
+                tmp = false(ny,nx);
+                yy = min(ny,size(M,1));
+                xx = min(nx,size(M,2));
+                tmp(1:yy,1:xx) = M(1:yy,1:xx);
+                M = tmp;
+            end
+        end
+
+        M = logical(M);
+    catch
+        try
+            M = true(size(mapOrY,1), size(mapOrY,2));
+        catch
+            M = true(nY,nX);
+        end
+    end
 end
 
 function M2 = resizeMask2D(M0, ny, nx)
@@ -6499,3 +6557,85 @@ function tf = isAtlasLikeUnderlayFile(f)
     end
 end
 end
+
+
+%%% SCM_GROUP_BUNDLE_PSC_NORMALIZE_PATCH_V4_START
+function G = SCM_normalizeGroupBundlePSC_PATCH_V4(G, fullf)
+% Robustly normalize SCM GroupAnalysis bundles so SCM_gui can reopen them.
+if nargin < 2, fullf = ''; end
+if isempty(G) || ~isstruct(G), error('Invalid SCM group bundle struct.'); end
+
+X = [];
+if isfield(G,'pscAtlas4D') && ~isempty(G.pscAtlas4D) && isnumeric(G.pscAtlas4D)
+    X = G.pscAtlas4D;
+else
+    flds = {'pscAtlasD','pscAtlas3D','psc4D','PSC4D','PSC','functionalPSC','Ipsc'};
+    for k = 1:numel(flds)
+        f = flds{k};
+        if isfield(G,f) && ~isempty(G.(f)) && isnumeric(G.(f))
+            X = G.(f);
+            break;
+        end
+    end
+end
+
+if isempty(X)
+    error(['The selected MAT file is not a full SCM bundle.' char(10) char(10) ...
+           'SCM_gui needs G.pscAtlas4D with dimensions [Y X T] or [Y X Z T].' char(10) ...
+           'You probably selected a static GroupAnalysis map/export file instead of an SCM_GroupExport bundle.' char(10) char(10) ...
+           'Select the file created by SCM_gui -> EXPORT SCM BUNDLE.' char(10) ...
+           'File: ' char(fullf)]);
+end
+
+X = double(X);
+X(~isfinite(X)) = 0;
+
+while ndims(X) > 4
+    X = squeeze(X);
+end
+
+% Common valid single-slice storage: [Y X 1 T] -> [Y X T]
+if ndims(X) == 4 && size(X,3) == 1 && size(X,4) >= 2
+    X = squeeze(X);
+end
+
+if ndims(X) == 2
+    error(['This bundle contains only a static 2D map, not the full PSC time series.' char(10) char(10) ...
+           'SCM_gui cannot reopen a static group-map PNG/MAT as SCM data.' char(10) ...
+           'Use SCM_gui -> EXPORT SCM BUNDLE to create SCM_GroupExport_*.mat.' char(10) ...
+           'File: ' char(fullf)]);
+end
+
+if ndims(X) == 3
+    if size(X,3) < 2
+        error('PSC array has only one frame. Need [Y X T] with T >= 2.');
+    end
+elseif ndims(X) == 4
+    if size(X,4) < 2
+        error('PSC array has only one time frame. Need [Y X Z T] with T >= 2.');
+    end
+else
+    error('G.pscAtlas4D must be [Y X T] or [Y X Z T] after normalization.');
+end
+
+G.pscAtlas4D = X;
+
+% Repair TR if it was saved only as tsec/tmin.
+badTR = true;
+try
+    badTR = isempty(G.TR) || ~isfinite(double(G.TR(1))) || double(G.TR(1)) <= 0;
+catch
+    badTR = true;
+end
+if badTR
+    try
+        if isfield(G,'tsec') && numel(G.tsec) >= 2
+            G.TR = median(diff(double(G.tsec(:))));
+        elseif isfield(G,'tmin') && numel(G.tmin) >= 2
+            G.TR = 60 * median(diff(double(G.tmin(:))));
+        end
+    catch
+    end
+end
+end
+%%% SCM_GROUP_BUNDLE_PSC_NORMALIZE_PATCH_V4_END

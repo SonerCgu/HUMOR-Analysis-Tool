@@ -3513,8 +3513,1525 @@ function side = fc_region_side_from_name_label(name,label,hasSignedLR)
 side = '';
 try
     s = strtrim(char(name));
+    s = regexprep(s,'s*[[^]]*]s*(label,opts)
+name = sprintf('ROI_%03d',label);
+try
+    T = opts.roiNameTable;
+    if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
+        idx = find(double(T.labels(:)) == double(label),1,'first');
+        if isempty(idx)
+            idx = find(abs(double(T.labels(:))) == abs(double(label)),1,'first');
+        end
+        if ~isempty(idx) && idx <= numel(T.names)
+            nm = char(T.names{idx});
+            if ~isempty(strtrim(nm)), name = sprintf('%s [%g]',nm,label); return; end
+        end
+    end
+    if iscell(opts.roiNames) && label >= 1 && label <= numel(opts.roiNames)
+        if ~isempty(opts.roiNames{label}), name = sprintf('%s [%g]',char(opts.roiNames{label}),label); end
+    end
+catch
+end
+end
+
+function idxT = fc_time_idx(TR,T,t0,t1)
+if ~isfinite(TR) || TR <= 0, TR = 1; end
+sec = (0:T-1) * TR;
+idxT = find(sec >= t0 & sec <= t1);
+if isempty(idxT), idxT = 1:T; end
+end
+
+function s = fc_flip_underlay_in_state(s,mode)
+try
+    if ~isempty(s.loadedUnderlay)
+        if strcmpi(mode,'lr')
+            s.loadedUnderlay = s.loadedUnderlay(:,end:-1:1,:);
+        else
+            s.loadedUnderlay = s.loadedUnderlay(end:-1:1,:,:);
+        end
+    end
+    for ii = 1:s.nSub
+        if ~isempty(s.subjects(ii).anat)
+            if strcmpi(mode,'lr')
+                s.subjects(ii).anat = s.subjects(ii).anat(:,end:-1:1,:);
+            else
+                s.subjects(ii).anat = s.subjects(ii).anat(end:-1:1,:,:);
+            end
+        end
+    end
+catch
+end
+end
+
+function rgb = fc_get_underlay(s)
+subj = s.subjects(s.currentSubject);
+I4 = subj.I4;
+meanImg = squeeze(mean(I4,4));
+medImg  = fc_fast_median_time(I4);
+
+switch lower(s.underlayMode)
+    case 'median'
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+    case 'mean'
+        rgb = fc_underlay_to_rgb(meanImg(:,:,s.slice),s,false);
+    case 'scm'
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+    case 'anat'
+        if ~isempty(subj.anat)
+            zUse = max(1,min(size(subj.anat,3),s.slice));
+            if isfield(subj,'anatIsDisplayReady') && subj.anatIsDisplayReady
+                rgb = fc_display_ready_rgb(subj.anat(:,:,zUse));
+            else
+                rgb = fc_underlay_to_rgb(subj.anat(:,:,zUse),s,false);
+            end
+        else
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        end
+    case 'atlas'
+        if ~isempty(subj.roiAtlas)
+            a = double(subj.roiAtlas(:,:,s.slice));
+            rgb = fc_map_rgb(a,jet(256),[0 max(1,max(a(:)))]);
+        else
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        end
+    case 'loaded'
+        U = s.loadedUnderlay;
+        if isempty(U)
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        elseif s.loadedUnderlayIsRGB
+            rgb = single(U);
+            if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+            rgb = min(max(rgb,0),1);
+        elseif isfield(s,'loadedUnderlayDisplayReady') && s.loadedUnderlayDisplayReady
+            if ndims(U) == 2, rgb = fc_display_ready_rgb(U);
+            else, zUse = max(1,min(size(U,3),s.slice)); rgb = fc_display_ready_rgb(U(:,:,zUse)); end
+        elseif ndims(U) == 2
+            rgb = fc_underlay_to_rgb(U,s,false);
+        else
+            zUse = max(1,min(size(U,3),s.slice));
+            rgb = fc_underlay_to_rgb(U(:,:,zUse),s,false);
+        end
+    otherwise
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+end
+end
+
+function medImg = fc_fast_median_time(I4)
+T = size(I4,4);
+if T <= 600
+    medImg = squeeze(median(I4,4));
+else
+    idx = round(linspace(1,T,600));
+    medImg = squeeze(median(I4(:,:,:,idx),4));
+end
+if ndims(medImg)==2, medImg = reshape(medImg,size(I4,1),size(I4,2),size(I4,3)); end
+end
+
+function rgb = fc_display_ready_rgb(U)
+U = squeeze(U);
+if ndims(U) == 3 && size(U,3) == 3
+    rgb = single(U);
+    if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+    rgb = min(max(rgb,0),1);
+    return;
+end
+U = double(U); U(~isfinite(U)) = 0;
+mx = max(U(:)); mn = min(U(:));
+if mx > 1 || mn < 0
+    if mx > mn, U = (U - mn) ./ max(eps,mx - mn); else, U = zeros(size(U)); end
+end
+U = min(max(U,0),1);
+rgb = repmat(single(U),[1 1 3]);
+end
+
+function rgb = fc_underlay_to_rgb(U,s,isColor)
+if nargin < 3, isColor = false; end
+U = squeeze(U);
+if isColor || (ndims(U)==3 && size(U,3)==3)
+    rgb = double(U);
+    if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+    rgb = min(max(rgb,0),1);
+    return;
+end
+U = double(U); U(~isfinite(U)) = 0;
+modeVal = 5; brightness = -0.04; contrast = 1.10; gammaVal = 0.95; logGain = 2.0; sharp = 0.35; vsz = 18; vlv = 35;
+try
+    if isfield(s,'underlayViewMode'), modeVal = s.underlayViewMode; end
+    if isfield(s,'underlayBrightness'), brightness = s.underlayBrightness; end
+    if isfield(s,'underlayContrast'), contrast = s.underlayContrast; end
+    if isfield(s,'underlayGamma'), gammaVal = s.underlayGamma; end
+    if isfield(s,'underlayLogGain'), logGain = s.underlayLogGain; end
+    if isfield(s,'underlaySharpness'), sharp = s.underlaySharpness; end
+    if isfield(s,'underlayVesselSize'), vsz = s.underlayVesselSize; end
+    if isfield(s,'underlayVesselLev'), vlv = s.underlayVesselLev; end
+catch
+end
+switch modeVal
+    case 1
+        U01 = fc_mat2gray_safe(U);
+    case 3
+        U01 = fc_clip01_percentile(U,0.5,99.5);
+    case 4
+        U01 = fc_clip01_percentile(U,0.5,99.5);
+        U01 = fc_vessel_enhance_simple(U01,vsz,vlv);
+        U01 = fc_clip01_percentile(U01,0.5,99.5);
+    otherwise
+        Upos = U;
+        minU = min(Upos(:));
+        Upos = Upos - minU;
+        med = median(Upos(isfinite(Upos) & Upos > 0));
+        if isempty(med) || ~isfinite(med) || med <= 0
+            med = fc_prctile(Upos(:),50);
+        end
+        if ~isfinite(med) || med <= 0, med = max(eps,mean(Upos(:))); end
+        Ulog = log1p(max(0,Upos) ./ max(eps,med) * logGain);
+        U01 = fc_clip01_percentile(Ulog,0.5,99.7);
+        if sharp > 0
+            U01 = fc_sharpen2d(U01,sharp);
+            U01 = min(max(U01,0),1);
+        end
+end
+U01 = U01 .* contrast + brightness;
+U01 = min(max(U01,0),1);
+if ~isfinite(gammaVal) || gammaVal <= 0, gammaVal = 1; end
+U01 = U01 .^ gammaVal;
+U01 = min(max(U01,0),1);
+rgb = repmat(single(U01),[1 1 3]);
+end
+
+function S = fc_sharpen2d(A,amount)
+A = double(A);
+try
+    h = ones(3,3)/9;
+    blur = filter2(h,A,'same');
+catch
+    blur = conv2(A,ones(3,3)/9,'same');
+end
+S = A + amount*(A - blur);
+end
+
+function U = fc_mat2gray_safe(A)
+A = double(A); A(~isfinite(A)) = 0;
+mn = min(A(:)); mx = max(A(:));
+if ~isfinite(mn) || ~isfinite(mx) || mx <= mn
+    U = zeros(size(A));
+else
+    U = (A - mn) ./ max(eps,mx - mn);
+    U = min(max(U,0),1);
+end
+end
+
+function U = fc_clip01_percentile(A,pLow,pHigh)
+A = double(A); A(~isfinite(A)) = 0;
+v = A(:); v = v(isfinite(v));
+if isempty(v), U = zeros(size(A)); return; end
+lo = fc_prctile(v,pLow); hi = fc_prctile(v,pHigh);
+if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
+    U = fc_mat2gray_safe(A); return;
+end
+U = A; U(U < lo) = lo; U(U > hi) = hi;
+U = (U - lo) ./ max(eps,hi - lo);
+U = min(max(U,0),1);
+end
+
+function U = fc_vessel_enhance_simple(U01,conectSize,conectLev)
+U01 = min(max(double(U01),0),1);
+if nargin < 2 || isempty(conectSize), conectSize = 18; end
+if nargin < 3 || isempty(conectLev), conectLev = 35; end
+if conectSize <= 0, U = U01; return; end
+lev01 = conectLev ./ 500; lev01 = min(max(lev01,0),1); lev01 = lev01.^0.75;
+thrMask = U01 > lev01;
+r = max(1,round(conectSize)); r = min(r,300);
+[x,y] = meshgrid(-r:r,-r:r); m = double((x.^2 + y.^2) <= r.^2); m = m ./ max(eps,sum(m(:)));
+try, D = filter2(m,double(thrMask),'same'); catch, D = conv2(double(thrMask),m,'same'); end
+D = min(max(D,0),1);
+strength = 0.8 + 1.6 * min(1,r/120);
+U = U01 .* (1 + strength .* D.^2) + 0.15 .* D.^2;
+U = min(max(U,0),1);
+end
+
+function atlasS = fc_atlas_slice(s)
+subj = s.subjects(s.currentSubject);
+atlasS = [];
+if ~isempty(subj.roiAtlas)
+    atlasS = double(subj.roiAtlas(:,:,s.slice));
+end
+end
+
+function [rgb,A] = fc_line_overlay(mask,labels,col)
+edge = false(size(mask));
+edge(1:end-1,:) = edge(1:end-1,:) | labels(1:end-1,:) ~= labels(2:end,:);
+edge(:,1:end-1) = edge(:,1:end-1) | labels(:,1:end-1) ~= labels(:,2:end);
+edge = edge & mask;
+rgb = nan(size(mask,1),size(mask,2),3);
+for k = 1:3
+    tmp = zeros(size(mask),'single'); tmp(edge) = col(k); rgb(:,:,k) = tmp;
+end
+A = 0.90 * double(edge);
+end
+
+function rgb = fc_map_rgb(M,cmap,clim)
+M = double(M); cmin = clim(1); cmax = clim(2);
+if ~isfinite(cmin) || ~isfinite(cmax) || cmax <= cmin
+    cmin = min(M(:)); cmax = max(M(:)); if cmax <= cmin, cmax = cmin + 1; end
+end
+u = (M - cmin) / (cmax - cmin); u = max(0,min(1,u));
+idx = 1 + floor(u * (size(cmap,1)-1)); idx(~isfinite(idx)) = 1; idx = max(1,min(size(cmap,1),idx));
+rgb = zeros(size(M,1),size(M,2),3,'single');
+for k = 1:3
+    tmp = cmap(idx,k); rgb(:,:,k) = reshape(single(tmp),size(M,1),size(M,2));
+end
+end
+
+function cmap = fc_get_cmap(name,n)
+if nargin < 2, n = 256; end
+name = lower(strtrim(name));
+switch name
+    case 'winter'
+        cmap = winter(n);
+    case 'hot'
+        cmap = hot(n);
+    case 'jet'
+        cmap = jet(n);
+    case 'gray'
+        cmap = gray(n);
+    case 'parula'
+        try, cmap = parula(n); catch, cmap = jet(n); end
+    otherwise
+        cmap = fc_bwr(n);
+end
+end
+
+function fc_colorbar_legend(ax,cmap,clim,labelStr,C)
+cla(ax);
+pos = get(ax,'Position');
+isVertical = numel(pos) >= 4 && pos(4) > pos(3) * 2;
+nC = size(cmap,1);
+
+if ~isfinite(clim(1)) || ~isfinite(clim(2)) || clim(2) <= clim(1)
+    clim = [-1 1];
+end
+
+if isVertical
+    img = reshape(nC:-1:1,[],1);
+    imagesc(ax,img);
+    hold(ax,'on');
+    y0 = round(1 + (clim(2) - 0) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+    y0 = max(1,min(nC,y0));
+    line(ax,[0.55 1.45],[y0 y0],'Color',[1 1 1],'LineWidth',2.2);
+    set(ax,'YDir','reverse','XTick',[], ...
+        'YTick',[1 y0 nC], ...
+        'YTickLabel',{num2str(clim(2),'%.2g'),'0',num2str(clim(1),'%.2g')}, ...
+        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
+        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
+    ylabel(ax,labelStr,'Color',C.fg,'FontSize',16, ...
+        'FontWeight','bold','Interpreter','none');
+    hold(ax,'off');
+else
+    img = reshape(1:nC,1,[]);
+    imagesc(ax,img);
+    hold(ax,'on');
+    x0 = round(1 + (0 - clim(1)) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+    x0 = max(1,min(nC,x0));
+    line(ax,[x0 x0],[0.55 1.45],'Color',[1 1 1],'LineWidth',2.2);
+    set(ax,'YTick',[], ...
+        'XTick',[1 x0 nC], ...
+        'XTickLabel',{num2str(clim(1),'%.2g'),'0',num2str(clim(2),'%.2g')}, ...
+        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
+        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
+    title(ax,labelStr,'Color',C.fg,'FontSize',16, ...
+        'FontWeight','bold','Interpreter','none');
+    hold(ax,'off');
+end
+colormap(ax,cmap);
+end
+
+function cmap = fc_bwr(n)
+if nargin < 1, n = 256; end
+n1 = floor(n/2); n2 = n - n1;
+b = [0.00 0.25 0.95]; w = [1.00 1.00 1.00]; r = [0.95 0.20 0.20];
+c1 = [linspace(b(1),w(1),n1)' linspace(b(2),w(2),n1)' linspace(b(3),w(3),n1)'];
+c2 = [linspace(w(1),r(1),n2)' linspace(w(2),r(2),n2)' linspace(w(3),r(3),n2)'];
+cmap = [c1; c2];
+end
+
+function [idx,vals] = fc_rank_vector(r,topN,mode,names)
+if nargin < 4, names = {}; end
+r = double(r(:)'); valid = find(isfinite(r));
+if isempty(valid), idx = []; vals = []; return; end
+switch lower(mode)
+    case 'positive'
+        [~,ord] = sort(r(valid),'descend');
+    case 'negative'
+        [~,ord] = sort(r(valid),'ascend');
+    case 'label'
+        if isempty(names)
+            ord = 1:numel(valid);
+        else
+            [~,ord] = sort(lower(names(valid)));
+        end
+    otherwise
+        [~,ord] = sort(abs(r(valid)),'descend');
+end
+idx = valid(ord); idx = idx(1:min(numel(idx),topN)); vals = r(idx);
+end
+
+function T = fc_compare_export_table(s,res)
+T = [];
+[M,names,order,meta] = fc_current_matrix(s,res);
+sel = fc_clip(s.compareROI,1,numel(names));
+vals = M(sel,:)'; labels = fc_display_labels_from_meta(meta,res,order);
+T.selectedName = names{sel}; T.labels = labels(:); T.names = names(:); T.values = vals(:);
+end
+
+function fc_write_matrix_csv(fileName,M,names)
+fid = fopen(fileName,'w'); if fid < 0, error('Could not open CSV file.'); end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid,'ROI');
+for j = 1:numel(names), fprintf(fid,',%s',fc_csv(names{j})); end
+fprintf(fid,'\n');
+for i = 1:size(M,1)
+    fprintf(fid,'%s',fc_csv(names{i}));
+    for j = 1:size(M,2), fprintf(fid,',%.10g',M(i,j)); end
+    fprintf(fid,'\n');
+end
+end
+
+function fc_write_compare_csv(fileName,T)
+fid = fopen(fileName,'w'); if fid < 0, error('Could not open compare CSV.'); end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid,'Selected,%s\n',fc_csv(T.selectedName));
+fprintf(fid,'Label,Region,Value\n');
+for i = 1:numel(T.values), fprintf(fid,'%.10g,%s,%.10g\n',T.labels(i),fc_csv(T.names{i}),T.values(i)); end
+end
+
+function s = fc_csv(s0)
+s = char(s0); s = strrep(s,'"','""'); s = ['"' s '"'];
+end
+
+function fc_save_axis(ax,fig,fileName)
+try
+    tmp = figure('Visible','off');
+    ax2 = copyobj(ax,tmp);
+    set(ax2,'Units','normalized','Position',[0.08 0.08 0.84 0.84]);
+    set(tmp,'Color',get(fig,'Color'),'Position',[100 100 1000 800]);
+    saveas(tmp,fileName);
+    close(tmp);
+catch
+end
+end
+
+function stp = fc_slider_step(Z)
+if Z <= 1, stp = [1 1]; else, stp = [1/(Z-1) min(10/(Z-1),1)]; end
+end
+
+function v = fc_clip(v,lo,hi)
+v = max(lo,min(hi,v));
+end
+
+function z = fc_z(x)
+x = double(x(:)); sd = std(x);
+if ~isfinite(sd) || sd <= 0, z = zeros(size(x)); else, z = (x - mean(x)) / sd; end
+end
+
+function r = fc_corr_scalar(x,y)
+x = double(x(:)); y = double(y(:)); x = x - mean(x); y = y - mean(y);
+den = sqrt(sum(x.^2) * sum(y.^2));
+if den <= 0 || ~isfinite(den), r = 0; else, r = sum(x.*y) / den; end
+end
+
+function Z = fc_atanh_safe(M)
+Z = double(M); Z = max(-0.999999,min(0.999999,Z)); Z = atanh(Z);
+end
+
+function tMin = fc_result_time_min(res,TRfallback)
+tMin = [];
+try
+    if isfield(res,'timeMin') && ~isempty(res.timeMin)
+        tMin = double(res.timeMin(:));
+    elseif isfield(res,'timeSec') && ~isempty(res.timeSec)
+        tMin = double(res.timeSec(:)) ./ 60;
+    elseif isfield(res,'tSec') && ~isempty(res.tSec)
+        tMin = double(res.tSec(:)) ./ 60;
+    elseif isfield(res,'tMin') && ~isempty(res.tMin)
+        tMin = double(res.tMin(:));
+    end
+catch
+    tMin = [];
+end
+
+if isempty(tMin) || any(~isfinite(tMin))
+    try
+        nT = size(res.meanTS,1);
+    catch
+        nT = 0;
+    end
+    if nargin < 2 || isempty(TRfallback) || ~isfinite(TRfallback) || TRfallback <= 0
+        TRfallback = 1;
+    end
+    tMin = ((0:nT-1)' .* double(TRfallback)) ./ 60;
+end
+end
+
+function tMin = fc_extract_seg_time_min(Seg,nT,TRfallback)
+tMin = [];
+if nargin < 3 || isempty(TRfallback) || ~isfinite(TRfallback) || TRfallback <= 0
+    TRfallback = 1;
+end
+
+minFields = {'timeMin','tMin','minutes','timeMinutes','time_min','t_min','TimeMin'};
+secFields = {'timeSec','tSec','seconds','timeSeconds','time_s','t_s','TimeSec','time','t'};
+
+for ii = 1:numel(minFields)
+    fn = minFields{ii};
+    try
+        if isfield(Seg,fn) && ~isempty(Seg.(fn))
+            v = double(Seg.(fn)(:));
+            if numel(v) == nT && all(isfinite(v))
+                tMin = v;
+                return;
+            end
+        end
+    catch
+    end
+end
+
+for ii = 1:numel(secFields)
+    fn = secFields{ii};
+    try
+        if isfield(Seg,fn) && ~isempty(Seg.(fn))
+            v = double(Seg.(fn)(:));
+            if numel(v) == nT && all(isfinite(v))
+                if strcmpi(fn,'t') || strcmpi(fn,'time')
+                    if max(v) > max(5,2*((nT-1)*TRfallback/60))
+                        tMin = v ./ 60;
+                    else
+                        tMin = v;
+                    end
+                else
+                    tMin = v ./ 60;
+                end
+                return;
+            end
+        end
+    catch
+    end
+end
+
+try
+    if isfield(Seg,'time') && isstruct(Seg.time)
+        if isfield(Seg.time,'min') && numel(Seg.time.min) == nT
+            tMin = double(Seg.time.min(:));
+            return;
+        elseif isfield(Seg.time,'sec') && numel(Seg.time.sec) == nT
+            tMin = double(Seg.time.sec(:)) ./ 60;
+            return;
+        end
+    end
+catch
+end
+
+tMin = ((0:nT-1)' .* double(TRfallback)) ./ 60;
+end
+
+function x = fc_prctile(a,p)
+a = double(a(:)); a = a(isfinite(a));
+if isempty(a), x = NaN; return; end
+a = sort(a);
+if numel(a)==1, x = a; return; end
+t = (p/100) * (numel(a)-1) + 1; i1 = floor(t); i2 = ceil(t);
+if i1 == i2, x = a(i1); else, w = t - i1; x = (1-w)*a(i1) + w*a(i2); end
+end
+
+function fc_ax(ax,C)
+try
+    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10, ...
+        'TickLabelInterpreter','none');
+catch
+    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10);
+end
+end
+
+function fc_nodata(ax,titleStr,C)
+cla(ax);
+text(ax,0.5,0.5,'No data','HorizontalAlignment','center','Color',C.fg,'FontSize',12,'FontWeight','bold');
+fc_ax(ax,C); title(ax,titleStr,'Color',C.fg,'Interpreter','none');
+set(ax,'XTick',[],'YTick',[]);
+end
+
+function lst = fc_underlay_list(st)
+subj = st.subjects(st.currentSubject);
+lst = {'SCM log-median underlay','Mean functional','Median functional'};
+if ~isempty(subj.anat), lst{end+1} = 'Mask Editor / provided anatomy'; end
+if ~isempty(st.loadedUnderlay), lst{end+1} = 'Loaded histology / underlay'; end
+if ~isempty(subj.roiAtlas), lst{end+1} = 'ROI labels as underlay'; end
+end
+
+function val = fc_underlay_value(st,lst)
+if nargin < 2 || isempty(lst), lst = fc_underlay_list(st); end
+if ischar(lst), lst = cellstr(lst); end
+val = 1;
+modeNow = lower(strtrim(st.underlayMode));
+for i = 1:numel(lst)
+    item = lower(strtrim(lst{i}));
+    switch modeNow
+        case 'scm'
+            if ~isempty(strfind(item,'scm')) || ~isempty(strfind(item,'log')), val = i; return; end
+        case 'mean'
+            if ~isempty(strfind(item,'mean')), val = i; return; end
+        case 'median'
+            if ~isempty(strfind(item,'median')) && isempty(strfind(item,'log')), val = i; return; end
+        case 'anat'
+            if ~isempty(strfind(item,'anatomy')) || ~isempty(strfind(item,'mask editor')) || ~isempty(strfind(item,'provided')), val = i; return; end
+        case 'loaded'
+            if ~isempty(strfind(item,'loaded')) || ~isempty(strfind(item,'histology')), val = i; return; end
+        case 'atlas'
+            if ~isempty(strfind(item,'labels')), val = i; return; end
+    end
+end
+val = 1;
+end
+
+function out = fc_short_list(c,n)
+out = c;
+for i = 1:numel(out)
+    s = char(out{i});
+    if numel(s) > n, s = [s(1:max(1,n-3)) '...']; end
+    out{i} = s;
+end
+end
+
+function out = fc_abbrev_list(c,n,showHemisphere)
+if nargin < 2 || isempty(n), n = 12; end
+if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+out = c;
+for i = 1:numel(out)
+    out{i} = fc_roi_abbrev(out{i},n,showHemisphere);
+end
+end
+
+function ab = fc_roi_abbrev(name,n,showHemisphere)
+if nargin < 2 || isempty(n), n = 12; end
+if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+s = strtrim(char(name));
+s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+s = regexprep(s,'^\s*-?\d+\s*','');
+s = strtrim(s);
+hemi = '';
+stem = s;
+tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
+if ~isempty(tok)
+    hemi = upper(strtrim(tok{1}));
+    stem = strtrim(tok{2});
+end
+stem = strrep(stem,'_',' ');
+stem = regexprep(stem,'\s+',' ');
+if showHemisphere && ~isempty(hemi)
+    ab = [hemi ' ' stem];
+else
+    ab = stem;
+end
+if isempty(strtrim(ab)), ab = s; end
+if numel(ab) > n
+    ab = [ab(1:max(1,n-3)) '...'];
+end
+end
+
+function out = fc_abbrev_only_list(c,n)
+if nargin < 2 || isempty(n), n = 12; end
+out = c;
+for i = 1:numel(out)
+    out{i} = fc_roi_abbrev_only(out{i},n);
+end
+end
+
+function ab = fc_roi_abbrev_only(name,n)
+if nargin < 2 || isempty(n), n = 12; end
+s = strtrim(char(name));
+s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+s = regexprep(s,'^\s*-?\d+\s*','');
+s = strtrim(s);
+tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
+if ~isempty(tok)
+    ab = strtrim(tok{2});
+else
+    ab = s;
+end
+ab = strrep(ab,'_',' ');
+ab = regexprep(ab,'\s+',' ');
+if isempty(strtrim(ab)), ab = s; end
+if numel(ab) > n
+    ab = [ab(1:max(1,n-3)) '...'];
+end
+end
+
+function col = fc_pair_color(list,val)
+if ischar(list), list = cellstr(list); end
+val = max(1,min(numel(list),val));
+name = lower(strtrim(list{val}));
+switch name
+    case 'blue'
+        col = [0.20 0.75 1.00];
+    case 'orange'
+        col = [1.00 0.55 0.20];
+    case 'green'
+        col = [0.30 0.90 0.45];
+    case 'purple'
+        col = [0.75 0.55 1.00];
+    case 'red'
+        col = [1.00 0.35 0.35];
+    case 'white'
+        col = [0.95 0.95 0.95];
+    otherwise
+        col = [0.70 0.70 0.74];
+end
+end
+
+function A2 = fc_fill_empty_hemi_labels(A)
+% Disabled intentionally.
+% Functional Connectivity must use the true co-registered atlas labels.
+% Do not mirror labels, because that creates fake left/right symmetry.
+A2 = A;
+end
+
+function fc_draw_roi_abbrev_on_map(ax,atlasS,labels,names,C,showHemisphere)
+if nargin < 6 || isempty(showHemisphere), showHemisphere = true; end
+try
+    A = round(double(atlasS));
+    labsInSlice = unique(A(:));
+    labsInSlice = labsInSlice(isfinite(labsInSlice) & labsInSlice ~= 0);
+    labsInSlice = intersect(labsInSlice,round(double(labels(:))));
+    if isempty(labsInSlice) || numel(labsInSlice) > 60
+        return;
+    end
+    hold(ax,'on');
+    for ii = 1:numel(labsInSlice)
+        lab = labsInSlice(ii);
+        idx = find(round(double(labels(:))) == round(double(lab)),1,'first');
+        if isempty(idx) || idx > numel(names), continue; end
+        if fc_is_background_region(lab,names{idx}), continue; end
+        [yy,xx] = find(A == round(double(lab)));
+        if numel(xx) < 12, continue; end
+        x = median(xx); y = median(yy);
+        text(ax,x,y,fc_roi_abbrev(names{idx},8,showHemisphere), ...
+            'Color',C.fg,'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+            'HorizontalAlignment','center','VerticalAlignment','middle', ...
+            'HitTest','off','Clipping','on');
+    end
+    hold(ax,'off');
+catch
+end
+end
+
+function v = fc_view_mode_to_value(modeVal)
+switch modeVal
+    case 5, v = 1;
+    case 3, v = 2;
+    case 4, v = 3;
+    otherwise, v = 4;
+end
+end
+
+function s = fc_short(s)
+s = char(s);
+if numel(s) > 32, s = [s(1:29) '...']; end
+end
+
+function out = fc_join(c)
+if isempty(c), out = 'none'; return; end
+out = c{1};
+for i = 2:numel(c), out = sprintf('%s\n%s',out,c{i}); end
+end
+
+function fc_log(opts,msg)
+try
+    if isfield(opts,'logFcn') && isa(opts.logFcn,'function_handle')
+        opts.logFcn(msg);
+    end
+catch
+end
+end
+
+function fcBundle = fc_make_group_bundle(s)
+% FC_MAKE_GROUP_BUNDLE
+% Standardized subject-level FC export for GroupAnalysis.
+%
+% Important:
+%   - Pearson r is stored as R.
+%   - Fisher z = atanh(r) is stored as Z.
+%   - Group analysis should average/statistically compare Z, not R.
+
+fcBundle = struct();
+
+fcBundle.version = 'FC_GroupBundle_v1';
+fcBundle.created = datestr(now);
+fcBundle.tag = s.tag;
+fcBundle.saveRoot = s.saveRoot;
+fcBundle.qcDir = s.qcDir;
+
+fcBundle.settings = struct();
+fcBundle.settings.roiMinVox = s.opts.roiMinVox;
+fcBundle.settings.roiOrder = s.roiOrder;
+fcBundle.settings.analysisStartSec = s.analysisStartSec;
+fcBundle.settings.analysisEndSec = s.analysisEndSec;
+fcBundle.settings.currentEpoch = s.currentEpoch;
+fcBundle.settings.epochName = s.epochs(s.currentEpoch).name;
+fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use tanh(Z) only for display.';
+fcBundle.settings.regionMode = fc_region_mode_from_state(s);
+
+fcBundle.subjects = struct([]);
+
+for i = 1:s.nSub
+
+    subj = s.subjects(i);
+
+    fcBundle.subjects(i).name = subj.name;
+    fcBundle.subjects(i).group = subj.group;
+    fcBundle.subjects(i).TR = subj.TR;
+    fcBundle.subjects(i).analysisDir = subj.analysisDir;
+
+    fcBundle.subjects(i).hasROI = false;
+    fcBundle.subjects(i).epochName = '';
+    fcBundle.subjects(i).timeIdx = [];
+    fcBundle.subjects(i).labels = [];
+    fcBundle.subjects(i).names = {};
+    fcBundle.subjects(i).counts = [];
+    fcBundle.subjects(i).meanTS = [];
+    fcBundle.subjects(i).R = [];
+    fcBundle.subjects(i).Z = [];
+
+    % Prefer current epoch result.
+    res = [];
+    if i <= size(s.roiResults,1) && s.currentEpoch <= size(s.roiResults,2)
+        res = s.roiResults{i,s.currentEpoch};
+    end
+
+    % Fallback: find any available ROI result for this subject.
+    if isempty(res)
+        for e = 1:size(s.roiResults,2)
+            if ~isempty(s.roiResults{i,e})
+                res = s.roiResults{i,e};
+                break;
+            end
+        end
+    end
+
+    if isempty(res)
+        continue;
+    end
+
+    fcBundle.subjects(i).hasROI = true;
+    fcBundle.subjects(i).epochName = res.epochName;
+    fcBundle.subjects(i).timeIdx = res.timeIdx;
+    fcBundle.subjects(i).labels = res.labels;
+    fcBundle.subjects(i).names = res.names;
+    fcBundle.subjects(i).counts = res.counts;
+    fcBundle.subjects(i).meanTS = res.meanTS;
+    fcBundle.subjects(i).R = res.M;
+
+    Z = double(res.M);
+    Z = max(-0.999999, min(0.999999, Z));
+    Z = atanh(Z);
+
+    % The diagonal is self-correlation. Keep R diagonal as 1,
+    % but set Z diagonal to 0 so group plots/statistics are cleaner.
+    Z(1:size(Z,1)+1:end) = 0;
+
+    fcBundle.subjects(i).Z = Z;
+
+    % Current display-mode matrix for GroupAnalysis convenience.
+    try
+        [Rdisp,namesDisp,orderDisp,metaDisp] = fc_current_matrix(s,res); %#ok<ASGLU>
+        fcBundle.subjects(i).displayRegionMode = fc_region_mode_from_state(s);
+        fcBundle.subjects(i).displayNames = namesDisp;
+        fcBundle.subjects(i).displayLabels = metaDisp.displayLabels;
+        fcBundle.subjects(i).displayGroups = metaDisp.groups;
+        fcBundle.subjects(i).displayR = Rdisp;
+        Zdisp = max(-0.999999,min(0.999999,double(Rdisp)));
+        Zdisp = atanh(Zdisp);
+        Zdisp(1:size(Zdisp,1)+1:end) = 0;
+        fcBundle.subjects(i).displayZ = Zdisp;
+    catch
+        fcBundle.subjects(i).displayRegionMode = 'both';
+        fcBundle.subjects(i).displayNames = res.names;
+        fcBundle.subjects(i).displayLabels = res.labels;
+        fcBundle.subjects(i).displayGroups = {};
+        fcBundle.subjects(i).displayR = res.M;
+        fcBundle.subjects(i).displayZ = Z;
+    end
+end
+
+end
+
+function outFile = fc_export_group_analysis_bundle_interactive(s)
+% Save standardized FC bundle for later GroupAnalysis loading.
+outFile = '';
+fcBundle = fc_make_group_bundle(s);
+
+hasAny = false;
+try
+    for ii = 1:numel(fcBundle.subjects)
+        if isfield(fcBundle.subjects(ii),'hasROI') && fcBundle.subjects(ii).hasROI
+            hasAny = true;
+            break;
+        end
+    end
+catch
+    hasAny = false;
+end
+if ~hasAny
+    error('No ROI FC result is available. Compute ROI current/all or load Seg MAT first.');
+end
+
+bundleDir = fullfile(s.saveRoot,'Connectivity','GroupBundles');
+if exist(bundleDir,'dir') ~= 7
+    mkdir(bundleDir);
+end
+
+defName = ['FC_GroupBundle_' s.tag '_' fc_region_mode_from_state(s) '.mat'];
+[f,p] = uiputfile({'*.mat','MAT-file (*.mat)'}, ...
+    'Save FC bundle for GroupAnalysis', fullfile(bundleDir,defName));
+if isequal(f,0)
+    return;
+end
+outFile = fullfile(p,f);
+save(outFile,'fcBundle','-v7.3');
+fprintf('\n[FunctionalConnectivity] Saved GroupAnalysis FC bundle:\n%s\n',outFile);
+end
+
+function startDir = fc_segmentation_start_dir(subj,opts)
+% Prefer the HUMoR segmentation output folder.
+startDir = pwd;
+try
+    if isfield(opts,'exportPath') && ~isempty(opts.exportPath)
+        segDir = fullfile(opts.exportPath,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+    end
+catch
+end
+try
+    if isfield(opts,'saveRoot') && ~isempty(opts.saveRoot)
+        segDir = fullfile(opts.saveRoot,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+    end
+catch
+end
+try
+    if isfield(subj,'analysisDir') && ~isempty(subj.analysisDir)
+        segDir = fullfile(subj.analysisDir,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+        if exist(subj.analysisDir,'dir'), startDir = subj.analysisDir; return; end
+    end
+catch
+end
+try
+    startDir = fc_start_dir(subj,opts);
+catch
+end
+end
+
+function [res, info, roiAtlas] = fc_read_segmentation_result(fullFile, fallbackTR, opts)
+% TRUE-LR Segmentation loader.
+% If Seg.labelMap contains signed labels, this loads Seg.Left + Seg.Right
+% as separate FC regions: negative labels = left, positive labels = right.
+% If no signed label map is present, it falls back to Seg.Both.
+
+res = [];
+info = struct();
+roiAtlas = [];
+
+if nargin < 2 || isempty(fallbackTR) || ~isfinite(fallbackTR) || fallbackTR <= 0
+    fallbackTR = 1;
+end
+if nargin < 3
+    opts = struct(); %#ok<NASGU>
+end
+
+if exist(fullFile,'file') ~= 2
+    error('File does not exist: %s', fullFile);
+end
+
+S = load(fullFile);
+if isfield(S,'Seg')
+    Seg = S.Seg;
+else
+    Seg = S;
+end
+
+% ------------------------------------------------------------
+% Get and repair label map early.
+% Important for old files where negative labels were saved as uint32.
+% ------------------------------------------------------------
+if isfield(Seg,'labelMap') && ~isempty(Seg.labelMap)
+    roiAtlas = fc_repair_signed_label_map(Seg.labelMap);
+elseif isfield(Seg,'R') && ~isempty(Seg.R)
+    roiAtlas = fc_repair_signed_label_map(Seg.R);
+elseif isfield(Seg,'atlas') && ~isempty(Seg.atlas)
+    roiAtlas = fc_repair_signed_label_map(Seg.atlas);
+else
+    roiAtlas = [];
+end
+
+hasSignedMap = false;
+try
+    hasSignedMap = ~isempty(roiAtlas) && any(double(roiAtlas(:)) < 0);
+catch
+    hasSignedMap = false;
+end
+
+% ------------------------------------------------------------
+% Read base region metadata.
+% Segmentation stores base labels as unsigned absolute Allen IDs.
+% ------------------------------------------------------------
+labelsBase = [];
+acr = {};
+nmFull = {};
+countsLeft = [];
+countsRight = [];
+countsBoth = [];
+
+if isfield(Seg,'region') && isstruct(Seg.region)
+    if isfield(Seg.region,'labels') && ~isempty(Seg.region.labels)
+        labelsBase = double(Seg.region.labels(:));
+    end
+    if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms)
+        acr = cellstr(Seg.region.acronyms(:));
+    end
+    if isfield(Seg.region,'names') && ~isempty(Seg.region.names)
+        nmFull = cellstr(Seg.region.names(:));
+    end
+    if isfield(Seg.region,'countsLeft') && ~isempty(Seg.region.countsLeft)
+        countsLeft = double(Seg.region.countsLeft(:));
+    end
+    if isfield(Seg.region,'countsRight') && ~isempty(Seg.region.countsRight)
+        countsRight = double(Seg.region.countsRight(:));
+    end
+    if isfield(Seg.region,'countsBoth') && ~isempty(Seg.region.countsBoth)
+        countsBoth = double(Seg.region.countsBoth(:));
+    end
+end
+
+% ------------------------------------------------------------
+% Decide whether we can use true left/right traces.
+% Only do this if the saved spatial label map is signed.
+% Otherwise FC map and timecourse labels would not match.
+% ------------------------------------------------------------
+hasLR = isfield(Seg,'Left') && isstruct(Seg.Left) && isfield(Seg,'Right') && isstruct(Seg.Right);
+useLR = hasSignedMap && hasLR;
+
+Mregion = [];
+labels = [];
+names = {};
+counts = [];
+spaceName = '';
+
+if useLR
+    L = [];
+    R = [];
+    if isfield(Seg.Left,'z') && isfield(Seg.Right,'z') && ~isempty(Seg.Left.z) && ~isempty(Seg.Right.z)
+        Lz = double(Seg.Left.z);
+        Rz = double(Seg.Right.z);
+        nFinite = sum(any(isfinite(Lz),2)) + sum(any(isfinite(Rz),2));
+        if nFinite >= 2
+            L = Lz;
+            R = Rz;
+            spaceName = 'LeftRight.z';
+        end
+    end
+    if isempty(L) && isfield(Seg.Left,'raw') && isfield(Seg.Right,'raw') && ~isempty(Seg.Left.raw) && ~isempty(Seg.Right.raw)
+        L = double(Seg.Left.raw);
+        R = double(Seg.Right.raw);
+        spaceName = 'LeftRight.raw';
+    end
+
+    if ~isempty(L) && ~isempty(R)
+        if isempty(labelsBase)
+            labelsBase = (1:min(size(L,1),size(R,1)))';
+        end
+        nBase = min([numel(labelsBase), size(L,1), size(R,1)]);
+        for kk = 1:nBase
+            lab0 = abs(round(double(labelsBase(kk))));
+            if ~isfinite(lab0) || lab0 == 0
+                continue;
+            end
+
+            stem = '';
+            if kk <= numel(acr)
+                stem = strtrim(char(acr{kk}));
+            end
+            if isempty(stem) || strcmpi(stem,'unknown')
+                if kk <= numel(nmFull)
+                    stem = strtrim(char(nmFull{kk}));
+                end
+            end
+            if isempty(stem) || strcmpi(stem,'unknown')
+                stem = sprintf('ROI_%g',lab0);
+            end
+
+            if any(isfinite(L(kk,:)))
+                Mregion(end+1,:) = L(kk,:); %#ok<AGROW>
+                labels(end+1,1) = -lab0; %#ok<AGROW>
+                names{end+1,1} = sprintf('L_%s [%g]',stem,-lab0); %#ok<AGROW>
+                if kk <= numel(countsLeft), counts(end+1,1) = countsLeft(kk); else, counts(end+1,1) = NaN; end %#ok<AGROW>
+            end
+
+            if any(isfinite(R(kk,:)))
+                Mregion(end+1,:) = R(kk,:); %#ok<AGROW>
+                labels(end+1,1) = lab0; %#ok<AGROW>
+                names{end+1,1} = sprintf('R_%s [%g]',stem,lab0); %#ok<AGROW>
+                if kk <= numel(countsRight), counts(end+1,1) = countsRight(kk); else, counts(end+1,1) = NaN; end %#ok<AGROW>
+            end
+        end
+    end
+end
+
+% ------------------------------------------------------------
+% Fallback: bilateral merged Seg.Both result.
+% This is expected to produce 78 regions for your slice.
+% ------------------------------------------------------------
+if isempty(Mregion)
+    hasZ = isfield(Seg,'Both') && isstruct(Seg.Both) && isfield(Seg.Both,'z') && ~isempty(Seg.Both.z);
+    hasRaw = isfield(Seg,'Both') && isstruct(Seg.Both) && isfield(Seg.Both,'raw') && ~isempty(Seg.Both.raw);
+    if hasZ
+        Mregion = double(Seg.Both.z);
+        spaceName = 'Both.z';
+        if sum(any(isfinite(Mregion),2)) < 2 && hasRaw
+            Mregion = double(Seg.Both.raw);
+            spaceName = 'Both.raw';
+        end
+    elseif hasRaw
+        Mregion = double(Seg.Both.raw);
+        spaceName = 'Both.raw';
+    else
+        error('Seg.Both.z/raw or signed Seg.Left/Right traces were not found.');
+    end
+
+    if isempty(labelsBase)
+        labelsBase = (1:size(Mregion,1))';
+    end
+    nBase = min(numel(labelsBase),size(Mregion,1));
+    labels = labelsBase(1:nBase);
+    names = cell(nBase,1);
+    for kk = 1:nBase
+        stem = '';
+        if kk <= numel(acr), stem = strtrim(char(acr{kk})); end
+        if isempty(stem) || strcmpi(stem,'unknown')
+            if kk <= numel(nmFull), stem = strtrim(char(nmFull{kk})); end
+        end
+        if isempty(stem) || strcmpi(stem,'unknown')
+            stem = sprintf('ROI_%g',labels(kk));
+        end
+        names{kk} = sprintf('%s [%g]',stem,labels(kk));
+    end
+    if numel(countsBoth) >= nBase
+        counts = countsBoth(1:nBase);
+    else
+        counts = nan(nBase,1);
+    end
+    Mregion = Mregion(1:nBase,:);
+end
+
+% ------------------------------------------------------------
+% Orient to time x region.
+% ------------------------------------------------------------
+if size(Mregion,1) == numel(labels)
+    meanTS = Mregion';
+elseif size(Mregion,2) == numel(labels)
+    meanTS = Mregion;
+else
+    error('Region-time matrix size does not match label count. Matrix = %s, labels = %d.', mat2str(size(Mregion)), numel(labels));
+end
+
+if size(meanTS,1) < 2
+    error('The selected Segmentation file has only %d time point(s). Functional connectivity needs region time traces.',size(meanTS,1));
+end
+
+% ------------------------------------------------------------
+% Remove invalid/background rows.
+% ------------------------------------------------------------
+valid = true(1,size(meanTS,2));
+for kk = 1:size(meanTS,2)
+    x = meanTS(:,kk);
+    valid(kk) = any(isfinite(x));
+    if kk <= numel(labels) && kk <= numel(names)
+        if fc_is_background_region(labels(kk),names{kk})
+            valid(kk) = false;
+        end
+    end
+end
+
+meanTS = meanTS(:,valid);
+labels = labels(valid(:));
+names = names(valid(:));
+if numel(counts) == numel(valid)
+    counts = counts(valid(:));
+else
+    counts = nan(numel(labels),1);
+end
+
+if size(meanTS,2) < 2
+    error('Segmentation result has only %d usable region traces after cleanup. Source used: %s.',size(meanTS,2),spaceName);
+end
+
+% Replace NaNs per region by that region finite mean before correlation.
+for kk = 1:size(meanTS,2)
+    x = meanTS(:,kk);
+    bad = ~isfinite(x);
+    if any(bad)
+        good = x(isfinite(x));
+        if isempty(good)
+            x(bad) = 0;
+        else
+            x(bad) = mean(good);
+        end
+        meanTS(:,kk) = x;
+    end
+end
+
+Rfc = fc_corr_matrix(meanTS);
+
+TR = fallbackTR;
+if isfield(Seg,'TR') && ~isempty(Seg.TR) && isfinite(Seg.TR) && Seg.TR > 0
+    TR = double(Seg.TR);
+end
+
+res = struct();
+res.labels = labels(:);
+res.names = names(:);
+res.counts = counts(:);
+res.meanTS = meanTS;
+res.M = Rfc;
+res.TR = TR;
+res.timeIdx = (1:size(meanTS,1))';
+res.epochName = ['Segmentation ' spaceName];
+res.sourceFile = fullFile;
+res.sourceType = 'HUMoR Segmentation';
+res.timeSec = [];
+res.timeMin = [];
+
+try
+    if isfield(Seg,'timeSec') && ~isempty(Seg.timeSec) && numel(Seg.timeSec) == size(meanTS,1)
+        res.timeSec = double(Seg.timeSec(:));
+        res.timeMin = res.timeSec ./ 60;
+    elseif isfield(Seg,'timeMin') && ~isempty(Seg.timeMin) && numel(Seg.timeMin) == size(meanTS,1)
+        res.timeMin = double(Seg.timeMin(:));
+        res.timeSec = res.timeMin .* 60;
+    else
+        res.timeSec = ((0:size(meanTS,1)-1)' .* TR);
+        res.timeMin = res.timeSec ./ 60;
+    end
+catch
+    res.timeSec = ((0:size(meanTS,1)-1)' .* TR);
+    res.timeMin = res.timeSec ./ 60;
+end
+
+try
+    res.timeMin = fc_extract_seg_time_min(Seg,size(meanTS,1),TR);
+catch
+end
+
+info = struct();
+info.file = fullFile;
+info.TR = TR;
+info.spaceName = spaceName;
+info.nRegions = numel(labels);
+info.nTime = size(meanTS,1);
+info.hasSignedMap = hasSignedMap;
+info.note = 'True LR FC uses Seg.Left/Right only when Seg.labelMap has signed labels.';
+end
+
+function A = fc_repair_signed_label_map(A)
+% Repair label maps while preserving signed left/right labels.
+% This also fixes old files where int32 negative labels were accidentally saved as uint32.
+try
+    sz = size(A);
+    if isa(A,'uint32')
+        u = double(A(:));
+        high = u > double(intmax('int32'));
+        u(high) = u(high) - 2^32;
+        A = reshape(u,sz);
+    else
+        A = double(A);
+        high = A > double(intmax('int32')) & A <= 2^32;
+        A(high) = A(high) - 2^32;
+    end
+    A = round(double(A));
+    A(~isfinite(A)) = 0;
+catch
+    try
+        A = round(double(A));
+        A(~isfinite(A)) = 0;
+    catch
+        A = [];
+    end
+end
+end
+
+function tf = fc_is_background_region(label,nameStr)
+tf = false;
+if nargin < 2 || isempty(nameStr), nameStr = ''; end
+try
+    lab = round(double(label));
+catch
+    lab = NaN;
+end
+if ~isfinite(lab) || lab == 0
+    tf = true;
+    return;
+end
+
+if any(abs(lab) == [0 997])
+    tf = true;
+    return;
+end
+
+try
+    s = lower(strtrim(char(nameStr)));
     s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
-    tok = regexp(s,'^\s*([LR])[_\-\s]+','tokens','once');
+    s = regexprep(s,'[_\-]+',' ');
+catch
+    s = '';
+end
+
+bad = {'root','background','outside','no label','nolabel','unknown','void','empty','air'};
+for ii = 1:numel(bad)
+    if strcmp(s,bad{ii}) || ~isempty(strfind(s,bad{ii}))
+        tf = true;
+        return;
+    end
+end
+end
+
+function fc_region_key_dialog(s,C)
+% Show abbreviation -> full-name mapping for the current ROI/Segmentation result.
+res = [];
+try
+    res = s.roiResults{s.currentSubject,s.currentEpoch};
+catch
+end
+
+if isempty(res) || ~isfield(res,'labels') || isempty(res.labels)
+    error('No ROI/Segmentation result is loaded yet. Load Seg MAT or compute ROI FC first.');
+end
+
+labels = double(res.labels(:));
+names = res.names(:);
+n = numel(labels);
+if numel(names) < n
+    tmp = cell(n,1);
+    for k = 1:n
+        if k <= numel(names), tmp{k} = names{k}; else, tmp{k} = sprintf('ROI_%g',labels(k)); end
+    end
+    names = tmp;
+end
+
+[abbr, fullNames, sourceFile, sourceLabel] = fc_region_key_collect(labels,names,s,res);
+
+lines = {};
+lines{end+1} = 'FUNCTIONAL CONNECTIVITY REGION KEY';
+lines{end+1} = '============================================================';
+lines{end+1} = sprintf('Regions: %d',n);
+if ~isempty(sourceLabel)
+    lines{end+1} = ['Source: ' sourceLabel];
+end
+if ~isempty(sourceFile)
+    lines{end+1} = ['File: ' sourceFile];
+end
+lines{end+1} = '';
+lines{end+1} = sprintf('%-5s %-12s %-18s %s','No','Label','Abbrev','Full name');
+lines{end+1} = sprintf('%-5s %-12s %-18s %s','----','----------','----------------','------------------------------');
+for k = 1:n
+    lines{end+1} = sprintf('%-5d %-12g %-18s %s',k,labels(k),abbr{k},fullNames{k}); %#ok<AGROW>
+end
+outTxt = strjoin(lines,newline);
+
+bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
+figKey = figure('Name','FC Region key: abbreviation -> full name', ...
+    'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
+    'Units','pixels','Position',[260 90 1050 820]);
+try, movegui(figKey,'center'); catch, end
+
+uicontrol('Parent',figKey,'Style','edit','Max',2,'Min',0, ...
+    'Units','normalized','Position',[0.035 0.105 0.930 0.855], ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'FontName','Consolas', ...
+    'FontSize',11,'HorizontalAlignment','left','String',outTxt);
+
+if ~isempty(sourceFile) && exist(sourceFile,'file')
+    uicontrol('Parent',figKey,'Style','pushbutton','Units','normalized', ...
+        'Position',[0.035 0.025 0.250 0.055],'String','Open source file', ...
+        'BackgroundColor',C.orange,'ForegroundColor','w', ...
+        'FontName',C.font,'FontWeight','bold','FontSize',12, ...
+        'Callback',@(src,evt)fc_open_file_external(sourceFile));
+end
+
+uicontrol('Parent',figKey,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.790 0.025 0.175 0.055],'String','Close', ...
+    'BackgroundColor',C.red,'ForegroundColor','w', ...
+    'FontName',C.font,'FontWeight','bold','FontSize',12, ...
+    'Callback',@(src,evt)delete(figKey));
+end
+
+function [abbr, fullNames, sourceFile, sourceLabel] = fc_region_key_collect(labels,names,s,res)
+n = numel(labels);
+abbr = cell(n,1);
+fullNames = cell(n,1);
+for k = 1:n
+    displayName = char(names{k});
+    displayName = strtrim(displayName);
+    abbr{k} = fc_roi_abbrev(displayName,18);
+    fullNames{k} = regexprep(displayName,'\s*\[[^\]]*\]\s*$','');
+    if isempty(strtrim(fullNames{k})), fullNames{k} = displayName; end
+end
+
+sourceFile = '';
+sourceLabel = '';
+
+try
+    if isfield(s,'loadedRegionNameFile') && ~isempty(s.loadedRegionNameFile) && exist(s.loadedRegionNameFile,'file')
+        sourceFile = s.loadedRegionNameFile;
+        sourceLabel = 'Loaded region-name TXT/CSV/MAT';
+    elseif isfield(s,'loadedSegmentationFile') && ~isempty(s.loadedSegmentationFile) && exist(s.loadedSegmentationFile,'file')
+        sourceFile = s.loadedSegmentationFile;
+        sourceLabel = 'Loaded Segmentation MAT';
+    elseif isfield(res,'sourceFile') && ~isempty(res.sourceFile) && exist(res.sourceFile,'file')
+        sourceFile = res.sourceFile;
+        sourceLabel = 'ROI result source file';
+    end
+catch
+end
+
+% If a region-name table was loaded, use it as full-name source.
+try
+    if isfield(s,'opts') && isfield(s.opts,'roiNameTable')
+        T = s.opts.roiNameTable;
+        if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
+            for k = 1:n
+                idx = find(abs(double(T.labels(:))) == abs(labels(k)),1,'first');
+                if ~isempty(idx) && idx <= numel(T.names)
+                    nm = strtrim(char(T.names{idx}));
+                    if ~isempty(nm)
+                        fullNames{k} = nm;
+                        abbr{k} = fc_roi_abbrev(nm,18);
+                    end
+                end
+            end
+        end
+    end
+catch
+end
+
+% If this came from HUMoR Segmentation, retrieve acronyms and full names directly from Seg.region.
+try
+    segFile = '';
+    if isfield(res,'sourceFile') && ~isempty(res.sourceFile) && exist(res.sourceFile,'file')
+        segFile = res.sourceFile;
+    elseif ~isempty(sourceFile) && exist(sourceFile,'file')
+        segFile = sourceFile;
+    end
+    if ~isempty(segFile)
+        S = load(segFile);
+        if isfield(S,'Seg')
+            Seg = S.Seg;
+            if isfield(Seg,'region') && isstruct(Seg.region) && isfield(Seg.region,'labels')
+                labs0 = double(Seg.region.labels(:));
+                acr0 = {};
+                nam0 = {};
+                if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms), acr0 = cellstr(Seg.region.acronyms(:)); end
+                if isfield(Seg.region,'names') && ~isempty(Seg.region.names), nam0 = cellstr(Seg.region.names(:)); end
+                for k = 1:n
+                    idx = find(abs(labs0) == abs(labels(k)),1,'first');
+                    if ~isempty(idx)
+                        if idx <= numel(acr0) && ~isempty(strtrim(char(acr0{idx})))
+                            abbr{k} = strtrim(char(acr0{idx}));
+                        end
+                        if idx <= numel(nam0) && ~isempty(strtrim(char(nam0{idx})))
+                            fullNames{k} = strtrim(char(nam0{idx}));
+                        end
+                    end
+                end
+            end
+        end
+    end
+catch
+end
+end
+
+function fc_open_file_external(fileName)
+try
+    if exist(fileName,'file')
+        if ispc
+            winopen(fileName);
+        elseif ismac
+            system(['open "' fileName '" &']);
+        else
+            system(['xdg-open "' fileName '" &']);
+        end
+    end
+catch
+    try, edit(fileName); catch, end
+end
+end
+
+function fc_help_dialog(C) %#ok<INUSD>
+bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
+helpFig = figure('Name','Functional Connectivity - Help', ...
+    'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
+    'Units','pixels','Position',[250 100 960 800]);
+try, movegui(helpFig,'center'); catch, end
+uicontrol('Parent',helpFig,'Style','edit','Max',2,'Min',0, ...
+    'Units','normalized','Position',[0.04 0.04 0.92 0.92], ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'FontName','Arial', ...
+    'FontSize',14,'HorizontalAlignment','left','String',fc_help_text());
+end
+
+function txt = fc_help_text()
+lines = {
+'FUNCTIONAL CONNECTIVITY GUIDE'
+'============================================================'
+''
+'Underlay versus ROI labels'
+'------------------------------------------------------------'
+'- Underlay / histology is only the background image.'
+'- ROI labels / atlas is an integer region map used to extract region timecourses.'
+'- Do not load histology as ROI labels. Do not load ROI labels as the underlay unless you only want a label display.'
+''
+'Underlay display'
+'------------------------------------------------------------'
+'- Default underlay is SCM-like log-median Doppler equalization.'
+'- This is computed directly from the active functional data if no Mask Editor underlay is passed.'
+'- If Mask Editor anatomical_reference is passed, it is shown exactly and not normalized again.'
+''
+'Seed Map tab'
+'------------------------------------------------------------'
+'- Click on the brain image to place the seed.'
+'- The yellow box shows the seed ROI that is averaged.'
+'- Seed current computes voxelwise Pearson correlation with that seed timecourse.'
+''
+'ROI Heatmap tab'
+'------------------------------------------------------------'
+'- Requires ROI labels/atlas.'
+'- Each cell is FC between two atlas-region mean timecourses.'
+'- Fisher z = atanh(r) is the recommended display/statistics transform.'
+''
+'Compare ROI tab'
+'------------------------------------------------------------'
+'- Choose one region such as CPu/CPU.'
+'- Bar plot shows the selected region versus all other regions.'
+'- Atlas map projects those correlations back onto the ROI label map.'
+''
+'Pair ROI tab'
+'------------------------------------------------------------'
+'- Inspects exactly two regions with traces, scatter and lag correlation.'
+''
+'Graph tab'
+'------------------------------------------------------------'
+'- This is a network matrix summary derived from the ROI Heatmap.'
+'- Matrix entries are Pearson r where |r| is above threshold, otherwise 0.'
+};
+txt = strjoin(lines,newline);
+end
+,'');
+    tok = regexp(s,'^s*([LR])[_-s]+','tokens','once');
     if ~isempty(tok)
         side = upper(tok{1});
         return;
@@ -3559,7 +5076,6 @@ TSmerge = zeros(size(meanTS,1),nG);
 namesMerge = cell(nG,1);
 labelsMerge = zeros(nG,1);
 order = zeros(nG,1);
-
 for gg = 1:nG
     idx = groups{gg};
     X = double(meanTS(:,idx));
@@ -3577,7 +5093,1488 @@ end
 function [key,stem,absLab] = fc_region_merge_key(name,label)
 absLab = abs(round(double(label)));
 stem = fc_region_fullname_no_lr(name);
-stem = regexprep(stem,'\s*\[[^\]]*\]\s*$','');
+stem = regexprep(stem,'s*[[^]]*]s*(label,opts)
+name = sprintf('ROI_%03d',label);
+try
+    T = opts.roiNameTable;
+    if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
+        idx = find(double(T.labels(:)) == double(label),1,'first');
+        if isempty(idx)
+            idx = find(abs(double(T.labels(:))) == abs(double(label)),1,'first');
+        end
+        if ~isempty(idx) && idx <= numel(T.names)
+            nm = char(T.names{idx});
+            if ~isempty(strtrim(nm)), name = sprintf('%s [%g]',nm,label); return; end
+        end
+    end
+    if iscell(opts.roiNames) && label >= 1 && label <= numel(opts.roiNames)
+        if ~isempty(opts.roiNames{label}), name = sprintf('%s [%g]',char(opts.roiNames{label}),label); end
+    end
+catch
+end
+end
+
+function idxT = fc_time_idx(TR,T,t0,t1)
+if ~isfinite(TR) || TR <= 0, TR = 1; end
+sec = (0:T-1) * TR;
+idxT = find(sec >= t0 & sec <= t1);
+if isempty(idxT), idxT = 1:T; end
+end
+
+function s = fc_flip_underlay_in_state(s,mode)
+try
+    if ~isempty(s.loadedUnderlay)
+        if strcmpi(mode,'lr')
+            s.loadedUnderlay = s.loadedUnderlay(:,end:-1:1,:);
+        else
+            s.loadedUnderlay = s.loadedUnderlay(end:-1:1,:,:);
+        end
+    end
+    for ii = 1:s.nSub
+        if ~isempty(s.subjects(ii).anat)
+            if strcmpi(mode,'lr')
+                s.subjects(ii).anat = s.subjects(ii).anat(:,end:-1:1,:);
+            else
+                s.subjects(ii).anat = s.subjects(ii).anat(end:-1:1,:,:);
+            end
+        end
+    end
+catch
+end
+end
+
+function rgb = fc_get_underlay(s)
+subj = s.subjects(s.currentSubject);
+I4 = subj.I4;
+meanImg = squeeze(mean(I4,4));
+medImg  = fc_fast_median_time(I4);
+
+switch lower(s.underlayMode)
+    case 'median'
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+    case 'mean'
+        rgb = fc_underlay_to_rgb(meanImg(:,:,s.slice),s,false);
+    case 'scm'
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+    case 'anat'
+        if ~isempty(subj.anat)
+            zUse = max(1,min(size(subj.anat,3),s.slice));
+            if isfield(subj,'anatIsDisplayReady') && subj.anatIsDisplayReady
+                rgb = fc_display_ready_rgb(subj.anat(:,:,zUse));
+            else
+                rgb = fc_underlay_to_rgb(subj.anat(:,:,zUse),s,false);
+            end
+        else
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        end
+    case 'atlas'
+        if ~isempty(subj.roiAtlas)
+            a = double(subj.roiAtlas(:,:,s.slice));
+            rgb = fc_map_rgb(a,jet(256),[0 max(1,max(a(:)))]);
+        else
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        end
+    case 'loaded'
+        U = s.loadedUnderlay;
+        if isempty(U)
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        elseif s.loadedUnderlayIsRGB
+            rgb = single(U);
+            if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+            rgb = min(max(rgb,0),1);
+        elseif isfield(s,'loadedUnderlayDisplayReady') && s.loadedUnderlayDisplayReady
+            if ndims(U) == 2, rgb = fc_display_ready_rgb(U);
+            else, zUse = max(1,min(size(U,3),s.slice)); rgb = fc_display_ready_rgb(U(:,:,zUse)); end
+        elseif ndims(U) == 2
+            rgb = fc_underlay_to_rgb(U,s,false);
+        else
+            zUse = max(1,min(size(U,3),s.slice));
+            rgb = fc_underlay_to_rgb(U(:,:,zUse),s,false);
+        end
+    otherwise
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+end
+end
+
+function medImg = fc_fast_median_time(I4)
+T = size(I4,4);
+if T <= 600
+    medImg = squeeze(median(I4,4));
+else
+    idx = round(linspace(1,T,600));
+    medImg = squeeze(median(I4(:,:,:,idx),4));
+end
+if ndims(medImg)==2, medImg = reshape(medImg,size(I4,1),size(I4,2),size(I4,3)); end
+end
+
+function rgb = fc_display_ready_rgb(U)
+U = squeeze(U);
+if ndims(U) == 3 && size(U,3) == 3
+    rgb = single(U);
+    if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+    rgb = min(max(rgb,0),1);
+    return;
+end
+U = double(U); U(~isfinite(U)) = 0;
+mx = max(U(:)); mn = min(U(:));
+if mx > 1 || mn < 0
+    if mx > mn, U = (U - mn) ./ max(eps,mx - mn); else, U = zeros(size(U)); end
+end
+U = min(max(U,0),1);
+rgb = repmat(single(U),[1 1 3]);
+end
+
+function rgb = fc_underlay_to_rgb(U,s,isColor)
+if nargin < 3, isColor = false; end
+U = squeeze(U);
+if isColor || (ndims(U)==3 && size(U,3)==3)
+    rgb = double(U);
+    if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+    rgb = min(max(rgb,0),1);
+    return;
+end
+U = double(U); U(~isfinite(U)) = 0;
+modeVal = 5; brightness = -0.04; contrast = 1.10; gammaVal = 0.95; logGain = 2.0; sharp = 0.35; vsz = 18; vlv = 35;
+try
+    if isfield(s,'underlayViewMode'), modeVal = s.underlayViewMode; end
+    if isfield(s,'underlayBrightness'), brightness = s.underlayBrightness; end
+    if isfield(s,'underlayContrast'), contrast = s.underlayContrast; end
+    if isfield(s,'underlayGamma'), gammaVal = s.underlayGamma; end
+    if isfield(s,'underlayLogGain'), logGain = s.underlayLogGain; end
+    if isfield(s,'underlaySharpness'), sharp = s.underlaySharpness; end
+    if isfield(s,'underlayVesselSize'), vsz = s.underlayVesselSize; end
+    if isfield(s,'underlayVesselLev'), vlv = s.underlayVesselLev; end
+catch
+end
+switch modeVal
+    case 1
+        U01 = fc_mat2gray_safe(U);
+    case 3
+        U01 = fc_clip01_percentile(U,0.5,99.5);
+    case 4
+        U01 = fc_clip01_percentile(U,0.5,99.5);
+        U01 = fc_vessel_enhance_simple(U01,vsz,vlv);
+        U01 = fc_clip01_percentile(U01,0.5,99.5);
+    otherwise
+        Upos = U;
+        minU = min(Upos(:));
+        Upos = Upos - minU;
+        med = median(Upos(isfinite(Upos) & Upos > 0));
+        if isempty(med) || ~isfinite(med) || med <= 0
+            med = fc_prctile(Upos(:),50);
+        end
+        if ~isfinite(med) || med <= 0, med = max(eps,mean(Upos(:))); end
+        Ulog = log1p(max(0,Upos) ./ max(eps,med) * logGain);
+        U01 = fc_clip01_percentile(Ulog,0.5,99.7);
+        if sharp > 0
+            U01 = fc_sharpen2d(U01,sharp);
+            U01 = min(max(U01,0),1);
+        end
+end
+U01 = U01 .* contrast + brightness;
+U01 = min(max(U01,0),1);
+if ~isfinite(gammaVal) || gammaVal <= 0, gammaVal = 1; end
+U01 = U01 .^ gammaVal;
+U01 = min(max(U01,0),1);
+rgb = repmat(single(U01),[1 1 3]);
+end
+
+function S = fc_sharpen2d(A,amount)
+A = double(A);
+try
+    h = ones(3,3)/9;
+    blur = filter2(h,A,'same');
+catch
+    blur = conv2(A,ones(3,3)/9,'same');
+end
+S = A + amount*(A - blur);
+end
+
+function U = fc_mat2gray_safe(A)
+A = double(A); A(~isfinite(A)) = 0;
+mn = min(A(:)); mx = max(A(:));
+if ~isfinite(mn) || ~isfinite(mx) || mx <= mn
+    U = zeros(size(A));
+else
+    U = (A - mn) ./ max(eps,mx - mn);
+    U = min(max(U,0),1);
+end
+end
+
+function U = fc_clip01_percentile(A,pLow,pHigh)
+A = double(A); A(~isfinite(A)) = 0;
+v = A(:); v = v(isfinite(v));
+if isempty(v), U = zeros(size(A)); return; end
+lo = fc_prctile(v,pLow); hi = fc_prctile(v,pHigh);
+if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
+    U = fc_mat2gray_safe(A); return;
+end
+U = A; U(U < lo) = lo; U(U > hi) = hi;
+U = (U - lo) ./ max(eps,hi - lo);
+U = min(max(U,0),1);
+end
+
+function U = fc_vessel_enhance_simple(U01,conectSize,conectLev)
+U01 = min(max(double(U01),0),1);
+if nargin < 2 || isempty(conectSize), conectSize = 18; end
+if nargin < 3 || isempty(conectLev), conectLev = 35; end
+if conectSize <= 0, U = U01; return; end
+lev01 = conectLev ./ 500; lev01 = min(max(lev01,0),1); lev01 = lev01.^0.75;
+thrMask = U01 > lev01;
+r = max(1,round(conectSize)); r = min(r,300);
+[x,y] = meshgrid(-r:r,-r:r); m = double((x.^2 + y.^2) <= r.^2); m = m ./ max(eps,sum(m(:)));
+try, D = filter2(m,double(thrMask),'same'); catch, D = conv2(double(thrMask),m,'same'); end
+D = min(max(D,0),1);
+strength = 0.8 + 1.6 * min(1,r/120);
+U = U01 .* (1 + strength .* D.^2) + 0.15 .* D.^2;
+U = min(max(U,0),1);
+end
+
+function atlasS = fc_atlas_slice(s)
+subj = s.subjects(s.currentSubject);
+atlasS = [];
+if ~isempty(subj.roiAtlas)
+    atlasS = double(subj.roiAtlas(:,:,s.slice));
+end
+end
+
+function [rgb,A] = fc_line_overlay(mask,labels,col)
+edge = false(size(mask));
+edge(1:end-1,:) = edge(1:end-1,:) | labels(1:end-1,:) ~= labels(2:end,:);
+edge(:,1:end-1) = edge(:,1:end-1) | labels(:,1:end-1) ~= labels(:,2:end);
+edge = edge & mask;
+rgb = nan(size(mask,1),size(mask,2),3);
+for k = 1:3
+    tmp = zeros(size(mask),'single'); tmp(edge) = col(k); rgb(:,:,k) = tmp;
+end
+A = 0.90 * double(edge);
+end
+
+function rgb = fc_map_rgb(M,cmap,clim)
+M = double(M); cmin = clim(1); cmax = clim(2);
+if ~isfinite(cmin) || ~isfinite(cmax) || cmax <= cmin
+    cmin = min(M(:)); cmax = max(M(:)); if cmax <= cmin, cmax = cmin + 1; end
+end
+u = (M - cmin) / (cmax - cmin); u = max(0,min(1,u));
+idx = 1 + floor(u * (size(cmap,1)-1)); idx(~isfinite(idx)) = 1; idx = max(1,min(size(cmap,1),idx));
+rgb = zeros(size(M,1),size(M,2),3,'single');
+for k = 1:3
+    tmp = cmap(idx,k); rgb(:,:,k) = reshape(single(tmp),size(M,1),size(M,2));
+end
+end
+
+function cmap = fc_get_cmap(name,n)
+if nargin < 2, n = 256; end
+name = lower(strtrim(name));
+switch name
+    case 'winter'
+        cmap = winter(n);
+    case 'hot'
+        cmap = hot(n);
+    case 'jet'
+        cmap = jet(n);
+    case 'gray'
+        cmap = gray(n);
+    case 'parula'
+        try, cmap = parula(n); catch, cmap = jet(n); end
+    otherwise
+        cmap = fc_bwr(n);
+end
+end
+
+function fc_colorbar_legend(ax,cmap,clim,labelStr,C)
+cla(ax);
+pos = get(ax,'Position');
+isVertical = numel(pos) >= 4 && pos(4) > pos(3) * 2;
+nC = size(cmap,1);
+
+if ~isfinite(clim(1)) || ~isfinite(clim(2)) || clim(2) <= clim(1)
+    clim = [-1 1];
+end
+
+if isVertical
+    img = reshape(nC:-1:1,[],1);
+    imagesc(ax,img);
+    hold(ax,'on');
+    y0 = round(1 + (clim(2) - 0) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+    y0 = max(1,min(nC,y0));
+    line(ax,[0.55 1.45],[y0 y0],'Color',[1 1 1],'LineWidth',2.2);
+    set(ax,'YDir','reverse','XTick',[], ...
+        'YTick',[1 y0 nC], ...
+        'YTickLabel',{num2str(clim(2),'%.2g'),'0',num2str(clim(1),'%.2g')}, ...
+        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
+        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
+    ylabel(ax,labelStr,'Color',C.fg,'FontSize',16, ...
+        'FontWeight','bold','Interpreter','none');
+    hold(ax,'off');
+else
+    img = reshape(1:nC,1,[]);
+    imagesc(ax,img);
+    hold(ax,'on');
+    x0 = round(1 + (0 - clim(1)) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+    x0 = max(1,min(nC,x0));
+    line(ax,[x0 x0],[0.55 1.45],'Color',[1 1 1],'LineWidth',2.2);
+    set(ax,'YTick',[], ...
+        'XTick',[1 x0 nC], ...
+        'XTickLabel',{num2str(clim(1),'%.2g'),'0',num2str(clim(2),'%.2g')}, ...
+        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
+        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
+    title(ax,labelStr,'Color',C.fg,'FontSize',16, ...
+        'FontWeight','bold','Interpreter','none');
+    hold(ax,'off');
+end
+colormap(ax,cmap);
+end
+
+function cmap = fc_bwr(n)
+if nargin < 1, n = 256; end
+n1 = floor(n/2); n2 = n - n1;
+b = [0.00 0.25 0.95]; w = [1.00 1.00 1.00]; r = [0.95 0.20 0.20];
+c1 = [linspace(b(1),w(1),n1)' linspace(b(2),w(2),n1)' linspace(b(3),w(3),n1)'];
+c2 = [linspace(w(1),r(1),n2)' linspace(w(2),r(2),n2)' linspace(w(3),r(3),n2)'];
+cmap = [c1; c2];
+end
+
+function [idx,vals] = fc_rank_vector(r,topN,mode,names)
+if nargin < 4, names = {}; end
+r = double(r(:)'); valid = find(isfinite(r));
+if isempty(valid), idx = []; vals = []; return; end
+switch lower(mode)
+    case 'positive'
+        [~,ord] = sort(r(valid),'descend');
+    case 'negative'
+        [~,ord] = sort(r(valid),'ascend');
+    case 'label'
+        if isempty(names)
+            ord = 1:numel(valid);
+        else
+            [~,ord] = sort(lower(names(valid)));
+        end
+    otherwise
+        [~,ord] = sort(abs(r(valid)),'descend');
+end
+idx = valid(ord); idx = idx(1:min(numel(idx),topN)); vals = r(idx);
+end
+
+function T = fc_compare_export_table(s,res)
+T = [];
+[M,names,order,meta] = fc_current_matrix(s,res);
+sel = fc_clip(s.compareROI,1,numel(names));
+vals = M(sel,:)'; labels = fc_display_labels_from_meta(meta,res,order);
+T.selectedName = names{sel}; T.labels = labels(:); T.names = names(:); T.values = vals(:);
+end
+
+function fc_write_matrix_csv(fileName,M,names)
+fid = fopen(fileName,'w'); if fid < 0, error('Could not open CSV file.'); end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid,'ROI');
+for j = 1:numel(names), fprintf(fid,',%s',fc_csv(names{j})); end
+fprintf(fid,'\n');
+for i = 1:size(M,1)
+    fprintf(fid,'%s',fc_csv(names{i}));
+    for j = 1:size(M,2), fprintf(fid,',%.10g',M(i,j)); end
+    fprintf(fid,'\n');
+end
+end
+
+function fc_write_compare_csv(fileName,T)
+fid = fopen(fileName,'w'); if fid < 0, error('Could not open compare CSV.'); end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid,'Selected,%s\n',fc_csv(T.selectedName));
+fprintf(fid,'Label,Region,Value\n');
+for i = 1:numel(T.values), fprintf(fid,'%.10g,%s,%.10g\n',T.labels(i),fc_csv(T.names{i}),T.values(i)); end
+end
+
+function s = fc_csv(s0)
+s = char(s0); s = strrep(s,'"','""'); s = ['"' s '"'];
+end
+
+function fc_save_axis(ax,fig,fileName)
+try
+    tmp = figure('Visible','off');
+    ax2 = copyobj(ax,tmp);
+    set(ax2,'Units','normalized','Position',[0.08 0.08 0.84 0.84]);
+    set(tmp,'Color',get(fig,'Color'),'Position',[100 100 1000 800]);
+    saveas(tmp,fileName);
+    close(tmp);
+catch
+end
+end
+
+function stp = fc_slider_step(Z)
+if Z <= 1, stp = [1 1]; else, stp = [1/(Z-1) min(10/(Z-1),1)]; end
+end
+
+function v = fc_clip(v,lo,hi)
+v = max(lo,min(hi,v));
+end
+
+function z = fc_z(x)
+x = double(x(:)); sd = std(x);
+if ~isfinite(sd) || sd <= 0, z = zeros(size(x)); else, z = (x - mean(x)) / sd; end
+end
+
+function r = fc_corr_scalar(x,y)
+x = double(x(:)); y = double(y(:)); x = x - mean(x); y = y - mean(y);
+den = sqrt(sum(x.^2) * sum(y.^2));
+if den <= 0 || ~isfinite(den), r = 0; else, r = sum(x.*y) / den; end
+end
+
+function Z = fc_atanh_safe(M)
+Z = double(M); Z = max(-0.999999,min(0.999999,Z)); Z = atanh(Z);
+end
+
+function tMin = fc_result_time_min(res,TRfallback)
+tMin = [];
+try
+    if isfield(res,'timeMin') && ~isempty(res.timeMin)
+        tMin = double(res.timeMin(:));
+    elseif isfield(res,'timeSec') && ~isempty(res.timeSec)
+        tMin = double(res.timeSec(:)) ./ 60;
+    elseif isfield(res,'tSec') && ~isempty(res.tSec)
+        tMin = double(res.tSec(:)) ./ 60;
+    elseif isfield(res,'tMin') && ~isempty(res.tMin)
+        tMin = double(res.tMin(:));
+    end
+catch
+    tMin = [];
+end
+
+if isempty(tMin) || any(~isfinite(tMin))
+    try
+        nT = size(res.meanTS,1);
+    catch
+        nT = 0;
+    end
+    if nargin < 2 || isempty(TRfallback) || ~isfinite(TRfallback) || TRfallback <= 0
+        TRfallback = 1;
+    end
+    tMin = ((0:nT-1)' .* double(TRfallback)) ./ 60;
+end
+end
+
+function tMin = fc_extract_seg_time_min(Seg,nT,TRfallback)
+tMin = [];
+if nargin < 3 || isempty(TRfallback) || ~isfinite(TRfallback) || TRfallback <= 0
+    TRfallback = 1;
+end
+
+minFields = {'timeMin','tMin','minutes','timeMinutes','time_min','t_min','TimeMin'};
+secFields = {'timeSec','tSec','seconds','timeSeconds','time_s','t_s','TimeSec','time','t'};
+
+for ii = 1:numel(minFields)
+    fn = minFields{ii};
+    try
+        if isfield(Seg,fn) && ~isempty(Seg.(fn))
+            v = double(Seg.(fn)(:));
+            if numel(v) == nT && all(isfinite(v))
+                tMin = v;
+                return;
+            end
+        end
+    catch
+    end
+end
+
+for ii = 1:numel(secFields)
+    fn = secFields{ii};
+    try
+        if isfield(Seg,fn) && ~isempty(Seg.(fn))
+            v = double(Seg.(fn)(:));
+            if numel(v) == nT && all(isfinite(v))
+                if strcmpi(fn,'t') || strcmpi(fn,'time')
+                    if max(v) > max(5,2*((nT-1)*TRfallback/60))
+                        tMin = v ./ 60;
+                    else
+                        tMin = v;
+                    end
+                else
+                    tMin = v ./ 60;
+                end
+                return;
+            end
+        end
+    catch
+    end
+end
+
+try
+    if isfield(Seg,'time') && isstruct(Seg.time)
+        if isfield(Seg.time,'min') && numel(Seg.time.min) == nT
+            tMin = double(Seg.time.min(:));
+            return;
+        elseif isfield(Seg.time,'sec') && numel(Seg.time.sec) == nT
+            tMin = double(Seg.time.sec(:)) ./ 60;
+            return;
+        end
+    end
+catch
+end
+
+tMin = ((0:nT-1)' .* double(TRfallback)) ./ 60;
+end
+
+function x = fc_prctile(a,p)
+a = double(a(:)); a = a(isfinite(a));
+if isempty(a), x = NaN; return; end
+a = sort(a);
+if numel(a)==1, x = a; return; end
+t = (p/100) * (numel(a)-1) + 1; i1 = floor(t); i2 = ceil(t);
+if i1 == i2, x = a(i1); else, w = t - i1; x = (1-w)*a(i1) + w*a(i2); end
+end
+
+function fc_ax(ax,C)
+try
+    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10, ...
+        'TickLabelInterpreter','none');
+catch
+    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10);
+end
+end
+
+function fc_nodata(ax,titleStr,C)
+cla(ax);
+text(ax,0.5,0.5,'No data','HorizontalAlignment','center','Color',C.fg,'FontSize',12,'FontWeight','bold');
+fc_ax(ax,C); title(ax,titleStr,'Color',C.fg,'Interpreter','none');
+set(ax,'XTick',[],'YTick',[]);
+end
+
+function lst = fc_underlay_list(st)
+subj = st.subjects(st.currentSubject);
+lst = {'SCM log-median underlay','Mean functional','Median functional'};
+if ~isempty(subj.anat), lst{end+1} = 'Mask Editor / provided anatomy'; end
+if ~isempty(st.loadedUnderlay), lst{end+1} = 'Loaded histology / underlay'; end
+if ~isempty(subj.roiAtlas), lst{end+1} = 'ROI labels as underlay'; end
+end
+
+function val = fc_underlay_value(st,lst)
+if nargin < 2 || isempty(lst), lst = fc_underlay_list(st); end
+if ischar(lst), lst = cellstr(lst); end
+val = 1;
+modeNow = lower(strtrim(st.underlayMode));
+for i = 1:numel(lst)
+    item = lower(strtrim(lst{i}));
+    switch modeNow
+        case 'scm'
+            if ~isempty(strfind(item,'scm')) || ~isempty(strfind(item,'log')), val = i; return; end
+        case 'mean'
+            if ~isempty(strfind(item,'mean')), val = i; return; end
+        case 'median'
+            if ~isempty(strfind(item,'median')) && isempty(strfind(item,'log')), val = i; return; end
+        case 'anat'
+            if ~isempty(strfind(item,'anatomy')) || ~isempty(strfind(item,'mask editor')) || ~isempty(strfind(item,'provided')), val = i; return; end
+        case 'loaded'
+            if ~isempty(strfind(item,'loaded')) || ~isempty(strfind(item,'histology')), val = i; return; end
+        case 'atlas'
+            if ~isempty(strfind(item,'labels')), val = i; return; end
+    end
+end
+val = 1;
+end
+
+function out = fc_short_list(c,n)
+out = c;
+for i = 1:numel(out)
+    s = char(out{i});
+    if numel(s) > n, s = [s(1:max(1,n-3)) '...']; end
+    out{i} = s;
+end
+end
+
+function out = fc_abbrev_list(c,n,showHemisphere)
+if nargin < 2 || isempty(n), n = 12; end
+if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+out = c;
+for i = 1:numel(out)
+    out{i} = fc_roi_abbrev(out{i},n,showHemisphere);
+end
+end
+
+function ab = fc_roi_abbrev(name,n,showHemisphere)
+if nargin < 2 || isempty(n), n = 12; end
+if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+s = strtrim(char(name));
+s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+s = regexprep(s,'^\s*-?\d+\s*','');
+s = strtrim(s);
+hemi = '';
+stem = s;
+tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
+if ~isempty(tok)
+    hemi = upper(strtrim(tok{1}));
+    stem = strtrim(tok{2});
+end
+stem = strrep(stem,'_',' ');
+stem = regexprep(stem,'\s+',' ');
+if showHemisphere && ~isempty(hemi)
+    ab = [hemi ' ' stem];
+else
+    ab = stem;
+end
+if isempty(strtrim(ab)), ab = s; end
+if numel(ab) > n
+    ab = [ab(1:max(1,n-3)) '...'];
+end
+end
+
+function out = fc_abbrev_only_list(c,n)
+if nargin < 2 || isempty(n), n = 12; end
+out = c;
+for i = 1:numel(out)
+    out{i} = fc_roi_abbrev_only(out{i},n);
+end
+end
+
+function ab = fc_roi_abbrev_only(name,n)
+if nargin < 2 || isempty(n), n = 12; end
+s = strtrim(char(name));
+s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+s = regexprep(s,'^\s*-?\d+\s*','');
+s = strtrim(s);
+tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
+if ~isempty(tok)
+    ab = strtrim(tok{2});
+else
+    ab = s;
+end
+ab = strrep(ab,'_',' ');
+ab = regexprep(ab,'\s+',' ');
+if isempty(strtrim(ab)), ab = s; end
+if numel(ab) > n
+    ab = [ab(1:max(1,n-3)) '...'];
+end
+end
+
+function col = fc_pair_color(list,val)
+if ischar(list), list = cellstr(list); end
+val = max(1,min(numel(list),val));
+name = lower(strtrim(list{val}));
+switch name
+    case 'blue'
+        col = [0.20 0.75 1.00];
+    case 'orange'
+        col = [1.00 0.55 0.20];
+    case 'green'
+        col = [0.30 0.90 0.45];
+    case 'purple'
+        col = [0.75 0.55 1.00];
+    case 'red'
+        col = [1.00 0.35 0.35];
+    case 'white'
+        col = [0.95 0.95 0.95];
+    otherwise
+        col = [0.70 0.70 0.74];
+end
+end
+
+function A2 = fc_fill_empty_hemi_labels(A)
+% Disabled intentionally.
+% Functional Connectivity must use the true co-registered atlas labels.
+% Do not mirror labels, because that creates fake left/right symmetry.
+A2 = A;
+end
+
+function fc_draw_roi_abbrev_on_map(ax,atlasS,labels,names,C,showHemisphere)
+if nargin < 6 || isempty(showHemisphere), showHemisphere = true; end
+try
+    A = round(double(atlasS));
+    labsInSlice = unique(A(:));
+    labsInSlice = labsInSlice(isfinite(labsInSlice) & labsInSlice ~= 0);
+    labsInSlice = intersect(labsInSlice,round(double(labels(:))));
+    if isempty(labsInSlice) || numel(labsInSlice) > 60
+        return;
+    end
+    hold(ax,'on');
+    for ii = 1:numel(labsInSlice)
+        lab = labsInSlice(ii);
+        idx = find(round(double(labels(:))) == round(double(lab)),1,'first');
+        if isempty(idx) || idx > numel(names), continue; end
+        if fc_is_background_region(lab,names{idx}), continue; end
+        [yy,xx] = find(A == round(double(lab)));
+        if numel(xx) < 12, continue; end
+        x = median(xx); y = median(yy);
+        text(ax,x,y,fc_roi_abbrev(names{idx},8,showHemisphere), ...
+            'Color',C.fg,'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+            'HorizontalAlignment','center','VerticalAlignment','middle', ...
+            'HitTest','off','Clipping','on');
+    end
+    hold(ax,'off');
+catch
+end
+end
+
+function v = fc_view_mode_to_value(modeVal)
+switch modeVal
+    case 5, v = 1;
+    case 3, v = 2;
+    case 4, v = 3;
+    otherwise, v = 4;
+end
+end
+
+function s = fc_short(s)
+s = char(s);
+if numel(s) > 32, s = [s(1:29) '...']; end
+end
+
+function out = fc_join(c)
+if isempty(c), out = 'none'; return; end
+out = c{1};
+for i = 2:numel(c), out = sprintf('%s\n%s',out,c{i}); end
+end
+
+function fc_log(opts,msg)
+try
+    if isfield(opts,'logFcn') && isa(opts.logFcn,'function_handle')
+        opts.logFcn(msg);
+    end
+catch
+end
+end
+
+function fcBundle = fc_make_group_bundle(s)
+% FC_MAKE_GROUP_BUNDLE
+% Standardized subject-level FC export for GroupAnalysis.
+%
+% Important:
+%   - Pearson r is stored as R.
+%   - Fisher z = atanh(r) is stored as Z.
+%   - Group analysis should average/statistically compare Z, not R.
+
+fcBundle = struct();
+
+fcBundle.version = 'FC_GroupBundle_v1';
+fcBundle.created = datestr(now);
+fcBundle.tag = s.tag;
+fcBundle.saveRoot = s.saveRoot;
+fcBundle.qcDir = s.qcDir;
+
+fcBundle.settings = struct();
+fcBundle.settings.roiMinVox = s.opts.roiMinVox;
+fcBundle.settings.roiOrder = s.roiOrder;
+fcBundle.settings.analysisStartSec = s.analysisStartSec;
+fcBundle.settings.analysisEndSec = s.analysisEndSec;
+fcBundle.settings.currentEpoch = s.currentEpoch;
+fcBundle.settings.epochName = s.epochs(s.currentEpoch).name;
+fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use tanh(Z) only for display.';
+fcBundle.settings.regionMode = fc_region_mode_from_state(s);
+
+fcBundle.subjects = struct([]);
+
+for i = 1:s.nSub
+
+    subj = s.subjects(i);
+
+    fcBundle.subjects(i).name = subj.name;
+    fcBundle.subjects(i).group = subj.group;
+    fcBundle.subjects(i).TR = subj.TR;
+    fcBundle.subjects(i).analysisDir = subj.analysisDir;
+
+    fcBundle.subjects(i).hasROI = false;
+    fcBundle.subjects(i).epochName = '';
+    fcBundle.subjects(i).timeIdx = [];
+    fcBundle.subjects(i).labels = [];
+    fcBundle.subjects(i).names = {};
+    fcBundle.subjects(i).counts = [];
+    fcBundle.subjects(i).meanTS = [];
+    fcBundle.subjects(i).R = [];
+    fcBundle.subjects(i).Z = [];
+
+    % Prefer current epoch result.
+    res = [];
+    if i <= size(s.roiResults,1) && s.currentEpoch <= size(s.roiResults,2)
+        res = s.roiResults{i,s.currentEpoch};
+    end
+
+    % Fallback: find any available ROI result for this subject.
+    if isempty(res)
+        for e = 1:size(s.roiResults,2)
+            if ~isempty(s.roiResults{i,e})
+                res = s.roiResults{i,e};
+                break;
+            end
+        end
+    end
+
+    if isempty(res)
+        continue;
+    end
+
+    fcBundle.subjects(i).hasROI = true;
+    fcBundle.subjects(i).epochName = res.epochName;
+    fcBundle.subjects(i).timeIdx = res.timeIdx;
+    fcBundle.subjects(i).labels = res.labels;
+    fcBundle.subjects(i).names = res.names;
+    fcBundle.subjects(i).counts = res.counts;
+    fcBundle.subjects(i).meanTS = res.meanTS;
+    fcBundle.subjects(i).R = res.M;
+
+    Z = double(res.M);
+    Z = max(-0.999999, min(0.999999, Z));
+    Z = atanh(Z);
+
+    % The diagonal is self-correlation. Keep R diagonal as 1,
+    % but set Z diagonal to 0 so group plots/statistics are cleaner.
+    Z(1:size(Z,1)+1:end) = 0;
+
+    fcBundle.subjects(i).Z = Z;
+
+    % Current display-mode matrix for GroupAnalysis convenience.
+    try
+        [Rdisp,namesDisp,orderDisp,metaDisp] = fc_current_matrix(s,res); %#ok<ASGLU>
+        fcBundle.subjects(i).displayRegionMode = fc_region_mode_from_state(s);
+        fcBundle.subjects(i).displayNames = namesDisp;
+        fcBundle.subjects(i).displayLabels = metaDisp.displayLabels;
+        fcBundle.subjects(i).displayGroups = metaDisp.groups;
+        fcBundle.subjects(i).displayR = Rdisp;
+        Zdisp = max(-0.999999,min(0.999999,double(Rdisp)));
+        Zdisp = atanh(Zdisp);
+        Zdisp(1:size(Zdisp,1)+1:end) = 0;
+        fcBundle.subjects(i).displayZ = Zdisp;
+    catch
+        fcBundle.subjects(i).displayRegionMode = 'both';
+        fcBundle.subjects(i).displayNames = res.names;
+        fcBundle.subjects(i).displayLabels = res.labels;
+        fcBundle.subjects(i).displayGroups = {};
+        fcBundle.subjects(i).displayR = res.M;
+        fcBundle.subjects(i).displayZ = Z;
+    end
+end
+
+end
+
+function startDir = fc_segmentation_start_dir(subj,opts)
+% Prefer the HUMoR segmentation output folder.
+startDir = pwd;
+try
+    if isfield(opts,'exportPath') && ~isempty(opts.exportPath)
+        segDir = fullfile(opts.exportPath,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+    end
+catch
+end
+try
+    if isfield(opts,'saveRoot') && ~isempty(opts.saveRoot)
+        segDir = fullfile(opts.saveRoot,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+    end
+catch
+end
+try
+    if isfield(subj,'analysisDir') && ~isempty(subj.analysisDir)
+        segDir = fullfile(subj.analysisDir,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+        if exist(subj.analysisDir,'dir'), startDir = subj.analysisDir; return; end
+    end
+catch
+end
+try
+    startDir = fc_start_dir(subj,opts);
+catch
+end
+end
+
+function [res, info, roiAtlas] = fc_read_segmentation_result(fullFile, fallbackTR, opts)
+% TRUE-LR Segmentation loader.
+% If Seg.labelMap contains signed labels, this loads Seg.Left + Seg.Right
+% as separate FC regions: negative labels = left, positive labels = right.
+% If no signed label map is present, it falls back to Seg.Both.
+
+res = [];
+info = struct();
+roiAtlas = [];
+
+if nargin < 2 || isempty(fallbackTR) || ~isfinite(fallbackTR) || fallbackTR <= 0
+    fallbackTR = 1;
+end
+if nargin < 3
+    opts = struct(); %#ok<NASGU>
+end
+
+if exist(fullFile,'file') ~= 2
+    error('File does not exist: %s', fullFile);
+end
+
+S = load(fullFile);
+if isfield(S,'Seg')
+    Seg = S.Seg;
+else
+    Seg = S;
+end
+
+% ------------------------------------------------------------
+% Get and repair label map early.
+% Important for old files where negative labels were saved as uint32.
+% ------------------------------------------------------------
+if isfield(Seg,'labelMap') && ~isempty(Seg.labelMap)
+    roiAtlas = fc_repair_signed_label_map(Seg.labelMap);
+elseif isfield(Seg,'R') && ~isempty(Seg.R)
+    roiAtlas = fc_repair_signed_label_map(Seg.R);
+elseif isfield(Seg,'atlas') && ~isempty(Seg.atlas)
+    roiAtlas = fc_repair_signed_label_map(Seg.atlas);
+else
+    roiAtlas = [];
+end
+
+hasSignedMap = false;
+try
+    hasSignedMap = ~isempty(roiAtlas) && any(double(roiAtlas(:)) < 0);
+catch
+    hasSignedMap = false;
+end
+
+% ------------------------------------------------------------
+% Read base region metadata.
+% Segmentation stores base labels as unsigned absolute Allen IDs.
+% ------------------------------------------------------------
+labelsBase = [];
+acr = {};
+nmFull = {};
+countsLeft = [];
+countsRight = [];
+countsBoth = [];
+
+if isfield(Seg,'region') && isstruct(Seg.region)
+    if isfield(Seg.region,'labels') && ~isempty(Seg.region.labels)
+        labelsBase = double(Seg.region.labels(:));
+    end
+    if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms)
+        acr = cellstr(Seg.region.acronyms(:));
+    end
+    if isfield(Seg.region,'names') && ~isempty(Seg.region.names)
+        nmFull = cellstr(Seg.region.names(:));
+    end
+    if isfield(Seg.region,'countsLeft') && ~isempty(Seg.region.countsLeft)
+        countsLeft = double(Seg.region.countsLeft(:));
+    end
+    if isfield(Seg.region,'countsRight') && ~isempty(Seg.region.countsRight)
+        countsRight = double(Seg.region.countsRight(:));
+    end
+    if isfield(Seg.region,'countsBoth') && ~isempty(Seg.region.countsBoth)
+        countsBoth = double(Seg.region.countsBoth(:));
+    end
+end
+
+% ------------------------------------------------------------
+% Decide whether we can use true left/right traces.
+% Only do this if the saved spatial label map is signed.
+% Otherwise FC map and timecourse labels would not match.
+% ------------------------------------------------------------
+hasLR = isfield(Seg,'Left') && isstruct(Seg.Left) && isfield(Seg,'Right') && isstruct(Seg.Right);
+useLR = hasSignedMap && hasLR;
+
+Mregion = [];
+labels = [];
+names = {};
+counts = [];
+spaceName = '';
+
+if useLR
+    L = [];
+    R = [];
+    if isfield(Seg.Left,'z') && isfield(Seg.Right,'z') && ~isempty(Seg.Left.z) && ~isempty(Seg.Right.z)
+        Lz = double(Seg.Left.z);
+        Rz = double(Seg.Right.z);
+        nFinite = sum(any(isfinite(Lz),2)) + sum(any(isfinite(Rz),2));
+        if nFinite >= 2
+            L = Lz;
+            R = Rz;
+            spaceName = 'LeftRight.z';
+        end
+    end
+    if isempty(L) && isfield(Seg.Left,'raw') && isfield(Seg.Right,'raw') && ~isempty(Seg.Left.raw) && ~isempty(Seg.Right.raw)
+        L = double(Seg.Left.raw);
+        R = double(Seg.Right.raw);
+        spaceName = 'LeftRight.raw';
+    end
+
+    if ~isempty(L) && ~isempty(R)
+        if isempty(labelsBase)
+            labelsBase = (1:min(size(L,1),size(R,1)))';
+        end
+        nBase = min([numel(labelsBase), size(L,1), size(R,1)]);
+        for kk = 1:nBase
+            lab0 = abs(round(double(labelsBase(kk))));
+            if ~isfinite(lab0) || lab0 == 0
+                continue;
+            end
+
+            stem = '';
+            if kk <= numel(acr)
+                stem = strtrim(char(acr{kk}));
+            end
+            if isempty(stem) || strcmpi(stem,'unknown')
+                if kk <= numel(nmFull)
+                    stem = strtrim(char(nmFull{kk}));
+                end
+            end
+            if isempty(stem) || strcmpi(stem,'unknown')
+                stem = sprintf('ROI_%g',lab0);
+            end
+
+            if any(isfinite(L(kk,:)))
+                Mregion(end+1,:) = L(kk,:); %#ok<AGROW>
+                labels(end+1,1) = -lab0; %#ok<AGROW>
+                names{end+1,1} = sprintf('L_%s [%g]',stem,-lab0); %#ok<AGROW>
+                if kk <= numel(countsLeft), counts(end+1,1) = countsLeft(kk); else, counts(end+1,1) = NaN; end %#ok<AGROW>
+            end
+
+            if any(isfinite(R(kk,:)))
+                Mregion(end+1,:) = R(kk,:); %#ok<AGROW>
+                labels(end+1,1) = lab0; %#ok<AGROW>
+                names{end+1,1} = sprintf('R_%s [%g]',stem,lab0); %#ok<AGROW>
+                if kk <= numel(countsRight), counts(end+1,1) = countsRight(kk); else, counts(end+1,1) = NaN; end %#ok<AGROW>
+            end
+        end
+    end
+end
+
+% ------------------------------------------------------------
+% Fallback: bilateral merged Seg.Both result.
+% This is expected to produce 78 regions for your slice.
+% ------------------------------------------------------------
+if isempty(Mregion)
+    hasZ = isfield(Seg,'Both') && isstruct(Seg.Both) && isfield(Seg.Both,'z') && ~isempty(Seg.Both.z);
+    hasRaw = isfield(Seg,'Both') && isstruct(Seg.Both) && isfield(Seg.Both,'raw') && ~isempty(Seg.Both.raw);
+    if hasZ
+        Mregion = double(Seg.Both.z);
+        spaceName = 'Both.z';
+        if sum(any(isfinite(Mregion),2)) < 2 && hasRaw
+            Mregion = double(Seg.Both.raw);
+            spaceName = 'Both.raw';
+        end
+    elseif hasRaw
+        Mregion = double(Seg.Both.raw);
+        spaceName = 'Both.raw';
+    else
+        error('Seg.Both.z/raw or signed Seg.Left/Right traces were not found.');
+    end
+
+    if isempty(labelsBase)
+        labelsBase = (1:size(Mregion,1))';
+    end
+    nBase = min(numel(labelsBase),size(Mregion,1));
+    labels = labelsBase(1:nBase);
+    names = cell(nBase,1);
+    for kk = 1:nBase
+        stem = '';
+        if kk <= numel(acr), stem = strtrim(char(acr{kk})); end
+        if isempty(stem) || strcmpi(stem,'unknown')
+            if kk <= numel(nmFull), stem = strtrim(char(nmFull{kk})); end
+        end
+        if isempty(stem) || strcmpi(stem,'unknown')
+            stem = sprintf('ROI_%g',labels(kk));
+        end
+        names{kk} = sprintf('%s [%g]',stem,labels(kk));
+    end
+    if numel(countsBoth) >= nBase
+        counts = countsBoth(1:nBase);
+    else
+        counts = nan(nBase,1);
+    end
+    Mregion = Mregion(1:nBase,:);
+end
+
+% ------------------------------------------------------------
+% Orient to time x region.
+% ------------------------------------------------------------
+if size(Mregion,1) == numel(labels)
+    meanTS = Mregion';
+elseif size(Mregion,2) == numel(labels)
+    meanTS = Mregion;
+else
+    error('Region-time matrix size does not match label count. Matrix = %s, labels = %d.', mat2str(size(Mregion)), numel(labels));
+end
+
+if size(meanTS,1) < 2
+    error('The selected Segmentation file has only %d time point(s). Functional connectivity needs region time traces.',size(meanTS,1));
+end
+
+% ------------------------------------------------------------
+% Remove invalid/background rows.
+% ------------------------------------------------------------
+valid = true(1,size(meanTS,2));
+for kk = 1:size(meanTS,2)
+    x = meanTS(:,kk);
+    valid(kk) = any(isfinite(x));
+    if kk <= numel(labels) && kk <= numel(names)
+        if fc_is_background_region(labels(kk),names{kk})
+            valid(kk) = false;
+        end
+    end
+end
+
+meanTS = meanTS(:,valid);
+labels = labels(valid(:));
+names = names(valid(:));
+if numel(counts) == numel(valid)
+    counts = counts(valid(:));
+else
+    counts = nan(numel(labels),1);
+end
+
+if size(meanTS,2) < 2
+    error('Segmentation result has only %d usable region traces after cleanup. Source used: %s.',size(meanTS,2),spaceName);
+end
+
+% Replace NaNs per region by that region finite mean before correlation.
+for kk = 1:size(meanTS,2)
+    x = meanTS(:,kk);
+    bad = ~isfinite(x);
+    if any(bad)
+        good = x(isfinite(x));
+        if isempty(good)
+            x(bad) = 0;
+        else
+            x(bad) = mean(good);
+        end
+        meanTS(:,kk) = x;
+    end
+end
+
+Rfc = fc_corr_matrix(meanTS);
+
+TR = fallbackTR;
+if isfield(Seg,'TR') && ~isempty(Seg.TR) && isfinite(Seg.TR) && Seg.TR > 0
+    TR = double(Seg.TR);
+end
+
+res = struct();
+res.labels = labels(:);
+res.names = names(:);
+res.counts = counts(:);
+res.meanTS = meanTS;
+res.M = Rfc;
+res.TR = TR;
+res.timeIdx = (1:size(meanTS,1))';
+res.epochName = ['Segmentation ' spaceName];
+res.sourceFile = fullFile;
+res.sourceType = 'HUMoR Segmentation';
+res.timeSec = [];
+res.timeMin = [];
+
+try
+    if isfield(Seg,'timeSec') && ~isempty(Seg.timeSec) && numel(Seg.timeSec) == size(meanTS,1)
+        res.timeSec = double(Seg.timeSec(:));
+        res.timeMin = res.timeSec ./ 60;
+    elseif isfield(Seg,'timeMin') && ~isempty(Seg.timeMin) && numel(Seg.timeMin) == size(meanTS,1)
+        res.timeMin = double(Seg.timeMin(:));
+        res.timeSec = res.timeMin .* 60;
+    else
+        res.timeSec = ((0:size(meanTS,1)-1)' .* TR);
+        res.timeMin = res.timeSec ./ 60;
+    end
+catch
+    res.timeSec = ((0:size(meanTS,1)-1)' .* TR);
+    res.timeMin = res.timeSec ./ 60;
+end
+
+try
+    res.timeMin = fc_extract_seg_time_min(Seg,size(meanTS,1),TR);
+catch
+end
+
+info = struct();
+info.file = fullFile;
+info.TR = TR;
+info.spaceName = spaceName;
+info.nRegions = numel(labels);
+info.nTime = size(meanTS,1);
+info.hasSignedMap = hasSignedMap;
+info.note = 'True LR FC uses Seg.Left/Right only when Seg.labelMap has signed labels.';
+end
+
+function A = fc_repair_signed_label_map(A)
+% Repair label maps while preserving signed left/right labels.
+% This also fixes old files where int32 negative labels were accidentally saved as uint32.
+try
+    sz = size(A);
+    if isa(A,'uint32')
+        u = double(A(:));
+        high = u > double(intmax('int32'));
+        u(high) = u(high) - 2^32;
+        A = reshape(u,sz);
+    else
+        A = double(A);
+        high = A > double(intmax('int32')) & A <= 2^32;
+        A(high) = A(high) - 2^32;
+    end
+    A = round(double(A));
+    A(~isfinite(A)) = 0;
+catch
+    try
+        A = round(double(A));
+        A(~isfinite(A)) = 0;
+    catch
+        A = [];
+    end
+end
+end
+
+function tf = fc_is_background_region(label,nameStr)
+tf = false;
+if nargin < 2 || isempty(nameStr), nameStr = ''; end
+try
+    lab = round(double(label));
+catch
+    lab = NaN;
+end
+if ~isfinite(lab) || lab == 0
+    tf = true;
+    return;
+end
+
+if any(abs(lab) == [0 997])
+    tf = true;
+    return;
+end
+
+try
+    s = lower(strtrim(char(nameStr)));
+    s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+    s = regexprep(s,'[_\-]+',' ');
+catch
+    s = '';
+end
+
+bad = {'root','background','outside','no label','nolabel','unknown','void','empty','air'};
+for ii = 1:numel(bad)
+    if strcmp(s,bad{ii}) || ~isempty(strfind(s,bad{ii}))
+        tf = true;
+        return;
+    end
+end
+end
+
+function fc_region_key_dialog(s,C)
+% Show abbreviation -> full-name mapping for the current ROI/Segmentation result.
+res = [];
+try
+    res = s.roiResults{s.currentSubject,s.currentEpoch};
+catch
+end
+
+if isempty(res) || ~isfield(res,'labels') || isempty(res.labels)
+    error('No ROI/Segmentation result is loaded yet. Load Seg MAT or compute ROI FC first.');
+end
+
+labels = double(res.labels(:));
+names = res.names(:);
+n = numel(labels);
+if numel(names) < n
+    tmp = cell(n,1);
+    for k = 1:n
+        if k <= numel(names), tmp{k} = names{k}; else, tmp{k} = sprintf('ROI_%g',labels(k)); end
+    end
+    names = tmp;
+end
+
+[abbr, fullNames, sourceFile, sourceLabel] = fc_region_key_collect(labels,names,s,res);
+
+lines = {};
+lines{end+1} = 'FUNCTIONAL CONNECTIVITY REGION KEY';
+lines{end+1} = '============================================================';
+lines{end+1} = sprintf('Regions: %d',n);
+if ~isempty(sourceLabel)
+    lines{end+1} = ['Source: ' sourceLabel];
+end
+if ~isempty(sourceFile)
+    lines{end+1} = ['File: ' sourceFile];
+end
+lines{end+1} = '';
+lines{end+1} = sprintf('%-5s %-12s %-18s %s','No','Label','Abbrev','Full name');
+lines{end+1} = sprintf('%-5s %-12s %-18s %s','----','----------','----------------','------------------------------');
+for k = 1:n
+    lines{end+1} = sprintf('%-5d %-12g %-18s %s',k,labels(k),abbr{k},fullNames{k}); %#ok<AGROW>
+end
+outTxt = strjoin(lines,newline);
+
+bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
+figKey = figure('Name','FC Region key: abbreviation -> full name', ...
+    'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
+    'Units','pixels','Position',[260 90 1050 820]);
+try, movegui(figKey,'center'); catch, end
+
+uicontrol('Parent',figKey,'Style','edit','Max',2,'Min',0, ...
+    'Units','normalized','Position',[0.035 0.105 0.930 0.855], ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'FontName','Consolas', ...
+    'FontSize',11,'HorizontalAlignment','left','String',outTxt);
+
+if ~isempty(sourceFile) && exist(sourceFile,'file')
+    uicontrol('Parent',figKey,'Style','pushbutton','Units','normalized', ...
+        'Position',[0.035 0.025 0.250 0.055],'String','Open source file', ...
+        'BackgroundColor',C.orange,'ForegroundColor','w', ...
+        'FontName',C.font,'FontWeight','bold','FontSize',12, ...
+        'Callback',@(src,evt)fc_open_file_external(sourceFile));
+end
+
+uicontrol('Parent',figKey,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.790 0.025 0.175 0.055],'String','Close', ...
+    'BackgroundColor',C.red,'ForegroundColor','w', ...
+    'FontName',C.font,'FontWeight','bold','FontSize',12, ...
+    'Callback',@(src,evt)delete(figKey));
+end
+
+function [abbr, fullNames, sourceFile, sourceLabel] = fc_region_key_collect(labels,names,s,res)
+n = numel(labels);
+abbr = cell(n,1);
+fullNames = cell(n,1);
+for k = 1:n
+    displayName = char(names{k});
+    displayName = strtrim(displayName);
+    abbr{k} = fc_roi_abbrev(displayName,18);
+    fullNames{k} = regexprep(displayName,'\s*\[[^\]]*\]\s*$','');
+    if isempty(strtrim(fullNames{k})), fullNames{k} = displayName; end
+end
+
+sourceFile = '';
+sourceLabel = '';
+
+try
+    if isfield(s,'loadedRegionNameFile') && ~isempty(s.loadedRegionNameFile) && exist(s.loadedRegionNameFile,'file')
+        sourceFile = s.loadedRegionNameFile;
+        sourceLabel = 'Loaded region-name TXT/CSV/MAT';
+    elseif isfield(s,'loadedSegmentationFile') && ~isempty(s.loadedSegmentationFile) && exist(s.loadedSegmentationFile,'file')
+        sourceFile = s.loadedSegmentationFile;
+        sourceLabel = 'Loaded Segmentation MAT';
+    elseif isfield(res,'sourceFile') && ~isempty(res.sourceFile) && exist(res.sourceFile,'file')
+        sourceFile = res.sourceFile;
+        sourceLabel = 'ROI result source file';
+    end
+catch
+end
+
+% If a region-name table was loaded, use it as full-name source.
+try
+    if isfield(s,'opts') && isfield(s.opts,'roiNameTable')
+        T = s.opts.roiNameTable;
+        if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
+            for k = 1:n
+                idx = find(abs(double(T.labels(:))) == abs(labels(k)),1,'first');
+                if ~isempty(idx) && idx <= numel(T.names)
+                    nm = strtrim(char(T.names{idx}));
+                    if ~isempty(nm)
+                        fullNames{k} = nm;
+                        abbr{k} = fc_roi_abbrev(nm,18);
+                    end
+                end
+            end
+        end
+    end
+catch
+end
+
+% If this came from HUMoR Segmentation, retrieve acronyms and full names directly from Seg.region.
+try
+    segFile = '';
+    if isfield(res,'sourceFile') && ~isempty(res.sourceFile) && exist(res.sourceFile,'file')
+        segFile = res.sourceFile;
+    elseif ~isempty(sourceFile) && exist(sourceFile,'file')
+        segFile = sourceFile;
+    end
+    if ~isempty(segFile)
+        S = load(segFile);
+        if isfield(S,'Seg')
+            Seg = S.Seg;
+            if isfield(Seg,'region') && isstruct(Seg.region) && isfield(Seg.region,'labels')
+                labs0 = double(Seg.region.labels(:));
+                acr0 = {};
+                nam0 = {};
+                if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms), acr0 = cellstr(Seg.region.acronyms(:)); end
+                if isfield(Seg.region,'names') && ~isempty(Seg.region.names), nam0 = cellstr(Seg.region.names(:)); end
+                for k = 1:n
+                    idx = find(abs(labs0) == abs(labels(k)),1,'first');
+                    if ~isempty(idx)
+                        if idx <= numel(acr0) && ~isempty(strtrim(char(acr0{idx})))
+                            abbr{k} = strtrim(char(acr0{idx}));
+                        end
+                        if idx <= numel(nam0) && ~isempty(strtrim(char(nam0{idx})))
+                            fullNames{k} = strtrim(char(nam0{idx}));
+                        end
+                    end
+                end
+            end
+        end
+    end
+catch
+end
+end
+
+function fc_open_file_external(fileName)
+try
+    if exist(fileName,'file')
+        if ispc
+            winopen(fileName);
+        elseif ismac
+            system(['open "' fileName '" &']);
+        else
+            system(['xdg-open "' fileName '" &']);
+        end
+    end
+catch
+    try, edit(fileName); catch, end
+end
+end
+
+function fc_help_dialog(C) %#ok<INUSD>
+bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
+helpFig = figure('Name','Functional Connectivity - Help', ...
+    'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
+    'Units','pixels','Position',[250 100 960 800]);
+try, movegui(helpFig,'center'); catch, end
+uicontrol('Parent',helpFig,'Style','edit','Max',2,'Min',0, ...
+    'Units','normalized','Position',[0.04 0.04 0.92 0.92], ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'FontName','Arial', ...
+    'FontSize',14,'HorizontalAlignment','left','String',fc_help_text());
+end
+
+function txt = fc_help_text()
+lines = {
+'FUNCTIONAL CONNECTIVITY GUIDE'
+'============================================================'
+''
+'Underlay versus ROI labels'
+'------------------------------------------------------------'
+'- Underlay / histology is only the background image.'
+'- ROI labels / atlas is an integer region map used to extract region timecourses.'
+'- Do not load histology as ROI labels. Do not load ROI labels as the underlay unless you only want a label display.'
+''
+'Underlay display'
+'------------------------------------------------------------'
+'- Default underlay is SCM-like log-median Doppler equalization.'
+'- This is computed directly from the active functional data if no Mask Editor underlay is passed.'
+'- If Mask Editor anatomical_reference is passed, it is shown exactly and not normalized again.'
+''
+'Seed Map tab'
+'------------------------------------------------------------'
+'- Click on the brain image to place the seed.'
+'- The yellow box shows the seed ROI that is averaged.'
+'- Seed current computes voxelwise Pearson correlation with that seed timecourse.'
+''
+'ROI Heatmap tab'
+'------------------------------------------------------------'
+'- Requires ROI labels/atlas.'
+'- Each cell is FC between two atlas-region mean timecourses.'
+'- Fisher z = atanh(r) is the recommended display/statistics transform.'
+''
+'Compare ROI tab'
+'------------------------------------------------------------'
+'- Choose one region such as CPu/CPU.'
+'- Bar plot shows the selected region versus all other regions.'
+'- Atlas map projects those correlations back onto the ROI label map.'
+''
+'Pair ROI tab'
+'------------------------------------------------------------'
+'- Inspects exactly two regions with traces, scatter and lag correlation.'
+''
+'Graph tab'
+'------------------------------------------------------------'
+'- This is a network matrix summary derived from the ROI Heatmap.'
+'- Matrix entries are Pearson r where |r| is above threshold, otherwise 0.'
+};
+txt = strjoin(lines,newline);
+end
+,'');
 stem = strtrim(stem);
 if isempty(stem)
     stem = sprintf('ROI_%g',absLab);
@@ -3590,11 +6587,1491 @@ end
 
 function s = fc_region_fullname_no_lr(name)
 s = strtrim(char(name));
+s = regexprep(s,'s*[[^]]*]s*(label,opts)
+name = sprintf('ROI_%03d',label);
+try
+    T = opts.roiNameTable;
+    if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
+        idx = find(double(T.labels(:)) == double(label),1,'first');
+        if isempty(idx)
+            idx = find(abs(double(T.labels(:))) == abs(double(label)),1,'first');
+        end
+        if ~isempty(idx) && idx <= numel(T.names)
+            nm = char(T.names{idx});
+            if ~isempty(strtrim(nm)), name = sprintf('%s [%g]',nm,label); return; end
+        end
+    end
+    if iscell(opts.roiNames) && label >= 1 && label <= numel(opts.roiNames)
+        if ~isempty(opts.roiNames{label}), name = sprintf('%s [%g]',char(opts.roiNames{label}),label); end
+    end
+catch
+end
+end
+
+function idxT = fc_time_idx(TR,T,t0,t1)
+if ~isfinite(TR) || TR <= 0, TR = 1; end
+sec = (0:T-1) * TR;
+idxT = find(sec >= t0 & sec <= t1);
+if isempty(idxT), idxT = 1:T; end
+end
+
+function s = fc_flip_underlay_in_state(s,mode)
+try
+    if ~isempty(s.loadedUnderlay)
+        if strcmpi(mode,'lr')
+            s.loadedUnderlay = s.loadedUnderlay(:,end:-1:1,:);
+        else
+            s.loadedUnderlay = s.loadedUnderlay(end:-1:1,:,:);
+        end
+    end
+    for ii = 1:s.nSub
+        if ~isempty(s.subjects(ii).anat)
+            if strcmpi(mode,'lr')
+                s.subjects(ii).anat = s.subjects(ii).anat(:,end:-1:1,:);
+            else
+                s.subjects(ii).anat = s.subjects(ii).anat(end:-1:1,:,:);
+            end
+        end
+    end
+catch
+end
+end
+
+function rgb = fc_get_underlay(s)
+subj = s.subjects(s.currentSubject);
+I4 = subj.I4;
+meanImg = squeeze(mean(I4,4));
+medImg  = fc_fast_median_time(I4);
+
+switch lower(s.underlayMode)
+    case 'median'
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+    case 'mean'
+        rgb = fc_underlay_to_rgb(meanImg(:,:,s.slice),s,false);
+    case 'scm'
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+    case 'anat'
+        if ~isempty(subj.anat)
+            zUse = max(1,min(size(subj.anat,3),s.slice));
+            if isfield(subj,'anatIsDisplayReady') && subj.anatIsDisplayReady
+                rgb = fc_display_ready_rgb(subj.anat(:,:,zUse));
+            else
+                rgb = fc_underlay_to_rgb(subj.anat(:,:,zUse),s,false);
+            end
+        else
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        end
+    case 'atlas'
+        if ~isempty(subj.roiAtlas)
+            a = double(subj.roiAtlas(:,:,s.slice));
+            rgb = fc_map_rgb(a,jet(256),[0 max(1,max(a(:)))]);
+        else
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        end
+    case 'loaded'
+        U = s.loadedUnderlay;
+        if isempty(U)
+            rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+        elseif s.loadedUnderlayIsRGB
+            rgb = single(U);
+            if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+            rgb = min(max(rgb,0),1);
+        elseif isfield(s,'loadedUnderlayDisplayReady') && s.loadedUnderlayDisplayReady
+            if ndims(U) == 2, rgb = fc_display_ready_rgb(U);
+            else, zUse = max(1,min(size(U,3),s.slice)); rgb = fc_display_ready_rgb(U(:,:,zUse)); end
+        elseif ndims(U) == 2
+            rgb = fc_underlay_to_rgb(U,s,false);
+        else
+            zUse = max(1,min(size(U,3),s.slice));
+            rgb = fc_underlay_to_rgb(U(:,:,zUse),s,false);
+        end
+    otherwise
+        rgb = fc_underlay_to_rgb(medImg(:,:,s.slice),s,false);
+end
+end
+
+function medImg = fc_fast_median_time(I4)
+T = size(I4,4);
+if T <= 600
+    medImg = squeeze(median(I4,4));
+else
+    idx = round(linspace(1,T,600));
+    medImg = squeeze(median(I4(:,:,:,idx),4));
+end
+if ndims(medImg)==2, medImg = reshape(medImg,size(I4,1),size(I4,2),size(I4,3)); end
+end
+
+function rgb = fc_display_ready_rgb(U)
+U = squeeze(U);
+if ndims(U) == 3 && size(U,3) == 3
+    rgb = single(U);
+    if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+    rgb = min(max(rgb,0),1);
+    return;
+end
+U = double(U); U(~isfinite(U)) = 0;
+mx = max(U(:)); mn = min(U(:));
+if mx > 1 || mn < 0
+    if mx > mn, U = (U - mn) ./ max(eps,mx - mn); else, U = zeros(size(U)); end
+end
+U = min(max(U,0),1);
+rgb = repmat(single(U),[1 1 3]);
+end
+
+function rgb = fc_underlay_to_rgb(U,s,isColor)
+if nargin < 3, isColor = false; end
+U = squeeze(U);
+if isColor || (ndims(U)==3 && size(U,3)==3)
+    rgb = double(U);
+    if max(rgb(:)) > 1, rgb = rgb ./ 255; end
+    rgb = min(max(rgb,0),1);
+    return;
+end
+U = double(U); U(~isfinite(U)) = 0;
+modeVal = 5; brightness = -0.04; contrast = 1.10; gammaVal = 0.95; logGain = 2.0; sharp = 0.35; vsz = 18; vlv = 35;
+try
+    if isfield(s,'underlayViewMode'), modeVal = s.underlayViewMode; end
+    if isfield(s,'underlayBrightness'), brightness = s.underlayBrightness; end
+    if isfield(s,'underlayContrast'), contrast = s.underlayContrast; end
+    if isfield(s,'underlayGamma'), gammaVal = s.underlayGamma; end
+    if isfield(s,'underlayLogGain'), logGain = s.underlayLogGain; end
+    if isfield(s,'underlaySharpness'), sharp = s.underlaySharpness; end
+    if isfield(s,'underlayVesselSize'), vsz = s.underlayVesselSize; end
+    if isfield(s,'underlayVesselLev'), vlv = s.underlayVesselLev; end
+catch
+end
+switch modeVal
+    case 1
+        U01 = fc_mat2gray_safe(U);
+    case 3
+        U01 = fc_clip01_percentile(U,0.5,99.5);
+    case 4
+        U01 = fc_clip01_percentile(U,0.5,99.5);
+        U01 = fc_vessel_enhance_simple(U01,vsz,vlv);
+        U01 = fc_clip01_percentile(U01,0.5,99.5);
+    otherwise
+        Upos = U;
+        minU = min(Upos(:));
+        Upos = Upos - minU;
+        med = median(Upos(isfinite(Upos) & Upos > 0));
+        if isempty(med) || ~isfinite(med) || med <= 0
+            med = fc_prctile(Upos(:),50);
+        end
+        if ~isfinite(med) || med <= 0, med = max(eps,mean(Upos(:))); end
+        Ulog = log1p(max(0,Upos) ./ max(eps,med) * logGain);
+        U01 = fc_clip01_percentile(Ulog,0.5,99.7);
+        if sharp > 0
+            U01 = fc_sharpen2d(U01,sharp);
+            U01 = min(max(U01,0),1);
+        end
+end
+U01 = U01 .* contrast + brightness;
+U01 = min(max(U01,0),1);
+if ~isfinite(gammaVal) || gammaVal <= 0, gammaVal = 1; end
+U01 = U01 .^ gammaVal;
+U01 = min(max(U01,0),1);
+rgb = repmat(single(U01),[1 1 3]);
+end
+
+function S = fc_sharpen2d(A,amount)
+A = double(A);
+try
+    h = ones(3,3)/9;
+    blur = filter2(h,A,'same');
+catch
+    blur = conv2(A,ones(3,3)/9,'same');
+end
+S = A + amount*(A - blur);
+end
+
+function U = fc_mat2gray_safe(A)
+A = double(A); A(~isfinite(A)) = 0;
+mn = min(A(:)); mx = max(A(:));
+if ~isfinite(mn) || ~isfinite(mx) || mx <= mn
+    U = zeros(size(A));
+else
+    U = (A - mn) ./ max(eps,mx - mn);
+    U = min(max(U,0),1);
+end
+end
+
+function U = fc_clip01_percentile(A,pLow,pHigh)
+A = double(A); A(~isfinite(A)) = 0;
+v = A(:); v = v(isfinite(v));
+if isempty(v), U = zeros(size(A)); return; end
+lo = fc_prctile(v,pLow); hi = fc_prctile(v,pHigh);
+if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
+    U = fc_mat2gray_safe(A); return;
+end
+U = A; U(U < lo) = lo; U(U > hi) = hi;
+U = (U - lo) ./ max(eps,hi - lo);
+U = min(max(U,0),1);
+end
+
+function U = fc_vessel_enhance_simple(U01,conectSize,conectLev)
+U01 = min(max(double(U01),0),1);
+if nargin < 2 || isempty(conectSize), conectSize = 18; end
+if nargin < 3 || isempty(conectLev), conectLev = 35; end
+if conectSize <= 0, U = U01; return; end
+lev01 = conectLev ./ 500; lev01 = min(max(lev01,0),1); lev01 = lev01.^0.75;
+thrMask = U01 > lev01;
+r = max(1,round(conectSize)); r = min(r,300);
+[x,y] = meshgrid(-r:r,-r:r); m = double((x.^2 + y.^2) <= r.^2); m = m ./ max(eps,sum(m(:)));
+try, D = filter2(m,double(thrMask),'same'); catch, D = conv2(double(thrMask),m,'same'); end
+D = min(max(D,0),1);
+strength = 0.8 + 1.6 * min(1,r/120);
+U = U01 .* (1 + strength .* D.^2) + 0.15 .* D.^2;
+U = min(max(U,0),1);
+end
+
+function atlasS = fc_atlas_slice(s)
+subj = s.subjects(s.currentSubject);
+atlasS = [];
+if ~isempty(subj.roiAtlas)
+    atlasS = double(subj.roiAtlas(:,:,s.slice));
+end
+end
+
+function [rgb,A] = fc_line_overlay(mask,labels,col)
+edge = false(size(mask));
+edge(1:end-1,:) = edge(1:end-1,:) | labels(1:end-1,:) ~= labels(2:end,:);
+edge(:,1:end-1) = edge(:,1:end-1) | labels(:,1:end-1) ~= labels(:,2:end);
+edge = edge & mask;
+rgb = nan(size(mask,1),size(mask,2),3);
+for k = 1:3
+    tmp = zeros(size(mask),'single'); tmp(edge) = col(k); rgb(:,:,k) = tmp;
+end
+A = 0.90 * double(edge);
+end
+
+function rgb = fc_map_rgb(M,cmap,clim)
+M = double(M); cmin = clim(1); cmax = clim(2);
+if ~isfinite(cmin) || ~isfinite(cmax) || cmax <= cmin
+    cmin = min(M(:)); cmax = max(M(:)); if cmax <= cmin, cmax = cmin + 1; end
+end
+u = (M - cmin) / (cmax - cmin); u = max(0,min(1,u));
+idx = 1 + floor(u * (size(cmap,1)-1)); idx(~isfinite(idx)) = 1; idx = max(1,min(size(cmap,1),idx));
+rgb = zeros(size(M,1),size(M,2),3,'single');
+for k = 1:3
+    tmp = cmap(idx,k); rgb(:,:,k) = reshape(single(tmp),size(M,1),size(M,2));
+end
+end
+
+function cmap = fc_get_cmap(name,n)
+if nargin < 2, n = 256; end
+name = lower(strtrim(name));
+switch name
+    case 'winter'
+        cmap = winter(n);
+    case 'hot'
+        cmap = hot(n);
+    case 'jet'
+        cmap = jet(n);
+    case 'gray'
+        cmap = gray(n);
+    case 'parula'
+        try, cmap = parula(n); catch, cmap = jet(n); end
+    otherwise
+        cmap = fc_bwr(n);
+end
+end
+
+function fc_colorbar_legend(ax,cmap,clim,labelStr,C)
+cla(ax);
+pos = get(ax,'Position');
+isVertical = numel(pos) >= 4 && pos(4) > pos(3) * 2;
+nC = size(cmap,1);
+
+if ~isfinite(clim(1)) || ~isfinite(clim(2)) || clim(2) <= clim(1)
+    clim = [-1 1];
+end
+
+if isVertical
+    img = reshape(nC:-1:1,[],1);
+    imagesc(ax,img);
+    hold(ax,'on');
+    y0 = round(1 + (clim(2) - 0) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+    y0 = max(1,min(nC,y0));
+    line(ax,[0.55 1.45],[y0 y0],'Color',[1 1 1],'LineWidth',2.2);
+    set(ax,'YDir','reverse','XTick',[], ...
+        'YTick',[1 y0 nC], ...
+        'YTickLabel',{num2str(clim(2),'%.2g'),'0',num2str(clim(1),'%.2g')}, ...
+        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
+        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
+    ylabel(ax,labelStr,'Color',C.fg,'FontSize',16, ...
+        'FontWeight','bold','Interpreter','none');
+    hold(ax,'off');
+else
+    img = reshape(1:nC,1,[]);
+    imagesc(ax,img);
+    hold(ax,'on');
+    x0 = round(1 + (0 - clim(1)) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+    x0 = max(1,min(nC,x0));
+    line(ax,[x0 x0],[0.55 1.45],'Color',[1 1 1],'LineWidth',2.2);
+    set(ax,'YTick',[], ...
+        'XTick',[1 x0 nC], ...
+        'XTickLabel',{num2str(clim(1),'%.2g'),'0',num2str(clim(2),'%.2g')}, ...
+        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
+        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
+    title(ax,labelStr,'Color',C.fg,'FontSize',16, ...
+        'FontWeight','bold','Interpreter','none');
+    hold(ax,'off');
+end
+colormap(ax,cmap);
+end
+
+function cmap = fc_bwr(n)
+if nargin < 1, n = 256; end
+n1 = floor(n/2); n2 = n - n1;
+b = [0.00 0.25 0.95]; w = [1.00 1.00 1.00]; r = [0.95 0.20 0.20];
+c1 = [linspace(b(1),w(1),n1)' linspace(b(2),w(2),n1)' linspace(b(3),w(3),n1)'];
+c2 = [linspace(w(1),r(1),n2)' linspace(w(2),r(2),n2)' linspace(w(3),r(3),n2)'];
+cmap = [c1; c2];
+end
+
+function [idx,vals] = fc_rank_vector(r,topN,mode,names)
+if nargin < 4, names = {}; end
+r = double(r(:)'); valid = find(isfinite(r));
+if isempty(valid), idx = []; vals = []; return; end
+switch lower(mode)
+    case 'positive'
+        [~,ord] = sort(r(valid),'descend');
+    case 'negative'
+        [~,ord] = sort(r(valid),'ascend');
+    case 'label'
+        if isempty(names)
+            ord = 1:numel(valid);
+        else
+            [~,ord] = sort(lower(names(valid)));
+        end
+    otherwise
+        [~,ord] = sort(abs(r(valid)),'descend');
+end
+idx = valid(ord); idx = idx(1:min(numel(idx),topN)); vals = r(idx);
+end
+
+function T = fc_compare_export_table(s,res)
+T = [];
+[M,names,order,meta] = fc_current_matrix(s,res);
+sel = fc_clip(s.compareROI,1,numel(names));
+vals = M(sel,:)'; labels = fc_display_labels_from_meta(meta,res,order);
+T.selectedName = names{sel}; T.labels = labels(:); T.names = names(:); T.values = vals(:);
+end
+
+function fc_write_matrix_csv(fileName,M,names)
+fid = fopen(fileName,'w'); if fid < 0, error('Could not open CSV file.'); end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid,'ROI');
+for j = 1:numel(names), fprintf(fid,',%s',fc_csv(names{j})); end
+fprintf(fid,'\n');
+for i = 1:size(M,1)
+    fprintf(fid,'%s',fc_csv(names{i}));
+    for j = 1:size(M,2), fprintf(fid,',%.10g',M(i,j)); end
+    fprintf(fid,'\n');
+end
+end
+
+function fc_write_compare_csv(fileName,T)
+fid = fopen(fileName,'w'); if fid < 0, error('Could not open compare CSV.'); end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid,'Selected,%s\n',fc_csv(T.selectedName));
+fprintf(fid,'Label,Region,Value\n');
+for i = 1:numel(T.values), fprintf(fid,'%.10g,%s,%.10g\n',T.labels(i),fc_csv(T.names{i}),T.values(i)); end
+end
+
+function s = fc_csv(s0)
+s = char(s0); s = strrep(s,'"','""'); s = ['"' s '"'];
+end
+
+function fc_save_axis(ax,fig,fileName)
+try
+    tmp = figure('Visible','off');
+    ax2 = copyobj(ax,tmp);
+    set(ax2,'Units','normalized','Position',[0.08 0.08 0.84 0.84]);
+    set(tmp,'Color',get(fig,'Color'),'Position',[100 100 1000 800]);
+    saveas(tmp,fileName);
+    close(tmp);
+catch
+end
+end
+
+function stp = fc_slider_step(Z)
+if Z <= 1, stp = [1 1]; else, stp = [1/(Z-1) min(10/(Z-1),1)]; end
+end
+
+function v = fc_clip(v,lo,hi)
+v = max(lo,min(hi,v));
+end
+
+function z = fc_z(x)
+x = double(x(:)); sd = std(x);
+if ~isfinite(sd) || sd <= 0, z = zeros(size(x)); else, z = (x - mean(x)) / sd; end
+end
+
+function r = fc_corr_scalar(x,y)
+x = double(x(:)); y = double(y(:)); x = x - mean(x); y = y - mean(y);
+den = sqrt(sum(x.^2) * sum(y.^2));
+if den <= 0 || ~isfinite(den), r = 0; else, r = sum(x.*y) / den; end
+end
+
+function Z = fc_atanh_safe(M)
+Z = double(M); Z = max(-0.999999,min(0.999999,Z)); Z = atanh(Z);
+end
+
+function tMin = fc_result_time_min(res,TRfallback)
+tMin = [];
+try
+    if isfield(res,'timeMin') && ~isempty(res.timeMin)
+        tMin = double(res.timeMin(:));
+    elseif isfield(res,'timeSec') && ~isempty(res.timeSec)
+        tMin = double(res.timeSec(:)) ./ 60;
+    elseif isfield(res,'tSec') && ~isempty(res.tSec)
+        tMin = double(res.tSec(:)) ./ 60;
+    elseif isfield(res,'tMin') && ~isempty(res.tMin)
+        tMin = double(res.tMin(:));
+    end
+catch
+    tMin = [];
+end
+
+if isempty(tMin) || any(~isfinite(tMin))
+    try
+        nT = size(res.meanTS,1);
+    catch
+        nT = 0;
+    end
+    if nargin < 2 || isempty(TRfallback) || ~isfinite(TRfallback) || TRfallback <= 0
+        TRfallback = 1;
+    end
+    tMin = ((0:nT-1)' .* double(TRfallback)) ./ 60;
+end
+end
+
+function tMin = fc_extract_seg_time_min(Seg,nT,TRfallback)
+tMin = [];
+if nargin < 3 || isempty(TRfallback) || ~isfinite(TRfallback) || TRfallback <= 0
+    TRfallback = 1;
+end
+
+minFields = {'timeMin','tMin','minutes','timeMinutes','time_min','t_min','TimeMin'};
+secFields = {'timeSec','tSec','seconds','timeSeconds','time_s','t_s','TimeSec','time','t'};
+
+for ii = 1:numel(minFields)
+    fn = minFields{ii};
+    try
+        if isfield(Seg,fn) && ~isempty(Seg.(fn))
+            v = double(Seg.(fn)(:));
+            if numel(v) == nT && all(isfinite(v))
+                tMin = v;
+                return;
+            end
+        end
+    catch
+    end
+end
+
+for ii = 1:numel(secFields)
+    fn = secFields{ii};
+    try
+        if isfield(Seg,fn) && ~isempty(Seg.(fn))
+            v = double(Seg.(fn)(:));
+            if numel(v) == nT && all(isfinite(v))
+                if strcmpi(fn,'t') || strcmpi(fn,'time')
+                    if max(v) > max(5,2*((nT-1)*TRfallback/60))
+                        tMin = v ./ 60;
+                    else
+                        tMin = v;
+                    end
+                else
+                    tMin = v ./ 60;
+                end
+                return;
+            end
+        end
+    catch
+    end
+end
+
+try
+    if isfield(Seg,'time') && isstruct(Seg.time)
+        if isfield(Seg.time,'min') && numel(Seg.time.min) == nT
+            tMin = double(Seg.time.min(:));
+            return;
+        elseif isfield(Seg.time,'sec') && numel(Seg.time.sec) == nT
+            tMin = double(Seg.time.sec(:)) ./ 60;
+            return;
+        end
+    end
+catch
+end
+
+tMin = ((0:nT-1)' .* double(TRfallback)) ./ 60;
+end
+
+function x = fc_prctile(a,p)
+a = double(a(:)); a = a(isfinite(a));
+if isempty(a), x = NaN; return; end
+a = sort(a);
+if numel(a)==1, x = a; return; end
+t = (p/100) * (numel(a)-1) + 1; i1 = floor(t); i2 = ceil(t);
+if i1 == i2, x = a(i1); else, w = t - i1; x = (1-w)*a(i1) + w*a(i2); end
+end
+
+function fc_ax(ax,C)
+try
+    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10, ...
+        'TickLabelInterpreter','none');
+catch
+    set(ax,'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'FontSize',10);
+end
+end
+
+function fc_nodata(ax,titleStr,C)
+cla(ax);
+text(ax,0.5,0.5,'No data','HorizontalAlignment','center','Color',C.fg,'FontSize',12,'FontWeight','bold');
+fc_ax(ax,C); title(ax,titleStr,'Color',C.fg,'Interpreter','none');
+set(ax,'XTick',[],'YTick',[]);
+end
+
+function lst = fc_underlay_list(st)
+subj = st.subjects(st.currentSubject);
+lst = {'SCM log-median underlay','Mean functional','Median functional'};
+if ~isempty(subj.anat), lst{end+1} = 'Mask Editor / provided anatomy'; end
+if ~isempty(st.loadedUnderlay), lst{end+1} = 'Loaded histology / underlay'; end
+if ~isempty(subj.roiAtlas), lst{end+1} = 'ROI labels as underlay'; end
+end
+
+function val = fc_underlay_value(st,lst)
+if nargin < 2 || isempty(lst), lst = fc_underlay_list(st); end
+if ischar(lst), lst = cellstr(lst); end
+val = 1;
+modeNow = lower(strtrim(st.underlayMode));
+for i = 1:numel(lst)
+    item = lower(strtrim(lst{i}));
+    switch modeNow
+        case 'scm'
+            if ~isempty(strfind(item,'scm')) || ~isempty(strfind(item,'log')), val = i; return; end
+        case 'mean'
+            if ~isempty(strfind(item,'mean')), val = i; return; end
+        case 'median'
+            if ~isempty(strfind(item,'median')) && isempty(strfind(item,'log')), val = i; return; end
+        case 'anat'
+            if ~isempty(strfind(item,'anatomy')) || ~isempty(strfind(item,'mask editor')) || ~isempty(strfind(item,'provided')), val = i; return; end
+        case 'loaded'
+            if ~isempty(strfind(item,'loaded')) || ~isempty(strfind(item,'histology')), val = i; return; end
+        case 'atlas'
+            if ~isempty(strfind(item,'labels')), val = i; return; end
+    end
+end
+val = 1;
+end
+
+function out = fc_short_list(c,n)
+out = c;
+for i = 1:numel(out)
+    s = char(out{i});
+    if numel(s) > n, s = [s(1:max(1,n-3)) '...']; end
+    out{i} = s;
+end
+end
+
+function out = fc_abbrev_list(c,n,showHemisphere)
+if nargin < 2 || isempty(n), n = 12; end
+if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+out = c;
+for i = 1:numel(out)
+    out{i} = fc_roi_abbrev(out{i},n,showHemisphere);
+end
+end
+
+function ab = fc_roi_abbrev(name,n,showHemisphere)
+if nargin < 2 || isempty(n), n = 12; end
+if nargin < 3 || isempty(showHemisphere), showHemisphere = true; end
+s = strtrim(char(name));
 s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
 s = regexprep(s,'^\s*-?\d+\s*','');
-s = regexprep(s,'^\s*[LR][_\-\s]+','');
+s = strtrim(s);
+hemi = '';
+stem = s;
+tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
+if ~isempty(tok)
+    hemi = upper(strtrim(tok{1}));
+    stem = strtrim(tok{2});
+end
+stem = strrep(stem,'_',' ');
+stem = regexprep(stem,'\s+',' ');
+if showHemisphere && ~isempty(hemi)
+    ab = [hemi ' ' stem];
+else
+    ab = stem;
+end
+if isempty(strtrim(ab)), ab = s; end
+if numel(ab) > n
+    ab = [ab(1:max(1,n-3)) '...'];
+end
+end
+
+function out = fc_abbrev_only_list(c,n)
+if nargin < 2 || isempty(n), n = 12; end
+out = c;
+for i = 1:numel(out)
+    out{i} = fc_roi_abbrev_only(out{i},n);
+end
+end
+
+function ab = fc_roi_abbrev_only(name,n)
+if nargin < 2 || isempty(n), n = 12; end
+s = strtrim(char(name));
+s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+s = regexprep(s,'^\s*-?\d+\s*','');
+s = strtrim(s);
+tok = regexp(s,'^([LR])[_\-\s]+(.+)$','tokens','once');
+if ~isempty(tok)
+    ab = strtrim(tok{2});
+else
+    ab = s;
+end
+ab = strrep(ab,'_',' ');
+ab = regexprep(ab,'\s+',' ');
+if isempty(strtrim(ab)), ab = s; end
+if numel(ab) > n
+    ab = [ab(1:max(1,n-3)) '...'];
+end
+end
+
+function col = fc_pair_color(list,val)
+if ischar(list), list = cellstr(list); end
+val = max(1,min(numel(list),val));
+name = lower(strtrim(list{val}));
+switch name
+    case 'blue'
+        col = [0.20 0.75 1.00];
+    case 'orange'
+        col = [1.00 0.55 0.20];
+    case 'green'
+        col = [0.30 0.90 0.45];
+    case 'purple'
+        col = [0.75 0.55 1.00];
+    case 'red'
+        col = [1.00 0.35 0.35];
+    case 'white'
+        col = [0.95 0.95 0.95];
+    otherwise
+        col = [0.70 0.70 0.74];
+end
+end
+
+function A2 = fc_fill_empty_hemi_labels(A)
+% Disabled intentionally.
+% Functional Connectivity must use the true co-registered atlas labels.
+% Do not mirror labels, because that creates fake left/right symmetry.
+A2 = A;
+end
+
+function fc_draw_roi_abbrev_on_map(ax,atlasS,labels,names,C,showHemisphere)
+if nargin < 6 || isempty(showHemisphere), showHemisphere = true; end
+try
+    A = round(double(atlasS));
+    labsInSlice = unique(A(:));
+    labsInSlice = labsInSlice(isfinite(labsInSlice) & labsInSlice ~= 0);
+    labsInSlice = intersect(labsInSlice,round(double(labels(:))));
+    if isempty(labsInSlice) || numel(labsInSlice) > 60
+        return;
+    end
+    hold(ax,'on');
+    for ii = 1:numel(labsInSlice)
+        lab = labsInSlice(ii);
+        idx = find(round(double(labels(:))) == round(double(lab)),1,'first');
+        if isempty(idx) || idx > numel(names), continue; end
+        if fc_is_background_region(lab,names{idx}), continue; end
+        [yy,xx] = find(A == round(double(lab)));
+        if numel(xx) < 12, continue; end
+        x = median(xx); y = median(yy);
+        text(ax,x,y,fc_roi_abbrev(names{idx},8,showHemisphere), ...
+            'Color',C.fg,'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+            'HorizontalAlignment','center','VerticalAlignment','middle', ...
+            'HitTest','off','Clipping','on');
+    end
+    hold(ax,'off');
+catch
+end
+end
+
+function v = fc_view_mode_to_value(modeVal)
+switch modeVal
+    case 5, v = 1;
+    case 3, v = 2;
+    case 4, v = 3;
+    otherwise, v = 4;
+end
+end
+
+function s = fc_short(s)
+s = char(s);
+if numel(s) > 32, s = [s(1:29) '...']; end
+end
+
+function out = fc_join(c)
+if isempty(c), out = 'none'; return; end
+out = c{1};
+for i = 2:numel(c), out = sprintf('%s\n%s',out,c{i}); end
+end
+
+function fc_log(opts,msg)
+try
+    if isfield(opts,'logFcn') && isa(opts.logFcn,'function_handle')
+        opts.logFcn(msg);
+    end
+catch
+end
+end
+
+function fcBundle = fc_make_group_bundle(s)
+% FC_MAKE_GROUP_BUNDLE
+% Standardized subject-level FC export for GroupAnalysis.
+%
+% Important:
+%   - Pearson r is stored as R.
+%   - Fisher z = atanh(r) is stored as Z.
+%   - Group analysis should average/statistically compare Z, not R.
+
+fcBundle = struct();
+
+fcBundle.version = 'FC_GroupBundle_v1';
+fcBundle.created = datestr(now);
+fcBundle.tag = s.tag;
+fcBundle.saveRoot = s.saveRoot;
+fcBundle.qcDir = s.qcDir;
+
+fcBundle.settings = struct();
+fcBundle.settings.roiMinVox = s.opts.roiMinVox;
+fcBundle.settings.roiOrder = s.roiOrder;
+fcBundle.settings.analysisStartSec = s.analysisStartSec;
+fcBundle.settings.analysisEndSec = s.analysisEndSec;
+fcBundle.settings.currentEpoch = s.currentEpoch;
+fcBundle.settings.epochName = s.epochs(s.currentEpoch).name;
+fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use tanh(Z) only for display.';
+fcBundle.settings.regionMode = fc_region_mode_from_state(s);
+
+fcBundle.subjects = struct([]);
+
+for i = 1:s.nSub
+
+    subj = s.subjects(i);
+
+    fcBundle.subjects(i).name = subj.name;
+    fcBundle.subjects(i).group = subj.group;
+    fcBundle.subjects(i).TR = subj.TR;
+    fcBundle.subjects(i).analysisDir = subj.analysisDir;
+
+    fcBundle.subjects(i).hasROI = false;
+    fcBundle.subjects(i).epochName = '';
+    fcBundle.subjects(i).timeIdx = [];
+    fcBundle.subjects(i).labels = [];
+    fcBundle.subjects(i).names = {};
+    fcBundle.subjects(i).counts = [];
+    fcBundle.subjects(i).meanTS = [];
+    fcBundle.subjects(i).R = [];
+    fcBundle.subjects(i).Z = [];
+
+    % Prefer current epoch result.
+    res = [];
+    if i <= size(s.roiResults,1) && s.currentEpoch <= size(s.roiResults,2)
+        res = s.roiResults{i,s.currentEpoch};
+    end
+
+    % Fallback: find any available ROI result for this subject.
+    if isempty(res)
+        for e = 1:size(s.roiResults,2)
+            if ~isempty(s.roiResults{i,e})
+                res = s.roiResults{i,e};
+                break;
+            end
+        end
+    end
+
+    if isempty(res)
+        continue;
+    end
+
+    fcBundle.subjects(i).hasROI = true;
+    fcBundle.subjects(i).epochName = res.epochName;
+    fcBundle.subjects(i).timeIdx = res.timeIdx;
+    fcBundle.subjects(i).labels = res.labels;
+    fcBundle.subjects(i).names = res.names;
+    fcBundle.subjects(i).counts = res.counts;
+    fcBundle.subjects(i).meanTS = res.meanTS;
+    fcBundle.subjects(i).R = res.M;
+
+    Z = double(res.M);
+    Z = max(-0.999999, min(0.999999, Z));
+    Z = atanh(Z);
+
+    % The diagonal is self-correlation. Keep R diagonal as 1,
+    % but set Z diagonal to 0 so group plots/statistics are cleaner.
+    Z(1:size(Z,1)+1:end) = 0;
+
+    fcBundle.subjects(i).Z = Z;
+
+    % Current display-mode matrix for GroupAnalysis convenience.
+    try
+        [Rdisp,namesDisp,orderDisp,metaDisp] = fc_current_matrix(s,res); %#ok<ASGLU>
+        fcBundle.subjects(i).displayRegionMode = fc_region_mode_from_state(s);
+        fcBundle.subjects(i).displayNames = namesDisp;
+        fcBundle.subjects(i).displayLabels = metaDisp.displayLabels;
+        fcBundle.subjects(i).displayGroups = metaDisp.groups;
+        fcBundle.subjects(i).displayR = Rdisp;
+        Zdisp = max(-0.999999,min(0.999999,double(Rdisp)));
+        Zdisp = atanh(Zdisp);
+        Zdisp(1:size(Zdisp,1)+1:end) = 0;
+        fcBundle.subjects(i).displayZ = Zdisp;
+    catch
+        fcBundle.subjects(i).displayRegionMode = 'both';
+        fcBundle.subjects(i).displayNames = res.names;
+        fcBundle.subjects(i).displayLabels = res.labels;
+        fcBundle.subjects(i).displayGroups = {};
+        fcBundle.subjects(i).displayR = res.M;
+        fcBundle.subjects(i).displayZ = Z;
+    end
+end
+
+end
+
+function startDir = fc_segmentation_start_dir(subj,opts)
+% Prefer the HUMoR segmentation output folder.
+startDir = pwd;
+try
+    if isfield(opts,'exportPath') && ~isempty(opts.exportPath)
+        segDir = fullfile(opts.exportPath,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+    end
+catch
+end
+try
+    if isfield(opts,'saveRoot') && ~isempty(opts.saveRoot)
+        segDir = fullfile(opts.saveRoot,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+    end
+catch
+end
+try
+    if isfield(subj,'analysisDir') && ~isempty(subj.analysisDir)
+        segDir = fullfile(subj.analysisDir,'Segmentation');
+        if exist(segDir,'dir'), startDir = segDir; return; end
+        if exist(subj.analysisDir,'dir'), startDir = subj.analysisDir; return; end
+    end
+catch
+end
+try
+    startDir = fc_start_dir(subj,opts);
+catch
+end
+end
+
+function [res, info, roiAtlas] = fc_read_segmentation_result(fullFile, fallbackTR, opts)
+% TRUE-LR Segmentation loader.
+% If Seg.labelMap contains signed labels, this loads Seg.Left + Seg.Right
+% as separate FC regions: negative labels = left, positive labels = right.
+% If no signed label map is present, it falls back to Seg.Both.
+
+res = [];
+info = struct();
+roiAtlas = [];
+
+if nargin < 2 || isempty(fallbackTR) || ~isfinite(fallbackTR) || fallbackTR <= 0
+    fallbackTR = 1;
+end
+if nargin < 3
+    opts = struct(); %#ok<NASGU>
+end
+
+if exist(fullFile,'file') ~= 2
+    error('File does not exist: %s', fullFile);
+end
+
+S = load(fullFile);
+if isfield(S,'Seg')
+    Seg = S.Seg;
+else
+    Seg = S;
+end
+
+% ------------------------------------------------------------
+% Get and repair label map early.
+% Important for old files where negative labels were saved as uint32.
+% ------------------------------------------------------------
+if isfield(Seg,'labelMap') && ~isempty(Seg.labelMap)
+    roiAtlas = fc_repair_signed_label_map(Seg.labelMap);
+elseif isfield(Seg,'R') && ~isempty(Seg.R)
+    roiAtlas = fc_repair_signed_label_map(Seg.R);
+elseif isfield(Seg,'atlas') && ~isempty(Seg.atlas)
+    roiAtlas = fc_repair_signed_label_map(Seg.atlas);
+else
+    roiAtlas = [];
+end
+
+hasSignedMap = false;
+try
+    hasSignedMap = ~isempty(roiAtlas) && any(double(roiAtlas(:)) < 0);
+catch
+    hasSignedMap = false;
+end
+
+% ------------------------------------------------------------
+% Read base region metadata.
+% Segmentation stores base labels as unsigned absolute Allen IDs.
+% ------------------------------------------------------------
+labelsBase = [];
+acr = {};
+nmFull = {};
+countsLeft = [];
+countsRight = [];
+countsBoth = [];
+
+if isfield(Seg,'region') && isstruct(Seg.region)
+    if isfield(Seg.region,'labels') && ~isempty(Seg.region.labels)
+        labelsBase = double(Seg.region.labels(:));
+    end
+    if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms)
+        acr = cellstr(Seg.region.acronyms(:));
+    end
+    if isfield(Seg.region,'names') && ~isempty(Seg.region.names)
+        nmFull = cellstr(Seg.region.names(:));
+    end
+    if isfield(Seg.region,'countsLeft') && ~isempty(Seg.region.countsLeft)
+        countsLeft = double(Seg.region.countsLeft(:));
+    end
+    if isfield(Seg.region,'countsRight') && ~isempty(Seg.region.countsRight)
+        countsRight = double(Seg.region.countsRight(:));
+    end
+    if isfield(Seg.region,'countsBoth') && ~isempty(Seg.region.countsBoth)
+        countsBoth = double(Seg.region.countsBoth(:));
+    end
+end
+
+% ------------------------------------------------------------
+% Decide whether we can use true left/right traces.
+% Only do this if the saved spatial label map is signed.
+% Otherwise FC map and timecourse labels would not match.
+% ------------------------------------------------------------
+hasLR = isfield(Seg,'Left') && isstruct(Seg.Left) && isfield(Seg,'Right') && isstruct(Seg.Right);
+useLR = hasSignedMap && hasLR;
+
+Mregion = [];
+labels = [];
+names = {};
+counts = [];
+spaceName = '';
+
+if useLR
+    L = [];
+    R = [];
+    if isfield(Seg.Left,'z') && isfield(Seg.Right,'z') && ~isempty(Seg.Left.z) && ~isempty(Seg.Right.z)
+        Lz = double(Seg.Left.z);
+        Rz = double(Seg.Right.z);
+        nFinite = sum(any(isfinite(Lz),2)) + sum(any(isfinite(Rz),2));
+        if nFinite >= 2
+            L = Lz;
+            R = Rz;
+            spaceName = 'LeftRight.z';
+        end
+    end
+    if isempty(L) && isfield(Seg.Left,'raw') && isfield(Seg.Right,'raw') && ~isempty(Seg.Left.raw) && ~isempty(Seg.Right.raw)
+        L = double(Seg.Left.raw);
+        R = double(Seg.Right.raw);
+        spaceName = 'LeftRight.raw';
+    end
+
+    if ~isempty(L) && ~isempty(R)
+        if isempty(labelsBase)
+            labelsBase = (1:min(size(L,1),size(R,1)))';
+        end
+        nBase = min([numel(labelsBase), size(L,1), size(R,1)]);
+        for kk = 1:nBase
+            lab0 = abs(round(double(labelsBase(kk))));
+            if ~isfinite(lab0) || lab0 == 0
+                continue;
+            end
+
+            stem = '';
+            if kk <= numel(acr)
+                stem = strtrim(char(acr{kk}));
+            end
+            if isempty(stem) || strcmpi(stem,'unknown')
+                if kk <= numel(nmFull)
+                    stem = strtrim(char(nmFull{kk}));
+                end
+            end
+            if isempty(stem) || strcmpi(stem,'unknown')
+                stem = sprintf('ROI_%g',lab0);
+            end
+
+            if any(isfinite(L(kk,:)))
+                Mregion(end+1,:) = L(kk,:); %#ok<AGROW>
+                labels(end+1,1) = -lab0; %#ok<AGROW>
+                names{end+1,1} = sprintf('L_%s [%g]',stem,-lab0); %#ok<AGROW>
+                if kk <= numel(countsLeft), counts(end+1,1) = countsLeft(kk); else, counts(end+1,1) = NaN; end %#ok<AGROW>
+            end
+
+            if any(isfinite(R(kk,:)))
+                Mregion(end+1,:) = R(kk,:); %#ok<AGROW>
+                labels(end+1,1) = lab0; %#ok<AGROW>
+                names{end+1,1} = sprintf('R_%s [%g]',stem,lab0); %#ok<AGROW>
+                if kk <= numel(countsRight), counts(end+1,1) = countsRight(kk); else, counts(end+1,1) = NaN; end %#ok<AGROW>
+            end
+        end
+    end
+end
+
+% ------------------------------------------------------------
+% Fallback: bilateral merged Seg.Both result.
+% This is expected to produce 78 regions for your slice.
+% ------------------------------------------------------------
+if isempty(Mregion)
+    hasZ = isfield(Seg,'Both') && isstruct(Seg.Both) && isfield(Seg.Both,'z') && ~isempty(Seg.Both.z);
+    hasRaw = isfield(Seg,'Both') && isstruct(Seg.Both) && isfield(Seg.Both,'raw') && ~isempty(Seg.Both.raw);
+    if hasZ
+        Mregion = double(Seg.Both.z);
+        spaceName = 'Both.z';
+        if sum(any(isfinite(Mregion),2)) < 2 && hasRaw
+            Mregion = double(Seg.Both.raw);
+            spaceName = 'Both.raw';
+        end
+    elseif hasRaw
+        Mregion = double(Seg.Both.raw);
+        spaceName = 'Both.raw';
+    else
+        error('Seg.Both.z/raw or signed Seg.Left/Right traces were not found.');
+    end
+
+    if isempty(labelsBase)
+        labelsBase = (1:size(Mregion,1))';
+    end
+    nBase = min(numel(labelsBase),size(Mregion,1));
+    labels = labelsBase(1:nBase);
+    names = cell(nBase,1);
+    for kk = 1:nBase
+        stem = '';
+        if kk <= numel(acr), stem = strtrim(char(acr{kk})); end
+        if isempty(stem) || strcmpi(stem,'unknown')
+            if kk <= numel(nmFull), stem = strtrim(char(nmFull{kk})); end
+        end
+        if isempty(stem) || strcmpi(stem,'unknown')
+            stem = sprintf('ROI_%g',labels(kk));
+        end
+        names{kk} = sprintf('%s [%g]',stem,labels(kk));
+    end
+    if numel(countsBoth) >= nBase
+        counts = countsBoth(1:nBase);
+    else
+        counts = nan(nBase,1);
+    end
+    Mregion = Mregion(1:nBase,:);
+end
+
+% ------------------------------------------------------------
+% Orient to time x region.
+% ------------------------------------------------------------
+if size(Mregion,1) == numel(labels)
+    meanTS = Mregion';
+elseif size(Mregion,2) == numel(labels)
+    meanTS = Mregion;
+else
+    error('Region-time matrix size does not match label count. Matrix = %s, labels = %d.', mat2str(size(Mregion)), numel(labels));
+end
+
+if size(meanTS,1) < 2
+    error('The selected Segmentation file has only %d time point(s). Functional connectivity needs region time traces.',size(meanTS,1));
+end
+
+% ------------------------------------------------------------
+% Remove invalid/background rows.
+% ------------------------------------------------------------
+valid = true(1,size(meanTS,2));
+for kk = 1:size(meanTS,2)
+    x = meanTS(:,kk);
+    valid(kk) = any(isfinite(x));
+    if kk <= numel(labels) && kk <= numel(names)
+        if fc_is_background_region(labels(kk),names{kk})
+            valid(kk) = false;
+        end
+    end
+end
+
+meanTS = meanTS(:,valid);
+labels = labels(valid(:));
+names = names(valid(:));
+if numel(counts) == numel(valid)
+    counts = counts(valid(:));
+else
+    counts = nan(numel(labels),1);
+end
+
+if size(meanTS,2) < 2
+    error('Segmentation result has only %d usable region traces after cleanup. Source used: %s.',size(meanTS,2),spaceName);
+end
+
+% Replace NaNs per region by that region finite mean before correlation.
+for kk = 1:size(meanTS,2)
+    x = meanTS(:,kk);
+    bad = ~isfinite(x);
+    if any(bad)
+        good = x(isfinite(x));
+        if isempty(good)
+            x(bad) = 0;
+        else
+            x(bad) = mean(good);
+        end
+        meanTS(:,kk) = x;
+    end
+end
+
+Rfc = fc_corr_matrix(meanTS);
+
+TR = fallbackTR;
+if isfield(Seg,'TR') && ~isempty(Seg.TR) && isfinite(Seg.TR) && Seg.TR > 0
+    TR = double(Seg.TR);
+end
+
+res = struct();
+res.labels = labels(:);
+res.names = names(:);
+res.counts = counts(:);
+res.meanTS = meanTS;
+res.M = Rfc;
+res.TR = TR;
+res.timeIdx = (1:size(meanTS,1))';
+res.epochName = ['Segmentation ' spaceName];
+res.sourceFile = fullFile;
+res.sourceType = 'HUMoR Segmentation';
+res.timeSec = [];
+res.timeMin = [];
+
+try
+    if isfield(Seg,'timeSec') && ~isempty(Seg.timeSec) && numel(Seg.timeSec) == size(meanTS,1)
+        res.timeSec = double(Seg.timeSec(:));
+        res.timeMin = res.timeSec ./ 60;
+    elseif isfield(Seg,'timeMin') && ~isempty(Seg.timeMin) && numel(Seg.timeMin) == size(meanTS,1)
+        res.timeMin = double(Seg.timeMin(:));
+        res.timeSec = res.timeMin .* 60;
+    else
+        res.timeSec = ((0:size(meanTS,1)-1)' .* TR);
+        res.timeMin = res.timeSec ./ 60;
+    end
+catch
+    res.timeSec = ((0:size(meanTS,1)-1)' .* TR);
+    res.timeMin = res.timeSec ./ 60;
+end
+
+try
+    res.timeMin = fc_extract_seg_time_min(Seg,size(meanTS,1),TR);
+catch
+end
+
+info = struct();
+info.file = fullFile;
+info.TR = TR;
+info.spaceName = spaceName;
+info.nRegions = numel(labels);
+info.nTime = size(meanTS,1);
+info.hasSignedMap = hasSignedMap;
+info.note = 'True LR FC uses Seg.Left/Right only when Seg.labelMap has signed labels.';
+end
+
+function A = fc_repair_signed_label_map(A)
+% Repair label maps while preserving signed left/right labels.
+% This also fixes old files where int32 negative labels were accidentally saved as uint32.
+try
+    sz = size(A);
+    if isa(A,'uint32')
+        u = double(A(:));
+        high = u > double(intmax('int32'));
+        u(high) = u(high) - 2^32;
+        A = reshape(u,sz);
+    else
+        A = double(A);
+        high = A > double(intmax('int32')) & A <= 2^32;
+        A(high) = A(high) - 2^32;
+    end
+    A = round(double(A));
+    A(~isfinite(A)) = 0;
+catch
+    try
+        A = round(double(A));
+        A(~isfinite(A)) = 0;
+    catch
+        A = [];
+    end
+end
+end
+
+function tf = fc_is_background_region(label,nameStr)
+tf = false;
+if nargin < 2 || isempty(nameStr), nameStr = ''; end
+try
+    lab = round(double(label));
+catch
+    lab = NaN;
+end
+if ~isfinite(lab) || lab == 0
+    tf = true;
+    return;
+end
+
+if any(abs(lab) == [0 997])
+    tf = true;
+    return;
+end
+
+try
+    s = lower(strtrim(char(nameStr)));
+    s = regexprep(s,'\s*\[[^\]]*\]\s*$','');
+    s = regexprep(s,'[_\-]+',' ');
+catch
+    s = '';
+end
+
+bad = {'root','background','outside','no label','nolabel','unknown','void','empty','air'};
+for ii = 1:numel(bad)
+    if strcmp(s,bad{ii}) || ~isempty(strfind(s,bad{ii}))
+        tf = true;
+        return;
+    end
+end
+end
+
+function fc_region_key_dialog(s,C)
+% Show abbreviation -> full-name mapping for the current ROI/Segmentation result.
+res = [];
+try
+    res = s.roiResults{s.currentSubject,s.currentEpoch};
+catch
+end
+
+if isempty(res) || ~isfield(res,'labels') || isempty(res.labels)
+    error('No ROI/Segmentation result is loaded yet. Load Seg MAT or compute ROI FC first.');
+end
+
+labels = double(res.labels(:));
+names = res.names(:);
+n = numel(labels);
+if numel(names) < n
+    tmp = cell(n,1);
+    for k = 1:n
+        if k <= numel(names), tmp{k} = names{k}; else, tmp{k} = sprintf('ROI_%g',labels(k)); end
+    end
+    names = tmp;
+end
+
+[abbr, fullNames, sourceFile, sourceLabel] = fc_region_key_collect(labels,names,s,res);
+
+lines = {};
+lines{end+1} = 'FUNCTIONAL CONNECTIVITY REGION KEY';
+lines{end+1} = '============================================================';
+lines{end+1} = sprintf('Regions: %d',n);
+if ~isempty(sourceLabel)
+    lines{end+1} = ['Source: ' sourceLabel];
+end
+if ~isempty(sourceFile)
+    lines{end+1} = ['File: ' sourceFile];
+end
+lines{end+1} = '';
+lines{end+1} = sprintf('%-5s %-12s %-18s %s','No','Label','Abbrev','Full name');
+lines{end+1} = sprintf('%-5s %-12s %-18s %s','----','----------','----------------','------------------------------');
+for k = 1:n
+    lines{end+1} = sprintf('%-5d %-12g %-18s %s',k,labels(k),abbr{k},fullNames{k}); %#ok<AGROW>
+end
+outTxt = strjoin(lines,newline);
+
+bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
+figKey = figure('Name','FC Region key: abbreviation -> full name', ...
+    'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
+    'Units','pixels','Position',[260 90 1050 820]);
+try, movegui(figKey,'center'); catch, end
+
+uicontrol('Parent',figKey,'Style','edit','Max',2,'Min',0, ...
+    'Units','normalized','Position',[0.035 0.105 0.930 0.855], ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'FontName','Consolas', ...
+    'FontSize',11,'HorizontalAlignment','left','String',outTxt);
+
+if ~isempty(sourceFile) && exist(sourceFile,'file')
+    uicontrol('Parent',figKey,'Style','pushbutton','Units','normalized', ...
+        'Position',[0.035 0.025 0.250 0.055],'String','Open source file', ...
+        'BackgroundColor',C.orange,'ForegroundColor','w', ...
+        'FontName',C.font,'FontWeight','bold','FontSize',12, ...
+        'Callback',@(src,evt)fc_open_file_external(sourceFile));
+end
+
+uicontrol('Parent',figKey,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.790 0.025 0.175 0.055],'String','Close', ...
+    'BackgroundColor',C.red,'ForegroundColor','w', ...
+    'FontName',C.font,'FontWeight','bold','FontSize',12, ...
+    'Callback',@(src,evt)delete(figKey));
+end
+
+function [abbr, fullNames, sourceFile, sourceLabel] = fc_region_key_collect(labels,names,s,res)
+n = numel(labels);
+abbr = cell(n,1);
+fullNames = cell(n,1);
+for k = 1:n
+    displayName = char(names{k});
+    displayName = strtrim(displayName);
+    abbr{k} = fc_roi_abbrev(displayName,18);
+    fullNames{k} = regexprep(displayName,'\s*\[[^\]]*\]\s*$','');
+    if isempty(strtrim(fullNames{k})), fullNames{k} = displayName; end
+end
+
+sourceFile = '';
+sourceLabel = '';
+
+try
+    if isfield(s,'loadedRegionNameFile') && ~isempty(s.loadedRegionNameFile) && exist(s.loadedRegionNameFile,'file')
+        sourceFile = s.loadedRegionNameFile;
+        sourceLabel = 'Loaded region-name TXT/CSV/MAT';
+    elseif isfield(s,'loadedSegmentationFile') && ~isempty(s.loadedSegmentationFile) && exist(s.loadedSegmentationFile,'file')
+        sourceFile = s.loadedSegmentationFile;
+        sourceLabel = 'Loaded Segmentation MAT';
+    elseif isfield(res,'sourceFile') && ~isempty(res.sourceFile) && exist(res.sourceFile,'file')
+        sourceFile = res.sourceFile;
+        sourceLabel = 'ROI result source file';
+    end
+catch
+end
+
+% If a region-name table was loaded, use it as full-name source.
+try
+    if isfield(s,'opts') && isfield(s.opts,'roiNameTable')
+        T = s.opts.roiNameTable;
+        if isstruct(T) && isfield(T,'labels') && isfield(T,'names') && ~isempty(T.labels)
+            for k = 1:n
+                idx = find(abs(double(T.labels(:))) == abs(labels(k)),1,'first');
+                if ~isempty(idx) && idx <= numel(T.names)
+                    nm = strtrim(char(T.names{idx}));
+                    if ~isempty(nm)
+                        fullNames{k} = nm;
+                        abbr{k} = fc_roi_abbrev(nm,18);
+                    end
+                end
+            end
+        end
+    end
+catch
+end
+
+% If this came from HUMoR Segmentation, retrieve acronyms and full names directly from Seg.region.
+try
+    segFile = '';
+    if isfield(res,'sourceFile') && ~isempty(res.sourceFile) && exist(res.sourceFile,'file')
+        segFile = res.sourceFile;
+    elseif ~isempty(sourceFile) && exist(sourceFile,'file')
+        segFile = sourceFile;
+    end
+    if ~isempty(segFile)
+        S = load(segFile);
+        if isfield(S,'Seg')
+            Seg = S.Seg;
+            if isfield(Seg,'region') && isstruct(Seg.region) && isfield(Seg.region,'labels')
+                labs0 = double(Seg.region.labels(:));
+                acr0 = {};
+                nam0 = {};
+                if isfield(Seg.region,'acronyms') && ~isempty(Seg.region.acronyms), acr0 = cellstr(Seg.region.acronyms(:)); end
+                if isfield(Seg.region,'names') && ~isempty(Seg.region.names), nam0 = cellstr(Seg.region.names(:)); end
+                for k = 1:n
+                    idx = find(abs(labs0) == abs(labels(k)),1,'first');
+                    if ~isempty(idx)
+                        if idx <= numel(acr0) && ~isempty(strtrim(char(acr0{idx})))
+                            abbr{k} = strtrim(char(acr0{idx}));
+                        end
+                        if idx <= numel(nam0) && ~isempty(strtrim(char(nam0{idx})))
+                            fullNames{k} = strtrim(char(nam0{idx}));
+                        end
+                    end
+                end
+            end
+        end
+    end
+catch
+end
+end
+
+function fc_open_file_external(fileName)
+try
+    if exist(fileName,'file')
+        if ispc
+            winopen(fileName);
+        elseif ismac
+            system(['open "' fileName '" &']);
+        else
+            system(['xdg-open "' fileName '" &']);
+        end
+    end
+catch
+    try, edit(fileName); catch, end
+end
+end
+
+function fc_help_dialog(C) %#ok<INUSD>
+bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
+helpFig = figure('Name','Functional Connectivity - Help', ...
+    'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
+    'Units','pixels','Position',[250 100 960 800]);
+try, movegui(helpFig,'center'); catch, end
+uicontrol('Parent',helpFig,'Style','edit','Max',2,'Min',0, ...
+    'Units','normalized','Position',[0.04 0.04 0.92 0.92], ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'FontName','Arial', ...
+    'FontSize',14,'HorizontalAlignment','left','String',fc_help_text());
+end
+
+function txt = fc_help_text()
+lines = {
+'FUNCTIONAL CONNECTIVITY GUIDE'
+'============================================================'
+''
+'Underlay versus ROI labels'
+'------------------------------------------------------------'
+'- Underlay / histology is only the background image.'
+'- ROI labels / atlas is an integer region map used to extract region timecourses.'
+'- Do not load histology as ROI labels. Do not load ROI labels as the underlay unless you only want a label display.'
+''
+'Underlay display'
+'------------------------------------------------------------'
+'- Default underlay is SCM-like log-median Doppler equalization.'
+'- This is computed directly from the active functional data if no Mask Editor underlay is passed.'
+'- If Mask Editor anatomical_reference is passed, it is shown exactly and not normalized again.'
+''
+'Seed Map tab'
+'------------------------------------------------------------'
+'- Click on the brain image to place the seed.'
+'- The yellow box shows the seed ROI that is averaged.'
+'- Seed current computes voxelwise Pearson correlation with that seed timecourse.'
+''
+'ROI Heatmap tab'
+'------------------------------------------------------------'
+'- Requires ROI labels/atlas.'
+'- Each cell is FC between two atlas-region mean timecourses.'
+'- Fisher z = atanh(r) is the recommended display/statistics transform.'
+''
+'Compare ROI tab'
+'------------------------------------------------------------'
+'- Choose one region such as CPu/CPU.'
+'- Bar plot shows the selected region versus all other regions.'
+'- Atlas map projects those correlations back onto the ROI label map.'
+''
+'Pair ROI tab'
+'------------------------------------------------------------'
+'- Inspects exactly two regions with traces, scatter and lag correlation.'
+''
+'Graph tab'
+'------------------------------------------------------------'
+'- This is a network matrix summary derived from the ROI Heatmap.'
+'- Matrix entries are Pearson r where |r| is above threshold, otherwise 0.'
+};
+txt = strjoin(lines,newline);
+end
+,'');
+s = regexprep(s,'^s*[LR][_-s]+','');
 s = strrep(s,'_',' ');
-s = regexprep(s,'\s+',' ');
+s = regexprep(s,'s+',' ');
 s = strtrim(s);
 end
 

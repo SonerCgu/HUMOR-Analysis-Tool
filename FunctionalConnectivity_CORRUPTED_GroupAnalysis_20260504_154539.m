@@ -38,81 +38,14 @@ if ~isempty(args) && isa(args{1},'function_handle')
     args = args(2:end);
 end
 
-%%% GA_INPUTPARSER_POSITIONAL_STARTDIR_FIX_V2_20260504_START
-% Accept old caller style: GroupAnalysis(studio,onClose,startDir)
-% or accidental positional folder paths from fUSI Studio.
-posStartDir = '';
-try
-    gaKnownInputNames = {'studio','logFcn','statusFcn','startDir','onClose'};
-    gaCleanArgs = {};
-    iiGA = 1;
-    while iiGA <= numel(args)
-        aGA = args{iiGA};
-        try
-            if exist('isstring','builtin') && isstring(aGA) && isscalar(aGA)
-                aGA = char(aGA);
-            end
-        catch
-        end
-
-        if isa(aGA,'function_handle')
-            posOnClose = aGA;
-            iiGA = iiGA + 1;
-            continue;
-        end
-
-        if ischar(aGA)
-            aTxt = strtrim(aGA);
-            isKnownName = any(strcmpi(aTxt,gaKnownInputNames));
-
-            if isKnownName
-                gaCleanArgs{end+1} = aTxt; %#ok<AGROW>
-                if iiGA < numel(args)
-                    gaCleanArgs{end+1} = args{iiGA+1}; %#ok<AGROW>
-                    iiGA = iiGA + 2;
-                else
-                    iiGA = iiGA + 1;
-                end
-                continue;
-            else
-                % Any unknown positional char/string is treated as startDir.
-                posStartDir = aTxt;
-                iiGA = iiGA + 1;
-                continue;
-            end
-        end
-
-        gaCleanArgs{end+1} = args{iiGA}; %#ok<AGROW>
-        iiGA = iiGA + 1;
-    end
-    args = gaCleanArgs;
-catch ME_ga_parse_clean
-    try, disp(['GroupAnalysis input cleanup warning: ' ME_ga_parse_clean.message]); catch, end
-end
-%%% GA_INPUTPARSER_POSITIONAL_STARTDIR_FIX_V2_20260504_END
-
 P = inputParser;
 P.addParameter('studio', struct(), @(x) isstruct(x));
 P.addParameter('logFcn', [], @(x) isempty(x) || isa(x,'function_handle'));
 P.addParameter('statusFcn', [], @(x) isempty(x) || isa(x,'function_handle'));
-P.addParameter('startDir', '', @(x) ischar(x) || (exist('isstring','builtin') && isstring(x) && isscalar(x)));
+P.addParameter('startDir', '', @(x) ischar(x));
 P.addParameter('onClose', [], @(x) isempty(x) || isa(x,'function_handle'));
 P.parse(args{:});
 opt = P.Results;
-%%% GA_APPLY_POSITIONAL_STARTDIR_V2_20260504_START
-try
-    if exist('isstring','builtin') && isstring(opt.startDir) && isscalar(opt.startDir)
-        opt.startDir = char(opt.startDir);
-    end
-catch
-end
-try
-    if exist('posStartDir','var') && ~isempty(posStartDir)
-        opt.startDir = posStartDir;
-    end
-catch
-end
-%%% GA_APPLY_POSITIONAL_STARTDIR_V2_20260504_END
 
 if ~isempty(posStudio)
     opt.studio = posStudio;
@@ -255,7 +188,6 @@ S.mapSigma            = 1;
 S.mapUnderlayMode     = 'Bundle underlay';
 S.mapCustomUnderlayFile = '';
 S.mapLoadedUnderlay   = [];
-S.mapLoadedOverlayMask = [];
 S.rowPacapSide        = cell(0,1);
 S.mapRefPacapSide     = 'Left';
 S.mapPreviewRow       = NaN;
@@ -1017,7 +949,6 @@ refreshMapBundlePopup();
 updateMapSideSummaryTable();
 setStatusText('Ready. Modular main loaded.');
 
-try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
 drawnow;
 
 %%% =====================================================================
@@ -1449,44 +1380,25 @@ drawnow;
     function onLoadCustomUnderlay(~,~)
         S0 = guidata(hFig);
         startPath = getSmartBrowseDir(S0);
-        [f,p] = uigetfile({'*.mat;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp','Underlay / MaskEditor files'}, ...
-            'Select custom underlay or MaskEditor mask bundle',startPath);
+        [f,p] = uigetfile({'*.mat;*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp','Underlay files'}, ...
+            'Select custom underlay',startPath);
         if isequal(f,0), return; end
-
-        fpOriginal = fullfile(p,f);
-        fpUsed = fpOriginal;
-        overlayMask = [];
+        fp = fullfile(p,f);
+        fp = GA_autoTrueUnderlayFile_20260504(fp);
+        fprintf('[GroupAnalysis] Load Underlay auto-file: %s\n', fp);
 
         try
-            [U,overlayMask,infoTxt] = GA_loadUnderlayAndOverlayMask_20260504(fpOriginal);
-        catch ME_direct
-            try
-                % Fallback only. Do NOT rely on corrupt cache files.
-                U = callMap('loadGroupUnderlayFile',fpOriginal);
-                overlayMask = [];
-                infoTxt = ['fallback raw load: ' shortPathForTable(fpOriginal,60)];
-            catch ME_fallback
-                msg = sprintf('Could not load underlay/mask bundle.\n\nDirect extraction:\n%s\n\nFallback:\n%s', ...
-                    ME_direct.message, ME_fallback.message);
-                errordlg(msg,'Load custom underlay');
-                return;
-            end
-        end
-
-        S0.mapLoadedUnderlay = U;
-        S0.mapLoadedOverlayMask = overlayMask;
-        S0.mapCustomUnderlayFile = fpOriginal;
-        S0.mapUnderlayMode = 'Loaded custom underlay';
-
-        try, setPopupToString(S0.hMapUnderlayMode,'Loaded custom underlay'); catch, end
-
-        guidata(hFig,S0);
-        updateMapTabPreview();
-
-        if ~isempty(overlayMask)
-            setStatusText(['Loaded true underlay + overlay mask: ' infoTxt]);
-        else
-            setStatusText(['Loaded true underlay only: ' infoTxt]);
+            U = callMap('loadGroupUnderlayFile',fp);
+            S0.mapLoadedUnderlay = U;
+            S0.mapCustomUnderlayFile = fp;
+            S0.mapUnderlayMode = 'Loaded custom underlay';
+            try, setPopupToString(S0.hMapUnderlayMode,'Loaded custom underlay'); catch, end
+            guidata(hFig,S0);
+            updateMapTabPreview();
+            setStatusText(['Loaded underlay: ' shortPathForTable(fp,50)]);
+        catch ME
+            try, GA_printErrorLocal(ME,'caught error in GroupAnalysis.m'); catch, end
+            errordlg(ME.message,'Load custom underlay');
         end
     end
 
@@ -1544,8 +1456,7 @@ drawnow;
         end
         setStatus(false);
         setStatusText(sprintf('Computing group maps from %d bundle row(s)...',numel(mapIdx)));
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow;
+        drawnow;
         try
             subjActive = S0.subj(mapIdx,:);
             [R,cacheOut] = callMap('runPSCMapAnalysis',S0,subjActive,mapIdx,S0.cache);
@@ -1686,8 +1597,7 @@ S0.activeTab = 'MAP';
         S0 = guidata(hFig);
         setStatus(false);
         setStatusText('Loading FC bundles...');
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow;
+        drawnow;
         try
             [FC,cacheOut] = callFC('loadFCGroupBundlesFromFiles',fileList,S0.cache);
             S0.cache = cacheOut;
@@ -1743,8 +1653,7 @@ drawnow;
         end
         setStatus(false);
         setStatusText('Computing group FC...');
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow;
+        drawnow;
         try
             G = callFC('alignFCSubjectsToCommonROIs',S0.FC);
             R = callFC('computeGroupFCStats',G,groupA,groupB);
@@ -1904,8 +1813,7 @@ drawnow;
 
         setStatus(false);
         setStatusText(sprintf('Running ROI analysis for %d row(s)...',numel(roiIdx)));
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow;
+        drawnow;
         try
             [R,cacheOut] = callCommon('runROITimecourseAnalysis',S0,subjActive,S0.cache);
             S0 = guidata(hFig);
@@ -2132,8 +2040,7 @@ S0.activeTab = 'PREV';
             try, cla(S0.ax2); catch, end
         end
 
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow limitrate;
+        drawnow limitrate;
     end
     function updatePreview()
         S0 = guidata(hFig);
@@ -2300,8 +2207,7 @@ try, S0 = readPlotScaleSettingsFromUI(S0); catch, end
         end
         S0 = readMapSettingsFromUI(S0);
         setStatusText(sprintf('Previewing bundle row %d...',r));
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow;
+        drawnow;
         try
             [G,cacheOut] = callMap('getCachedGroupBundle',S0.cache,bf);
             S0.cache = cacheOut;
@@ -2360,133 +2266,11 @@ drawnow;
     end
 
     function varargout = callFC(action,varargin)
-        % GA_FC_PARAMETER_NAME_FIX_20260504
-        % Adaptive wrapper for GroupAnalysis_FC.
-        % Some GroupAnalysis_FC versions expect positional inputs, others expect
-        % name-value inputs. This wrapper supports both and prevents folder paths
-        % like Z:...dataset from being interpreted as parameter names.
-        
         try
             [varargout{1:nargout}] = GroupAnalysis_FC(action,varargin{:});
-            return;
-        catch ME1
-            msg1 = lower(ME1.message);
-            shouldRetry = false;
-            if ~isempty(strfind(msg1,'unmatched parameter name')) || ...
-               ~isempty(strfind(msg1,'parameter name')) || ...
-               ~isempty(strfind(msg1,'field name')) || ...
-               ~isempty(strfind(msg1,'name-value'))
-                shouldRetry = true;
-            end
-            
-            if shouldRetry
-                try
-                    act = lower(strtrimSafe(action));
-                    switch act
-                        case 'findfcbundlesrecursive'
-                            if numel(varargin) < 1
-                                error('Missing root folder for findFCBundlesRecursive.');
-                            end
-                            rootDir = varargin{1};
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'rootDir',rootDir);
-                                return;
-                            catch
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'folder',rootDir);
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'rootFolder',rootDir);
-                            return;
-                            
-                        case 'loadfcgroupbundlesfromfiles'
-                            fileList = {};
-                            cacheIn = struct();
-                            if numel(varargin) >= 1, fileList = varargin{1}; end
-                            if numel(varargin) >= 2, cacheIn = varargin{2}; end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'fileList',fileList,'cache',cacheIn);
-                                return;
-                            catch
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'files',fileList,'cache',cacheIn);
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'files',fileList,'cacheIn',cacheIn);
-                            return;
-                            
-                        case 'alignfcsubjectstocommonrois'
-                            if numel(varargin) < 1
-                                error('Missing FC struct for alignFCSubjectsToCommonROIs.');
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'FC',varargin{1});
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'fc',varargin{1});
-                            return;
-                            
-                        case 'computegroupfcstats'
-                            if numel(varargin) < 3
-                                error('Missing G/groupA/groupB for computeGroupFCStats.');
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'G',varargin{1},'groupA',varargin{2},'groupB',varargin{3});
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'aligned',varargin{1},'groupA',varargin{2},'groupB',varargin{3});
-                            return;
-                            
-                        case 'fcplotmatrix'
-                            if numel(varargin) < 6
-                                error('Missing inputs for fcPlotMatrix.');
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'ax',varargin{1},'M',varargin{2},'clim',varargin{3},'titleStr',varargin{4},'names',varargin{5},'C',varargin{6});
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'ax',varargin{1},'matrix',varargin{2},'clim',varargin{3},'titleStr',varargin{4},'names',varargin{5},'C',varargin{6});
-                            return;
-                            
-                        case 'fcplotpmatrix'
-                            if numel(varargin) < 5
-                                error('Missing inputs for fcPlotPMatrix.');
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'ax',varargin{1},'P',varargin{2},'titleStr',varargin{3},'names',varargin{4},'C',varargin{5});
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'ax',varargin{1},'pMat',varargin{2},'titleStr',varargin{3},'names',varargin{4},'C',varargin{5});
-                            return;
-                            
-                        case 'exportgroupfcresults'
-                            if numel(varargin) < 1
-                                error('Missing S struct for exportGroupFCResults.');
-                            end
-                            try
-                                [varargout{1:nargout}] = GroupAnalysis_FC(action,'S',varargin{1});
-                                return;
-                            catch
-                            end
-                            [varargout{1:nargout}] = GroupAnalysis_FC(action,'state',varargin{1});
-                            return;
-                    end
-                catch ME2
-                    try, GA_printErrorLocal(ME2,'GroupAnalysis_FC adaptive retry failed'); catch, end
-                    error('GroupAnalysis_FC action "%s" failed. Original: %s | Retry: %s',action,ME1.message,ME2.message);
-                end
-            end
-            
-            try, GA_printErrorLocal(ME1,'caught error in GroupAnalysis.m'); catch, end
-            error('GroupAnalysis_FC action "%s" failed: %s',action,ME1.message);
+        catch ME
+            try, GA_printErrorLocal(ME,'caught error in GroupAnalysis.m'); catch, end
+            error('GroupAnalysis_FC action "%s" failed: %s',action,ME.message);
         end
     end
 
@@ -2513,8 +2297,7 @@ drawnow;
             set(S0.hMapExportStatus,'String',txt);
         catch
         end
-        try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow limitrate;
+        drawnow limitrate;
     end
 
     function setStatus(isReady)
@@ -3408,14 +3191,6 @@ Rm.modMax = S.mapModMax;
 Rm.blackBody = S.mapBlackBody;
 Rm.colormapName = S.mapColormap;
 Rm.flipUDPreview = false; % GA orientation fix: do not force upside-down flip
-Rm.alphaPercent = 100;
-Rm.overlayMask = [];
-try
-    if isfield(S,'mapLoadedOverlayMask') && ~isempty(S.mapLoadedOverlayMask)
-        Rm.overlayMask = S.mapLoadedOverlayMask;
-    end
-catch
-end
 end
 
 function hardClearAxLocal(ax,styleName,showGrid,ttl)
@@ -3961,8 +3736,7 @@ else
     ga_plot_roi_bottom(ax,R,S,fgCol,bgCol,colA,colB,showAnimalLabels);
 end
 
-try, try, GA_force_scm_alpha_20260504(gcf,10,20); catch, end; % AUTO_FORCE_SCM_ALPHA_20260504
-drawnow limitrate; catch, end
+try, drawnow limitrate; catch, end
 end
 
 function R = ga_get_roi_preview_data(S)
@@ -7271,191 +7045,3 @@ catch
 end
 end
 
-
-
-
-% ============================================================
-% GA_loadUnderlayAndOverlayMask_20260504
-% Robust extractor for MaskEditor UnderlayAndOverlayMasks MAT files.
-% ============================================================
-function [U,OM,infoTxt] = GA_loadUnderlayAndOverlayMask_20260504(fp)
-U = [];
-OM = [];
-infoTxt = '';
-
-fp = strtrimSafe(fp);
-if isempty(fp) || exist(fp,'file') ~= 2
-    error('File not found: %s',fp);
-end
-
-[~,~,ext] = fileparts(fp);
-ext = lower(ext);
-
-if ~strcmp(ext,'.mat')
-    U = imread(fp);
-    infoTxt = shortFileOnly_20260504(fp);
-    return;
-end
-
-L = load(fp);
-
-cands = struct('path',{},'value',{},'scoreU',{},'scoreM',{});
-walkStruct(L,'',0);
-
-if isempty(cands)
-    error('No numeric image-like fields found in MAT file: %s',fp);
-end
-
-% Pick true underlay.
-scoresU = [cands.scoreU];
-[bestU,idxU] = max(scoresU);
-if isempty(idxU) || bestU <= -Inf
-    error('Could not identify a true underlay field in MAT file.');
-end
-U = cands(idxU).value;
-U = squeeze(U);
-U = double(U);
-U(~isfinite(U)) = 0;
-
-% Pick overlay/signal mask.
-scoresM = [cands.scoreM];
-[bestM,idxM] = max(scoresM);
-if ~isempty(idxM) && isfinite(bestM) && bestM > 0
-    OM = cands(idxM).value;
-    OM = squeeze(OM);
-    if ndims(OM) > 2
-        if size(OM,3) == 1
-            OM = OM(:,:,1);
-        elseif size(OM,3) == 3
-            OM = OM(:,:,1);
-        else
-            OM = OM(:,:,round(size(OM,3)/2));
-        end
-    end
-    OM = double(OM);
-    OM(~isfinite(OM)) = 0;
-    if max(OM(:)) > min(OM(:))
-        OM = OM > 0.5 * max(OM(:));
-    else
-        OM = logical(OM);
-    end
-else
-    OM = [];
-end
-
-infoTxt = sprintf('%s | underlay=%s', shortFileOnly_20260504(fp), cands(idxU).path);
-if ~isempty(OM)
-    infoTxt = sprintf('%s | overlayMask=%s', infoTxt, cands(idxM).path);
-end
-
-fprintf('[GA mask loader] %s\n', infoTxt);
-
-    function walkStruct(S,path0,depth)
-        if depth > 5
-            return;
-        end
-        if isstruct(S)
-            fn = fieldnames(S);
-            for ii = 1:numel(fn)
-                f = fn{ii};
-                if isempty(path0)
-                    pth = f;
-                else
-                    pth = [path0 '.' f];
-                end
-                try
-                    walkStruct(S.(f),pth,depth+1);
-                catch
-                end
-            end
-        elseif isnumeric(S) || islogical(S)
-            A = squeeze(S);
-            if isempty(A) || numel(A) < 100
-                return;
-            end
-            if ndims(A) > 3
-                return;
-            end
-            sz = size(A);
-            if numel(sz) < 2 || sz(1) < 8 || sz(2) < 8
-                return;
-            end
-            scU = scoreUnderlay(path0,A);
-            scM = scoreMask(path0,A);
-            cands(end+1).path = path0;
-            cands(end).value = A;
-            cands(end).scoreU = scU;
-            cands(end).scoreM = scM;
-        elseif iscell(S) && numel(S) <= 20
-            for jj = 1:numel(S)
-                try
-                    walkStruct(S{jj},sprintf('%s{%d}',path0,jj),depth+1);
-                catch
-                end
-            end
-        end
-    end
-
-    function sc = scoreUnderlay(pathName,A)
-        p = lower(pathName);
-        sc = 0;
-        if contains(p,'sliceunderlayraw'), sc = sc + 1200; end
-        if contains(p,'underlayraw'),      sc = sc + 1000; end
-        if contains(p,'sliceunderlay'),    sc = sc + 900;  end
-        if contains(p,'underlay2d'),       sc = sc + 800;  end
-        if contains(p,'underlay'),         sc = sc + 650;  end
-        if contains(p,'brainimage'),       sc = sc + 500;  end
-        if contains(p,'anatomy'),          sc = sc + 450;  end
-        if contains(p,'bg'),               sc = sc + 300;  end
-        if contains(p,'mask'),             sc = sc - 500;  end
-        if contains(p,'overlay'),          sc = sc - 400;  end
-        if isBinaryish(A),                   sc = sc - 350;  end
-        if ndims(A) == 3 && size(A,3) == 3, sc = sc + 100;  end
-    end
-
-    function sc = scoreMask(pathName,A)
-        p = lower(pathName);
-        sc = -Inf;
-        if contains(p,'overlaymask'), sc = 1200; end
-        if contains(p,'signalmask'),  sc = max(sc,1100); end
-        if contains(p,'overlay') && contains(p,'mask'), sc = max(sc,1000); end
-        if contains(p,'loadedmask'),  sc = max(sc,500); end
-        if contains(p,'mask') && ~contains(p,'underlaymask'), sc = max(sc,250); end
-        if isfinite(sc)
-            if isBinaryish(A), sc = sc + 150; else, sc = sc - 150; end
-        end
-    end
-
-    function tf = isBinaryish(A)
-        try
-            if islogical(A)
-                tf = true;
-                return;
-            end
-            v = double(A(:));
-            v = v(isfinite(v));
-            if isempty(v)
-                tf = true;
-                return;
-            end
-            if numel(v) > 10000
-                idx = round(linspace(1,numel(v),10000));
-                v = v(idx);
-            end
-            v = round(v(:) * 1000) / 1000;
-            u = unique(v);
-            tf = numel(u) <= 4;
-        catch
-            tf = false;
-        end
-    end
-end
-
-function s = shortFileOnly_20260504(fp)
-try
-    [~,a,b] = fileparts(fp);
-    s = [a b];
-catch
-    s = fp;
-end
-end
