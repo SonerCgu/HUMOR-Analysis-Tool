@@ -3,21 +3,7 @@ function fig = FunctionalConnectivity(dataIn, saveRoot, tag, opts)
 % fUSI Studio - Functional Connectivity GUI
 % MATLAB 2017b compatible, ASCII-only.
 %
-% Updated Soner/HUMoR version
 % ------------------------------------------------------------
-% Fixes included in this full copy-paste version:
-%   1) ROI heatmap is larger.
-%   2) Graph matrix heatmap is larger.
-%   3) Larger gaps between heatmap labels to avoid overlap.
-%   4) Compare ROI dropdowns and labels use region abbreviations.
-%   5) Pair ROI tab top controls/text are moved down and no longer cut off.
-%   6) ROI heatmap no longer shows subject name.
-%   7) Graph tab removes degree plot and degree text.
-%   8) Vertical heatmap legends are reversed correctly: +1/high at top, -1/low at bottom.
-%   9) File pickers robustly start in Registration folder via temporary cd().
-%  10) Underlay remains separated from ROI labels.
-%  11) Can load HUMoR Segmentation.mat region-time outputs directly into ROI FC.
-%
 % INPUT
 %   dataIn:
 %       numeric [Y X T] or [Y X Z T]
@@ -123,13 +109,10 @@ st.analysisEndSec = inf;
 st.epochs = struct('name', {'Whole'}, 'start', {0}, 'end', {inf});
 st.currentEpoch = 1;
 
-% FC_LR_EPOCH_PATCH_20260505_STATE
-% Injection/window settings are in minutes for user readability.
 st.fcEpochMode = 'whole';      % whole | pre | during | post
 st.fcInjStartMin = 14;          % edit in GUI
 st.fcInjEndMin   = 15;          % edit in GUI
 st.fcEpochWinMin = 3;           % first N minutes for pre/during/post
-% FC_LR_EPOCH_PATCH_20260505_STATE_END
 
 st.underlayMode = fc_initial_underlay_mode(st.subjects(1), opts);
 st.underlayViewMode = opts.defaultUnderlayViewMode;
@@ -214,7 +197,7 @@ C.fsBig   = 17;
 % FIGURE
 % -------------------------------------------------------------------------
 scr = get(0,'ScreenSize');
-fig = figure( ...
+fig = figure('Position',[35 35 1650 960],  ...
     'Name','fUSI Studio - Functional Connectivity', ...
     'Color',C.bgFig, ...
     'MenuBar','none', ...
@@ -224,9 +207,10 @@ fig = figure( ...
     'Position',scr, ...
     'CloseRequestFcn',@onClose, ...
     'WindowScrollWheelFcn',@onMouseWheel);
+try, HUMoR_popup_polish_now(gcf); catch, end
+
 try, set(fig,'WindowState','maximized'); catch, end
 try, set(fig,'Renderer','opengl'); catch, end
-% FC_LR_LABEL_DISPLAY_PATCH_V2_INTERPRETER
 try
     set(fig,'DefaultTextInterpreter','none');
     set(fig,'DefaultAxesTickLabelInterpreter','none');
@@ -475,7 +459,6 @@ txtROI = uicontrol('Parent',pROI,'Style','text','Units','normalized', ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.dim, ...
     'HorizontalAlignment','left','FontName',C.font,'FontSize',C.fsTiny);
 
-% FC_LR_EPOCH_PATCH_20260505_UI
 fc_label(pROI,[0.02 0.205 0.105 0.085],'Window',C);
 ddEpochMode = uicontrol('Parent',pROI,'Style','popupmenu','Units','normalized', ...
     'Position',[0.125 0.185 0.205 0.115], ...
@@ -507,7 +490,6 @@ uicontrol('Parent',pROI,'Style','pushbutton','Units','normalized', ...
     'Position',[0.835 0.185 0.125 0.115], 'String','Apply win', ...
     'BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onEpochApply);
-% FC_LR_EPOCH_PATCH_20260505_UI_END
 
 % -------------------------------------------------------------------------
 % DISPLAY / SAVE PANEL
@@ -581,7 +563,6 @@ edSeedAlpha = uicontrol('Parent',pSave,'Style','edit','Units','normalized', ...
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, 'FontName',C.font, ...
     'FontSize',C.fsTiny,'Callback',@onColorSettings);
 
-% FC_LR_LABEL_DISPLAY_PATCH_V2_CHECKBOX
 cbShowLR = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
     'Position',[0.705 0.385 0.245 0.105], ...
     'String','Show L/R', 'Value',1, ...
@@ -589,7 +570,6 @@ cbShowLR = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
     'Callback',@onShowHemisphere);
 
-% FC_REGION_MODE_PATCH_20260504_UI
 fc_label(pSave,[0.02 0.205 0.14 0.10],'Regions',C);
 ddRegionMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized', ...
     'Position',[0.16 0.19 0.34 0.12], ...
@@ -598,7 +578,6 @@ ddRegionMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized'
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
     'FontName',C.font,'FontSize',C.fsTiny,'FontWeight','bold', ...
     'Callback',@onRegionMode);
-% FC_REGION_MODE_PATCH_20260504_UI_END
 
 
 fc_label(pSave,[0.02 0.205 0.14 0.10],'',C);
@@ -3534,7 +3513,6 @@ end
 mode = fc_region_mode_from_state(s);
 hasSignedLR = any(labels0 < 0);
 
-% FC_LR_EPOCH_PATCH_20260505_LVR_MATRIX
 if strcmpi(mode,'lvr')
     leftIdx = [];
     rightIdx = [];
@@ -3580,7 +3558,6 @@ if strcmpi(mode,'lvr')
         return;
     end
 end
-% FC_LR_EPOCH_PATCH_20260505_LVR_MATRIX_END
 
 if strcmpi(mode,'merged') && isfield(res,'meanTS') && ~isempty(res.meanTS) && size(res.meanTS,2) == n0
     [TSmerge,names,labelsDisplay,groups,order] = fc_merge_lr_timecourses(res.meanTS,names0,labels0);
@@ -5224,7 +5201,7 @@ for ii = 1:numel(bad)
 end
 end
 
-function fc_region_key_dialog(s,C)
+function fc_region_key_dialog('Position',[55 50 1500 900], s,C)
 % Show abbreviation -> full-name mapping for the current ROI/Segmentation result.
 res = [];
 try
@@ -5234,6 +5211,8 @@ end
 
 if isempty(res) || ~isfield(res,'labels') || isempty(res.labels)
     error('No ROI/Segmentation result is loaded yet. Load Seg MAT or compute ROI FC first.');
+try, HUMoR_popup_polish_now(gcf); catch, end
+
 end
 
 labels = double(res.labels(:));
@@ -5398,7 +5377,9 @@ function fc_help_dialog(C) %#ok<INUSD>
 bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
 helpFig = figure('Name','Functional Connectivity - Help', ...
     'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
-    'Units','pixels','Position',[250 100 960 800]);
+    'Units','pixels','Position',[35 35 1650 960], );
+try, HUMoR_popup_polish_now(gcf); catch, end
+
 try, movegui(helpFig,'center'); catch, end
 uicontrol('Parent',helpFig,'Style','edit','Max',2,'Min',0, ...
     'Units','normalized','Position',[0.04 0.04 0.92 0.92], ...
@@ -5452,3 +5433,4 @@ lines = {
 };
 txt = strjoin(lines,newline);
 end
+

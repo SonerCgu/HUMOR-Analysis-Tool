@@ -3,7 +3,6 @@
 % This keeps blackbody 0-percent pixels transparent below Mod Min.
 %% GA_ALPHA_MOD_SCM_STYLE_20260504_END
 
-% GA_AUTO_ERROR_PRINT_PATCH_V1
 function hFig = GroupAnalysis(varargin)
 % GroupAnalysis.m
 % Reduced modular main GUI for fUSI Studio Group Analysis
@@ -16,10 +15,6 @@ function hFig = GroupAnalysis(varargin)
 %   GroupAnalysis_FC.m
 %   GroupAnalysis_Common.m
 %
-% Expected dispatcher style:
-%   GroupAnalysis_Map('runPSCMapAnalysis', ...)
-%   GroupAnalysis_FC('loadFCGroupBundlesFromFiles', ...)
-%   GroupAnalysis_Common('runROITimecourseAnalysis', ...)
 
 %%% =====================================================================
 %%% INPUT PARSING
@@ -168,6 +163,9 @@ hFig = figure( ...
     'NumberTitle','off', ...
     'Position',[120 60 1860 980], ...
     'CloseRequestFcn',@closeMe);
+% HUMoR_FORCE_FULLSCREEN_PATCH32
+try, HUMoR_force_fullscreen_fig(hFig); catch, end
+
 
 set(hFig, ...
     'DefaultUicontrolFontName',F.name, ...
@@ -910,7 +908,6 @@ S.hSmoothWin = uicontrol(S.hPrevTop,'Style','edit','String',num2str(S.tc_preview
 
 S.ax1 = axes('Parent',S.hPrevBG,'Units','normalized','Position',[0.095 0.540 0.850 0.285]);
 S.ax2 = axes('Parent',S.hPrevBG,'Units','normalized','Position',[0.095 0.120 0.850 0.285]);
-% GA_ROI_PREVIEW_VISUAL_PATCH_START
 try
     set(S.hPrevTop,'Position',[0.02 0.735 0.96 0.255]);
     set(S.ax1,'Position',[0.095 0.455 0.850 0.245]);
@@ -1002,8 +999,6 @@ catch ME_ga_roi_visual_ui
     disp('ROI preview visual UI patch failed:');
     disp(ME_ga_roi_visual_ui.message);
 end
-% GA_ROI_PREVIEW_VISUAL_PATCH_END
-
 
 
 %%% =====================================================================
@@ -1604,7 +1599,7 @@ S0.activeTab = 'MAP';
 
     function onExportGroupMapDataSCM(~,~)
         try
-            GA_exportGroupAnalysisPPTBundleFix_20260504(hFig,false);
+            GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,false);
         catch ME
             try
                 GA_scm_print_error(ME, 'onExportGroupMapDataSCM');
@@ -1638,7 +1633,7 @@ S0.activeTab = 'MAP';
 
     function onExportGroupMapPPT(~,~)
         try
-            GA_exportGroupAnalysisPPTBundleFix_20260504(hFig,true);
+            GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,true);
         catch ME
             try
                 GA_scm_print_error(ME, 'onExportGroupMapPPT');
@@ -2178,7 +2173,6 @@ drawnow limitrate;
             end
 
             
-            
             try, S0 = readPreviewAxisControlsLocal(S0); catch, end
 try, S0 = readPlotScaleSettingsFromUI(S0); catch, end
             try, applyPreviewLightDarkToUI(S0); catch, end
@@ -2217,8 +2211,6 @@ try, S0 = readPlotScaleSettingsFromUI(S0); catch, end
             end
         end
     end
-
-
 
 
     function refreshMapBundlePopup()
@@ -3900,7 +3892,6 @@ end
 end
 
 
-
 % GA_ROI_PREVIEW_STANDALONE_START
 function exportOnePreview(ax, whichPlot, S, styleName)
 % Repaired fail-safe ROI preview plotter.
@@ -4709,7 +4700,6 @@ end
 end
 
 
-
 function gaPrevTop(ax,R,S,styleName)
 [~,fg] = gaPrevColors(styleName);
 hold(ax,'on');
@@ -4890,7 +4880,6 @@ function s = gaPrevStars(p)
 if p < 0.001, s='***'; elseif p < 0.01, s='**'; elseif p < 0.05, s='*'; else, s='n.s.'; end
 end
 % GA_ROI_PREVIEW_STANDALONE_END
-
 
 
 function savePreviewPNGLocal(outFile, whichPlot, S)
@@ -5121,8 +5110,6 @@ end
 end
 
 
-
-
 function gaApplyROIPreviewAxisCleanfix(hFig,R)
 % Applies final visual cleanup to ROI preview axes.
 if nargin < 1 || isempty(hFig) || ~ishandle(hFig)
@@ -5312,8 +5299,6 @@ end
 end
 
 
-
-
 function [lineW, shadeA, colA, colB, showLabels] = ga_preview_style_from_gui(figH)
 lineW = 2.8;
 shadeA = 0.22;
@@ -5443,8 +5428,6 @@ shadeA = max(0,min(0.75,shadeA));
 end
 
 
-
-% GA_GROUPMAP_SCM_PPT_EXPORT_AND_SIGBAR_PATCH_START
 function GA_exportGroupMeanSCMBundle_Interactive(hFig, makePPT)
 % Export Group Maps result either as an SCM-compatible MAT bundle or as PPT.
 if nargin < 2 || isempty(makePPT), makePPT = false; end
@@ -5479,7 +5462,7 @@ if makePPT
     GA_export_capture_map_png_local(S,pngFile,D);
     GA = G; %#ok<NASGU>
     save(matFile,'G','GA','D','-v7.3');
-    GA_exportGroupAnalysisPPTBundleFix_20260504(hFig,true);
+    GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,true);
     fprintf('[saved PPT] %s\n', outFile);
     fprintf('[saved preview PNG] %s\n', pngFile);
     fprintf('[saved SCM bundle] %s\n', matFile);
@@ -5843,7 +5826,6 @@ else
     s = 'n.s.';
 end
 end
-% GA_GROUPMAP_SCM_PPT_EXPORT_AND_SIGBAR_PATCH_END
 function G = GA_fixGroupBundleForScmOpen_local(G,D)
 % Make GroupAnalysis SCM bundle readable by SCM_gui.
 % SCM_gui expects G.pscAtlas4D as [Y X T] or [Y X Z T].
@@ -6704,8 +6686,6 @@ end
 % END_GA_SCM_TIMESERIES_EXPORT_HELPERS_V2
 
 
-%%% GA_FULL_SCM_TIMESERIES_PPT_PATCH_V4_START
-
 function [rows,bundles] = GA_collectSCMBundlesFromRows_PATCH_V4(S,cand)
 rows = []; bundles = {}; seen = {};
 for ii = 1:numel(cand)
@@ -7225,18 +7205,8 @@ end
 function GA_mkdir_PATCH_V4(d)
 if exist(d,'dir')~=7, ok = mkdir(d); if ~ok, error('Could not create folder: %s',d); end, end
 end
-%%% GA_FULL_SCM_TIMESERIES_PPT_PATCH_V4_END
 
 
-
-
-
-
-%%% GA_FULL_SCM_TIMESERIES_PPT_DEBUG_PATCH_V7_START
-
-
-
-%%% PATCH_TRUE_SCM_ALPHA_20260504_ADDED_GA_alphaModFixFromCData_20260504
 function Aout = GA_alphaModFixFromCData_20260504(h, Ain)
 % Strict SCM-style alpha safety wrapper.
 % Keeps AlphaData numeric in [0,1] and removes black zero-valued overlay pixels.
@@ -7270,8 +7240,6 @@ try
 catch
 end
 end
-
-
 
 
 % ============================================================
@@ -7459,3 +7427,4 @@ catch
     s = fp;
 end
 end
+

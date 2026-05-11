@@ -2,20 +2,6 @@ function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
 % SCM_gui - fUSI Studio SCM viewer/controller
 % MATLAB 2017b + 2023b compatible, ASCII-safe.
 %
-% Corrected robust version for copy-paste use.
-% Main fixes included:
-%   1) Removed duplicate safeCdBack nested function conflict.
-%   2) Robust uigetfileStartIn() that really opens in requested folder.
-%   3) LOAD MASK starts in Masks/Mask/ROI/Registration before Visualization.
-%   4) LOAD NEW UNDERLAY starts in Visualization first.
-%   5) WARP FUNCTIONAL TO ATLAS starts in Registration2D/Registration first.
-%   6) If par.exportPath/loadedPath points to Visualization, root is normalized one level up.
-%   7) Atlas transform auto-detection accepts CoronalRegistration2D*.mat,
-%      Transformation*.mat, source/atlas/histology-style filenames.
-%   8) Load mask/bundle supports MAT/NIfTI and resizes safely to current SCM display.
-%   9) Load underlay/bundle avoids stretching by validating/warping/resizing explicitly.
-%  10) Open Video GUI passes selector path hints to video GUI through parVideo.
-%
 % Expected PSC dimensions:
 %   [Y X T] or [Y X Z T]
 
@@ -887,7 +873,6 @@ function computeSCM(~,~)
     sigMap = mean(PSCz(:,:,s0i:s1i), 3);
     map = sigMap - baseMap;
     if sig > 0, map = smooth2D_gauss(map, sig); end
-    % PATCH_COMPUTE_SCM_MASK_SIZE_20260504
     mask2D = SCM_localMaskToMapSize_20260504(mask2D, map);
     map(~mask2D) = 0;
     state.lastSignedMap = map;
@@ -939,7 +924,6 @@ function updateView(~,~)
 end
 
 function [dispMap, alpha] = buildDisplayedOverlay(rawMap, localMask)
-    % PATCH_BUILD_DISPLAY_MASK_SIZE_20260504
     rawMap = double(rawMap);
     localMask = SCM_localMaskToMapSize_20260504(localMask, rawMap);
 
@@ -5090,7 +5074,6 @@ function [Uatlas, msg] = buildStepMotorAtlasUnderlay(origUnderlay, currentUnderl
     end 
    
 
-
 function [Uatlas, ok] = buildStepMotorAtlasUnderlayFromRegFiles(usedRegList, yy, xx, zz)
 
     Uatlas = [];
@@ -6559,7 +6542,6 @@ end
 end
 
 
-%%% SCM_GROUP_BUNDLE_PSC_NORMALIZE_PATCH_V4_START
 function G = SCM_normalizeGroupBundlePSC_PATCH_V4(G, fullf)
 % Robustly normalize SCM GroupAnalysis bundles so SCM_gui can reopen them.
 if nargin < 2, fullf = ''; end
@@ -6638,4 +6620,5 @@ if badTR
     end
 end
 end
-%%% SCM_GROUP_BUNDLE_PSC_NORMALIZE_PATCH_V4_END
+
+

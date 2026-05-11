@@ -312,6 +312,9 @@ lineCol   = [0.35 0.80 1.00];
 fig = figure('Name','ICA Components - left click select, right click deselect', ...
     'Color',bgFig,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
     'Position',[160 90 1580 900]);
+% HUMoR_FORCE_FULLSCREEN_PATCH31
+try, HUMoR_force_fullscreen_fig(fig); catch, end
+
 
 try, set(fig,'Renderer','opengl'); catch, end
 

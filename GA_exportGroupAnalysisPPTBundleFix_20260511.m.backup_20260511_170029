@@ -1,0 +1,931 @@
+function GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,mode)
+% Fast SCM-style GroupAnalysis exporter.
+% No deep recursive GUI scan. Small popup only. MATLAB 2017b compatible.
+
+if nargin < 1 || isempty(hFig) || ~ishghandle(hFig)
+    try, hFig = gcbf; catch, hFig = []; end
+end
+if isempty(hFig) || ~ishghandle(hFig)
+    try, hFig = gcf; catch, hFig = []; end
+end
+if isempty(hFig) || ~ishghandle(hFig)
+    error('No valid GroupAnalysis figure found.');
+end
+try
+    if ~strcmpi(get(hFig,'Type'),'figure')
+        hFig = ancestor(hFig,'figure');
+    end
+catch
+end
+
+if nargin < 2 || isempty(mode)
+    mode = 'ppt';
+end
+if isnumeric(mode) || islogical(mode)
+    if logical(mode(1)), mode = 'ppt'; else, mode = 'data'; end
+end
+mode = lower(strtrim(char(mode)));
+
+S = guidata(hFig);
+if isempty(S) || ~isstruct(S)
+    error('Could not read GroupAnalysis GUI state. Run/preview the group map first.');
+end
+
+try
+    localStatus(hFig,'Export: fast data lookup ...');
+    [rawTS,U,subjects,info,auto] = localCollectFast(hFig,S);
+    cfg = localSmallDialog(auto,rawTS);
+    if isempty(cfg)
+        localStatus(hFig,'Export cancelled.');
+        return;
+    end
+    [TS,U] = localPrepareTS(rawTS,U,cfg);
+    [maps,winInfo] = localWindowMaps(TS,cfg);
+    if isempty(maps)
+        error('No export windows were generated. Check TR, export start/end, and window size.');
+    end
+    if isempty(cfg.caxisAuto)
+        cfg.caxis = localAutoCaxisFromData(maps);
+    else
+        cfg.caxis = cfg.caxisAuto;
+    end
+    switch mode
+        case {'ppt','powerpoint','exportppt'}
+            localExportPPT(hFig,S,TS,U,maps,winInfo,subjects,info,cfg);
+        case {'data','scm','exportdata','exportdatascm'}
+            localExportData(hFig,S,TS,U,maps,winInfo,subjects,info,cfg);
+        otherwise
+            error('Unknown export mode: %s',mode);
+    end
+catch ME
+    localStatus(hFig,['Export failed: ' ME.message]);
+    rethrow(ME);
+end
+end
+
+function [rawTS,U,subjects,info,auto] = localCollectFast(hFig,S)
+rawTS = localPickFastTimeSeries(S);
+if isempty(rawTS)
+    rawTS = localPickFastStaticMap(S);
+    if isempty(rawTS)
+        error('No GroupAnalysis PSC/time-series/map found. Run/preview the group map first, then export.');
+    end
+end
+raw2D = localFirstImage(rawTS);
+U = localPickFastUnderlay(S,size(raw2D));
+U = localResizeLike(U,size(raw2D));
+subjects = localPickSubjects(S);
+info = struct();
+info.created = datestr(now);
+info.subjects = subjects;
+info.nSubjects = numel(subjects);
+info.analysisName = localCharSetting(S,{'analysisName','tag','fileLabel','title'},'GroupAnalysis');
+auto = localAutoSettings(hFig,S,rawTS);
+end
+
+function rawTS = localPickFastTimeSeries(S)
+rawTS = [];
+paths = { ...
+    'lastMAP.PSC','lastMAP.groupPSC','lastMAP.meanPSC','lastMAP.TS','lastMAP.timeSeries', ...
+    'lastMapDisplay.PSC','lastMapDisplay.groupPSC','lastMapDisplay.TS','lastMapDisplay.timeSeries', ...
+    'G.PSC','GA.PSC','G.TS','GA.TS', ...
+    'PSC','groupPSC','meanPSC','pscMean','TS','timeSeries','groupTimeSeries'};
+for i = 1:numel(paths)
+    v = localGetPath(S,paths{i});
+    if localIsTS(v)
+        rawTS = v;
+        return;
+    end
+end
+
+% Fast shallow scan only: top level and one struct level. No deep recursion through handles.
+rawTS = localShallowNumericSearch(S,{'psc','timeseries','timeSeries','groupPSC','meanPSC','TS'},true);
+end
+
+function M = localPickFastStaticMap(S)
+M = [];
+paths = { ...
+    'lastMAP.groupMap','lastMAP.map','lastMAP.overlay','lastMAP.M', ...
+    'lastMapDisplay.groupMap','lastMapDisplay.map','lastMapDisplay.overlay', ...
+    'groupMap','groupMap2D','scmMapAtlas','mapAtlas','overlay2D','overlay','map'};
+for i = 1:numel(paths)
+    v = localGetPath(S,paths{i});
+    if isnumeric(v) && ~isempty(v) && numel(v) > 25
+        M = v;
+        return;
+    end
+end
+M = localShallowNumericSearch(S,{'groupmap','map','overlay','scmmap'},false);
+end
+
+function v = localShallowNumericSearch(S,keys,wantTS)
+v = []; bestScore = -Inf;
+if ~isstruct(S), return; end
+f = fieldnames(S);
+for i = 1:numel(f)
+    x = S.(f{i});
+    [hit,score] = localNameHit(f{i},keys);
+    if hit && isnumeric(x) && numel(x) > 25
+        ok = true;
+        if wantTS, ok = localIsTS(x); end
+        if ok && score > bestScore
+            bestScore = score; v = x;
+        end
+    end
+    if isstruct(x) && numel(x) == 1
+        ff = fieldnames(x);
+        for j = 1:numel(ff)
+            y = x.(ff{j});
+            [hit2,score2] = localNameHit(ff{j},keys);
+            if hit2 && isnumeric(y) && numel(y) > 25
+                ok = true;
+                if wantTS, ok = localIsTS(y); end
+                if ok && score2+10 > bestScore
+                    bestScore = score2+10; v = y;
+                end
+            end
+        end
+    end
+end
+end
+
+function [hit,score] = localNameHit(name,keys)
+n = lower(char(name)); hit = false; score = 0;
+for k = 1:numel(keys)
+    kk = lower(char(keys{k}));
+    if ~isempty(strfind(n,kk))
+        hit = true; score = score + 50 + numel(kk);
+    end
+end
+bad = {'button','panel','axis','axes','handle','text','table'};
+for k = 1:numel(bad)
+    if ~isempty(strfind(n,bad{k}))
+        score = score - 200;
+    end
+end
+end
+
+function tf = localIsTS(v)
+tf = false;
+if ~isnumeric(v) || isempty(v) || numel(v) < 50, return; end
+v = squeeze(v);
+d = ndims(v); sz = size(v);
+if d < 3, return; end
+if d == 3 && sz(3) == 3 && localLooksRGB(v), return; end
+if d == 3 && sz(3) >= 2, tf = true; return; end
+if d >= 4 && sz(end) >= 2, tf = true; return; end
+end
+
+function auto = localAutoSettings(hFig,S,rawTS)
+T = localGuessT(rawTS);
+TR = localNumSetting(S,{'TR','tr','TRsec','TR_s','TRms','TR_ms','repetitionTime'},NaN);
+if ~isfinite(TR) || TR <= 0
+    TR = localNumFromUI(hFig,{'tr','TR'},NaN);
+end
+if ~isfinite(TR) || TR <= 0
+    TR = 1;
+end
+if TR > 10
+    TR = TR ./ 1000;
+end
+dur = T .* TR;
+
+auto = struct();
+auto.TR = TR;
+auto.T = T;
+auto.duration = dur;
+auto.injStart = localNumSetting(S,{'injStart','injectionStart','stimStart','PIstart'},0);
+auto.injEnd = localNumSetting(S,{'injEnd','injectionEnd','stimEnd','PIend'},300);
+if ~isfinite(auto.injEnd) || auto.injEnd <= auto.injStart
+    auto.injEnd = 300;
+end
+auto.exportStart = auto.injStart;
+auto.exportEnd = dur;
+if ~isfinite(auto.exportEnd) || auto.exportEnd <= auto.exportStart
+    auto.exportEnd = max(auto.injEnd,auto.exportStart+60);
+end
+auto.windowSize = 60;
+auto.mapsPerSlide = 6;
+auto.sliceIndex = 0;
+
+cax = localVecSetting(S,{'caxis','mapCaxis','overlayCaxis','CLim','clim'},[]);
+if isempty(cax)
+    cax = localAxesCaxis(hFig);
+end
+auto.caxisAuto = cax;
+auto.threshold = localNumSetting(S,{'mapThreshold','threshold','overlayThreshold','thr'},0);
+auto.modMin = localNumSetting(S,{'mapModMin','modMin','alphaModMin','alphaMin'},10);
+auto.modMax = localNumSetting(S,{'mapModMax','modMax','alphaModMax','alphaMax'},20);
+auto.colormapName = localCharSetting(S,{'mapColormap','colormapName','overlayColormap','cmap'},'blackbdy_iso');
+auto.alphaModOn = true;
+end
+
+function cfg = localSmallDialog(auto,rawTS)
+cfg = [];
+T = localGuessT(rawTS);
+dur = auto.duration;
+
+d = dialog('Name','GroupAnalysis Export PPT', ...
+    'Color','k','WindowStyle','modal', ...
+    'Units','pixels','Position',[420 230 500 390]);
+
+uicontrol(d,'Style','text','String','GroupAnalysis SCM-style export', ...
+    'Units','pixels','Position',[25 345 450 25], ...
+    'BackgroundColor','k','ForegroundColor','w', ...
+    'FontSize',14,'FontWeight','bold','HorizontalAlignment','left');
+
+infoStr = sprintf('Auto TR = %.4g s    Frames = %d    Duration = %.1f s',auto.TR,T,dur);
+uicontrol(d,'Style','text','String',infoStr, ...
+    'Units','pixels','Position',[25 318 450 22], ...
+    'BackgroundColor','k','ForegroundColor',[0.9 0.9 0.9], ...
+    'FontSize',10,'HorizontalAlignment','left');
+
+setStr = sprintf('Auto display: caxis/threshold/alpha/colormap from GroupAnalysis');
+uicontrol(d,'Style','text','String',setStr, ...
+    'Units','pixels','Position',[25 294 450 22], ...
+    'BackgroundColor','k','ForegroundColor',[1 0.85 0.35], ...
+    'FontSize',9,'HorizontalAlignment','left');
+
+labels = {'Injection start / PI 0 (s)','Injection end (s)','Export start (s)','Export end (s)','Window size (s)','Brains per slide'};
+vals = {num2str(auto.injStart),num2str(auto.injEnd),num2str(auto.exportStart),num2str(auto.exportEnd),num2str(auto.windowSize),num2str(auto.mapsPerSlide)};
+h = cell(1,numel(labels));
+y = 250;
+for i = 1:numel(labels)
+    uicontrol(d,'Style','text','String',labels{i}, ...
+        'Units','pixels','Position',[35 y 210 22], ...
+        'BackgroundColor','k','ForegroundColor','w', ...
+        'FontSize',10,'HorizontalAlignment','left');
+    h{i} = uicontrol(d,'Style','edit','String',vals{i}, ...
+        'Units','pixels','Position',[265 y 170 25], ...
+        'BackgroundColor',[0.12 0.12 0.12],'ForegroundColor','w', ...
+        'FontSize',10,'HorizontalAlignment','left');
+    y = y - 38;
+end
+
+uicontrol(d,'Style','pushbutton','String','Cancel', ...
+    'Units','pixels','Position',[225 25 105 35], ...
+    'BackgroundColor',[0.35 0.08 0.08],'ForegroundColor','w', ...
+    'FontWeight','bold','Callback',@(src,evt)localDlgCancel(d));
+uicontrol(d,'Style','pushbutton','String','Export', ...
+    'Units','pixels','Position',[350 25 105 35], ...
+    'BackgroundColor',[0.05 0.35 0.12],'ForegroundColor','w', ...
+    'FontWeight','bold','Callback',@(src,evt)localDlgOK(d,h,auto));
+
+uiwait(d);
+if ishandle(d)
+    cfg = getappdata(d,'cfg');
+    delete(d);
+end
+end
+
+function localDlgCancel(d)
+setappdata(d,'cfg',[]);
+uiresume(d);
+end
+
+function localDlgOK(d,h,auto)
+try
+    cfg = auto;
+    cfg.injStart = str2double(get(h{1},'String'));
+    cfg.injEnd = str2double(get(h{2},'String'));
+    cfg.exportStart = str2double(get(h{3},'String'));
+    cfg.exportEnd = str2double(get(h{4},'String'));
+    cfg.windowSize = str2double(get(h{5},'String'));
+    cfg.mapsPerSlide = round(str2double(get(h{6},'String')));
+    if ~isfinite(cfg.injStart), cfg.injStart = 0; end
+    if ~isfinite(cfg.injEnd), cfg.injEnd = 300; end
+    if ~isfinite(cfg.exportStart), cfg.exportStart = cfg.injStart; end
+    if ~isfinite(cfg.exportEnd), cfg.exportEnd = cfg.duration; end
+    if cfg.exportEnd <= cfg.exportStart, error('Export end must be after export start.'); end
+    if ~isfinite(cfg.windowSize) || cfg.windowSize <= 0, error('Window size must be positive.'); end
+    if ~isfinite(cfg.mapsPerSlide) || cfg.mapsPerSlide < 1, cfg.mapsPerSlide = 6; end
+    cfg.created = datestr(now);
+    setappdata(d,'cfg',cfg);
+    uiresume(d);
+catch ME
+    errordlg(ME.message,'Invalid export settings');
+end
+end
+
+function [TS,U] = localPrepareTS(rawTS,U,cfg)
+A = double(rawTS);
+A(~isfinite(A)) = 0;
+A = squeeze(A);
+d = ndims(A);
+
+if d == 2
+    TS = reshape(A,[size(A,1) size(A,2) 1]);
+elseif d == 3
+    if size(A,3) == 3 && localLooksRGB(A)
+        TS = reshape(localGray(A),[size(A,1) size(A,2) 1]);
+    else
+        TS = A;
+    end
+elseif d == 4
+    sz = size(A);
+    if sz(3) > 10 && sz(4) <= 50
+        % likely Y x X x T x subject/group: average last dimension
+        TS = mean(A,4);
+    else
+        % likely Y x X x Z x T: use middle Z slice, not slice 1
+        z = cfg.sliceIndex;
+        if ~isfinite(z) || z <= 0, z = ceil(sz(3)/2); end
+        z = max(1,min(sz(3),round(z)));
+        TS = squeeze(A(:,:,z,:));
+    end
+else
+    sz = size(A);
+    A = reshape(A,sz(1),sz(2),prod(sz(3:end-1)),sz(end));
+    z = ceil(size(A,3)/2);
+    TS = squeeze(A(:,:,z,:));
+end
+
+if ndims(TS) < 3
+    TS = reshape(TS,[size(TS,1) size(TS,2) 1]);
+end
+U = localResizeLike(U,size(TS(:,:,1)));
+end
+
+function [maps,winInfo] = localWindowMaps(TS,cfg)
+T = size(TS,3);
+t = (0:T-1) .* cfg.TR;
+maps = [];
+winInfo = struct('startSec',{},'endSec',{},'relStartSec',{},'relEndSec',{},'frameIdx',{},'label',{});
+
+if T <= 1
+    maps(:,:,1) = TS(:,:,1);
+    wi.startSec = cfg.exportStart;
+    wi.endSec = cfg.exportEnd;
+    wi.relStartSec = cfg.exportStart - cfg.injStart;
+    wi.relEndSec = cfg.exportEnd - cfg.injStart;
+    wi.frameIdx = 1;
+    wi.label = localPILabel(wi.relStartSec,wi.relEndSec);
+    winInfo = wi;
+    return;
+end
+
+starts = cfg.exportStart:cfg.windowSize:(cfg.exportEnd-eps);
+if isempty(starts), starts = cfg.exportStart; end
+
+for k = 1:numel(starts)
+    st = starts(k);
+    en = min(st + cfg.windowSize,cfg.exportEnd);
+    idx = find(t >= st & t < en);
+    idx = idx(idx >= 1 & idx <= T);
+    if isempty(idx)
+        % Safe partial-window fallback, clipped to available frames.
+        i1 = max(1,min(T,floor(st ./ cfg.TR) + 1));
+        i2 = max(1,min(T,ceil(en ./ cfg.TR)));
+        if i2 >= i1 && st < (T .* cfg.TR)
+            idx = i1:i2;
+        end
+    end
+    idx = idx(idx >= 1 & idx <= T);
+    if isempty(idx)
+        continue;
+    end
+    maps(:,:,end+1) = localMean3(TS(:,:,idx)); %#ok<AGROW>
+    wi.startSec = st;
+    wi.endSec = en;
+    wi.relStartSec = st - cfg.injStart;
+    wi.relEndSec = en - cfg.injStart;
+    wi.frameIdx = idx(:)';
+    wi.label = localPILabel(wi.relStartSec,wi.relEndSec);
+    winInfo(end+1) = wi; %#ok<AGROW>
+end
+end
+
+function s = localPILabel(a,b)
+if a >= 0 && b >= 0
+    s = sprintf('PI +%.0f-%.0f s',a,b);
+elseif a < 0 && b <= 0
+    s = sprintf('Pre %.0f-%.0f s',a,b);
+else
+    s = sprintf('PI %.0f-%.0f s',a,b);
+end
+end
+
+function m = localMean3(A)
+if ndims(A) == 2
+    m = A;
+else
+    m = mean(A,3);
+end
+m(~isfinite(m)) = 0;
+end
+
+function localExportPPT(hFig,S,TS,U,maps,winInfo,subjects,info,cfg)
+startDir = localStartDir(S);
+[f,p] = uiputfile({'*.pptx','PowerPoint (*.pptx)'},'Save GroupAnalysis PPT', ...
+    fullfile(startDir,['GroupAnalysis_TimeSeries_' datestr(now,'yyyymmdd_HHMMSS') '.pptx']));
+if isequal(f,0)
+    localStatus(hFig,'Export PPT cancelled.');
+    return;
+end
+pptFile = fullfile(p,f);
+[~,baseName] = fileparts(pptFile);
+pngDir = fullfile(p,[baseName '_PNGs']);
+if exist(pngDir,'dir') ~= 7, mkdir(pngDir); end
+
+slidePNGs = {};
+localStatus(hFig,'Export PPT: summary slide ...');
+summaryPNG = fullfile(pngDir,'slide_001_summary.png');
+localSummarySlide(summaryPNG,cfg,subjects,info,TS,maps,winInfo);
+slidePNGs{end+1} = summaryPNG;
+
+nMaps = size(maps,3);
+perSlide = max(1,cfg.mapsPerSlide);
+nSlides = ceil(nMaps/perSlide);
+for s = 1:nSlides
+    idx1 = (s-1)*perSlide + 1;
+    idx2 = min(nMaps,s*perSlide);
+    localStatus(hFig,sprintf('Export PPT: slide %d/%d, windows %d-%d ...',s,nSlides,idx1,idx2));
+    pngFile = fullfile(pngDir,sprintf('slide_%03d_maps.png',s+1));
+    localGridSlide(pngFile,maps(:,:,idx1:idx2),U,cfg,winInfo(idx1:idx2),subjects,s,nSlides);
+    slidePNGs{end+1} = pngFile;
+end
+
+localStatus(hFig,'Export PPT: writing pptx ...');
+localWritePPT(pptFile,slidePNGs);
+save(fullfile(pngDir,'export_settings.mat'),'cfg','subjects','info','winInfo','maps','U','-v7.3');
+localStatus(hFig,['Export PPT complete: ' pptFile]);
+fprintf('\nExport PPT complete:\n%s\n',pptFile);
+end
+
+function localExportData(hFig,S,TS,U,maps,winInfo,subjects,info,cfg)
+startDir = localStartDir(S);
+[f,p] = uiputfile({'*.mat','MAT-file (*.mat)'},'Save SCM-compatible GroupAnalysis data', ...
+    fullfile(startDir,['GroupAnalysis_SCM_TimeSeries_' datestr(now,'yyyymmdd_HHMMSS') '.mat']));
+if isequal(f,0)
+    localStatus(hFig,'Export Data SCM cancelled.');
+    return;
+end
+outFile = fullfile(p,f);
+localStatus(hFig,'Export Data SCM: rendering overlays ...');
+nMaps = size(maps,3);
+renderedRGB = cell(1,nMaps);
+alphaMasks = cell(1,nMaps);
+for k = 1:nMaps
+    [renderedRGB{k},alphaMasks{k}] = localRender(maps(:,:,k),U,cfg);
+end
+PSC = reshape(double(TS),[size(TS,1) size(TS,2) 1 size(TS,3)]);
+TR = cfg.TR;
+tsec = (0:size(TS,3)-1).*TR;
+tmin = tsec./60;
+bg = U; underlay2D = U; commonUnderlay = U; brainImage = U;
+windowMaps = maps; scmMapAtlas = maps; overlay2D = maps(:,:,1); groupMap2D = maps(:,:,1);
+par = struct(); par.source = 'GroupAnalysis'; par.exportType = 'SCM-compatible time-series group export'; par.cfg = cfg;
+G = struct();
+G.created = datestr(now); G.source = 'GroupAnalysis Export Data SCM fast'; G.isGroupAnalysis = true;
+G.subjects = subjects; G.info = info; G.cfg = cfg; G.winInfo = winInfo;
+G.PSC = PSC; G.TS = TS; G.windowMaps = windowMaps; G.underlay2D = underlay2D;
+G.commonUnderlay = commonUnderlay; G.bg = bg; G.brainImage = brainImage;
+G.renderedRGB = renderedRGB; G.alphaMasks = alphaMasks; G.TR = TR; G.tsec = tsec; G.tmin = tmin; G.par = par;
+GA = G;
+save(outFile,'G','GA','PSC','TS','windowMaps','winInfo','underlay2D','commonUnderlay', ...
+    'brainImage','bg','overlay2D','groupMap2D','scmMapAtlas','renderedRGB','alphaMasks', ...
+    'TR','tsec','tmin','par','cfg','subjects','info','-v7.3');
+localStatus(hFig,['Export Data SCM complete: ' outFile]);
+fprintf('\nExport Data SCM complete:\n%s\n',outFile);
+end
+
+function localSummarySlide(pngFile,cfg,subjects,info,TS,maps,winInfo)
+fig = figure('Visible','off','Color','k','Units','pixels','Position',[100 100 1600 900]);
+ax = axes('Parent',fig,'Position',[0 0 1 1]); axis(ax,'off');
+text(ax,0.05,0.91,'GroupAnalysis Time-Series Export', ...
+    'Color','w','FontSize',32,'FontWeight','bold','Interpreter','none');
+text(ax,0.05,0.86,datestr(now),'Color',[0.8 0.8 0.8],'FontSize',15,'Interpreter','none');
+lines = {};
+lines{end+1} = sprintf('Animals / subjects: %d',numel(subjects));
+lines{end+1} = sprintf('Subject list: %s',localJoin(subjects,', '));
+lines{end+1} = sprintf('Input size: %d x %d x %d',size(TS,1),size(TS,2),size(TS,3));
+lines{end+1} = sprintf('Generated maps: %d',size(maps,3));
+lines{end+1} = sprintf('TR auto-detected: %.4g s',cfg.TR);
+lines{end+1} = sprintf('Injection / PI: %.1f - %.1f s',cfg.injStart,cfg.injEnd);
+lines{end+1} = sprintf('Export range: %.1f - %.1f s',cfg.exportStart,cfg.exportEnd);
+lines{end+1} = sprintf('Window size: %.1f s',cfg.windowSize);
+lines{end+1} = sprintf('C-axis auto: [%g  %g]',cfg.caxis(1),cfg.caxis(2));
+lines{end+1} = sprintf('Threshold auto: %g',cfg.threshold);
+lines{end+1} = sprintf('Alpha auto: [%g  %g]',cfg.modMin,cfg.modMax);
+lines{end+1} = sprintf('Colormap auto: %s',cfg.colormapName);
+y = 0.78;
+for i = 1:numel(lines)
+    text(ax,0.07,y,lines{i},'Color','w','FontSize',17,'Interpreter','none');
+    y = y - 0.047;
+end
+if ~isempty(winInfo)
+    text(ax,0.07,0.10,['First window: ' winInfo(1).label],'Color',[1 0.85 0.35],'FontSize',15,'Interpreter','none');
+end
+localPrintPNG(fig,pngFile);
+close(fig);
+end
+
+function localGridSlide(pngFile,maps,U,cfg,winInfo,subjects,slideNum,nSlides)
+n = size(maps,3);
+[~,~,cmap] = localRender(maps(:,:,1),U,cfg);
+fig = figure('Visible','off','Color','k','Units','pixels','Position',[100 100 1600 900]);
+tax = axes('Parent',fig,'Position',[0 0 1 1]); axis(tax,'off');
+text(tax,0.035,0.955,sprintf('GroupAnalysis Time Series  |  Slide %d / %d',slideNum,nSlides), ...
+    'Color','w','FontSize',21,'FontWeight','bold','Interpreter','none');
+text(tax,0.965,0.955,sprintf('n = %d',numel(subjects)), ...
+    'Color',[0.85 0.85 0.85],'FontSize',13,'HorizontalAlignment','right','Interpreter','none');
+
+cbax = axes('Parent',fig,'Position',[0.045 0.22 0.030 0.55]);
+grad = linspace(cfg.caxis(2),cfg.caxis(1),256)';
+imagesc(cbax,grad); colormap(cbax,cmap);
+set(cbax,'XTick',[],'YTick',[1 128 256], ...
+    'YTickLabel',{num2str(cfg.caxis(2)),num2str(mean(cfg.caxis)),num2str(cfg.caxis(1))}, ...
+    'YAxisLocation','left','Color','k','XColor','w','YColor','w','FontSize',12);
+title(cbax,'PSC','Color','w','FontSize',13,'Interpreter','none');
+
+cols = 3; rows = 2;
+if n <= 4, cols = 2; rows = 2; end
+x0 = 0.13; xGap = 0.025; yGap = 0.065;
+w = (0.83 - (cols-1)*xGap) / cols;
+h = (0.76 - (rows-1)*yGap) / rows;
+for i = 1:n
+    r = floor((i-1)/cols); c = mod(i-1,cols);
+    x = x0 + c*(w+xGap);
+    y = 0.13 + (rows-1-r)*(h+yGap);
+    ax = axes('Parent',fig,'Position',[x y w h]);
+    rgb = localRender(maps(:,:,i),U,cfg);
+    image(ax,rgb); axis(ax,'image'); axis(ax,'off');
+    wi = winInfo(i);
+    title(ax,sprintf('%s  |  %.0f-%.0f s',wi.label,wi.startSec,wi.endSec), ...
+        'Color','w','FontSize',13,'FontWeight','bold','Interpreter','none');
+    if ~isempty(wi.frameIdx)
+        text(ax,0.02,0.05,sprintf('frames %d-%d',wi.frameIdx(1),wi.frameIdx(end)), ...
+            'Units','normalized','Color',[1 0.9 0.25],'FontSize',10,'FontWeight','bold','Interpreter','none');
+    end
+end
+text(tax,0.50,0.025,sprintf('PI %.0f-%.0f s  |  window %.0f s  |  caxis [%g %g]', ...
+    cfg.injStart,cfg.injEnd,cfg.windowSize,cfg.caxis(1),cfg.caxis(2)), ...
+    'Color',[0.75 0.75 0.75],'FontSize',12,'HorizontalAlignment','center','Interpreter','none');
+localPrintPNG(fig,pngFile);
+close(fig);
+end
+
+function [rgb,alpha,cmap] = localRender(M,U,cfg)
+M = double(M); M(~isfinite(M)) = 0;
+U = localResizeLike(U,size(M));
+base = localBaseRGB(U);
+cmap = localCmap(cfg.colormapName,256);
+cax = cfg.caxis;
+if isempty(cax) || numel(cax) < 2 || cax(1) == cax(2)
+    cax = localAutoCaxisFromData(M);
+end
+idx = round(1 + 255 .* (M - cax(1)) ./ max(eps,(cax(2)-cax(1))));
+idx(idx < 1) = 1; idx(idx > 256) = 256;
+ov = ind2rgb(idx,cmap);
+pass = abs(M) >= cfg.threshold;
+alpha = (abs(M) - cfg.modMin) ./ max(eps,(cfg.modMax-cfg.modMin));
+alpha(~pass) = 0; alpha(~isfinite(alpha)) = 0;
+alpha(alpha < 0) = 0; alpha(alpha > 1) = 1;
+a3 = repmat(alpha,[1 1 3]);
+rgb = base.*(1-a3) + ov.*a3;
+rgb(rgb < 0) = 0; rgb(rgb > 1) = 1;
+end
+
+function base = localBaseRGB(U)
+if ndims(U) == 3 && size(U,3) == 3
+    base = double(U);
+    if max(base(:)) > 1, base = base./255; end
+else
+    g = localGray(U);
+    base = repmat(g,[1 1 3]);
+end
+base(base < 0) = 0; base(base > 1) = 1;
+end
+
+function g = localGray(A)
+A = double(A);
+if ndims(A) == 3 && size(A,3) == 3
+    A = 0.2989*A(:,:,1) + 0.5870*A(:,:,2) + 0.1140*A(:,:,3);
+end
+A(~isfinite(A)) = 0;
+mn = min(A(:)); mx = max(A(:));
+if mx > mn, g = (A-mn)./(mx-mn); else, g = zeros(size(A)); end
+end
+
+function cmap = localCmap(name,n)
+if nargin < 2, n = 256; end
+name = lower(strtrim(char(name)));
+try
+    switch name
+        case {'blackbdy_iso','blackbdy','blackbody'}
+            cmap = hot(n).^0.85;
+        case 'hot'
+            cmap = hot(n);
+        case 'gray'
+            cmap = gray(n);
+        case 'jet'
+            cmap = jet(n);
+        case 'parula'
+            cmap = parula(n);
+        case 'turbo'
+            try, cmap = turbo(n); catch, cmap = parula(n); end
+        case 'winter'
+            cmap = winter(n);
+        case 'bone'
+            cmap = bone(n);
+        case 'copper'
+            cmap = copper(n);
+        otherwise
+            cmap = hot(n).^0.85;
+    end
+catch
+    cmap = hot(n);
+end
+end
+
+function localWritePPT(pptFile,slidePNGs)
+if exist(pptFile,'file') == 2
+    try, delete(pptFile); catch, end
+end
+if ~isempty(which('mlreportgen.ppt.Presentation'))
+    import mlreportgen.ppt.*
+    ppt = Presentation(pptFile); open(ppt);
+    for i = 1:numel(slidePNGs)
+        slide = add(ppt,'Blank');
+        pic = Picture(slidePNGs{i});
+        pic.X = '0in'; pic.Y = '0in'; pic.Width = '13.333in'; pic.Height = '7.5in';
+        add(slide,pic);
+    end
+    close(ppt);
+elseif ispc && exist('actxserver','file') == 2
+    app = actxserver('PowerPoint.Application');
+    app.Visible = 1;
+    pres = app.Presentations.Add;
+    pres.PageSetup.SlideWidth = 960; pres.PageSetup.SlideHeight = 540;
+    for i = 1:numel(slidePNGs)
+        slide = pres.Slides.Add(i,12);
+        slide.FollowMasterBackground = 0;
+        slide.Background.Fill.ForeColor.RGB = 0;
+        slide.Shapes.AddPicture(slidePNGs{i},0,1,0,0,960,540);
+    end
+    pres.SaveAs(pptFile); pres.Close; app.Quit;
+else
+    error('No PPT writer found. Need mlreportgen.ppt or PowerPoint COM.');
+end
+if exist(pptFile,'file') ~= 2
+    error('PPT was not created: %s',pptFile);
+end
+end
+
+function localPrintPNG(fig,pngFile)
+set(fig,'PaperPositionMode','auto');
+print(fig,pngFile,'-dpng','-r180');
+end
+
+function U = localPickFastUnderlay(S,sz)
+U = [];
+paths = {'lastMAP.commonUnderlay','lastMAP.underlay','lastMAP.bg','lastMAP.brainImage', ...
+    'lastMapDisplay.underlay','lastMapDisplay.bg','commonUnderlay','underlay2D','underlay','brainImage','bg','U'};
+for i = 1:numel(paths)
+    v = localGetPath(S,paths{i});
+    if isnumeric(v) && ~isempty(v) && numel(v) > 25
+        U = v; break;
+    end
+end
+if isempty(U), U = zeros(sz); end
+U = double(U);
+if ndims(U) > 3, U = squeeze(U); end
+if ndims(U) == 3 && size(U,3) ~= 3, U = U(:,:,1); end
+U(~isfinite(U)) = 0;
+end
+
+function B = localResizeLike(A,sz)
+if numel(sz) > 2, sz = sz(1:2); end
+A = double(A);
+if ndims(A) == 3 && size(A,3) == 3
+    B = zeros(sz(1),sz(2),3);
+    for c = 1:3, B(:,:,c) = localResizeLike(A(:,:,c),sz); end
+    return;
+end
+if ndims(A) > 2, A = squeeze(A); if ndims(A) > 2, A = A(:,:,1); end, end
+if isequal(size(A),sz), B = A; return; end
+try
+    B = imresize(A,sz,'bilinear');
+catch
+    [Y,X] = size(A);
+    [xq,yq] = meshgrid(linspace(1,X,sz(2)),linspace(1,Y,sz(1)));
+    B = interp2(double(A),xq,yq,'linear',0);
+end
+end
+
+function img = localFirstImage(A)
+A = squeeze(double(A));
+if ndims(A) == 2
+    img = A;
+elseif ndims(A) == 3
+    if size(A,3) == 3 && localLooksRGB(A), img = localGray(A); else, img = A(:,:,1); end
+else
+    img = squeeze(A(:,:,ceil(size(A,3)/2),1));
+end
+end
+
+function tf = localLooksRGB(A)
+tf = false;
+try
+    tf = ndims(A) == 3 && size(A,3) == 3 && min(A(:)) >= 0 && max(A(:)) <= 255;
+catch
+end
+end
+
+function T = localGuessT(A)
+A = squeeze(A); d = ndims(A); sz = size(A);
+if d <= 2
+    T = 1;
+elseif d == 3
+    if sz(3) == 3 && localLooksRGB(A), T = 1; else, T = sz(3); end
+else
+    if sz(3) > 10 && sz(4) <= 50
+        T = sz(3);
+    else
+        T = sz(end);
+    end
+end
+end
+
+function cax = localAutoCaxisFromData(A)
+x = double(A(:)); x = x(isfinite(x));
+if isempty(x), cax = [0 100]; return; end
+lo = localPrctile(x,2); hi = localPrctile(x,98);
+if lo == hi, lo = min(x); hi = max(x); end
+if lo == hi, lo = 0; hi = 1; end
+if lo > 0, lo = 0; end
+cax = [lo hi];
+end
+
+function cax = localAxesCaxis(hFig)
+cax = [];
+try
+    axs = findall(hFig,'Type','axes');
+    for i = 1:numel(axs)
+        cl = get(axs(i),'CLim');
+        if isnumeric(cl) && numel(cl) == 2 && all(isfinite(cl)) && cl(1) ~= cl(2)
+            if ~(cl(1) == 0 && cl(2) == 1)
+                cax = cl; return;
+            end
+        end
+    end
+catch
+end
+end
+
+function q = localPrctile(x,p)
+x = sort(double(x(:))); x = x(isfinite(x));
+if isempty(x), q = 0; return; end
+pos = 1 + (numel(x)-1)*p/100;
+lo = floor(pos); hi = ceil(pos);
+if lo == hi, q = x(lo); else, q = x(lo) + (x(hi)-x(lo))*(pos-lo); end
+end
+
+function v = localGetPath(S,path)
+v = [];
+parts = regexp(path,'\.','split'); cur = S;
+for i = 1:numel(parts)
+    if isstruct(cur) && isfield(cur,parts{i})
+        cur = cur.(parts{i});
+    else
+        return;
+    end
+end
+v = cur;
+end
+
+function x = localNamedField(S,names)
+x = [];
+if ~isstruct(S), return; end
+f = fieldnames(S);
+for i = 1:numel(f)
+    for j = 1:numel(names)
+        if strcmpi(f{i},names{j}), x = S.(f{i}); return; end
+    end
+end
+for i = 1:numel(f)
+    y = S.(f{i});
+    if isstruct(y) && numel(y) == 1
+        ff = fieldnames(y);
+        for k = 1:numel(ff)
+            for j = 1:numel(names)
+                if strcmpi(ff{k},names{j}), x = y.(ff{k}); return; end
+            end
+        end
+    end
+end
+end
+
+function v = localNumSetting(S,names,fb)
+v = fb; x = localNamedField(S,names);
+try
+    if ischar(x), x = str2double(x); end
+    if iscell(x), x = x{1}; end
+    x = double(x); x = x(isfinite(x));
+    if ~isempty(x), v = x(1); end
+catch
+end
+end
+
+function v = localVecSetting(S,names,fb)
+v = fb; x = localNamedField(S,names);
+try
+    if ischar(x), x = sscanf(x,'%f'); end
+    x = double(x); x = x(isfinite(x));
+    if numel(x) >= 2, v = x(1:2)'; end
+catch
+end
+end
+
+function s = localCharSetting(S,names,fb)
+s = fb; x = localNamedField(S,names);
+try
+    if iscell(x), x = x{1}; end
+    if ~isempty(x), s = strtrim(char(x)); end
+catch
+end
+end
+
+function v = localNumFromUI(hFig,keys,fb)
+v = fb;
+try
+    edits = findall(hFig,'Style','edit');
+    for i = 1:numel(edits)
+        tag = lower(char(get(edits(i),'Tag')));
+        str = char(get(edits(i),'String'));
+        hit = false;
+        for k = 1:numel(keys)
+            if ~isempty(strfind(tag,lower(keys{k}))), hit = true; end
+        end
+        if hit
+            q = str2double(str);
+            if isfinite(q), v = q; return; end
+        end
+    end
+catch
+end
+end
+
+function subjects = localPickSubjects(S)
+subjects = {};
+paths = {'lastMAP.subjects','subjects','animalNames','animals','mouseNames','mice','subjectNames'};
+for i = 1:numel(paths)
+    c = localToCellstr(localGetPath(S,paths{i}));
+    if ~isempty(c), subjects = c; return; end
+end
+subjects = {'not detected'};
+end
+
+function c = localToCellstr(x)
+c = {};
+try
+    if isempty(x), return; end
+    if iscell(x), c = cellfun(@char,x(:),'UniformOutput',false);
+    elseif ischar(x), c = cellstr(x);
+    elseif isnumeric(x), c = arrayfun(@(q)sprintf('%g',q),x(:),'UniformOutput',false);
+    else, return;
+    end
+    c = c(:)';
+catch
+    c = {};
+end
+end
+
+function s = localJoin(c,sep)
+if isempty(c), s = ''; return; end
+s = char(c{1});
+for i = 2:numel(c), s = [s sep char(c{i})]; end
+end
+
+function out = localStartDir(S)
+out = pwd;
+for k = {'outDir','saveRoot','exportPath','loadedPath'}
+    try
+        x = localGetPath(S,k{1});
+        if ischar(x) && exist(x,'dir') == 7, out = x; return; end
+    catch
+    end
+end
+end
+
+function localStatus(hFig,msg)
+msg = char(msg);
+try, set(hFig,'Name',msg); catch, end
+try
+    txt = findall(hFig,'Style','text');
+    for i = 1:numel(txt)
+        try
+            s = get(txt(i),'String');
+            if iscell(s), s = s{1}; end
+            low = lower(char(s));
+            if ~isempty(strfind(low,'group map')) || ~isempty(strfind(low,'complete')) || ~isempty(strfind(low,'status')) || ~isempty(strfind(low,'export'))
+                set(txt(i),'String',msg,'ForegroundColor',[1 0.9 0.25]);
+            end
+        catch
+        end
+    end
+catch
+end
+drawnow;
+fprintf('[GroupAnalysis export] %s\n',msg);
+end

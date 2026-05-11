@@ -1,0 +1,1411 @@
+HUMoR / fUSI Studio Patch 15 Health Check
+============================================================
+Date: 11-May-2026 14:30:13
+Root: D:\Github\HUMOR-Analysis-Tool
+MATLAB version: 23.2.0.2365128 (R2023b)
+Computer: PCWIN64
+Current folder: D:\Github\HUMOR-Analysis-Tool
+
+
+1) ROOT AND PATH STATUS
+------------------------------------------------------------
+Root folder exists: YES
+Root appears on MATLAB path: YES
+_legacy_unused folder exists: YES
+_health_reports folder exists: YES
+
+2) CORE FILE EXISTENCE
+------------------------------------------------------------
+[OK]      run_fusi_studio.m
+[OK]      fusi_studio.m
+[OK]      loadFUSIData.m
+[OK]      fUSI_Live_Studio.m
+[OK]      motor.m
+[OK]      imregdemons_preprocess.m
+[OK]      imregdemons_param_gui.m
+[OK]      gabriel_preprocess.m
+[OK]      gabriel_param_gui.m
+[OK]      computeImregdemonsSignalChange.m
+[OK]      computeGabrielSignalChange.m
+[OK]      computePSC.m
+[OK]      SCM_gui.m
+[OK]      play_fusi_video_final.m
+[OK]      mask.m
+[OK]      FunctionalConnectivity.m
+[OK]      GroupAnalysis.m
+[OK]      GroupAnalysis_FC.m
+[MISSING] GroupAnalysis_Map.m
+[OK]      studio_resolve_paths.m
+
+3) MATLAB PATH RESOLUTION: which -all
+------------------------------------------------------------
+
+--- which -all run_fusi_studio ---
+D:\Github\HUMOR-Analysis-Tool\run_fusi_studio.m
+
+
+--- which -all fusi_studio ---
+D:\Github\HUMOR-Analysis-Tool\fusi_studio.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_dark_load_dialog_patch_20260511_131859\fusi_studio.m              % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_filepicker_trueTR_patch_20260511_133450\fusi_studio.m             % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_integrated_probe_tr_dialog_20260511_132523\fusi_studio.m          % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_output_folder_choice_20260511_131257\fusi_studio.m                % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch09_bigger_popup_imreg_cleanup_20260511_134415\fusi_studio.m  % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch10_TR_default_java_fallback_20260511_134852\fusi_studio.m    % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch11B_TR_motor_popup_20260511_140038\fusi_studio.m             % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch11_TR_motor_popup_20260511_135731\fusi_studio.m              % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch12_java_log_fallback_20260511_140427\fusi_studio.m           % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\fusi_studio.m     % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_path_portability_patch_20260511_112142\fusi_studio.m              % Shadowed
+
+
+--- which -all loadFUSIData ---
+D:\Github\HUMOR-Analysis-Tool\loadFUSIData.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_filepicker_trueTR_patch_20260511_133450\loadFUSIData.m          % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\loadFUSIData.m  % Shadowed
+
+
+--- which -all motor ---
+D:\Github\HUMOR-Analysis-Tool\motor.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch11B_TR_motor_popup_20260511_140038\motor.m  % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch11_TR_motor_popup_20260511_135731\motor.m   % Shadowed
+
+
+--- which -all imregdemons_preprocess ---
+D:\Github\HUMOR-Analysis-Tool\imregdemons_preprocess.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\imregdemons_preprocess.m  % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_path_portability_patch_20260511_112142\imregdemons_preprocess.m           % Shadowed
+
+
+--- which -all imregdemons_param_gui ---
+D:\Github\HUMOR-Analysis-Tool\imregdemons_param_gui.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\imregdemons_param_gui.m  % Shadowed
+
+
+--- which -all gabriel_preprocess ---
+D:\Github\HUMOR-Analysis-Tool\gabriel_preprocess.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\gabriel_preprocess.m  % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_path_portability_patch_20260511_112142\gabriel_preprocess.m           % Shadowed
+
+
+--- which -all gabriel_param_gui ---
+D:\Github\HUMOR-Analysis-Tool\gabriel_param_gui.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\gabriel_param_gui.m  % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_path_portability_patch_20260511_112142\gabriel_param_gui.m           % Shadowed
+
+
+--- which -all computeImregdemonsSignalChange ---
+D:\Github\HUMOR-Analysis-Tool\computeImregdemonsSignalChange.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\computeImregdemonsSignalChange.m  % Shadowed
+
+
+--- which -all computeGabrielSignalChange ---
+D:\Github\HUMOR-Analysis-Tool\computeGabrielSignalChange.m
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch09_bigger_popup_imreg_cleanup_20260511_134415\computeGabrielSignalChange.m  % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_patch13_safe_imregdemons_naming_20260511_141054\computeGabrielSignalChange.m     % Shadowed
+D:\Github\HUMOR-Analysis-Tool\_backup_before_path_portability_patch_20260511_112142\computeGabrielSignalChange.m              % Shadowed
+
+
+--- which -all SCM_gui ---
+D:\Github\HUMOR-Analysis-Tool\SCM_gui.m
+
+
+--- which -all play_fusi_video_final ---
+D:\Github\HUMOR-Analysis-Tool\play_fusi_video_final.m
+
+
+--- which -all mask ---
+D:\Github\HUMOR-Analysis-Tool\mask.m
+
+
+--- which -all FunctionalConnectivity ---
+D:\Github\HUMOR-Analysis-Tool\FunctionalConnectivity.m
+
+
+--- which -all GroupAnalysis ---
+D:\Github\HUMOR-Analysis-Tool\GroupAnalysis.m
+
+
+4) CHECKCODE OUTPUT
+------------------------------------------------------------
+
+===== fusi_studio.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',150)">L 150</a> (C 34-46): 'javacomponent' is undocumented and will be removed in a future release. There is no simple replacement for this.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',214)">L 214</a> (C 5): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',518)">L 518</a> (C 17-25): Value assigned to variable might be unused. Consider replacing the variable with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',519)">L 519</a> (C 5-13): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',537)">L 537</a> (C 9-54): This statement (and possibly following ones) cannot be reached.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',586)">L 586</a> (C 42-43): Variable might be used before it is defined.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',587)">L 587</a> (C 13-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1135)">L 1135</a> (C 10-16): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1135)">L 1135</a> (C 18-20): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1619)">L 1619</a> (C 13-17): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1788)">L 1788</a> (C 14-20): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1788)">L 1788</a> (C 22-24): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1846)">L 1846</a> (C 15-21): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1846)">L 1846</a> (C 23-25): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1898)">L 1898</a> (C 10-16): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',1898)">L 1898</a> (C 18-20): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2004)">L 2004</a> (C 14-20): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2004)">L 2004</a> (C 22-24): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2069)">L 2069</a> (C 14-20): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2069)">L 2069</a> (C 22-24): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2163)">L 2163</a> (C 14-20): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2163)">L 2163</a> (C 22-24): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2651)">L 2651</a> (C 13-18): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2806)">L 2806</a> (C 10-16): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',2806)">L 2806</a> (C 18-20): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3002)">L 3002</a> (C 10-27): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3043)">L 3043</a> (C 38-44): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3043)">L 3043</a> (C 46-48): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3102)">L 3102</a> (C 10-16): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3102)">L 3102</a> (C 18-20): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3265)">L 3265</a> (C 23): Use of brackets [] is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3732)">L 3732</a> (C 45-94): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3933)">L 3933</a> (C 18-24): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',3933)">L 3933</a> (C 26-28): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',4313)">L 4313</a> (C 5-15): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',4354)">L 4354</a> (C 5-19): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',4390)">L 4390</a> (C 5-16): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',4425)">L 4425</a> (C 5-16): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',4597)">L 4597</a> (C 17-38): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5107)">L 5107</a> (C 1-2): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5119)">L 5119</a> (C 1-5): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5245)">L 5245</a> (C 41-51): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5275)">L 5275</a> (C 9): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5286)">L 5286</a> (C 9): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5315)">L 5315</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5359)">L 5359</a> (C 1-5): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5392)">L 5392</a> (C 8-14): In this comparison the call to UPPER/LOWER is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5400)">L 5400</a> (C 8-14): In this comparison the call to UPPER/LOWER is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5462)">L 5462</a> (C 36-46): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5517)">L 5517</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5686)">L 5686</a> (C 46-57): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5692)">L 5692</a> (C 45-56): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5707)">L 5707</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5708)">L 5708</a> (C 1-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5717)">L 5717</a> (C 4-10): In this comparison the call to UPPER/LOWER is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5754)">L 5754</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5755)">L 5755</a> (C 1-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',5893)">L 5893</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6008)">L 6008</a> (C 8-14): In this comparison the call to UPPER/LOWER is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6027)">L 6027</a> (C 13): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6064)">L 6064</a> (C 46-56): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6305)">L 6305</a> (C 1-12): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6512)">L 6512</a> (C 1-12): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6650)">L 6650</a> (C 6-7): This keyword might not be aligned with its matching END on line 6654.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6805)">L 6805</a> (C 9): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6895)">L 6895</a> (C 9): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6982)">L 6982</a> (C 39-45): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6982)">L 6982</a> (C 47-49): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6988)">L 6988</a> (C 10-16): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6988)">L 6988</a> (C 18-20): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6998)">L 6998</a> (C 36-42): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',6998)">L 6998</a> (C 44-46): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7028)">L 7028</a> (C 9): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7074)">L 7074</a> (C 35-41): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7074)">L 7074</a> (C 43-45): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7180)">L 7180</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7180)">L 7180</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7188)">L 7188</a> (C 52-64): For readability, consider using the 'newline' function instead of 'sprintf('\n')'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7190)">L 7190</a> (C 37-49): For readability, consider using the 'newline' function instead of 'sprintf('\n')'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7190)">L 7190</a> (C 75-87): For readability, consider using the 'newline' function instead of 'sprintf('\n')'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7228)">L 7228</a> (C 10-16): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7228)">L 7228</a> (C 18-20): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7292)">L 7292</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7358)">L 7358</a> (C 57-73): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',7362)">L 7362</a> (C 13-21): Value assigned to variable might be unused. Consider replacing the variable with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8270)">L 8270</a> (C 8-9): This keyword might not be aligned with its matching END on line 8345.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8380)">L 8380</a> (C 24-40): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8698)">L 8698</a> (C 48-58): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8699)">L 8699</a> (C 38-48): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8722)">L 8722</a> (C 23-52): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8722)">L 8722</a> (C 57-85): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8791)">L 8791</a> (C 12-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8792)">L 8792</a> (C 12-37): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8793)">L 8793</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8794)">L 8794</a> (C 12-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8795)">L 8795</a> (C 12-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8891)">L 8891</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',8977)">L 8977</a> (C 45-55): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',9129)">L 9129</a> (C 5-6): The preallocated value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',9189)">L 9189</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',9459)">L 9459</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',9537)">L 9537</a> (C 14-45): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',9542)">L 9542</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',9636)">L 9636</a> (C 64-74): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10004)">L 10004</a> (C 36-42): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10004)">L 10004</a> (C 44-46): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10035)">L 10035</a> (C 28-41): No Code Analyzer check is found for this check ID.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10058)">L 10058</a> (C 13-16): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10238)">L 10238</a> (C 56-67): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10277)">L 10277</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10325)">L 10325</a> (C 31-59): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10413)">L 10413</a> (C 36-46): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10483)">L 10483</a> (C 50-61): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10489)">L 10489</a> (C 49-60): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10572)">L 10572</a> (C 42-68): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10583)">L 10583</a> (C 19): Use of brackets [] is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10659)">L 10659</a> (C 17-54): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10666)">L 10666</a> (C 5-16): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10686)">L 10686</a> (C 9-17): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10698)">L 10698</a> (C 5-10): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10699)">L 10699</a> (C 5-16): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',10912)">L 10912</a> (C 5-13): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11193)">L 11193</a> (C 24-46): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11249)">L 11249</a> (C 15-41): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11264)">L 11264</a> (C 58-61): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11265)">L 11265</a> (C 5-15): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11266)">L 11266</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11277)">L 11277</a> (C 12-36): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/fusi_studio.m',11277)">L 11277</a> (C 41-69): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+
+
+
+===== loadFUSIData.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',81)">L 81</a> (C 102-114): For readability, consider using the 'newline' function instead of 'sprintf('\n')'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',82)">L 82</a> (C 92-104): For readability, consider using the 'newline' function instead of 'sprintf('\n')'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',86)">L 86</a> (C 80-92): For readability, consider using the 'newline' function instead of 'sprintf('\n')'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',188)">L 188</a> (C 9-10): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',189)">L 189</a> (C 9-20): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',471)">L 471</a> (C 32-42): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',635)">L 635</a> (C 46-57): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',641)">L 641</a> (C 45-56): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/loadFUSIData.m',843)">L 843</a> (C 1-3): Value assigned to variable might be unused.
+
+
+
+===== motor.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/motor.m',156)">L 156</a> (C 63-72): To pass MException properties to the warning function, use a format specifier.  For example, warning(E.identifier, '%s', E.message).
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/motor.m',241)">L 241</a> (C 5-19): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/motor.m',443)">L 443</a> (C 31-37): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/motor.m',1109)">L 1109</a> (C 22-28): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/motor.m',1255)">L 1255</a> (C 41-42): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/motor.m',1583)">L 1583</a> (C 10-42): Function might be unused.
+
+
+
+===== imregdemons_preprocess.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',55)">L 55</a> (C 16-22): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',55)">L 55</a> (C 24-26): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',225)">L 225</a> (C 9-13): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',260)">L 260</a> (C 13-17): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',285)">L 285</a> (C 9-13): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',343)">L 343</a> (C 11-15): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',430)">L 430</a> (C 42): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',430)">L 430</a> (C 44-55): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',444)">L 444</a> (C 18-23): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/imregdemons_preprocess.m',447)">L 447</a> (C 18-23): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+
+
+
+===== imregdemons_param_gui.m =====
+No checkcode messages.
+
+===== SCM_gui.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',40)">L 40</a> (C 56-83): This statement (and possibly following ones) cannot be reached.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',41)">L 41</a> (C 24-41): This statement (and possibly following ones) cannot be reached.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',135)">L 135</a> (C 5-6): Outer loop index 'zz' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',224)">L 224</a> (C 1-5): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',494)">L 494</a> (C 8-13): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',548)">L 548</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',754)">L 754</a> (C 12-14): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',792)">L 792</a> (C 12-14): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',923)">L 923</a> (C 5-9): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1040)">L 1040</a> (C 1-3): This keyword might not be aligned with its matching END on line 1093.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1051)">L 1051</a> (C 12-17): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1063)">L 1063</a> (C 12-13): This keyword might not be aligned with its matching END on line 1077.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1236)">L 1236</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1485)">L 1485</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1551)">L 1551</a> (C 32): Use of brackets [] is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1557)">L 1557</a> (C 32): Use of brackets [] is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1571)">L 1571</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1598)">L 1598</a> (C 15-17): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1601)">L 1601</a> (C 52-62): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1604)">L 1604</a> (C 13-14): Outer loop index 'zz' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1616)">L 1616</a> (C 13-14): Outer loop index 'zz' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1639)">L 1639</a> (C 42-48): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1639)">L 1639</a> (C 50-52): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1666)">L 1666</a> (C 5-7): The variable 'roi' is an uplevel variable, invalid in a function called by onCleanup.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1667)">L 1667</a> (C 30-32): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1672)">L 1672</a> (C 15-17): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1675)">L 1675</a> (C 58-68): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1681)">L 1681</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1681)">L 1681</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1692)">L 1692</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1693)">L 1693</a> (C 9-13): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1706)">L 1706</a> (C 41-49): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1707)">L 1707</a> (C 42-50): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1708)">L 1708</a> (C 42-50): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1731)">L 1731</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1732)">L 1732</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1738)">L 1738</a> (C 5-9): The variable 'state' is an uplevel variable, invalid in a function called by onCleanup.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1739)">L 1739</a> (C 41-43): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1749)">L 1749</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1749)">L 1749</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1759)">L 1759</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1773)">L 1773</a> (C 45-53): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1774)">L 1774</a> (C 64-72): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1778)">L 1778</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1785)">L 1785</a> (C 15-17): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1788)">L 1788</a> (C 55-65): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1826)">L 1826</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1826)">L 1826</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1889)">L 1889</a> (C 9-13): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1920)">L 1920</a> (C 17-21): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1947)">L 1947</a> (C 81-89): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1949)">L 1949</a> (C 86-94): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',1952)">L 1952</a> (C 86-94): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2014)">L 2014</a> (C 9-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2025)">L 2025</a> (C 69-81): To pass MException properties to the warning function, use a format specifier.  For example, warning(E.identifier, '%s', E.message).
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2051)">L 2051</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2052)">L 2052</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2058)">L 2058</a> (C 5-9): The variable 'state' is an uplevel variable, invalid in a function called by onCleanup.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2059)">L 2059</a> (C 38-40): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2082)">L 2082</a> (C 5-9): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2091)">L 2091</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2093)">L 2093</a> (C 44-52): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2116)">L 2116</a> (C 5-9): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2125)">L 2125</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2164)">L 2164</a> (C 60-68): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2206)">L 2206</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2295)">L 2295</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2309)">L 2309</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2338)">L 2338</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2338)">L 2338</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2341)">L 2341</a> (C 69-75): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2341)">L 2341</a> (C 77-79): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2419)">L 2419</a> (C 12-51): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2420)">L 2420</a> (C 17-53): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2421)">L 2421</a> (C 17-50): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2786)">L 2786</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2815)">L 2815</a> (C 5-7): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2958)">L 2958</a> (C 46-56): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',2959)">L 2959</a> (C 46-56): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3019)">L 3019</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3046)">L 3046</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3091)">L 3091</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3122)">L 3122</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3149)">L 3149</a> (C 27-31): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3156)">L 3156</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3178)">L 3178</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3206)">L 3206</a> (C 17-18): Outer loop index 'zz' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3241)">L 3241</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3294)">L 3294</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3315)">L 3315</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3338)">L 3338</a> (C 17-18): Outer loop index 'zz' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3401)">L 3401</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3448)">L 3448</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3507)">L 3507</a> (C 55-65): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3508)">L 3508</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3598)">L 3598</a> (C 70-80): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3620)">L 3620</a> (C 115-125): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3621)">L 3621</a> (C 115-125): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3622)">L 3622</a> (C 106-116): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3624)">L 3624</a> (C 107-117): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3653)">L 3653</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3686)">L 3686</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3709)">L 3709</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3848)">L 3848</a> (C 5-6): This keyword might not be aligned with its matching END on line 3853.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3859)">L 3859</a> (C 31-63): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3934)">L 3934</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',3983)">L 3983</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4011)">L 4011</a> (C 10-53): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4036)">L 4036</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4052)">L 4052</a> (C 9-10): This keyword might not be aligned with its matching END on line 4054.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4223)">L 4223</a> (C 29-39): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4224)">L 4224</a> (C 66-76): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4225)">L 4225</a> (C 35-45): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4230)">L 4230</a> (C 35-45): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4231)">L 4231</a> (C 82-92): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4232)">L 4232</a> (C 45-55): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4240)">L 4240</a> (C 27-37): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4241)">L 4241</a> (C 81-91): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4242)">L 4242</a> (C 45-55): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4247)">L 4247</a> (C 36-46): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4248)">L 4248</a> (C 84-94): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4249)">L 4249</a> (C 55-65): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4318)">L 4318</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4322)">L 4322</a> (C 5-6): This keyword might not be aligned with its matching END on line 4326.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4354)">L 4354</a> (C 5-6): This keyword might not be aligned with its matching END on line 4416.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4511)">L 4511</a> (C 7-8): This keyword might not be aligned with its matching END on line 4515.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4532)">L 4532</a> (C 5-7): This keyword might not be aligned with its matching END on line 4543.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4758)">L 4758</a> (C 12-55): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4759)">L 4759</a> (C 12-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4760)">L 4760</a> (C 12-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4761)">L 4761</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4762)">L 4762</a> (C 12-39): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4763)">L 4763</a> (C 12-39): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4764)">L 4764</a> (C 12-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4765)">L 4765</a> (C 12-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4766)">L 4766</a> (C 12-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4840)">L 4840</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',4956)">L 4956</a> (C 26-52): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5255)">L 5255</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5320)">L 5320</a> (C 14-49): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5410)">L 5410</a> (C 76-85): To pass MException properties to the warning function, use a format specifier.  For example, warning(E.identifier, '%s', E.message).
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5433)">L 5433</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5474)">L 5474</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5643)">L 5643</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5707)">L 5707</a> (C 16-17): This keyword might not be aligned with its matching END on line 5721.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5707)">L 5707</a> (C 19-23): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5762)">L 5762</a> (C 26-60): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5780)">L 5780</a> (C 59-69): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5781)">L 5781</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5802)">L 5802</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5847)">L 5847</a> (C 20-24): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5863)">L 5863</a> (C 68-77): To pass MException properties to the warning function, use a format specifier.  For example, warning(E.identifier, '%s', E.message).
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5908)">L 5908</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5976)">L 5976</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',5996)">L 5996</a> (C 1-2): This keyword might not be aligned with its matching END on line 6005.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6160)">L 6160</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6192)">L 6192</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6193)">L 6193</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6197)">L 6197</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6198)">L 6198</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6203)">L 6203</a> (C 5-7): This keyword might not be aligned with its matching END on line 6207.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6213)">L 6213</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6214)">L 6214</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6251)">L 6251</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6255)">L 6255</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6255)">L 6255</a> (C 102-112): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6258)">L 6258</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6258)">L 6258</a> (C 134-144): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6262)">L 6262</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6276)">L 6276</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6281)">L 6281</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6298)">L 6298</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6305)">L 6305</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6310)">L 6310</a> (C 47): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6319)">L 6319</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6364)">L 6364</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6368)">L 6368</a> (C 5): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6369)">L 6369</a> (C 5-7): This keyword might not be aligned with its matching END on line 6373.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6453)">L 6453</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6490)">L 6490</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6511)">L 6511</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6533)">L 6533</a> (C 47-58): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6565)">L 6565</a> (C 62-69): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6565)">L 6565</a> (C 71-78): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6566)">L 6566</a> (C 79-86): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6567)">L 6567</a> (C 113-120): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6567)">L 6567</a> (C 122-129): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6568)">L 6568</a> (C 71-78): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6584)">L 6584</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6585)">L 6585</a> (C 87-94): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6585)">L 6585</a> (C 96-103): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6586)">L 6586</a> (C 76-83): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6587)">L 6587</a> (C 80-87): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/SCM_gui.m',6606)">L 6606</a> (C 1-5): Value assigned to variable might be unused.
+
+
+
+===== play_fusi_video_final.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',77)">L 77</a> (C 1-10): Variable is set, but might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',136)">L 136</a> (C 2-10): Value assigned to variable might be unused. Consider replacing the variable with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',136)">L 136</a> (C 13-21): Value assigned to variable might be unused. Consider replacing the variable with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',137)">L 137</a> (C 1-9): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',138)">L 138</a> (C 1-9): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',263)">L 263</a> (C 1-5): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1026)">L 1026</a> (C 9-10): This keyword might not be aligned with its matching END on line 1029.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1040)">L 1040</a> (C 9-10): This keyword might not be aligned with its matching END on line 1042.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1359)">L 1359</a> (C 13-17): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1592)">L 1592</a> (C 9-13): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1767)">L 1767</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1820)">L 1820</a> (C 5-12): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1821)">L 1821</a> (C 5-10): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1822)">L 1822</a> (C 5-13): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1823)">L 1823</a> (C 5-12): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1830)">L 1830</a> (C 9-20): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1886)">L 1886</a> (C 19-25): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1886)">L 1886</a> (C 27-29): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',1977)">L 1977</a> (C 13-22): 'Renderer' will be removed in a future release. There is no simple replacement for this.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2278)">L 2278</a> (C 32-38): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2278)">L 2278</a> (C 40-42): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2316)">L 2316</a> (C 25-31): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2316)">L 2316</a> (C 33-35): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2598)">L 2598</a> (C 9-13): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2679)">L 2679</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2793)">L 2793</a> (C 27-49): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2833)">L 2833</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2894)">L 2894</a> (C 12-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',2989)">L 2989</a> (C 5-10): This keyword might not be aligned with its matching END on line 3035.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3208)">L 3208</a> (C 16-21): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3347)">L 3347</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3361)">L 3361</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3453)">L 3453</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3565)">L 3565</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3598)">L 3598</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3639)">L 3639</a> (C 9-17): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3683)">L 3683</a> (C 74-81): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3683)">L 3683</a> (C 83-90): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3700)">L 3700</a> (C 35-42): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3700)">L 3700</a> (C 44-51): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3701)">L 3701</a> (C 29-36): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3702)">L 3702</a> (C 71-78): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3703)">L 3703</a> (C 75-82): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3703)">L 3703</a> (C 84-91): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3704)">L 3704</a> (C 30-37): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3705)">L 3705</a> (C 47-54): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3706)">L 3706</a> (C 75-82): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3804)">L 3804</a> (C 78-85): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3805)">L 3805</a> (C 31-38): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3805)">L 3805</a> (C 40-47): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3806)">L 3806</a> (C 43-50): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3807)">L 3807</a> (C 79-86): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',3844)">L 3844</a> (C 16-21): Value assigned to variable might be unused. Consider replacing the variable with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4161)">L 4161</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4245)">L 4245</a> (C 86-93): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4246)">L 4246</a> (C 49-56): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4321)">L 4321</a> (C 12-61): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4326)">L 4326</a> (C 12-65): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4492)">L 4492</a> (C 12-55): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4493)">L 4493</a> (C 12-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4494)">L 4494</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4495)">L 4495</a> (C 12-39): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4496)">L 4496</a> (C 12-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4497)">L 4497</a> (C 12-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4498)">L 4498</a> (C 12-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4696)">L 4696</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4766)">L 4766</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4767)">L 4767</a> (C 15-19): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4821)">L 4821</a> (C 9-10): This keyword might not be aligned with its matching END on line 4824.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4969)">L 4969</a> (C 44-54): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4979)">L 4979</a> (C 20-73): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4982)">L 4982</a> (C 45-55): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',4983)">L 4983</a> (C 47-57): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5020)">L 5020</a> (C 8-55): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5021)">L 5021</a> (C 8-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5022)">L 5022</a> (C 8-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5023)">L 5023</a> (C 8-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5024)">L 5024</a> (C 8-39): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5025)">L 5025</a> (C 8-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5026)">L 5026</a> (C 8-50): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5102)">L 5102</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5346)">L 5346</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5385)">L 5385</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5395)">L 5395</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5547)">L 5547</a> (C 74-81): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5547)">L 5547</a> (C 83-90): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5548)">L 5548</a> (C 97-104): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5549)">L 5549</a> (C 64-71): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5549)">L 5549</a> (C 73-80): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5667)">L 5667</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5699)">L 5699</a> (C 96-103): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5723)">L 5723</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5882)">L 5882</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',5945)">L 5945</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/play_fusi_video_final.m',6049)">L 6049</a> (C 5-13): Value assigned to variable might be unused.
+
+
+
+===== mask.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',241)">L 241</a> (C 5-6): Outer loop index 'ii' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',911)">L 911</a> (C 13-14): Outer loop index 'ii' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',922)">L 922</a> (C 13-14): Outer loop index 'ii' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',1462)">L 1462</a> (C 14-20): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',1462)">L 1462</a> (C 22-24): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',1525)">L 1525</a> (C 9-14): This keyword might not be aligned with its matching END on line 1532.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',1972)">L 1972</a> (C 6-7): This keyword might not be aligned with its matching END on line 1974.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2140)">L 2140</a> (C 13-14): Outer loop index 'ii' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2336)">L 2336</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2399)">L 2399</a> (C 9-10): The preallocated value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2560)">L 2560</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2569)">L 2569</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2605)">L 2605</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/mask.m',2719)">L 2719</a> (C 5): Value assigned to variable might be unused.
+
+
+
+===== FunctionalConnectivity.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',35)">L 35</a> (C 38-44): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',35)">L 35</a> (C 46-48): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',59)">L 59</a> (C 5): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',70)">L 70</a> (C 9): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',79)">L 79</a> (C 17): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',87)">L 87</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',210)">L 210</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',211)">L 211</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',240)">L 240</a> (C 5): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',415)">L 415</a> (C 1-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',425)">L 425</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',427)">L 427</a> (C 1-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',454)">L 454</a> (C 1-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',629)">L 629</a> (C 5): Outer loop index 'k' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',781)">L 781</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',789)">L 789</a> (C 9-12): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',952)">L 952</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1012)">L 1012</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1013)">L 1013</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1014)">L 1014</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1015)">L 1015</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1016)">L 1016</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1017)">L 1017</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1018)">L 1018</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1019)">L 1019</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1020)">L 1020</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1021)">L 1021</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1022)">L 1022</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1023)">L 1023</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1024)">L 1024</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1025)">L 1025</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1026)">L 1026</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1027)">L 1027</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1028)">L 1028</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1029)">L 1029</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1341)">L 1341</a> (C 12-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1341)">L 1341</a> (C 47-77): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1343)">L 1343</a> (C 16-49): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1343)">L 1343</a> (C 54-90): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1345)">L 1345</a> (C 16-54): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1345)">L 1345</a> (C 59-93): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1345)">L 1345</a> (C 98-129): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1345)">L 1345</a> (C 134-169): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1347)">L 1347</a> (C 16-49): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1349)">L 1349</a> (C 16-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1349)">L 1349</a> (C 53-85): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1415)">L 1415</a> (C 16-47): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1415)">L 1415</a> (C 52-84): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1417)">L 1417</a> (C 20-51): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1419)">L 1419</a> (C 20-52): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1421)">L 1421</a> (C 20-53): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1421)">L 1421</a> (C 58-91): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1421)">L 1421</a> (C 96-126): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1429)">L 1429</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1588)">L 1588</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1656)">L 1656</a> (C 17): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1685)">L 1685</a> (C 17): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1688)">L 1688</a> (C 17): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1693)">L 1693</a> (C 29): Outer loop index 'k' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1836)">L 1836</a> (C 17): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',1881)">L 1881</a> (C 17): Outer loop index 'i' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2017)">L 2017</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2018)">L 2018</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2019)">L 2019</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2020)">L 2020</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2021)">L 2021</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2022)">L 2022</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2167)">L 2167</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2280)">L 2280</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2332)">L 2332</a> (C 13-19): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2361)">L 2361</a> (C 17): Outer loop index 'k' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2570)">L 2570</a> (C 13): Outer loop index 'k' is set inside a nested function.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2629)">L 2629</a> (C 1-2): This keyword might not be aligned with its matching END on line 2633.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2812)">L 2812</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2814)">L 2814</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2816)">L 2816</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2913)">L 2913</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2948)">L 2948</a> (C 41-51): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2949)">L 2949</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2973)">L 2973</a> (C 4-37): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',2975)">L 2975</a> (C 8-38): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3013)">L 3013</a> (C 57-67): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3042)">L 3042</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3133)">L 3133</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3135)">L 3135</a> (C 1-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3139)">L 3139</a> (C 4-9): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3162)">L 3162</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3181)">L 3181</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3181)">L 3181</a> (C 9-22): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3245)">L 3245</a> (C 1-2): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3290)">L 3290</a> (C 4-9): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3295)">L 3295</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3355)">L 3355</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3688)">L 3688</a> (C 9-14): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3881)">L 3881</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3883)">L 3883</a> (C 16-20): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',3902)">L 3902</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4021)">L 4021</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4074)">L 4074</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4164)">L 4164</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4177)">L 4177</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4252)">L 4252</a> (C 1-4): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4348)">L 4348</a> (C 1-3): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4354)">L 4354</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4354)">L 4354</a> (C 49-77): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4356)">L 4356</a> (C 16-45): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4358)">L 4358</a> (C 16-47): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4358)">L 4358</a> (C 52-79): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4360)">L 4360</a> (C 16-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4360)">L 4360</a> (C 53-89): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4360)">L 4360</a> (C 94-127): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4362)">L 4362</a> (C 16-47): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4362)">L 4362</a> (C 52-86): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4364)">L 4364</a> (C 16-47): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4370)">L 4370</a> (C 16-28): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4444)">L 4444</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4454)">L 4454</a> (C 44-54): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4472)">L 4472</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4474)">L 4474</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4475)">L 4475</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4476)">L 4476</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4486)">L 4486</a> (C 12-13): Variable might be set by a nonscalar operator.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4486)">L 4486</a> (C 18-19): Variable might be set by a nonscalar operator.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4592)">L 4592</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4616)">L 4616</a> (C 15-39): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4661)">L 4661</a> (C 14-21): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4693)">L 4693</a> (C 20-26): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4693)">L 4693</a> (C 28-30): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4823)">L 4823</a> (C 84-87): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4829)">L 4829</a> (C 1-3): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4830)">L 4830</a> (C 1-4): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4831)">L 4831</a> (C 1-8): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',4865)">L 4865</a> (C 1-12): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',5202)">L 5202</a> (C 10-29): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',5249)">L 5249</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',5368)">L 5368</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/FunctionalConnectivity.m',5377)">L 5377</a> (C 4): Extra comma is unnecessary.
+
+
+
+===== GroupAnalysis.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',85)">L 85</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',524)">L 524</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',913)">L 913</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',914)">L 914</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',915)">L 915</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',917)">L 917</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',918)">L 918</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',919)">L 919</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',920)">L 920</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',921)">L 921</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',922)">L 922</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1012)">L 1012</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1012)">L 1012</a> (C 56): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1346)">L 1346</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1349)">L 1349</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1354)">L 1354</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1357)">L 1357</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1398)">L 1398</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1399)">L 1399</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1411)">L 1411</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1418)">L 1418</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1419)">L 1419</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1420)">L 1420</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1427)">L 1427</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1449)">L 1449</a> (C 9-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1450)">L 1450</a> (C 9-19): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1473)">L 1473</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1539)">L 1539</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1539)">L 1539</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1560)">L 1560</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1575)">L 1575</a> (C 43-49): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1575)">L 1575</a> (C 51-53): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1592)">L 1592</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1618)">L 1618</a> (C 65-71): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1618)">L 1618</a> (C 73-75): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1626)">L 1626</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1666)">L 1666</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1681)">L 1681</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1681)">L 1681</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1697)">L 1697</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1738)">L 1738</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1738)">L 1738</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1751)">L 1751</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1795)">L 1795</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1810)">L 1810</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1831)">L 1831</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1846)">L 1846</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1899)">L 1899</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1899)">L 1899</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1916)">L 1916</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1941)">L 1941</a> (C 58-64): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1941)">L 1941</a> (C 66-68): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1951)">L 1951</a> (C 84-90): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1951)">L 1951</a> (C 92-94): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1957)">L 1957</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1972)">L 1972</a> (C 18-24): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',1972)">L 1972</a> (C 26-28): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2109)">L 2109</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2116)">L 2116</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2124)">L 2124</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2127)">L 2127</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2127)">L 2127</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2173)">L 2173</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2174)">L 2174</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2175)">L 2175</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2292)">L 2292</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2292)">L 2292</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2314)">L 2314</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2333)">L 2333</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2346)">L 2346</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2364)">L 2364</a> (C 16-65): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2365)">L 2365</a> (C 16-55): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2366)">L 2366</a> (C 16-51): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2367)">L 2367</a> (C 16-51): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2472)">L 2472</a> (C 24): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2477)">L 2477</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2486)">L 2486</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2505)">L 2505</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2505)">L 2505</a> (C 64): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',2643)">L 2643</a> (C 17-22): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3092)">L 3092</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3093)">L 3093</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3094)">L 3094</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3095)">L 3095</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3096)">L 3096</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3098)">L 3098</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3099)">L 3099</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3100)">L 3100</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3101)">L 3101</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3102)">L 3102</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3113)">L 3113</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3114)">L 3114</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3120)">L 3120</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3127)">L 3127</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3128)">L 3128</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3134)">L 3134</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3177)">L 3177</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3178)">L 3178</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3179)">L 3179</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3180)">L 3180</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3181)">L 3181</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3182)">L 3182</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3183)">L 3183</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3184)">L 3184</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3185)">L 3185</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3186)">L 3186</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3187)">L 3187</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3201)">L 3201</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3207)">L 3207</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3212)">L 3212</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3213)">L 3213</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3214)">L 3214</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3215)">L 3215</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3216)">L 3216</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3218)">L 3218</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3219)">L 3219</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3220)">L 3220</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3221)">L 3221</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3222)">L 3222</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3246)">L 3246</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3247)">L 3247</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3248)">L 3248</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3249)">L 3249</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3250)">L 3250</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3251)">L 3251</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3257)">L 3257</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3273)">L 3273</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3274)">L 3274</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3275)">L 3275</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3276)">L 3276</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3339)">L 3339</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3345)">L 3345</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3346)">L 3346</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3347)">L 3347</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3355)">L 3355</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3356)">L 3356</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3357)">L 3357</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3358)">L 3358</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3359)">L 3359</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3410)">L 3410</a> (C 10-25): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3479)">L 3479</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3479)">L 3479</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3545)">L 3545</a> (C 17-22): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3599)">L 3599</a> (C 16-32): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3651)">L 3651</a> (C 33-71): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3653)">L 3653</a> (C 1-10): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3654)">L 3654</a> (C 1-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3660)">L 3660</a> (C 1-9): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3676)">L 3676</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3798)">L 3798</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3807)">L 3807</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3932)">L 3932</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3933)">L 3933</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3934)">L 3934</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3952)">L 3952</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3952)">L 3952</a> (C 9): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3952)">L 3952</a> (C 61): Extra semicolon is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3957)">L 3957</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3984)">L 3984</a> (C 5-10): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3985)">L 3985</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3986)">L 3986</a> (C 5-11): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',3987)">L 3987</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4015)">L 4015</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4018)">L 4018</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4085)">L 4085</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4086)">L 4086</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4139)">L 4139</a> (C 12-38): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4139)">L 4139</a> (C 43-73): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4140)">L 4140</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4200)">L 4200</a> (C 42-46): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4221)">L 4221</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4228)">L 4228</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4246)">L 4246</a> (C 12-38): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4246)">L 4246</a> (C 43-73): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4247)">L 4247</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4290)">L 4290</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4298)">L 4298</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4299)">L 4299</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4317)">L 4317</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4322)">L 4322</a> (C 14-42): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4338)">L 4338</a> (C 14-41): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4375)">L 4375</a> (C 14-26): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4379)">L 4379</a> (C 8-35): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4379)">L 4379</a> (C 40-66): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4381)">L 4381</a> (C 12-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4381)">L 4381</a> (C 46-71): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4381)">L 4381</a> (C 76-102): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4381)">L 4381</a> (C 107-133): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4383)">L 4383</a> (C 12-37): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4385)">L 4385</a> (C 12-39): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4387)">L 4387</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4389)">L 4389</a> (C 12-40): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4391)">L 4391</a> (C 12-39): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4404)">L 4404</a> (C 41-51): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4425)">L 4425</a> (C 10-32): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4466)">L 4466</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4467)">L 4467</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4468)">L 4468</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4479)">L 4479</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4514)">L 4514</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4523)">L 4523</a> (C 10-23): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4553)">L 4553</a> (C 1-2): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4561)">L 4561</a> (C 18-23): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4586)">L 4586</a> (C 8-35): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4586)">L 4586</a> (C 40-68): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4588)">L 4588</a> (C 12-37): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4588)">L 4588</a> (C 42-71): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4588)">L 4588</a> (C 76-104): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4600)">L 4600</a> (C 8-35): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4602)">L 4602</a> (C 12-37): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4602)">L 4602</a> (C 42-71): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4691)">L 4691</a> (C 14-20): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4700)">L 4700</a> (C 10-18): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4718)">L 4718</a> (C 5-8): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4729)">L 4729</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4732)">L 4732</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4736)">L 4736</a> (C 10-21): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4748)">L 4748</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4755)">L 4755</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4763)">L 4763</a> (C 31): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4774)">L 4774</a> (C 10-20): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4775)">L 4775</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4787)">L 4787</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4815)">L 4815</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4829)">L 4829</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4872)">L 4872</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4927)">L 4927</a> (C 24-48): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4976)">L 4976</a> (C 13-27): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',4996)">L 4996</a> (C 13-27): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5080)">L 5080</a> (C 4-31): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5080)">L 5080</a> (C 36-62): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5083)">L 5083</a> (C 4-33): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5083)">L 5083</a> (C 38-65): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5086)">L 5086</a> (C 4-29): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5086)">L 5086</a> (C 34-62): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5086)">L 5086</a> (C 67-95): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5089)">L 5089</a> (C 4-32): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5089)">L 5089</a> (C 37-65): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5092)">L 5092</a> (C 4-32): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5092)">L 5092</a> (C 37-63): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5095)">L 5095</a> (C 4-30): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5095)">L 5095</a> (C 35-66): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5098)">L 5098</a> (C 4-31): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5101)">L 5101</a> (C 4-31): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5104)">L 5104</a> (C 4-30): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5104)">L 5104</a> (C 35-61): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5110)">L 5110</a> (C 10-38): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5128)">L 5128</a> (C 8-52): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5130)">L 5130</a> (C 12-57): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5158)">L 5158</a> (C 1-3): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5162)">L 5162</a> (C 1-3): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5162)">L 5162</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5163)">L 5163</a> (C 1-3): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5163)">L 5163</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5164)">L 5164</a> (C 1-3): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5164)">L 5164</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5166)">L 5166</a> (C 1-3): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5173)">L 5173</a> (C 1-3): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5177)">L 5177</a> (C 9-11): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5177)">L 5177</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5178)">L 5178</a> (C 9-11): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5178)">L 5178</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5206)">L 5206</a> (C 5-7): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5206)">L 5206</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5207)">L 5207</a> (C 5-7): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5207)">L 5207</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5231)">L 5231</a> (C 5-7): TRY statement should have a CATCH statement to check for unexpected errors.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5231)">L 5231</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5236)">L 5236</a> (C 1-3): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5243)">L 5243</a> (C 13-15): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5271)">L 5271</a> (C 17-20): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5275)">L 5275</a> (C 9-12): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5339)">L 5339</a> (C 12-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5339)">L 5339</a> (C 46-72): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5339)">L 5339</a> (C 77-103): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5341)">L 5341</a> (C 16-47): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5343)">L 5343</a> (C 16-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5345)">L 5345</a> (C 16-46): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5347)">L 5347</a> (C 16-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5349)">L 5349</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5351)">L 5351</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5353)">L 5353</a> (C 16-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5355)">L 5355</a> (C 16-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5357)">L 5357</a> (C 16-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5359)">L 5359</a> (C 16-45): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5361)">L 5361</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5363)">L 5363</a> (C 16-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5381)">L 5381</a> (C 12-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5381)">L 5381</a> (C 46-72): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5381)">L 5381</a> (C 77-103): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5383)">L 5383</a> (C 16-47): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5385)">L 5385</a> (C 16-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5387)">L 5387</a> (C 16-46): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5389)">L 5389</a> (C 16-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5391)">L 5391</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5393)">L 5393</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5395)">L 5395</a> (C 16-41): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5397)">L 5397</a> (C 16-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5399)">L 5399</a> (C 16-42): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5401)">L 5401</a> (C 16-45): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5403)">L 5403</a> (C 16-44): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5405)">L 5405</a> (C 16-43): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5428)">L 5428</a> (C 10-48): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5432)">L 5432</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5452)">L 5452</a> (C 35-41): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5452)">L 5452</a> (C 43-45): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5460)">L 5460</a> (C 13-23): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5467)">L 5467</a> (C 42-48): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5467)">L 5467</a> (C 50-52): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5486)">L 5486</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5489)">L 5489</a> (C 1-10): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5509)">L 5509</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5510)">L 5510</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5528)">L 5528</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5529)">L 5529</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5530)">L 5530</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5531)">L 5531</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5532)">L 5532</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5534)">L 5534</a> (C 13-19): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5534)">L 5534</a> (C 21-23): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5555)">L 5555</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5556)">L 5556</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5557)">L 5557</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5590)">L 5590</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5592)">L 5592</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5598)">L 5598</a> (C 64): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5599)">L 5599</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5599)">L 5599</a> (C 6-10): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5600)">L 5600</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5601)">L 5601</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5602)">L 5602</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5608)">L 5608</a> (C 10-34): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5608)">L 5608</a> (C 52): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5608)">L 5608</a> (C 54): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5640)">L 5640</a> (C 13-18): This import statement runs before any other code in function 'GA_export_write_ppt_local'. Consider placing it at the top of the function body.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5669)">L 5669</a> (C 101-113): To pass MException properties to the warning function, use a format specifier.  For example, warning(E.identifier, '%s', E.message).
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5700)">L 5700</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5701)">L 5701</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5718)">L 5718</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5720)">L 5720</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5783)">L 5783</a> (C 12-38): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5783)">L 5783</a> (C 43-68): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5804)">L 5804</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5826)">L 5826</a> (C 14-46): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5904)">L 5904</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5965)">L 5965</a> (C 10-49): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5965)">L 5965</a> (C 63-69): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',5971)">L 5971</a> (C 20-26): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6038)">L 6038</a> (C 13-19): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6038)">L 6038</a> (C 21-23): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6288)">L 6288</a> (C 8-33): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6289)">L 6289</a> (C 8-35): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6290)">L 6290</a> (C 8-35): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6291)">L 6291</a> (C 8-34): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6292)">L 6292</a> (C 8-36): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6293)">L 6293</a> (C 8-34): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6294)">L 6294</a> (C 8-32): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6295)">L 6295</a> (C 8-33): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6296)">L 6296</a> (C 8-38): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6297)">L 6297</a> (C 8-34): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6298)">L 6298</a> (C 8-35): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6299)">L 6299</a> (C 8-37): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6306)">L 6306</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6307)">L 6307</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6308)">L 6308</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6312)">L 6312</a> (C 47): Input argument might be unused. Consider replacing the argument with ~ instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6314)">L 6314</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6315)">L 6315</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6341)">L 6341</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6346)">L 6346</a> (C 17-18): This keyword might not be aligned with its matching END on line 6349.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6346)">L 6346</a> (C 20-49): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6347)">L 6347</a> (C 24-51): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6348)">L 6348</a> (C 24-50): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6359)">L 6359</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6368)">L 6368</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6373)">L 6373</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6378)">L 6378</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6384)">L 6384</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6385)">L 6385</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6386)">L 6386</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6392)">L 6392</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6398)">L 6398</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6415)">L 6415</a> (C 12-16): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6433)">L 6433</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6439)">L 6439</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6461)">L 6461</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6463)">L 6463</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6467)">L 6467</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6555)">L 6555</a> (C 91): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6556)">L 6556</a> (C 22-26): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6560)">L 6560</a> (C 54-62): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6592)">L 6592</a> (C 49-53): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6616)">L 6616</a> (C 55-63): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6622)">L 6622</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6627)">L 6627</a> (C 13-18): This import statement runs before any other code in function 'GA_write_ppt_from_slide_pngs_local'. Consider placing it at the top of the function body.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6630)">L 6630</a> (C 20): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6638)">L 6638</a> (C 66-75): To pass MException properties to the warning function, use a format specifier.  For example, warning(E.identifier, '%s', E.message).
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6654)">L 6654</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6655)">L 6655</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6662)">L 6662</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6668)">L 6668</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6677)">L 6677</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6686)">L 6686</a> (C 27-63): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6691)">L 6691</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6694)">L 6694</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6716)">L 6716</a> (C 10-48): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6716)">L 6716</a> (C 53-85): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6752)">L 6752</a> (C 68-75): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6753)">L 6753</a> (C 58-65): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6764)">L 6764</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6765)">L 6765</a> (C 83-90): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6766)">L 6766</a> (C 86-93): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6789)">L 6789</a> (C 20-38): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6791)">L 6791</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6802)">L 6802</a> (C 14-44): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6821)">L 6821</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6826)">L 6826</a> (C 14-45): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6856)">L 6856</a> (C 18-45): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6869)">L 6869</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6880)">L 6880</a> (C 14-38): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6910)">L 6910</a> (C 10-31): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6917)">L 6917</a> (C 91): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6918)">L 6918</a> (C 39-43): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6920)">L 6920</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',6923)">L 6923</a> (C 33-41): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7000)">L 7000</a> (C 10-39): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7007)">L 7007</a> (C 46-50): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7009)">L 7009</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7019)">L 7019</a> (C 36-44): '-opengl' is not recommended. Use '-image' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7023)">L 7023</a> (C 10-29): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7025)">L 7025</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7028)">L 7028</a> (C 5-10): This import statement runs before any other code in function 'GA_writePPT_PATCH_V4'. Consider placing it at the top of the function body.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7033)">L 7033</a> (C 16): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7040)">L 7040</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7055)">L 7055</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7056)">L 7056</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7119)">L 7119</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7125)">L 7125</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7136)">L 7136</a> (C 49-54): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7142)">L 7142</a> (C 15-43): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7159)">L 7159</a> (C 14-39): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7161)">L 7161</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7162)">L 7162</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7165)">L 7165</a> (C 17-39): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7167)">L 7167</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7168)">L 7168</a> (C 71): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7172)">L 7172</a> (C 14-35): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7186)">L 7186</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7189)">L 7189</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7192)">L 7192</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7195)">L 7195</a> (C 12): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7197)">L 7197</a> (C 14-33): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7198)">L 7198</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7202)">L 7202</a> (C 10-26): Function might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7222)">L 7222</a> (C 24-28): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7247)">L 7247</a> (C 1): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7249)">L 7249</a> (C 1-7): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7259)">L 7259</a> (C 5-10): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis.m',7291)">L 7291</a> (C 8-12): When checking if a variable is a matrix consider using ISMATRIX.
+
+
+
+===== GroupAnalysis_FC.m =====
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',23)">L 23</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',32)">L 32</a> (C 5-6): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',32)">L 32</a> (C 10-17): For readability, consider using 'newline' instead of 'char(10)'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',92)">L 92</a> (C 8-13): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',468)">L 468</a> (C 1-5): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',471)">L 471</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',508)">L 508</a> (C 1-5): 'caxis' is not recommended. Use 'clim' instead, which is a direct replacement.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',511)">L 511</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',600)">L 600</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',687)">L 687</a> (C 4-8): When checking if a variable is a matrix consider using ISMATRIX.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',723)">L 723</a> (C 17-22): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',947)">L 947</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',948)">L 948</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',949)">L 949</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',950)">L 950</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1055)">L 1055</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1056)">L 1056</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1058)">L 1058</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1059)">L 1059</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1061)">L 1061</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1062)">L 1062</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1073)">L 1073</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1074)">L 1074</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1075)">L 1075</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1076)">L 1076</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1081)">L 1081</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1082)">L 1082</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1083)">L 1083</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1088)">L 1088</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1089)">L 1089</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1090)">L 1090</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1114)">L 1114</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1127)">L 1127</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1128)">L 1128</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1133)">L 1133</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1134)">L 1134</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1261)">L 1261</a> (C 1-4): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1322)">L 1322</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1342)">L 1342</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1347)">L 1347</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1680)">L 1680</a> (C 5-14): 'Renderer' will be removed in a future release. There is no simple replacement for this.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1692)">L 1692</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1693)">L 1693</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1694)">L 1694</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1695)">L 1695</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1700)">L 1700</a> (C 4): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1851)">L 1851</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',1921)">L 1921</a> (C 16-23): 'xlswrite' is not recommended. With appropriate code changes, use 'writematrix' or 'writecell' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2001)">L 2001</a> (C 5-6): This keyword might not be aligned with its matching END on line 2003.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2025)">L 2025</a> (C 1-4): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2026)">L 2026</a> (C 1-4): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2317)">L 2317</a> (C 5): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2323)">L 2323</a> (C 9): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2394)">L 2394</a> (C 39-49): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2427)">L 2427</a> (C 38-77): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2436)">L 2436</a> (C 36-73): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2445)">L 2445</a> (C 31-65): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2452)">L 2452</a> (C 31-61): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2745)">L 2745</a> (C 8): Extra comma is unnecessary.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2901)">L 2901</a> (C 35-45): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2910)">L 2910</a> (C 12-52): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2910)">L 2910</a> (C 57-90): For readability, use '~contains(str1, str2)' instead of 'isempty(strfind(str1, str2))'.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',2947)">L 2947</a> (C 5-11): 'dlmread' is not recommended. With appropriate code changes, use 'readtable' or 'readmatrix' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',3459)">L 3459</a> (C 8-13): Use STRCMPI(str1,str2) instead of using UPPER/LOWER in a call to STRCMP.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',3662)">L 3662</a> (C 4-5): This keyword might not be aligned with its matching END on line 3666.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',3871)">L 3871</a> (C 17-22): Variable appears to change size on every loop iteration. Consider preallocating for speed.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4255)">L 4255</a> (C 5): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4491)">L 4491</a> (C 1-4): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4494)">L 4494</a> (C 17-23): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4494)">L 4494</a> (C 25-27): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4519)">L 4519</a> (C 13-19): 'datestr' is not recommended. With appropriate code changes, use 'datetime' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4519)">L 4519</a> (C 21-23): 'now' is not recommended. With appropriate code changes, use 'datetime("now")' instead.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4639)">L 4639</a> (C 5-14): Value assigned to variable might be unused.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4712)">L 4712</a> (C 63-73): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+<a href="matlab: opentoline('D:/Github/HUMOR-Analysis-Tool/GroupAnalysis_FC.m',4715)">L 4715</a> (C 63-73): A Code Analyzer message was once suppressed here, but the message is no longer generated.
+
+
+
+===== GroupAnalysis_Map.m =====
+File missing. Skipped.
+
+5) IMREGDEMONS / GABRIEL COMPATIBILITY STATUS
+------------------------------------------------------------
+
+Old compatibility name: gabriel_preprocess.m
+New preferred name:     imregdemons_preprocess.m
+Old file exists: YES
+New file exists: YES
+Old file appears to call new file: YES
+
+Old compatibility name: gabriel_param_gui.m
+New preferred name:     imregdemons_param_gui.m
+Old file exists: YES
+New file exists: YES
+Old file appears to call new file: YES
+
+Old compatibility name: computeGabrielSignalChange.m
+New preferred name:     computeImregdemonsSignalChange.m
+Old file exists: YES
+New file exists: YES
+Old file appears to call new file: YES
+
+6) LEGACY QUARANTINE STATUS
+------------------------------------------------------------
+Patch14 quarantine folders found: 1
+
+Quarantine: patch14_20260511_142158
+  M-files inside: 2
+  Restore script: RESTORE_patch14_20260511_142158.m
+  Files:
+    - RESTORE_patch14_20260511_142158.m
+    - autoThreshold.m
+
+
+7) REMAINING GABRIEL/GABRIEL REFERENCES
+------------------------------------------------------------
+
+===== computeGabrielSignalChange.m =====
+L1: function varargout = computeGabrielSignalChange(varargin)
+
+===== fUSI_Live_Studio.m =====
+L61: gabriel_active = false;
+L62: gabriel_use       = false;
+L63: gabriel_nsub      = 50;
+L64: gabriel_regSmooth = 1.3; %#ok<NASGU>
+L69: if gabriel_use
+L71:         gabriel_nsub, gabriel_regSmooth);
+L74:     opts.nsub   = gabriel_nsub;
+L84:         nr = floor(T / gabriel_nsub);
+L92:         TR_proc = TR * gabriel_nsub;
+L302: gabrielToggle = uicontrol(sidebar,'Style','checkbox', ...
+L305:     'Value',gabriel_use, ...
+L309:     'Callback',@(src,~) setGabrielUse(src));
+L318: gabrielNsub = uicontrol(sidebar,'Style','edit', ...
+L329: gabrielZstart = uicontrol(sidebar,'Style','edit', ...
+L334: gabrielZend = uicontrol(sidebar,'Style','edit', ...
+L340: gabrielReloadBtn = uicontrol(sidebar,'Style','pushbutton', ...
+L345:     'Callback',@reloadWithGabriel);
+L1099:     function setGabrielUse(src)
+L1100:         gabriel_use = logical(get(src,'Value'));
+L1103:     function reloadWithGabriel(varargin)
+L1110:         z1 = max(1, round(str2double(get(gabrielZstart,'String'))));
+L1111:         z2 = min(Nz, round(str2double(get(gabrielZend,'String'))));
+L1118:         if gabriel_active
+L1128:             gabriel_active = false;
+L1129:             set(gabrielToggle,'Value',0);
+L1134:             nsub = str2double(get(gabrielNsub,'String'));
+L1186:             gabriel_active = true;
+L1187:             set(gabrielToggle,'Value',1);
+L1225:         if gabriel_active
+L1226:             set(gabrielReloadBtn,'String','Revert to RAW data','BackgroundColor',C.red);
+L1229:             set(gabrielReloadBtn,'String','Apply Imregdemons preprocessing','BackgroundColor',C.green);
+
+===== fusi_studio.m =====
+L7430:     base = strrep(base, '_gabriel_', '_imregdemons_');
+L10215:         'gabriel', ...
+
+===== gabriel_param_gui.m =====
+L1: function varargout = gabriel_param_gui(varargin)
+
+===== gabriel_preprocess.m =====
+L1: function varargout = gabriel_preprocess(varargin)
+
+===== play_fusi_video_final.m =====
+L1864:         if contains(rawLabel,'gabriel'), tags{end+1} = 'gab'; end
+
+===== studio_resolve_paths.m =====
+L59: P.qcGabrielDir     = P.qcImregdemonsDir;
+L96: if contains(s,'imregdemons') || contains(s,'gabriel')
+
+Total files with Gabriel/gabriel references: 7
+
+8) DUPLICATE BASENAME CHECK IN ROOT
+------------------------------------------------------------
+No duplicate basenames found among root .m files.
+
+9) SUMMARY
+------------------------------------------------------------
+Core files present:  19
+Core files missing:  1
+
+Missing core files:
+  - GroupAnalysis_Map.m
+
+Recommended next step:
+If run_fusi_studio opens and the report has no critical missing files, move to targeted module patches.
+Suggested next target: Patch 16 Load/TR popup final polish OR Patch 17 Motor reconstruction workflow.

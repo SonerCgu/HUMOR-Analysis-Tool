@@ -124,21 +124,56 @@ guidata(fig, studio);
 
 addStudioIcon();
 
-jLog = javaObjectEDT('javax.swing.JTextArea');
-jLog.setEditable(false);
-jLog.setLineWrap(true);
-jLog.setWrapStyleWord(true);
-jLog.setFont(java.awt.Font('Monospaced', java.awt.Font.PLAIN, 26));
+jLog = [];
+hLogContainer = [];
 
-% Safe Java colors. Avoid direct java.awt.Color(...) calls.
-jLog.setBackground(studioJavaColor(0,0,0));
-jLog.setForeground(studioJavaColor(0.60,0.85,1.00));
+try
+    useJavaLog = usejava('jvm') && exist('javaObjectEDT','file') && exist('javacomponent','file');
+catch
+    useJavaLog = false;
+end
 
-jLog.setText('');
+if useJavaLog
+    try
+        jLog = javaObjectEDT('javax.swing.JTextArea');
+        jLog.setEditable(false);
+        jLog.setLineWrap(true);
+        jLog.setWrapStyleWord(true);
+        jLog.setFont(java.awt.Font('Monospaced', java.awt.Font.PLAIN, 26));
+        jLog.setBackground(studioJavaColor(0,0,0));
+        jLog.setForeground(studioJavaColor(0.60,0.85,1.00));
+        jLog.setText('');
 
-jScroll = javaObjectEDT('javax.swing.JScrollPane', jLog);
-[~, hLogContainer] = javacomponent(jScroll, [1 1 1 1], logPanel); %#ok<JAVCM>
-set(hLogContainer, 'Units','normalized', 'Position',[0.02 0.02 0.96 0.95]);
+        jScroll = javaObjectEDT('javax.swing.JScrollPane', jLog);
+        warnState = warning('off','all');
+        try
+            [~, hLogContainer] = javacomponent(jScroll, [1 1 1 1], logPanel);
+            warning(warnState);
+        catch MEjavaComponent
+            warning(warnState);
+            rethrow(MEjavaComponent);
+        end
+
+        set(hLogContainer, 'Units','normalized', 'Position',[0.02 0.02 0.96 0.95]);
+    catch
+        jLog = [];
+        hLogContainer = [];
+    end
+end
+
+if isempty(hLogContainer) || ~ishghandle(hLogContainer)
+    hLogContainer = uicontrol(logPanel, ...
+        'Style','listbox', ...
+        'Units','normalized', ...
+        'Position',[0.02 0.02 0.96 0.95], ...
+        'BackgroundColor',[0 0 0], ...
+        'ForegroundColor',[0.60 0.85 1.00], ...
+        'FontName','Monospaced', ...
+        'FontSize',12, ...
+        'String',{''}, ...
+        'Max',2, ...
+        'Min',0);
+end
 
 studio = guidata(fig);
 studio.logBox = hLogContainer;
@@ -356,9 +391,9 @@ function drawButtons(parent, btns, sectionIndex)
             case 'frame rejection'
                 callback = @frameRateCallback;
             case 'subsampling'
-                callback = @gabrielCallback;
+                callback = @imregdemonsCallback;
             case 'imregdemons'
-                callback = @gabrielCallback;
+                callback = @imregdemonsCallback;
             case 'scrubbing'
                 callback = @scrubbingCallback;
             case 'motor'
@@ -424,10 +459,7 @@ function loadDataCallback(~,~)
 
     studio = guidata(fig);
 
-    startPath = 'Z:\fUS\Project_PACAP_AVATAR_SC\RawData';
-    if ~exist(startPath,'dir')
-        startPath = pwd;
-    end
+    startPath = studio_default_load_start_path(studio);
 
     [file,path] = uigetfile( ...
         {'*.mat;*.nii;*.nii.gz','fUSI Data (*.mat, *.nii, *.nii.gz)'}, ...
@@ -483,7 +515,23 @@ studio.registrationPath = '';
     fullInputFile = fullfile(path,file);
     [data, meta] = loadFUSIData(fullInputFile, []);
 
-    [chosenTR, probeType, defaultTR, wasCancelled] = promptTRAfterLoad(data, meta);
+    [probeType, defaultTR] = detectProbeTypeFromMeta(data, meta);
+    defaultTR = studio_probe_default_tr_seconds(probeType, data);
+    defaultTR = 0.320;
+    chosenTR = defaultTR;
+    [fileTRCandidate, fileTRSource] = studio_get_file_tr_candidate(data, meta);
+    try
+        if ~isfield(meta,'rawMetadata') || isempty(meta.rawMetadata)
+            meta.rawMetadata = struct();
+        end
+        meta.rawMetadata.TRPreselectedSource = 'default 320 ms';
+        if ~isempty(fileTRCandidate) && isfinite(fileTRCandidate) && fileTRCandidate > 0
+            meta.rawMetadata.fileTRCandidateSec = fileTRCandidate;
+            meta.rawMetadata.fileTRCandidateSource = fileTRSource;
+        end
+    catch
+    end
+    wasCancelled = false;
 
     if wasCancelled
         addLog('Load cancelled during TR selection.');
@@ -505,8 +553,7 @@ studio.registrationPath = '';
     meta.rawMetadata.defaultTRUserPromptSec = defaultTR;
     meta.rawMetadata.selectedTRUserSec = chosenTR;
 
-        rawRoot = 'Z:\fUS\Project_PACAP_AVATAR_SC\RawData';
-        analysedRoot = 'Z:\fUS\Project_PACAP_AVATAR_SC\AnalysedData';
+        [rawRoot, analysedRoot] = studio_auto_roots_from_input(path);
 
         studio_mkdir(analysedRoot);
 
@@ -535,6 +582,31 @@ studio.registrationPath = '';
         else
             datasetFolder = fullfile(analysedRoot, datasetName);
         end
+
+        if ~exist('TR','var') || isempty(TR) || ~isnumeric(TR) || ~isfinite(TR) || TR <= 0
+            TR = studio_get_last_tr_default();
+        end
+        [chosenTR, datasetFolder, outputWasCancelled, probeType, defaultTR] = studio_load_options_dark_dialog_patch16(chosenTR, datasetFolder, analysedRoot, datasetName, probeType, defaultTR, data, meta);
+        if outputWasCancelled
+            addLog('Load cancelled during TR/output-folder selection.');
+            setProgramStatus(true);
+            return;
+        end
+
+        % Apply selected TR from dark load-options dialog
+        data.TR = chosenTR;
+        data.nVols = size(data.I, ndims(data.I));
+        data.TotalTimeSec = data.nVols * data.TR;
+        data.TotalTimeMin = data.TotalTimeSec / 60;
+        data.totalTime = data.TotalTimeSec;
+        data.totalTimeMin = data.TotalTimeMin;
+
+        if ~isfield(meta,'rawMetadata') || isempty(meta.rawMetadata)
+            meta.rawMetadata = struct();
+        end
+        meta.rawMetadata.probeTypeUserConfirmed = probeType;
+        meta.rawMetadata.defaultTRUserPromptSec = defaultTR;
+        meta.rawMetadata.selectedTRUserSec = chosenTR;
 
         studio_mkdir(datasetFolder);
 
@@ -947,6 +1019,7 @@ end
         'Callback',@onCancel);
 
     set(dlg,'Visible','on');
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
     waitfor(dlg);
 
     function onSelectAll(~,~)
@@ -1008,9 +1081,9 @@ end
 
 
 %% =========================================================
-%  IMREGDEMONS / GABRIEL PREPROCESSING
+%  IMREGDEMONS PREPROCESSING
 % =========================================================
-function gabrielCallback(~,~)
+function imregdemonsCallback(~,~)
 
     studio = guidata(fig);
 
@@ -1056,7 +1129,7 @@ function gabrielCallback(~,~)
         upper(blockMethod), nsub));
     drawnow;
 
-    % Track figure state so any figures created by gabriel_preprocess
+    % Track figure state so any figures created by imregdemons_preprocess
     % can be closed afterwards
     figsBefore = findall(0, 'Type', 'figure');
 
@@ -1073,7 +1146,7 @@ function gabrielCallback(~,~)
     opts.qcDir = fullfile(studio.exportPath, 'Preprocessing', ...
         sprintf('imregdemons_QC_%s_nsub%d', blockMethod, nsub));
 
-    % Optional metadata for auto-detection inside gabriel_preprocess
+    % Optional metadata for auto-detection inside imregdemons_preprocess
     try
         opts.meta = studio.meta;
     catch
@@ -1090,7 +1163,7 @@ function gabrielCallback(~,~)
     end
 
     try
-        out = gabriel_preprocess(data.I, data.TR, opts);
+        out = imregdemons_preprocess(data.I, data.TR, opts);
 
         % Close any new figures created during preprocessing
         drawnow;
@@ -1519,6 +1592,7 @@ uicontrol('Parent',settingsPanel,'Style','text', ...
     updateSummary();
 
     set(dlg,'Visible','on');
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
     waitfor(dlg);
 
     % =====================================================
@@ -1731,10 +1805,7 @@ function frameRateCallback(~,~)
         safeCloseFigureHandle(QC_before, 'figRejected');
         closeLingeringQCFigures();
 
-        choice = questdlg( ...
-            sprintf('%.2f %% volumes rejected.\n\nInterpolate rejected volumes?', QC_before.rejPct), ...
-            'Frame-rate rejection', ...
-            'Yes','No','No');
+        choice = 'Yes'; % Patch 24: frame rejection auto-confirmed
 
         if ~strcmp(choice,'Yes')
             addLog('Interpolation skipped.');
@@ -2254,10 +2325,12 @@ function cfg = showTemporalSmoothSubsampleDialog(data)
         'NumberTitle','off', ...
         'Resize','off', ...
         'Units','pixels', ...
-        'Position',[300 180 760 560], ...
+        'Position',[35 40 1600 940],   ...
         'WindowStyle','modal', ...
         'Visible','off', ...
         'CloseRequestFcn',@onCancel);
+try, HUMoR_popup_polish_now(gcf); catch, end
+
 
     try
         movegui(dlg,'center');
@@ -2561,6 +2634,7 @@ function cfg = showTemporalSmoothSubsampleDialog(data)
     updateSummary();
 
     set(dlg,'Visible','on');
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
     waitfor(dlg);
 
     % =====================================================
@@ -3165,11 +3239,13 @@ defaultHigh = defaultLowPass;    % for band-pass high edge
         'NumberTitle','off', ...
         'Resize','off', ...
         'Units','pixels', ...
-        'Position',[350 180 760 560], ...
+        'Position',[35 40 1600 940],   ...
         'WindowStyle','modal', ...
         'Visible','off', ...
         'CloseRequestFcn',@onCancel, ...
         'KeyPressFcn',@onKey);
+try, HUMoR_popup_polish_now(gcf); catch, end
+
 
     try
         movegui(dlg,'center');
@@ -3403,6 +3479,7 @@ defaultHigh = defaultLowPass;    % for band-pass high edge
 
     set(dlg,'Visible','on');
     drawnow;
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
     waitfor(dlg);
 
     % ---------------------------------------------------------------------
@@ -4128,11 +4205,13 @@ loadedNames = struct('labels',[],'names',{{}});
         'NumberTitle','off', ...
         'Resize','off', ...
         'Units','pixels', ...
-       'Position',[150 40 1120 820], ...
+       'Position',[35 35 1650 960],  ...
         'WindowStyle','modal', ...
         'Visible','off', ...
         'CloseRequestFcn',@onCancel, ...
         'KeyPressFcn',@onKey);
+try, HUMoR_popup_polish_now(gcf); catch, end
+
 
     try
         movegui(dlg,'center');
@@ -4483,6 +4562,7 @@ updateSummary();
 fcScaleFcSetupFonts(dlg);
 
 set(dlg,'Visible','on');
+try, HUMoR_popup_autofit_apply(dlg); catch, end
 waitfor(dlg);
 
     % =====================================================
@@ -7266,6 +7346,7 @@ function choice = showPcaIcaMethodDialog()
         'ForegroundColor','w', ...
         'Callback',@onCancel);
 
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
     waitfor(dlg);
 
     function onPCA(~,~)
@@ -7285,63 +7366,12 @@ function choice = showPcaIcaMethodDialog()
 end
     function [TR, probeType, defaultTR, wasCancelled] = promptTRAfterLoad(data, meta)
 
-TR = [];
-wasCancelled = false;
-
+% Legacy fallback only. The interactive TR choice is now handled by
+% studio_load_options_dark_dialog during dataset loading.
 [probeType, defaultTR] = detectProbeTypeFromMeta(data, meta);
-
-detectedTR = [];
-try
-    if isfield(data,'TR') && ~isempty(data.TR) && isfinite(data.TR) && data.TR > 0
-        detectedTR = double(data.TR);
-    end
-catch
-end
-
-msg = sprintf([ ...
-    'Detected probe type: %s\n\n' ...
-    'Preset default TR: %.0f ms (%.3f s)\n'], ...
-    probeType, defaultTR*1000, defaultTR);
-
-if ~isempty(detectedTR)
-    msg = [msg sprintf('\nLoader/file TR before user choice: %.0f ms (%.3f s)\n', ...
-        detectedTR*1000, detectedTR)];
-end
-
-msg = [msg sprintf('\nChoose "Use Default" or "Custom TR".')];
-
-choice = questdlg(msg, 'TR Selection', ...
-    'Use Default', 'Custom TR', 'Cancel', 'Use Default');
-
-if isempty(choice) || strcmpi(choice,'Cancel')
-    wasCancelled = true;
-    return;
-end
-
-if strcmpi(choice,'Use Default')
-    TR = defaultTR;
-    return;
-end
-
-while true
-    answ = inputdlg( ...
-        {sprintf('Enter TR in ms for %s:', probeType)}, ...
-        'Custom TR', 1, {sprintf('%.0f', defaultTR*1000)});
-
-    if isempty(answ)
-        wasCancelled = true;
-        return;
-    end
-
-    trMs = str2double(answ{1});
-    if isfinite(trMs) && trMs > 0
-        TR = trMs / 1000;
-        return;
-    end
-
-    uiwait(errordlg('Please enter a positive numeric TR in milliseconds.', ...
-        'Invalid TR', 'modal'));
-end
+    defaultTR = studio_probe_default_tr_seconds(probeType, data);
+TR = defaultTR;
+wasCancelled = false;
 
 end
 
@@ -7999,6 +8029,7 @@ uicontrol('Parent',filePanel,'Style','text', ...
     setStatusForChoice(defaultChoice);
 
     set(dlg,'Visible','on');
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
     waitfor(dlg);
 
     function h = makeLabel(parent,pos,str,fs,col)
@@ -10484,6 +10515,836 @@ function sc = studio_score_volume_candidate(v, nameStr)
     end
 end
 %% =========================================================
+%  PATH HELPERS
+% =========================================================
+function startPath = studio_default_load_start_path(studio)
+    startPath = '';
+
+    try
+        if isstruct(studio) && isfield(studio,'loadedPath') && ~isempty(studio.loadedPath) && exist(studio.loadedPath,'dir')
+            startPath = studio.loadedPath;
+        end
+    catch
+        startPath = '';
+    end
+
+    if isempty(startPath) && ispc
+        winDefault = 'Z:\fUS\Project_PACAP_AVATAR_SC\RawData';
+        if exist(winDefault,'dir')
+            startPath = winDefault;
+        end
+    end
+
+    if isempty(startPath)
+        startPath = pwd;
+    end
+end
+
+function [rawRoot, analysedRoot] = studio_auto_roots_from_input(inputPath)
+    if nargin < 1 || isempty(inputPath)
+        inputPath = pwd;
+    end
+
+    p = char(inputPath);
+    if isempty(p) || exist(p,'dir') ~= 7
+        p = pwd;
+    end
+
+    while numel(p) > 1 && (p(end) == filesep || any(p(end) == ['/', char(92)]))
+        p(end) = [];
+    end
+
+    pForward = strrep(p, char(92), '/');
+
+    if ~isempty(regexp(pForward, '(^|/)RawData(/|$)', 'once'))
+        rawRootForward = regexprep(pForward, '(^.*?/RawData)(/.*)?$', '$1', 'ignorecase');
+        analysedRootForward = regexprep(rawRootForward, 'RawData$', 'AnalysedData', 'ignorecase');
+        rawRoot = strrep(rawRootForward, '/', filesep);
+        analysedRoot = strrep(analysedRootForward, '/', filesep);
+    else
+        rawRoot = p;
+        analysedRoot = fullfile(p, 'AnalysedData');
+    end
+
+    if isempty(rawRoot)
+        rawRoot = pwd;
+    end
+
+    if isempty(analysedRoot)
+        analysedRoot = fullfile(pwd, 'AnalysedData');
+    end
+end
+
+
+%% =========================================================
+%  OUTPUT FOLDER CHOOSER
+% =========================================================
+function [datasetFolder, wasCancelled] = studio_choose_output_folder(autoDatasetFolder, analysedRoot, datasetName)
+    datasetFolder = autoDatasetFolder;
+    wasCancelled = false;
+
+    if nargin < 2 || isempty(analysedRoot)
+        analysedRoot = pwd;
+    end
+    if nargin < 3 || isempty(datasetName)
+        datasetName = 'Dataset';
+    end
+
+    msg = sprintf(['Output folder for this dataset:\n\n%s\n\nUse this automatic folder, or choose a different output parent folder?'], autoDatasetFolder);
+
+    choice = questdlg(msg, ...
+        'Choose output folder', ...
+        'Automatic', ...
+        'Choose parent folder', ...
+        'Cancel load', ...
+        'Automatic');
+
+    if isempty(choice) || strcmp(choice,'Cancel load')
+        wasCancelled = true;
+        return;
+    end
+
+    if strcmp(choice,'Automatic')
+        datasetFolder = autoDatasetFolder;
+        return;
+    end
+
+    startDir = analysedRoot;
+
+    try
+        if ispref('fusi_studio','lastOutputParent')
+            prefDir = getpref('fusi_studio','lastOutputParent');
+            if ischar(prefDir) && exist(prefDir,'dir')
+                startDir = prefDir;
+            end
+        end
+    catch
+    end
+
+    if isempty(startDir) || exist(startDir,'dir') ~= 7
+        try
+            startDir = fileparts(autoDatasetFolder);
+        catch
+            startDir = pwd;
+        end
+    end
+
+    if isempty(startDir) || exist(startDir,'dir') ~= 7
+        startDir = pwd;
+    end
+
+    titleStr = sprintf('Select OUTPUT PARENT folder. Dataset folder "%s" will be created inside it.', datasetName);
+    parentDir = uigetdir(startDir, titleStr);
+
+    if isequal(parentDir,0)
+        wasCancelled = true;
+        return;
+    end
+
+    try
+        setpref('fusi_studio','lastOutputParent',parentDir);
+    catch
+    end
+
+    datasetFolder = fullfile(parentDir, datasetName);
+end
+
+
+%% =========================================================
+%  DARK LOAD OPTIONS DIALOG
+% =========================================================
+function defaultTR = studio_get_last_tr_default()
+    defaultTR = 0.320;
+    try
+        if ispref('fusi_studio','lastTR')
+            tmp = getpref('fusi_studio','lastTR');
+            if isnumeric(tmp) && isfinite(tmp) && tmp > 0
+                defaultTR = tmp;
+            end
+        end
+    catch
+    end
+end
+
+function answ = studio_silent_tr_answer_for_old_prompt()
+    answ = {num2str(studio_get_last_tr_default())};
+end
+
+function [TR, datasetFolder, wasCancelled, probeType, defaultTR] = studio_load_options_dark_dialog(initialTR, autoDatasetFolder, analysedRoot, datasetName, probeType, defaultTR, data, meta)
+    TR = initialTR;
+    datasetFolder = autoDatasetFolder;
+    wasCancelled = false;
+
+    if nargin < 7
+        data = struct();
+    end
+    if nargin < 8
+        meta = struct();
+    end
+
+    if nargin < 5 || isempty(probeType) || nargin < 6 || isempty(defaultTR) || ~isnumeric(defaultTR) || ~isfinite(defaultTR) || defaultTR <= 0
+        try
+            [probeType, defaultTR] = detectProbeTypeFromMeta(data, meta);
+    defaultTR = studio_probe_default_tr_seconds(probeType, data);
+        catch
+            probeType = '2D Probe';
+            defaultTR = 0.320;
+        end
+    end
+
+    if nargin < 1 || isempty(initialTR) || ~isnumeric(initialTR) || ~isfinite(initialTR) || initialTR <= 0
+        initialTR = defaultTR;
+    end
+    if nargin < 2 || isempty(autoDatasetFolder)
+        autoDatasetFolder = fullfile(pwd,'AnalysedData', 'Dataset');
+    end
+    if nargin < 3 || isempty(analysedRoot)
+        analysedRoot = fileparts(autoDatasetFolder);
+    end
+    if nargin < 4 || isempty(datasetName)
+        datasetName = 'Dataset';
+    end
+
+    fileTR = [];
+    fileTRSource = 'not found';
+    try
+        [fileTR, fileTRSource] = studio_get_file_tr_candidate(data, meta);
+    catch
+        fileTR = [];
+        fileTRSource = 'not found';
+    end
+
+    customTRmsDefault = defaultTR * 1000;
+    if ~isempty(fileTR) && isfinite(fileTR) && fileTR > 0
+        customTRmsDefault = fileTR * 1000;
+    end
+
+    bg       = [0.07 0.08 0.10];
+    panel    = [0.12 0.13 0.16];
+    panel2   = [0.16 0.17 0.21];
+    fg       = [0.94 0.94 0.94];
+    muted    = [0.72 0.74 0.78];
+    green    = [0.10 0.50 0.24];
+    red      = [0.62 0.13 0.12];
+    blue     = [0.12 0.28 0.52];
+    orange   = [0.85 0.45 0.12];
+
+    W = 1000;
+    H = 760;
+    scr = get(0,'ScreenSize');
+    x0 = max(30, round((scr(3)-W)/2));
+    y0 = max(30, round((scr(4)-H)/2));
+
+    dlg = figure('Name','Load dataset options', ...
+        'NumberTitle','off', ...
+        'MenuBar','none', ...
+        'ToolBar','none', ...
+        'Color',bg, ...
+        'Units','pixels', ...
+        'Position',[x0 y0 W H], ...
+        'Resize','off', ...
+        'WindowStyle','modal', ...
+        'CloseRequestFcn',@onCancel);
+
+    result = struct();
+    result.cancel = true;
+    result.TR = defaultTR;
+    result.datasetFolder = autoDatasetFolder;
+    setappdata(dlg,'result',result);
+
+    uicontrol(dlg,'Style','text', ...
+        'String','Load dataset options', ...
+        'Units','pixels', ...
+        'Position',[35 595 790 36], ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',21, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    uicontrol(dlg,'Style','text', ...
+        'String','Confirm probe/TR settings and choose where analysed data should be saved.', ...
+        'Units','pixels', ...
+        'Position',[35 565 790 24], ...
+        'BackgroundColor',bg, ...
+        'ForegroundColor',muted, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'HorizontalAlignment','left');
+
+    % Probe/TR panel
+    uipanel('Parent',dlg, ...
+        'Units','pixels', ...
+        'Position',[35 390 790 160], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'BorderType','line', ...
+        'HighlightColor',panel2);
+
+    uicontrol(dlg,'Style','text', ...
+        'String','Probe and temporal resolution', ...
+        'Units','pixels', ...
+        'Position',[60 515 500 26], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',14, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    infoText = sprintf('Detected probe: %s     |     Probe default TR: %.0f ms (%.3f s)', probeType, defaultTR*1000, defaultTR);
+    if ~isempty(fileTR)
+        infoText = sprintf('%s     |     File TR: %.0f ms (%.3f s)', infoText, fileTR*1000, fileTR);
+    end
+
+    uicontrol(dlg,'Style','text', ...
+        'String',infoText, ...
+        'Units','pixels', ...
+        'Position',[60 487 735 24], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',muted, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'HorizontalAlignment','left');
+
+    hUseDefaultTR = uicontrol(dlg,'Style','radiobutton', ...
+        'String',sprintf('Use probe default TR: %.0f ms', defaultTR*1000), ...
+        'Value',1, ...
+        'Units','pixels', ...
+        'Position',[60 450 320 28], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'Callback',@onUseDefaultTR);
+
+    hUseCustomTR = uicontrol(dlg,'Style','radiobutton', ...
+        'String','Use custom TR', ...
+        'Value',0, ...
+        'Units','pixels', ...
+        'Position',[410 450 190 28], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'Callback',@onUseCustomTR);
+
+    hCustomTRms = uicontrol(dlg,'Style','edit', ...
+        'String',sprintf('%.0f', customTRmsDefault), ...
+        'Units','pixels', ...
+        'Position',[590 448 105 32], ...
+        'BackgroundColor',[0.24 0.24 0.27], ...
+        'ForegroundColor',[0.85 0.85 0.85], ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'HorizontalAlignment','center', ...
+        'Enable','off');
+
+    uicontrol(dlg,'Style','text', ...
+        'String','ms', ...
+        'Units','pixels', ...
+        'Position',[705 452 40 24], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',muted, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'HorizontalAlignment','left');
+
+    if ~isempty(fileTR) && isfinite(fileTR) && fileTR > 0
+        trHintString = sprintf('Default TR is 320 ms. File TR %.0f ms is pre-filled in Custom TR. Source: %s', fileTR*1000, fileTRSource);
+    else
+        trHintString = 'Default TR is 320 ms and is pre-selected. Use Custom TR if needed.';
+    end
+
+    hTRHint = uicontrol(dlg,'Style','text', ...
+        'String',trHintString, ...
+        'Units','pixels', ...
+        'Position',[60 414 735 24], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',orange, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left');
+
+    % Output panel
+    uipanel('Parent',dlg, ...
+        'Units','pixels', ...
+        'Position',[35 115 790 260], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'BorderType','line', ...
+        'HighlightColor',panel2);
+
+    uicontrol(dlg,'Style','text', ...
+        'String','Output folder', ...
+        'Units','pixels', ...
+        'Position',[60 340 250 26], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',14, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','left');
+
+    hAuto = uicontrol(dlg,'Style','radiobutton', ...
+        'String','Automatic output folder (recommended)', ...
+        'Value',1, ...
+        'Units','pixels', ...
+        'Position',[60 305 360 28], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'Callback',@onAuto);
+
+    hCustom = uicontrol(dlg,'Style','radiobutton', ...
+        'String','Choose custom output parent folder', ...
+        'Value',0, ...
+        'Units','pixels', ...
+        'Position',[440 305 330 28], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'Callback',@onCustom);
+
+    uicontrol(dlg,'Style','text', ...
+        'String','Automatic dataset folder:', ...
+        'Units','pixels', ...
+        'Position',[60 272 300 22], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',muted, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left');
+
+    hAutoPath = uicontrol(dlg,'Style','edit', ...
+        'String',autoDatasetFolder, ...
+        'Units','pixels', ...
+        'Position',[60 238 710 30], ...
+        'BackgroundColor',panel2, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left', ...
+        'Enable','inactive');
+
+    uicontrol(dlg,'Style','text', ...
+        'String','Custom parent folder. The dataset folder will be created inside this folder:', ...
+        'Units','pixels', ...
+        'Position',[60 202 650 22], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',muted, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left');
+
+    startDir = analysedRoot;
+    try
+        if ispref('fusi_studio','lastOutputParent')
+            prefDir = getpref('fusi_studio','lastOutputParent');
+            if ischar(prefDir) && exist(prefDir,'dir')
+                startDir = prefDir;
+            end
+        end
+    catch
+    end
+    if isempty(startDir) || exist(startDir,'dir') ~= 7
+        startDir = fileparts(autoDatasetFolder);
+    end
+    if isempty(startDir) || exist(startDir,'dir') ~= 7
+        startDir = pwd;
+    end
+
+    hParent = uicontrol(dlg,'Style','edit', ...
+        'String',startDir, ...
+        'Units','pixels', ...
+        'Position',[60 165 585 32], ...
+        'BackgroundColor',[0.24 0.24 0.27], ...
+        'ForegroundColor',[0.85 0.85 0.85], ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left', ...
+        'Enable','off');
+
+    hBrowse = uicontrol(dlg,'Style','pushbutton', ...
+        'String','Browse', ...
+        'Units','pixels', ...
+        'Position',[660 165 110 32], ...
+        'BackgroundColor',blue, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',11, ...
+        'FontWeight','bold', ...
+        'Enable','off', ...
+        'Callback',@onBrowse);
+
+    hHint = uicontrol(dlg,'Style','text', ...
+        'String','Automatic mode is selected. This keeps your current workflow unchanged.', ...
+        'Units','pixels', ...
+        'Position',[60 128 710 24], ...
+        'BackgroundColor',panel, ...
+        'ForegroundColor',orange, ...
+        'FontName','Arial', ...
+        'FontSize',10, ...
+        'HorizontalAlignment','left');
+
+    % Buttons
+    uicontrol(dlg,'Style','pushbutton', ...
+        'String','Cancel', ...
+        'Units','pixels', ...
+        'Position',[535 40 130 46], ...
+        'BackgroundColor',red, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'FontWeight','bold', ...
+        'Callback',@onCancel);
+
+    uicontrol(dlg,'Style','pushbutton', ...
+        'String','Proceed', ...
+        'Units','pixels', ...
+        'Position',[685 40 140 46], ...
+        'BackgroundColor',green, ...
+        'ForegroundColor',fg, ...
+        'FontName','Arial', ...
+        'FontSize',13, ...
+        'FontWeight','bold', ...
+        'Callback',@onProceed);
+
+    try
+        studio_scale_load_options_dialog(dlg, 1.16, 1.12, 1.18);
+    catch
+    end
+
+    drawnow;
+    try, HUMoR_popup_autofit_apply(dlg); catch, end
+    uiwait(dlg);
+
+    if ishandle(dlg)
+        result = getappdata(dlg,'result');
+        try delete(dlg); catch, end
+    else
+        result = struct('cancel',true,'TR',defaultTR,'datasetFolder',autoDatasetFolder);
+    end
+
+    if isfield(result,'cancel') && result.cancel
+        wasCancelled = true;
+        return;
+    end
+
+    TR = result.TR;
+    datasetFolder = result.datasetFolder;
+    wasCancelled = false;
+
+    function onUseDefaultTR(~,~)
+        if ~ishandle(dlg), return; end
+        set(hUseDefaultTR,'Value',1);
+        set(hUseCustomTR,'Value',0);
+        set(hCustomTRms,'Enable','off','BackgroundColor',[0.24 0.24 0.27],'ForegroundColor',[0.85 0.85 0.85]);
+        set(hTRHint,'String','Probe default TR is pre-selected. If file TR is detected, it is pre-filled in Custom TR.','ForegroundColor',orange);
+    end
+
+    function onUseCustomTR(~,~)
+        if ~ishandle(dlg), return; end
+        set(hUseDefaultTR,'Value',0);
+        set(hUseCustomTR,'Value',1);
+        set(hCustomTRms,'Enable','on','BackgroundColor',[0.98 0.98 0.98],'ForegroundColor',[0 0 0]);
+        set(hTRHint,'String','Custom TR selected. Enter the value in milliseconds.','ForegroundColor',muted);
+    end
+
+    function onAuto(~,~)
+        if ~ishandle(dlg), return; end
+        set(hAuto,'Value',1);
+        set(hCustom,'Value',0);
+        set(hParent,'Enable','off','BackgroundColor',[0.24 0.24 0.27],'ForegroundColor',[0.85 0.85 0.85]);
+        set(hBrowse,'Enable','off');
+        set(hHint,'String','Automatic mode is selected. This keeps your current workflow unchanged.','ForegroundColor',orange);
+    end
+
+    function onCustom(~,~)
+        if ~ishandle(dlg), return; end
+        set(hAuto,'Value',0);
+        set(hCustom,'Value',1);
+        set(hParent,'Enable','on','BackgroundColor',[0.98 0.98 0.98],'ForegroundColor',[0 0 0]);
+        set(hBrowse,'Enable','on');
+        set(hHint,'String','Custom mode: DatasetName folder will be created inside the selected parent folder.','ForegroundColor',muted);
+    end
+
+    function onBrowse(~,~)
+        if ~ishandle(dlg), return; end
+        currentDir = get(hParent,'String');
+        if isempty(currentDir) || exist(currentDir,'dir') ~= 7
+            currentDir = startDir;
+        end
+        picked = uigetdir(currentDir, 'Select output parent folder');
+        if isequal(picked,0)
+            return;
+        end
+        set(hParent,'String',picked);
+        onCustom();
+    end
+
+    function onProceed(~,~)
+        if ~ishandle(dlg), return; end
+
+        useCustomTR = get(hUseCustomTR,'Value') == 1;
+        if useCustomTR
+            trMs = str2double(strtrim(get(hCustomTRms,'String')));
+            if isempty(trMs) || ~isfinite(trMs) || trMs <= 0
+                errordlg('Please enter a valid positive custom TR in milliseconds.','Invalid TR');
+                return;
+            end
+            trVal = trMs / 1000;
+        else
+            trVal = defaultTR;
+        end
+
+        useCustomOutput = get(hCustom,'Value') == 1;
+
+        if useCustomOutput
+            parentDir = strtrim(get(hParent,'String'));
+            if isempty(parentDir) || exist(parentDir,'dir') ~= 7
+                errordlg('Please choose a valid output parent folder.','Invalid output folder');
+                return;
+            end
+            outFolder = fullfile(parentDir, datasetName);
+            try setpref('fusi_studio','lastOutputParent',parentDir); catch, end
+        else
+            outFolder = autoDatasetFolder;
+        end
+
+        try setpref('fusi_studio','lastTR',trVal); catch, end
+
+        result = struct();
+        result.cancel = false;
+        result.TR = trVal;
+        result.datasetFolder = outFolder;
+        setappdata(dlg,'result',result);
+        uiresume(dlg);
+    end
+
+    function onCancel(~,~)
+        if ishandle(dlg)
+            result = struct();
+            result.cancel = true;
+            result.TR = defaultTR;
+            result.datasetFolder = autoDatasetFolder;
+            setappdata(dlg,'result',result);
+            uiresume(dlg);
+        end
+    end
+end
+
+
+%% =========================================================
+%  LOAD OPTIONS DIALOG SCALING HELPER
+% =========================================================
+function studio_scale_load_options_dialog(dlg, sx, sy, fontScale)
+    if nargin < 2 || isempty(sx), sx = 1.0; end
+    if nargin < 3 || isempty(sy), sy = sx; end
+    if nargin < 4 || isempty(fontScale), fontScale = max(sx,sy); end
+
+    try
+        hs = findall(dlg);
+    catch
+        return;
+    end
+
+    for ii = 1:numel(hs)
+        h = hs(ii);
+
+        try
+            if isequal(h, dlg)
+                continue;
+            end
+        catch
+        end
+
+        try
+            typ = get(h,'Type');
+        catch
+            typ = '';
+        end
+
+        if ~(strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel'))
+            continue;
+        end
+
+        try
+            oldUnits = get(h,'Units');
+            set(h,'Units','pixels');
+            p = get(h,'Position');
+            if isnumeric(p) && numel(p) >= 4
+                p(1) = round(p(1) * sx);
+                p(2) = round(p(2) * sy);
+                p(3) = round(p(3) * sx);
+                p(4) = round(p(4) * sy);
+                set(h,'Position',p);
+            end
+            set(h,'Units',oldUnits);
+        catch
+        end
+
+        try
+            fs = get(h,'FontSize');
+            if isnumeric(fs) && isfinite(fs) && fs > 0
+                set(h,'FontSize',max(9, round(fs * fontScale)));
+            end
+        catch
+        end
+    end
+end
+
+%% =========================================================
+%  ROBUST FILE PICKER HELPER
+% =========================================================
+function [file,path] = studio_uigetfile_robust(filterSpec, titleStr, startDir)
+    if nargin < 3 || isempty(startDir) || exist(startDir,'dir') ~= 7
+        startDir = '';
+        try
+            if ispref('fusi_studio','lastLoadPath')
+                p = getpref('fusi_studio','lastLoadPath');
+                if ischar(p) && exist(p,'dir')
+                    startDir = p;
+                end
+            end
+        catch
+        end
+    end
+
+    if isempty(startDir) || exist(startDir,'dir') ~= 7
+        if ispc
+            homeDir = getenv('USERPROFILE');
+        else
+            homeDir = getenv('HOME');
+        end
+        if ~isempty(homeDir) && exist(homeDir,'dir')
+            desktopDir = fullfile(homeDir,'Desktop');
+            if exist(desktopDir,'dir')
+                startDir = desktopDir;
+            else
+                startDir = homeDir;
+            end
+        else
+            startDir = pwd;
+        end
+    end
+
+    try
+        [file,path] = uigetfile(filterSpec, titleStr, startDir);
+    catch
+        try
+            [file,path] = uigetfile(filterSpec, titleStr, pwd);
+        catch
+            [file,path] = uigetfile(filterSpec, titleStr);
+        end
+    end
+
+    try
+        if ~isequal(file,0) && ischar(path) && exist(path,'dir')
+            setpref('fusi_studio','lastLoadPath',path);
+        end
+    catch
+    end
+end
+
+
+%% =========================================================
+%  CUSTOM TR DEFAULT HELPER
+% =========================================================
+function ms = studio_custom_tr_ms_default(data, meta, defaultTR)
+    ms = defaultTR * 1000;
+
+    try
+        [tr, ~] = studio_get_file_tr_candidate(data, meta);
+        if ~isempty(tr) && isnumeric(tr) && isscalar(tr) && isfinite(tr) && tr > 0
+            ms = double(tr) * 1000;
+        end
+    catch
+    end
+end
+
+%% =========================================================
+%  PROBE DEFAULT TR HELPER
+% =========================================================
+function tr = studio_probe_default_tr_seconds(probeType, data)
+    %#ok<INUSD>
+    tr = 0.320;
+
+    try
+        s = lower(strtrim(char(probeType)));
+    catch
+        s = '';
+    end
+
+    is3D = false;
+
+    if ~isempty(s)
+        if ~isempty(strfind(s,'3d')) || ~isempty(strfind(s,'matrix'))
+            is3D = true;
+        end
+    end
+
+    if is3D
+        tr = 0.480;
+    else
+        tr = 0.320;
+    end
+end
+
+%% =========================================================
+%  FILE TR DETECTION HELPER
+% =========================================================
+function [tr, source] = studio_get_file_tr_candidate(data, meta)
+    tr = [];
+    source = 'not found';
+
+    try
+        if isstruct(meta) && isfield(meta,'rawMetadata') && isstruct(meta.rawMetadata)
+            rm = meta.rawMetadata;
+
+            if isfield(rm,'TRDetectedFromFileSec') && ~isempty(rm.TRDetectedFromFileSec)
+                v = rm.TRDetectedFromFileSec;
+                if isnumeric(v) && isscalar(v) && isfinite(v) && v > 0
+                    tr = double(v);
+                    source = 'TRDetectedFromFileSec';
+                    return;
+                end
+            end
+
+            if isfield(rm,'TRWasImputed') && isequal(rm.TRWasImputed,false)
+                if isfield(rm,'TRBeforeUserChoiceSec') && ~isempty(rm.TRBeforeUserChoiceSec)
+                    v = rm.TRBeforeUserChoiceSec;
+                    if isnumeric(v) && isscalar(v) && isfinite(v) && v > 0
+                        tr = double(v);
+                        source = 'TRBeforeUserChoiceSec';
+                        return;
+                    end
+                end
+            end
+        end
+    catch
+    end
+
+    try
+        if isstruct(data) && isfield(data,'TR') && ~isempty(data.TR)
+            v = data.TR;
+            if isnumeric(v) && isscalar(v) && isfinite(v) && v > 0
+                if isstruct(meta) && isfield(meta,'rawMetadata') && isstruct(meta.rawMetadata) && ...
+                        isfield(meta.rawMetadata,'TRWasImputed') && isequal(meta.rawMetadata.TRWasImputed,false)
+                    tr = double(v);
+                    source = 'data.TR from file';
+                    return;
+                end
+            end
+        end
+    catch
+    end
+end
+
+%% =========================================================
 %  CLOSE HANDLER
 % =========================================================
 function onCloseStudio(~,~)
@@ -10521,3 +11382,325 @@ c = javaObjectEDT('java.awt.Color', ...
     int32(rgb(1)), int32(rgb(2)), int32(rgb(3)));
 end
 end
+
+
+
+
+%% =========================================================
+%  SETUP POPUP SIZE HELPER
+% =========================================================
+function studio_enlarge_setup_popup_if_needed(hFig)
+    try
+        if isempty(hFig) || ~ishghandle(hFig)
+            return;
+        end
+        if ~strcmpi(get(hFig,'Type'),'figure')
+            return;
+        end
+
+        tagName = 'Patch25SetupPopupScaled';
+        try
+            if isappdata(hFig,tagName)
+                return;
+            end
+            setappdata(hFig,tagName,true);
+        catch
+        end
+
+        blob = '';
+        try
+            blob = lower(char(get(hFig,'Name')));
+        catch
+            blob = '';
+        end
+
+        try
+            hsText = findall(hFig,'Type','uicontrol');
+            for kk = 1:numel(hsText)
+                try
+                    s = get(hsText(kk),'String');
+                    if iscell(s)
+                        tmp = '';
+                        for jj = 1:numel(s)
+                            tmp = [tmp ' ' char(s{jj})]; %#ok<AGROW>
+                        end
+                        s = tmp;
+                    end
+                    if isnumeric(s)
+                        s = num2str(s);
+                    end
+                    blob = [blob ' ' lower(char(s))]; %#ok<AGROW>
+                catch
+                end
+            end
+        catch
+        end
+
+        isScrub = ~isempty(strfind(blob,'scrub')) || ~isempty(strfind(blob,'dvars'));
+        isTemp  = ~isempty(strfind(blob,'temporal smoothing')) || ~isempty(strfind(blob,'subsampling')) || ~isempty(strfind(blob,'subsample'));
+        isFilt  = ~isempty(strfind(blob,'filtering')) || ~isempty(strfind(blob,' filter')) || ~isempty(strfind(blob,'bandpass')) || ~isempty(strfind(blob,'high-pass')) || ~isempty(strfind(blob,'low-pass'));
+
+        if ~(isScrub || isTemp || isFilt)
+            return;
+        end
+
+        if isScrub
+            growW = 1.38;
+            growH = 1.30;
+            fontScale = 1.35;
+            minFont = 13;
+        elseif isTemp
+            growW = 1.36;
+            growH = 1.24;
+            fontScale = 1.24;
+            minFont = 12;
+        else
+            growW = 1.34;
+            growH = 1.24;
+            fontScale = 1.24;
+            minFont = 12;
+        end
+
+        try
+            set(hFig,'Units','pixels');
+            pos = get(hFig,'Position');
+            scr = get(0,'ScreenSize');
+
+            hs = findall(hFig);
+            maxX = pos(3);
+            maxY = pos(4);
+            minX = inf;
+            minY = inf;
+            for kk = 1:numel(hs)
+                h = hs(kk);
+                if isequal(h,hFig)
+                    continue;
+                end
+                try
+                    typ = get(h,'Type');
+                catch
+                    typ = '';
+                end
+                if strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel') || strcmpi(typ,'axes')
+                    try
+                        oldUnits = get(h,'Units');
+                        set(h,'Units','pixels');
+                        p = get(h,'Position');
+                        set(h,'Units',oldUnits);
+                        if isnumeric(p) && numel(p) >= 4
+                            minX = min(minX,p(1));
+                            minY = min(minY,p(2));
+                            maxX = max(maxX,p(1)+p(3));
+                            maxY = max(maxY,p(2)+p(4));
+                        end
+                    catch
+                    end
+                end
+            end
+
+            margin = 70;
+            needW = max(round(pos(3)*growW), round(maxX + margin));
+            needH = max(round(pos(4)*growH), round(maxY + margin));
+
+            maxAllowedW = max(760, scr(3) - 80);
+            maxAllowedH = max(560, scr(4) - 110);
+
+            newW = min(needW, maxAllowedW);
+            newH = min(needH, maxAllowedH);
+
+            newX = round((scr(3)-newW)/2);
+            newY = round((scr(4)-newH)/2);
+            newX = max(20,newX);
+            newY = max(35,newY);
+
+            set(hFig,'Position',[newX newY newW newH]);
+        catch
+            newW = [];
+            newH = [];
+        end
+
+        try
+            hs = findall(hFig);
+            for kk = 1:numel(hs)
+                h = hs(kk);
+                if isequal(h,hFig)
+                    continue;
+                end
+
+                try
+                    typ = get(h,'Type');
+                catch
+                    typ = '';
+                end
+
+                if strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel')
+                    try
+                        oldUnits = get(h,'Units');
+                        set(h,'Units','pixels');
+                        p = get(h,'Position');
+                        if isnumeric(p) && numel(p) >= 4
+                            p(3) = round(p(3) * 1.04);
+                            p(4) = round(p(4) * 1.08);
+                            set(h,'Position',p);
+                        end
+                        set(h,'Units',oldUnits);
+                    catch
+                    end
+                end
+
+                try
+                    fs = get(h,'FontSize');
+                    if isnumeric(fs) && isfinite(fs) && fs > 0
+                        set(h,'FontSize',max(minFont,round(fs*fontScale)));
+                    end
+                catch
+                end
+
+                try
+                    set(h,'FontWeight','bold');
+                catch
+                end
+            end
+        catch
+        end
+
+        try
+            studio_fit_popup_children_to_window(hFig);
+        catch
+        end
+
+        try
+            drawnow;
+        catch
+        end
+    catch
+    end
+end
+
+function studio_fit_popup_children_to_window(hFig)
+    if isempty(hFig) || ~ishghandle(hFig)
+        return;
+    end
+
+    try
+        set(hFig,'Units','pixels');
+        figPos = get(hFig,'Position');
+    catch
+        return;
+    end
+
+    marginLeft = 35;
+    marginRight = 45;
+    marginBottom = 35;
+    marginTop = 35;
+
+    hs = findall(hFig);
+    maxX = -inf;
+    maxY = -inf;
+    minX = inf;
+    minY = inf;
+
+    keep = false(size(hs));
+    posCell = cell(size(hs));
+
+    for kk = 1:numel(hs)
+        h = hs(kk);
+        if isequal(h,hFig)
+            continue;
+        end
+        try
+            typ = get(h,'Type');
+        catch
+            typ = '';
+        end
+        if strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel') || strcmpi(typ,'axes')
+            try
+                oldUnits = get(h,'Units');
+                set(h,'Units','pixels');
+                p = get(h,'Position');
+                set(h,'Units',oldUnits);
+                if isnumeric(p) && numel(p) >= 4
+                    keep(kk) = true;
+                    posCell{kk} = p;
+                    minX = min(minX,p(1));
+                    minY = min(minY,p(2));
+                    maxX = max(maxX,p(1)+p(3));
+                    maxY = max(maxY,p(2)+p(4));
+                end
+            catch
+            end
+        end
+    end
+
+    if ~isfinite(maxX) || ~isfinite(maxY)
+        return;
+    end
+
+    scr = get(0,'ScreenSize');
+    needW = round(maxX + marginRight);
+    needH = round(maxY + marginTop);
+    maxAllowedW = max(760, scr(3)-80);
+    maxAllowedH = max(560, scr(4)-110);
+
+    newW = min(max(figPos(3),needW),maxAllowedW);
+    newH = min(max(figPos(4),needH),maxAllowedH);
+
+    if newW ~= figPos(3) || newH ~= figPos(4)
+        figPos(3) = newW;
+        figPos(4) = newH;
+        figPos(1) = max(20,round((scr(3)-newW)/2));
+        figPos(2) = max(35,round((scr(4)-newH)/2));
+        set(hFig,'Position',figPos);
+    end
+
+    figW = figPos(3);
+    figH = figPos(4);
+
+    overflowX = maxX - (figW - marginRight);
+    overflowY = maxY - (figH - marginTop);
+
+    shiftX = 0;
+    shiftY = 0;
+    if minX < marginLeft
+        shiftX = marginLeft - minX;
+    elseif overflowX > 0
+        shiftX = -overflowX;
+    end
+    if minY < marginBottom
+        shiftY = marginBottom - minY;
+    elseif overflowY > 0
+        shiftY = -overflowY;
+    end
+
+    for kk = 1:numel(hs)
+        if ~keep(kk)
+            continue;
+        end
+        h = hs(kk);
+        p = posCell{kk};
+        try
+            oldUnits = get(h,'Units');
+            set(h,'Units','pixels');
+            p(1) = p(1) + shiftX;
+            p(2) = p(2) + shiftY;
+
+            if p(1) + p(3) > figW - marginRight
+                p(3) = max(40, figW - marginRight - p(1));
+            end
+            if p(2) + p(4) > figH - marginTop
+                p(4) = max(20, figH - marginTop - p(2));
+            end
+            if p(1) < marginLeft
+                p(1) = marginLeft;
+            end
+            if p(2) < marginBottom
+                p(2) = marginBottom;
+            end
+
+            set(h,'Position',p);
+            set(h,'Units',oldUnits);
+        catch
+        end
+    end
+end
+

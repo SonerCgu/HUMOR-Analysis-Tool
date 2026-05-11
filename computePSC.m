@@ -1,7 +1,7 @@
 function proc = computePSC(I, TR, par, baseline)
 % computePSC (UPDATED: supports 2D + matrix probe 3D)
 % ------------------------------------------------------------
-% Classic PSC pipeline (no Gabriel branches).
+% Classic PSC pipeline.
 %
 % Supports input:
 %   - 2D probe:     I = [Y X T]
@@ -58,7 +58,7 @@ b0 = max(1, b0);
 b1 = min(nFrames, b1);
 
 if b0 >= b1 || b1 < 1 || b0 > nFrames
-    warning('Baseline window invalid — using first 10%% of data.');
+    warning('Baseline window invalid â€” using first 10%% of data.');
     b0 = 1;
     b1 = max(1, round(0.1 * nFrames));
 end
@@ -264,3 +264,5 @@ end
 
 PSC = reshape(V, [nY,nX,nZ,nT]);
 end
+
+

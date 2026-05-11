@@ -1,0 +1,850 @@
+function out = GA_exportGroupAnalysisPPTBundleFix_20260504(mode,varargin)
+% GA_exportGroupAnalysisPPTBundleFix_20260504
+% Robust GroupAnalysis export hotfix.
+% Modes:
+%   GA_exportGroupAnalysisPPTBundleFix_20260504('ppt')
+%   GA_exportGroupAnalysisPPTBundleFix_20260504('scm')
+
+if nargin < 1 || isempty(mode), mode = 'ppt'; end
+out = [];
+fig = localGetFigure(varargin{:});
+
+try
+    switch lower(char(mode))
+        case {'ppt','powerpoint','exportppt'}
+            out = localExportPPT(fig);
+        case {'scm','data','exportdata','bundle'}
+            out = localExportSCM(fig);
+        otherwise
+            error('Unknown mode: %s',char(mode));
+    end
+catch ME
+    localSetStatus(fig,['Export ERROR: ' ME.message]);
+    fprintf(2,'\nExport ERROR: %s\n',ME.message);
+    rethrow(ME);
+end
+end
+
+function fig = localGetFigure(varargin)
+fig = [];
+for k = 1:numel(varargin)
+    try
+        if ishghandle(varargin{k})
+            fig = ancestor(varargin{k},'figure');
+            if ~isempty(fig), return; end
+        end
+    catch
+    end
+end
+try
+    figs = findall(0,'Type','figure');
+    for k = 1:numel(figs)
+        nm = lower(localGetProp(figs(k),'Name'));
+        tg = lower(localGetProp(figs(k),'Tag'));
+        if ~isempty(strfind(nm,'group')) || ~isempty(strfind(tg,'group'))
+            fig = figs(k);
+            return;
+        end
+    end
+end
+try, fig = gcf; catch, fig = []; end
+end
+
+function out = localExportPPT(fig)
+if isempty(fig) || ~ishghandle(fig)
+    error('Open GroupAnalysis first, then run the exporter.');
+end
+
+localSetStatus(fig,'Export PPT: collecting open GroupAnalysis data ...');
+S = localCollectState(fig);
+D = localPickMainArray(S);
+if isempty(D.data)
+    error(['Could not find group PSC / time-series / map-stack data in the open GUI. ' ...
+           'Run Group Map Analysis first, keep the GroupAnalysis window open, then export again.']);
+end
+
+info = localInferInfo(S,D);
+pr = localSmallPrompt(info);
+if isempty(pr)
+    localSetStatus(fig,'Export PPT cancelled.');
+    out = [];
+    return;
+end
+
+[saveFile,savePath] = uiputfile('*.pptx','Save GroupAnalysis PPT export',fullfile(pwd,'GroupAnalysis_PI_export.pptx'));
+if isequal(saveFile,0)
+    localSetStatus(fig,'Export PPT cancelled.');
+    out = [];
+    return;
+end
+pptFile = fullfile(savePath,saveFile);
+pngDir = fullfile(savePath,['GA_export_png_' datestr(now,'yyyymmdd_HHMMSS')]);
+if ~exist(pngDir,'dir'), mkdir(pngDir); end
+
+localSetStatus(fig,'Export PPT: preparing PI-windowed brain maps ...');
+
+[maps,labels,usedMode] = localBuildMaps(D.data,info.TR,pr.piStart,pr.piEnd,pr.winSize);
+if isempty(maps)
+    error('No maps could be generated. Check PI window and window size.');
+end
+
+bg = localPickBackground(S,size(maps));
+clim = info.caxis;
+thr = info.threshold;
+alphaMin = info.alphaMin;
+alphaMax = info.alphaMax;
+cmapName = info.cmap;
+
+nMaps = size(maps,3);
+pngs = cell(nMaps,1);
+for k = 1:nMaps
+    localSetStatus(fig,sprintf('Export PPT: rendering brain %d / %d ...',k,nMaps));
+    thisBg = localBgForIndex(bg,k,size(maps(:,:,k)));
+    pngs{k} = fullfile(pngDir,sprintf('GA_PI_brain_%03d.png',k));
+    localRenderBrainPNG(thisBg,maps(:,:,k),pngs{k},labels{k},clim,thr,alphaMin,alphaMax,cmapName);
+end
+
+cbFile = fullfile(pngDir,'GA_left_colorbar.png');
+localRenderColorbarPNG(cbFile,clim,cmapName);
+
+meta = localMakeMetaText(S,D,info,pr,usedMode,nMaps);
+localSetStatus(fig,'Export PPT: creating PowerPoint ...');
+localWritePPT(pptFile,pngs,labels,cbFile,meta,pr.perSlide);
+
+localSetStatus(fig,['Export PPT complete: ' pptFile]);
+fprintf('\nExport PPT complete:\n%s\n',pptFile);
+out = pptFile;
+end
+
+function out = localExportSCM(fig)
+if isempty(fig) || ~ishghandle(fig)
+    error('Open GroupAnalysis first, then run the exporter.');
+end
+
+localSetStatus(fig,'Export Data SCM: collecting open GroupAnalysis data ...');
+S = localCollectState(fig);
+D = localPickMainArray(S);
+if isempty(D.data)
+    error('Could not find group PSC / time-series / map-stack data to save as SCM bundle.');
+end
+info = localInferInfo(S,D);
+
+[saveFile,savePath] = uiputfile('*.mat','Save no-popup SCM bundle',fullfile(pwd,'GroupAnalysis_SCM_bundle.mat'));
+if isequal(saveFile,0)
+    localSetStatus(fig,'Export Data SCM cancelled.');
+    out = [];
+    return;
+end
+bundleFile = fullfile(savePath,saveFile);
+
+PSC = double(D.data);
+bg = localPickBackground(S,size(PSC));
+TR = info.TR;
+baseline = info.baseline;
+nVolsOrig = size(PSC,ndims(PSC));
+
+par = struct();
+par.source = 'GroupAnalysis';
+par.exportedBy = 'GA_exportGroupAnalysisPPTBundleFix_20260504';
+par.exportDate = datestr(now);
+par.caxis = info.caxis;
+par.previewCaxis = info.caxis;
+par.threshold = info.threshold;
+par.mapThreshold = info.threshold;
+par.alphaModMin = info.alphaMin;
+par.alphaModMax = info.alphaMax;
+par.colormap = info.cmap;
+par.cmap = info.cmap;
+par.isGroupAnalysisBundle = true;
+par.note = 'No-popup SCM bundle from GroupAnalysis. Open in SCM GUI.';
+par.mainArrayName = D.name;
+par.mainArraySource = D.source;
+
+save(bundleFile,'PSC','bg','TR','par','baseline','nVolsOrig','-v7.3');
+localSetStatus(fig,['Export Data SCM complete: ' bundleFile]);
+fprintf('\nExport Data SCM complete:\n%s\n',bundleFile);
+out = bundleFile;
+end
+
+function S = localCollectState(fig)
+S = struct();
+S.num = struct('name',{},'source',{},'data',{},'score');
+S.scalar = struct('name',{},'source',{},'value');
+S.text = {};
+
+% 1) guidata
+try
+    gd = guidata(fig);
+    S = localScanValue(S,gd,'guidata','guidata',0);
+catch
+end
+
+% 2) figure appdata
+try
+    ad = getappdata(fig);
+    S = localScanValue(S,ad,'appdata(fig)','appdata(fig)',0);
+catch
+end
+
+% 3) all children appdata + UserData, but without crawling graphics internals
+try
+    objs = findall(fig);
+    for i = 1:min(numel(objs),300)
+        try
+            ud = get(objs(i),'UserData');
+            if ~isempty(ud)
+                S = localScanValue(S,ud,sprintf('UserData_%d',i),'UserData',0);
+            end
+        catch
+        end
+        try
+            ad = getappdata(objs(i));
+            if ~isempty(ad)
+                S = localScanValue(S,ad,sprintf('appdata_obj_%d',i),'appdata(obj)',0);
+            end
+        catch
+        end
+    end
+catch
+end
+
+% 4) base workspace: use whos first, then only load plausible variables
+try
+    W = evalin('base','whos');
+    for i = 1:numel(W)
+        nm = W(i).name;
+        cls = W(i).class;
+        sz = W(i).size;
+        if W(i).bytes > 4e9
+            continue;
+        end
+        plausible = false;
+        if strcmp(cls,'double') || strcmp(cls,'single') || strcmp(cls,'uint16') || strcmp(cls,'uint8') || strcmp(cls,'logical')
+            if numel(sz) >= 3 || (numel(sz) >= 2 && all(sz(1:min(2,end)) > 20))
+                plausible = true;
+            end
+        elseif strcmp(cls,'struct')
+            plausible = true;
+        end
+        if plausible
+            try
+                val = evalin('base',nm);
+                S = localScanValue(S,val,nm,'base',0);
+            catch
+            end
+        end
+    end
+catch
+end
+end
+
+function S = localScanValue(S,val,name,source,depth)
+if depth > 5
+    return;
+end
+if isempty(val)
+    return;
+end
+
+if isnumeric(val) || islogical(val)
+    sz = size(val);
+    nd = ndims(val);
+    if numel(val) == 1
+        q.name = name; q.source = source; q.value = double(val);
+        S.scalar(end+1) = q;
+    elseif nd >= 2 && numel(val) >= 100
+        score = localScoreArray(name,val);
+        q.name = name; q.source = source; q.data = val; q.score = score;
+        S.num(end+1) = q;
+    end
+    return;
+end
+
+if ischar(val)
+    if numel(val) < 300
+        S.text{end+1} = val;
+    end
+    return;
+end
+
+if iscell(val)
+    n = min(numel(val),80);
+    for k = 1:n
+        try
+            S = localScanValue(S,val{k},sprintf('%s{%d}',name,k),source,depth+1);
+        catch
+        end
+    end
+    return;
+end
+
+if isstruct(val)
+    if numel(val) > 20
+        val = val(1:min(numel(val),20));
+    end
+    for m = 1:numel(val)
+        f = fieldnames(val(m));
+        for k = 1:numel(f)
+            try
+                S = localScanValue(S,val(m).(f{k}),[name '.' f{k}],source,depth+1);
+            catch
+            end
+        end
+    end
+    return;
+end
+end
+
+function score = localScoreArray(name,A)
+nm = lower(name);
+sz = size(A);
+nd = ndims(A);
+score = 0;
+if nd >= 3, score = score + 50; end
+if nd >= 4, score = score + 35; end
+if numel(sz) >= 2 && sz(1) > 20 && sz(2) > 20, score = score + 20; end
+if numel(A) > 5000, score = score + 5; end
+good = {'psc','group','map','maps','overlay','signal','time','series','meanpsc','avgpsc','pi'};
+for k = 1:numel(good)
+    if ~isempty(strfind(nm,good{k})), score = score + 12; end
+end
+bad = {'mask','roi','atlas','label','labels','bg','background','underlay','anat','axis','color','cmap'};
+for k = 1:numel(bad)
+    if ~isempty(strfind(nm,bad{k})), score = score - 30; end
+end
+% Prefer arrays that can produce several maps
+if nd == 3 && sz(3) > 1, score = score + min(sz(3),60); end
+if nd == 4 && sz(4) > 1, score = score + min(sz(4),60); end
+end
+
+function D = localPickMainArray(S)
+D = struct('name','','source','','data',[]);
+if ~isfield(S,'num') || isempty(S.num)
+    return;
+end
+best = -Inf; bestIdx = 0;
+for i = 1:numel(S.num)
+    A = S.num(i).data;
+    sz = size(A);
+    nd = ndims(A);
+    ok = false;
+    if nd >= 3 && numel(A) >= 1000
+        if sz(1) > 15 && sz(2) > 15
+            ok = true;
+        end
+    end
+    if ok && S.num(i).score > best
+        best = S.num(i).score;
+        bestIdx = i;
+    end
+end
+if bestIdx > 0
+    D.name = S.num(bestIdx).name;
+    D.source = S.num(bestIdx).source;
+    D.data = squeeze(S.num(bestIdx).data);
+end
+end
+
+function info = localInferInfo(S,D)
+info = struct();
+info.TR = localFindScalar(S,{'tr','TR','frameperiod','frame_period','dt'},1);
+if isempty(info.TR) || ~isfinite(info.TR) || info.TR <= 0
+    info.TR = 1;
+end
+
+info.caxis = localFindVector2(S,{'caxis','clim','previewcaxis','mapcaxis','overlaycaxis'},[0 100]);
+info.threshold = localFindScalar(S,{'threshold','mapthreshold','thresh'},0);
+info.alphaMin = localFindScalar(S,{'alphamodmin','modmin','alphamin'},10);
+info.alphaMax = localFindScalar(S,{'alphamodmax','modmax','alphamax'},20);
+if info.alphaMax <= info.alphaMin
+    info.alphaMin = 10; info.alphaMax = 20;
+end
+info.baseline = localFindVector2(S,{'baseline','basewindow','baselinewindow'},[30 240]);
+info.cmap = localFindCmap(S);
+
+% If caxis was not found but data is available, infer sensible limits
+if isequal(info.caxis,[0 100])
+    try
+        x = double(D.data(:));
+        x = x(isfinite(x));
+        if ~isempty(x)
+            p1 = localPrctile(x,1);
+            p99 = localPrctile(x,99);
+            if p99 > p1
+                if p1 < 0
+                    m = max(abs([p1 p99]));
+                    info.caxis = [-m m];
+                else
+                    info.caxis = [0 p99];
+                end
+            end
+        end
+    catch
+    end
+end
+end
+
+function val = localFindScalar(S,keys,defaultVal)
+val = defaultVal;
+if ~isfield(S,'scalar'), return; end
+best = -Inf;
+for i = 1:numel(S.scalar)
+    nm = lower(S.scalar(i).name);
+    sc = 0;
+    for k = 1:numel(keys)
+        if ~isempty(strfind(nm,lower(keys{k}))), sc = sc + 10; end
+    end
+    if sc > best
+        v = S.scalar(i).value;
+        if isfinite(v) && abs(v) < 1e6
+            val = double(v);
+            best = sc;
+        end
+    end
+end
+end
+
+function val = localFindVector2(S,keys,defaultVal)
+val = defaultVal;
+if ~isfield(S,'num'), return; end
+best = -Inf;
+for i = 1:numel(S.num)
+    A = S.num(i).data;
+    if isnumeric(A) && numel(A) == 2
+        nm = lower(S.num(i).name);
+        sc = 0;
+        for k = 1:numel(keys)
+            if ~isempty(strfind(nm,lower(keys{k}))), sc = sc + 10; end
+        end
+        if sc > best
+            v = double(A(:)');
+            if all(isfinite(v)) && v(2) > v(1)
+                val = v;
+                best = sc;
+            end
+        end
+    end
+end
+end
+
+function cmap = localFindCmap(S)
+cmap = 'blackbdy_iso';
+try
+    txt = lower(strjoin(S.text,' '));
+    opts = {'blackbdy_iso','blackbdy','hot','parula','turbo','jet','winter','gray'};
+    for k = 1:numel(opts)
+        if ~isempty(strfind(txt,opts{k}))
+            cmap = opts{k};
+            return;
+        end
+    end
+catch
+end
+end
+
+function pr = localSmallPrompt(info)
+prompt = { ...
+    'Injection end time in seconds:', ...
+    'PI export start time in seconds:', ...
+    'PI export end time in seconds:', ...
+    'Window size in seconds:', ...
+    'Brain images per slide:'};
+def = { ...
+    '300', ...
+    '300', ...
+    '900', ...
+    '60', ...
+    '6'};
+titleStr = sprintf('GroupAnalysis PPT export  |  auto TR = %.4g sec',info.TR);
+answ = inputdlg(prompt,titleStr,1,def);
+if isempty(answ), pr = []; return; end
+pr = struct();
+pr.injEnd = str2double(answ{1});
+pr.piStart = str2double(answ{2});
+pr.piEnd = str2double(answ{3});
+pr.winSize = str2double(answ{4});
+pr.perSlide = round(str2double(answ{5}));
+if ~isfinite(pr.injEnd), pr.injEnd = 300; end
+if ~isfinite(pr.piStart), pr.piStart = pr.injEnd; end
+if ~isfinite(pr.piEnd) || pr.piEnd <= pr.piStart, pr.piEnd = pr.piStart + 600; end
+if ~isfinite(pr.winSize) || pr.winSize <= 0, pr.winSize = 60; end
+if ~isfinite(pr.perSlide) || pr.perSlide < 1, pr.perSlide = 6; end
+pr.perSlide = min(max(pr.perSlide,1),12);
+end
+
+function [maps,labels,modeUsed] = localBuildMaps(A,TR,piStart,piEnd,winSize)
+A = squeeze(double(A));
+sz = size(A);
+nd = ndims(A);
+maps = [];
+labels = {};
+modeUsed = '';
+
+if nd == 2
+    maps = A;
+    labels = {'Static group map'};
+    modeUsed = 'single static map';
+    return;
+end
+
+if nd == 3
+    n3 = sz(3);
+    if n3 >= 10
+        % Treat as X x Y x Time
+        nT = n3;
+        edges = piStart:winSize:piEnd;
+        if numel(edges) < 2, edges = [piStart piStart+winSize]; end
+        allMaps = {}; allLabels = {};
+        for w = 1:(numel(edges)-1)
+            t0 = edges(w); t1 = edges(w+1);
+            i0 = max(1,floor(t0/TR)+1);
+            i1 = min(nT,floor(t1/TR));
+            if i1 < i0, continue; end
+            allMaps{end+1} = mean(A(:,:,i0:i1),3,'omitnan');
+            allLabels{end+1} = sprintf('PI %.0f-%.0f s',t0,t1);
+        end
+        if isempty(allMaps)
+            % fallback: use all frames as map stack
+            maps = A;
+            for k = 1:n3, labels{k} = sprintf('Map %d',k); end
+            modeUsed = '3D map stack fallback';
+        else
+            maps = zeros(size(A,1),size(A,2),numel(allMaps));
+            for k = 1:numel(allMaps), maps(:,:,k) = allMaps{k}; end
+            labels = allLabels;
+            modeUsed = '3D time-series PI windows';
+        end
+        return;
+    else
+        % Treat as X x Y x map/slice stack
+        maps = A;
+        for k = 1:n3, labels{k} = sprintf('Group map / slice %d',k); end
+        modeUsed = '3D precomputed map stack';
+        return;
+    end
+end
+
+if nd >= 4
+    % Assume X x Y x Slice x Time. Export every slice for every PI window.
+    nS = sz(3);
+    nT = sz(4);
+    edges = piStart:winSize:piEnd;
+    if numel(edges) < 2, edges = [piStart piStart+winSize]; end
+    tmp = {}; lab = {};
+    for w = 1:(numel(edges)-1)
+        t0 = edges(w); t1 = edges(w+1);
+        i0 = max(1,floor(t0/TR)+1);
+        i1 = min(nT,floor(t1/TR));
+        if i1 < i0, continue; end
+        for s = 1:nS
+            M = squeeze(mean(A(:,:,s,i0:i1),4,'omitnan'));
+            tmp{end+1} = M;
+            lab{end+1} = sprintf('PI %.0f-%.0f s | slice %d',t0,t1,s);
+        end
+    end
+    if isempty(tmp)
+        % fallback: all slices at first timepoint
+        for s = 1:nS
+            tmp{end+1} = squeeze(A(:,:,s,1));
+            lab{end+1} = sprintf('Slice %d',s);
+        end
+        modeUsed = '4D slice fallback';
+    else
+        modeUsed = '4D slice x PI-window export';
+    end
+    maps = zeros(size(A,1),size(A,2),numel(tmp));
+    for k = 1:numel(tmp), maps(:,:,k) = tmp{k}; end
+    labels = lab;
+    return;
+end
+end
+
+function bg = localPickBackground(S,mapSize)
+bg = [];
+if ~isfield(S,'num') || isempty(S.num), return; end
+H = mapSize(1); W = mapSize(2);
+best = -Inf; idx = 0;
+for i = 1:numel(S.num)
+    A = squeeze(S.num(i).data);
+    sz = size(A);
+    nm = lower(S.num(i).name);
+    if numel(sz) >= 2 && sz(1) == H && sz(2) == W
+        sc = 0;
+        good = {'bg','background','underlay','anat','anatomy','mean','doppler','vessel'};
+        for k = 1:numel(good)
+            if ~isempty(strfind(nm,good{k})), sc = sc + 20; end
+        end
+        bad = {'psc','overlay','map','group','mask','roi'};
+        for k = 1:numel(bad)
+            if ~isempty(strfind(nm,bad{k})), sc = sc - 25; end
+        end
+        if ndims(A) <= 3 && sc > best
+            best = sc; idx = i;
+        end
+    end
+end
+if idx > 0
+    bg = squeeze(double(S.num(idx).data));
+end
+end
+
+function B = localBgForIndex(bg,k,targetSize)
+if isempty(bg)
+    B = zeros(targetSize);
+    return;
+end
+bg = squeeze(double(bg));
+if ndims(bg) == 2
+    B = bg;
+elseif ndims(bg) == 3
+    idx = min(size(bg,3),max(1,k));
+    B = bg(:,:,idx);
+else
+    B = squeeze(bg(:,:,1));
+end
+if ~isequal(size(B),targetSize)
+    try
+        B = imresize(B,targetSize);
+    catch
+        B = zeros(targetSize);
+    end
+end
+end
+
+function localRenderBrainPNG(bg,map,outFile,labelStr,clim,thr,alphaMin,alphaMax,cmapName)
+fig = figure('Visible','off','Color','k','Units','pixels','Position',[100 100 900 760]);
+ax = axes('Parent',fig,'Color','k','Position',[0.02 0.06 0.96 0.88]);
+bg = double(bg); map = double(map);
+bg = localNormalize01(bg);
+imagesc(ax,bg);
+axis(ax,'image'); axis(ax,'off');
+colormap(ax,gray(256));
+hold(ax,'on');
+h = imagesc(ax,map);
+cm = localCmap(cmapName,256);
+colormap(ax,cm);
+caxis(ax,clim);
+a = localAlpha(map,thr,alphaMin,alphaMax,clim);
+set(h,'AlphaData',a);
+title(ax,labelStr,'Color','w','FontSize',16,'FontWeight','bold','Interpreter','none');
+set(fig,'InvertHardcopy','off');
+try
+    exportgraphics(fig,outFile,'BackgroundColor','black','Resolution',180);
+catch
+    print(fig,outFile,'-dpng','-r180');
+end
+close(fig);
+end
+
+function localRenderColorbarPNG(outFile,clim,cmapName)
+fig = figure('Visible','off','Color','k','Units','pixels','Position',[100 100 210 760]);
+ax = axes('Parent',fig,'Color','k','Position',[0.40 0.08 0.20 0.84]);
+img = linspace(clim(2),clim(1),256)';
+imagesc(ax,img);
+set(ax,'XTick',[],'YTick',[1 256],'YTickLabel',{num2str(clim(2),'%.3g'),num2str(clim(1),'%.3g')},'YColor','w','FontSize',12);
+colormap(ax,localCmap(cmapName,256));
+title(ax,'PSC','Color','w','FontSize',13,'FontWeight','bold');
+set(fig,'InvertHardcopy','off');
+try
+    exportgraphics(fig,outFile,'BackgroundColor','black','Resolution',180);
+catch
+    print(fig,outFile,'-dpng','-r180');
+end
+close(fig);
+end
+
+function localWritePPT(pptFile,pngs,labels,cbFile,meta,perSlide)
+if nargin < 6 || isempty(perSlide), perSlide = 6; end
+try
+    pp = actxserver('PowerPoint.Application');
+catch
+    error('PowerPoint COM could not start. On Windows, make sure Microsoft PowerPoint is installed.');
+end
+pp.Visible = 1;
+pres = pp.Presentations.Add;
+pres.PageSetup.SlideWidth = 13.333 * 72;
+pres.PageSetup.SlideHeight = 7.5 * 72;
+W = pres.PageSetup.SlideWidth;
+H = pres.PageSetup.SlideHeight;
+
+% cover slide
+slide = pres.Slides.Add(1,12);
+localSlideBlack(slide,W,H);
+localAddText(slide,'GroupAnalysis PI-windowed export',35,35,W-70,50,30,true);
+localAddText(slide,meta,45,105,W-90,H-135,16,false);
+
+n = numel(pngs);
+idx = 1;
+slideNo = 2;
+while idx <= n
+    slide = pres.Slides.Add(slideNo,12);
+    localSlideBlack(slide,W,H);
+    localAddText(slide,sprintf('GroupAnalysis PI maps  |  %d-%d of %d',idx,min(idx+perSlide-1,n),n),25,15,W-50,30,18,true);
+    try
+        slide.Shapes.AddPicture(cbFile,0,1,25,70,65,H-110);
+    catch
+    end
+    left0 = 105;
+    top0 = 60;
+    gap = 12;
+    if perSlide <= 4
+        cols = 2; rows = 2;
+    else
+        cols = 3; rows = 2;
+    end
+    cellW = (W-left0-35-(cols-1)*gap)/cols;
+    cellH = (H-top0-35-(rows-1)*gap)/rows;
+    for j = 1:perSlide
+        k = idx + j - 1;
+        if k > n, break; end
+        r = floor((j-1)/cols);
+        c = mod(j-1,cols);
+        x = left0 + c*(cellW+gap);
+        y = top0 + r*(cellH+gap);
+        localAddText(slide,labels{k},x,y,cellW,18,10,false);
+        try
+            slide.Shapes.AddPicture(pngs{k},0,1,x,y+20,cellW,cellH-22);
+        catch
+        end
+    end
+    idx = idx + perSlide;
+    slideNo = slideNo + 1;
+end
+pres.SaveAs(pptFile);
+end
+
+function localSlideBlack(slide,W,H)
+try
+    shp = slide.Shapes.AddShape(1,0,0,W,H);
+    shp.Fill.ForeColor.RGB = 0;
+    shp.Line.Visible = 0;
+    shp.ZOrder(1);
+catch
+end
+end
+
+function localAddText(slide,txt,x,y,w,h,fs,boldFlag)
+try
+    box = slide.Shapes.AddTextbox(1,x,y,w,h);
+    box.TextFrame.TextRange.Text = txt;
+    box.TextFrame.TextRange.Font.Name = 'Arial';
+    box.TextFrame.TextRange.Font.Size = fs;
+    box.TextFrame.TextRange.Font.Color.RGB = 16777215;
+    if boldFlag, box.TextFrame.TextRange.Font.Bold = 1; end
+    box.Fill.Visible = 0;
+    box.Line.Visible = 0;
+catch
+end
+end
+
+function meta = localMakeMetaText(S,D,info,pr,usedMode,nMaps)
+meta = sprintf(['Main data: %s\nSource: %s\nMode: %s\nTR: %.4g sec\nPI export: %.0f to %.0f sec, window %.0f sec\nInjection end: %.0f sec\nCaxis: [%.4g %.4g]\nThreshold: %.4g\nAlpha modulation: %.4g to %.4g\nColormap: %s\nBrain images exported: %d\nExport date: %s'], ...
+    D.name,D.source,usedMode,info.TR,pr.piStart,pr.piEnd,pr.winSize,pr.injEnd,info.caxis(1),info.caxis(2),info.threshold,info.alphaMin,info.alphaMax,info.cmap,nMaps,datestr(now));
+end
+
+function A = localAlpha(map,thr,alphaMin,alphaMax,clim)
+map = double(map);
+absmap = abs(map);
+if isempty(thr) || ~isfinite(thr), thr = 0; end
+lo = alphaMin; hi = alphaMax;
+if ~isfinite(lo), lo = 10; end
+if ~isfinite(hi) || hi <= lo, hi = lo + 10; end
+den = max(eps,hi-lo);
+A = (absmap - lo) ./ den;
+A = max(0,min(1,A));
+A(absmap < thr) = 0;
+A(~isfinite(map)) = 0;
+end
+
+function x = localNormalize01(x)
+x = double(x);
+x(~isfinite(x)) = 0;
+mn = localPrctile(x(:),1);
+mx = localPrctile(x(:),99);
+if mx <= mn
+    mn = min(x(:)); mx = max(x(:));
+end
+if mx > mn
+    x = (x-mn)/(mx-mn);
+else
+    x = zeros(size(x));
+end
+x = max(0,min(1,x));
+end
+
+function cm = localCmap(name,n)
+if nargin < 2, n = 256; end
+name = lower(char(name));
+switch name
+    case {'hot'}
+        cm = hot(n);
+    case {'jet'}
+        cm = jet(n);
+    case {'gray','grey'}
+        cm = gray(n);
+    case {'winter'}
+        cm = winter(n);
+    case {'parula'}
+        try, cm = parula(n); catch, cm = jet(n); end
+    case {'turbo'}
+        try, cm = turbo(n); catch, cm = jet(n); end
+    otherwise
+        % blackbody-style: black -> red -> orange/yellow -> white
+        x = linspace(0,1,n)';
+        r = min(1,3*x);
+        g = min(1,max(0,3*x-1));
+        b = min(1,max(0,3*x-2));
+        cm = [r g b];
+end
+end
+
+function p = localPrctile(x,q)
+x = double(x(:));
+x = x(isfinite(x));
+if isempty(x), p = 0; return; end
+x = sort(x);
+idx = 1 + (numel(x)-1) * q/100;
+lo = floor(idx); hi = ceil(idx);
+lo = max(1,min(numel(x),lo));
+hi = max(1,min(numel(x),hi));
+if lo == hi
+    p = x(lo);
+else
+    p = x(lo) + (idx-lo)*(x(hi)-x(lo));
+end
+end
+
+function localSetStatus(fig,msg)
+fprintf('%s\n',msg);
+if isempty(fig) || ~ishghandle(fig), return; end
+try
+    objs = findall(fig,'Style','text');
+    best = [];
+    for i = 1:numel(objs)
+        s = lower(localGetProp(objs(i),'String'));
+        tg = lower(localGetProp(objs(i),'Tag'));
+        if ~isempty(strfind(s,'group map analysis')) || ~isempty(strfind(s,'status')) || ~isempty(strfind(tg,'status'))
+            best = objs(i);
+            break;
+        end
+    end
+    if ~isempty(best) && ishghandle(best)
+        set(best,'String',msg);
+        drawnow;
+    end
+catch
+end
+end
+
+function s = localGetProp(h,p)
+s = '';
+try
+    v = get(h,p);
+    if ischar(v), s = v;
+    elseif isnumeric(v), s = num2str(v);
+    elseif iscell(v), s = strjoin(v,' ');
+    else, s = char(v);
+    end
+catch
+end
+end

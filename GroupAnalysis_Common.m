@@ -1,8 +1,4 @@
-% GA_AUTO_ERROR_PRINT_PATCH_V1
 function varargout = GroupAnalysis_Common(action, varargin)
-% GroupAnalysis_Common - dynamic dispatcher for split GroupAnalysis module.
-% Safe dispatcher header repaired after line-26 quote error.
-% MATLAB 2017b + 2023b compatible.
 
 if nargin < 1 || isempty(action)
     error('GroupAnalysis_Common requires an action string.');
@@ -84,7 +80,6 @@ for ii = 1:numel(tok)
     names{ii} = tok{ii}{1};
 end
 
-% Remove dispatcher/helper itself.
 skip = strcmpi(names, mfilename) | strcmpi(names, 'resolveLocalActionName_GA_dispatch');
 names = names(~skip);
 
@@ -705,7 +700,6 @@ for i = 1:n
     end
 end
 end
-
 
 
 %%% =====================================================================
@@ -4549,7 +4543,6 @@ end
     end
 
 
-
 function colors = buildMapSideTableColorsDisplayOnly(rows, mapRows)
 % Fallback table coloring helper for Group Maps side table.
 % Does not require S, so it is safe in split modules.
@@ -4611,7 +4604,6 @@ for ii = 1:nargin
     end
 end
 end
-
 
 
 % GA_ROI_PREVIEW_STANDALONE_START
@@ -5021,3 +5013,4 @@ end
         end
     end
 end
+

@@ -1,8 +1,6 @@
 function out = mask(varargin)
 % mask.m - fUSI Studio Mask Editor
 % MATLAB 2017b / 2023b compatible
-% ASCII-only source for maximum copy-paste safety
-%
 % PURPOSE
 %   - Draw a brain / underlay mask
 %   - Draw an overlay / signal mask
@@ -387,6 +385,9 @@ fig = figure( ...
     'DefaultUicontrolFontSize',UI.fsText, ...
     'DefaultUipanelFontName',UI.fontName, ...
     'DefaultUipanelFontSize',UI.fsPanel);
+% HUMoR_FORCE_FULLSCREEN_PATCH32
+try, HUMoR_force_fullscreen_fig(fig); catch, end
+
 
 try
     set(fig,'Renderer','opengl');
@@ -1090,6 +1091,7 @@ function ok = loadExternalUnderlayInteractive()
 
         updateTitle();
         updateStatus(['External underlay loaded from: ' p]);
+        tryLoadMasksFromScmBundleFile(S.externalFile);
         ok = true;
 
     catch ME
@@ -2716,7 +2718,86 @@ end
 end
 
 
- function U = pickNumericFromMat(Sx)
+ % SCM_GROUP_BUNDLE_MASK_EDITOR_PATCH_20260511
+function tryLoadMasksFromScmBundleFile(fullFile)
+    % If selected MAT is an SCM_GroupExport bundle, load its mask fields
+    % into Mask Editor so the overlay mask can be modified/drawn.
+    try
+        if isempty(fullFile) || exist(fullFile,'file') ~= 2
+            return;
+        end
+        [~,~,ext0] = fileparts(fullFile);
+        if ~strcmpi(ext0,'.mat')
+            return;
+        end
+
+        L0 = load(fullFile);
+        B0 = [];
+
+        if isfield(L0,'G') && isstruct(L0.G)
+            B0 = L0.G;
+        elseif isfield(L0,'maskBundle') && isstruct(L0.maskBundle)
+            B0 = L0.maskBundle;
+        else
+            B0 = L0;
+        end
+
+        ov = scmMask_getFirstNumericField(B0,{ ...
+            'overlayMask', ...
+            'signalMask', ...
+            'maskAtlas', ...
+            'mask2DCurrentSlice', ...
+            'loadedMask', ...
+            'mask', ...
+            'activeMask'});
+
+        br = scmMask_getFirstNumericField(B0,{ ...
+            'brainMask', ...
+            'underlayMask', ...
+            'brain_mask', ...
+            'underlay_mask'});
+
+        loadedSomething = false;
+
+        if ~isempty(br)
+            brainMaskVol = fitMaskToDims(br, nY, nX, nZ);
+            loadedSomething = true;
+        end
+
+        if ~isempty(ov)
+            overlayMaskVol = fitMaskToDims(ov, nY, nX, nZ);
+
+            % SCM uses maskIsInclude=false to mean exclusion mask.
+            % Mask Editor overlayMask means include/display mask, so invert if needed.
+            try
+                if isfield(B0,'maskIsInclude') && ~isempty(B0.maskIsInclude) && ~logical(B0.maskIsInclude)
+                    overlayMaskVol = ~overlayMaskVol;
+                elseif isfield(B0,'loadedMaskIsInclude') && ~isempty(B0.loadedMaskIsInclude) && ~logical(B0.loadedMaskIsInclude)
+                    overlayMaskVol = ~overlayMaskVol;
+                end
+            catch
+            end
+
+            S.editTarget = 2;
+            updateTargetUI();
+            loadedSomething = true;
+        end
+
+        if loadedSomething
+            updateStatus(['Loaded SCM bundle underlay/mask: ' fullFile]);
+        end
+
+    catch MEloadMaskBundle
+        try
+            warning('[mask] Could not import SCM bundle mask fields: %s', MEloadMaskBundle.message);
+        catch
+        end
+    end
+end
+
+function U = pickNumericFromMat(Sx)
+    % SCM-aware MAT picker for Mask Editor external underlays.
+    % Supports normal MaskEditor bundles and SCM_GroupExport bundles.
 
     U = [];
 
@@ -2724,7 +2805,6 @@ end
         error('No usable numeric underlay found in MAT.');
     end
 
-    % If something non-struct was passed in by mistake, still handle it safely
     if isnumeric(Sx) && ~isempty(Sx)
         U = Sx;
         return;
@@ -2734,95 +2814,164 @@ end
         error('No usable numeric underlay found in MAT.');
     end
 
-    % First try nested maskBundle, but only if it is really a struct
-    if isfield(Sx,'maskBundle')
-        mb = Sx.maskBundle;
-        if isstruct(mb)
-            try
-                U = pickNumericFromMat(mb);
-                return;
-            catch
-            end
-        end
+    % 1) SCM_GroupExport bundle: variable G
+    if isfield(Sx,'G') && isstruct(Sx.G)
+        U = scmMask_pickUnderlayFromStruct(Sx.G);
+        if ~isempty(U), return; end
     end
 
+    % 2) MaskEditor bundle
+    if isfield(Sx,'maskBundle') && isstruct(Sx.maskBundle)
+        U = scmMask_pickUnderlayFromStruct(Sx.maskBundle);
+        if ~isempty(U), return; end
+    end
+
+    % 3) Top-level fields
+    U = scmMask_pickUnderlayFromStruct(Sx);
+    if ~isempty(U), return; end
+
+    error('No usable numeric underlay found in MAT.');
+end
+
+function U = scmMask_pickUnderlayFromStruct(Sx)
+    U = [];
+    if isempty(Sx) || ~isstruct(Sx), return; end
+
     pref = { ...
+        'sliceUnderlayProcessed', ...
+        'sliceUnderlayRaw', ...
         'anatomical_reference', ...
-        'brainImage', ...
         'anatomical_reference_raw', ...
+        'underlayAtlas', ...
+        'underlayAtlas2D', ...
         'underlay2D', ...
-        'underlay', ...
+        'commonUnderlay', ...
+        'brainImage', ...
+        'bgAtlas', ...
         'bg', ...
+        'meanAtlas', ...
+        'anatomyAtlas', ...
+        'underlay', ...
         'img', ...
         'I', ...
         'Data'};
 
-    % Priority fields
     for kk = 1:numel(pref)
         fn = pref{kk};
-
-        if isfield(Sx, fn)
+        if isfield(Sx,fn)
             v = Sx.(fn);
-
-            if isnumeric(v) && ~isempty(v)
-                U = v;
-                return;
-            end
-
-            if isstruct(v)
-                if isfield(v,'Data')
-                    dv = v.Data;
-                    if isnumeric(dv) && ~isempty(dv)
-                        U = dv;
-                        return;
-                    end
-                end
-
-                if isfield(v,'I')
-                    iv = v.I;
-                    if isnumeric(iv) && ~isempty(iv)
-                        U = iv;
-                        return;
-                    end
-                end
-            end
+            U = scmMask_extractNumericImage(v);
+            if ~isempty(U), return; end
         end
     end
 
-    % Any struct field containing I or Data
-    fn = fieldnames(Sx);
-    for kk = 1:numel(fn)
-        v = Sx.(fn{kk});
+    % If no underlay was saved, derive one from full PSC time series.
+    pscFields = {'pscAtlas4D','psc4D','PSC4D','PSC','functionalPSC','Ipsc'};
+    for kk = 1:numel(pscFields)
+        fn = pscFields{kk};
+        if isfield(Sx,fn) && isnumeric(Sx.(fn)) && ~isempty(Sx.(fn))
+            U = scmMask_pscToUnderlay(Sx.(fn));
+            if ~isempty(U), return; end
+        end
+    end
 
+    % Scan nested structs for image-like numeric fields.
+    fns = fieldnames(Sx);
+    for kk = 1:numel(fns)
+        v = Sx.(fns{kk});
         if isstruct(v)
-            if isfield(v,'I')
-                iv = v.I;
-                if isnumeric(iv) && ~isempty(iv)
-                    U = iv;
-                    return;
-                end
-            end
-
-            if isfield(v,'Data')
-                dv = v.Data;
-                if isnumeric(dv) && ~isempty(dv)
-                    U = dv;
-                    return;
-                end
-            end
+            U = scmMask_pickUnderlayFromStruct(v);
+            if ~isempty(U), return; end
         end
     end
 
-    % Any numeric top-level field
-    for kk = 1:numel(fn)
-        v = Sx.(fn{kk});
-        if isnumeric(v) && ~isempty(v)
-            U = v;
+    % Last fallback: any image-like numeric top-level field.
+    for kk = 1:numel(fns)
+        v = Sx.(fns{kk});
+        U = scmMask_extractNumericImage(v);
+        if ~isempty(U), return; end
+    end
+end
+
+function U = scmMask_extractNumericImage(v)
+    U = [];
+
+    if isempty(v)
+        return;
+    end
+
+    if isstruct(v)
+        subPref = {'Data','data','I','img','image','underlay','brainImage','anatomical_reference'};
+        for ss = 1:numel(subPref)
+            if isfield(v,subPref{ss})
+                U = scmMask_extractNumericImage(v.(subPref{ss}));
+                if ~isempty(U), return; end
+            end
+        end
+        return;
+    end
+
+    if ~(isnumeric(v) || islogical(v))
+        return;
+    end
+
+    v = squeeze(double(v));
+    if isempty(v)
+        return;
+    end
+
+    % Reject scalar/vector/table-like numeric fields such as TR, nY, nX.
+    if ndims(v) < 2 || size(v,1) < 16 || size(v,2) < 16
+        return;
+    end
+
+    U = v;
+end
+
+function U = scmMask_pscToUnderlay(X)
+    U = [];
+    try
+        X = double(X);
+        X(~isfinite(X)) = 0;
+
+        if ndims(X) == 4
+            % [Y X Z T] -> [Y X Z]
+            U = mean(X,4);
+        elseif ndims(X) == 3
+            % [Y X T] -> [Y X 1]
+            U = mean(X,3);
+            U = reshape(U,[size(U,1) size(U,2) 1]);
+        elseif ndims(X) == 2
+            U = X;
+        else
+            U = [];
+        end
+    catch
+        U = [];
+    end
+end
+
+function v = scmMask_getFirstNumericField(Sx,names)
+    v = [];
+    if isempty(Sx) || ~isstruct(Sx), return; end
+
+    for kk = 1:numel(names)
+        fn = names{kk};
+        if isfield(Sx,fn) && ~isempty(Sx.(fn)) && (isnumeric(Sx.(fn)) || islogical(Sx.(fn)))
+            v = Sx.(fn);
             return;
         end
     end
 
-    error('No usable numeric underlay found in MAT.');
+    if isfield(Sx,'G') && isstruct(Sx.G)
+        v = scmMask_getFirstNumericField(Sx.G,names);
+        if ~isempty(v), return; end
+    end
+
+    if isfield(Sx,'maskBundle') && isstruct(Sx.maskBundle)
+        v = scmMask_getFirstNumericField(Sx.maskBundle,names);
+        if ~isempty(v), return; end
+    end
 end
 
 % -------------------- Display utils --------------------
@@ -3271,3 +3420,5 @@ end
         end
     end
 end
+
+

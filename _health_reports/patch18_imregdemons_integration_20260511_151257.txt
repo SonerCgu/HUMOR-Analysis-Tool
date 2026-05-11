@@ -1,0 +1,78 @@
+HUMoR / fUSI Studio Patch 18 Report
+===================================
+Date: 11-May-2026 15:12:57
+Root: D:\Github\HUMOR-Analysis-Tool
+
+Preferred functions:
+
+--- which -all imregdemons_preprocess ---
+D:\Github\HUMOR-Analysis-Tool\imregdemons_preprocess.m
+
+
+--- which -all imregdemons_param_gui ---
+D:\Github\HUMOR-Analysis-Tool\imregdemons_param_gui.m
+
+
+--- which -all computeImregdemonsSignalChange ---
+D:\Github\HUMOR-Analysis-Tool\computeImregdemonsSignalChange.m
+
+
+Compatibility wrappers:
+
+--- which -all gabriel_preprocess ---
+D:\Github\HUMOR-Analysis-Tool\gabriel_preprocess.m
+
+
+--- which -all gabriel_param_gui ---
+D:\Github\HUMOR-Analysis-Tool\gabriel_param_gui.m
+
+
+--- which -all computeGabrielSignalChange ---
+D:\Github\HUMOR-Analysis-Tool\computeGabrielSignalChange.m
+
+
+Remaining Gabriel/gabriel references in selected files:
+
+===== fusi_studio.m =====
+L7430: base = strrep(base, '_gabriel_', '_imregdemons_');
+L10215: 'gabriel', ...
+
+===== fUSI_Live_Studio.m =====
+L61: gabriel_active = false;
+L62: gabriel_use       = false;
+L63: gabriel_nsub      = 50;
+L64: gabriel_regSmooth = 1.3; %#ok<NASGU>
+L69: if gabriel_use
+L71: gabriel_nsub, gabriel_regSmooth);
+L74: opts.nsub   = gabriel_nsub;
+L84: nr = floor(T / gabriel_nsub);
+L92: TR_proc = TR * gabriel_nsub;
+L302: gabrielToggle = uicontrol(sidebar,'Style','checkbox', ...
+L305: 'Value',gabriel_use, ...
+L309: 'Callback',@(src,~) setGabrielUse(src));
+L318: gabrielNsub = uicontrol(sidebar,'Style','edit', ...
+L329: gabrielZstart = uicontrol(sidebar,'Style','edit', ...
+L334: gabrielZend = uicontrol(sidebar,'Style','edit', ...
+L340: gabrielReloadBtn = uicontrol(sidebar,'Style','pushbutton', ...
+L345: 'Callback',@reloadWithGabriel);
+L1099: function setGabrielUse(src)
+L1100: gabriel_use = logical(get(src,'Value'));
+L1103: function reloadWithGabriel(varargin)
+L1110: z1 = max(1, round(str2double(get(gabrielZstart,'String'))));
+L1111: z2 = min(Nz, round(str2double(get(gabrielZend,'String'))));
+L1118: if gabriel_active
+L1128: gabriel_active = false;
+L1129: set(gabrielToggle,'Value',0);
+L1134: nsub = str2double(get(gabrielNsub,'String'));
+L1186: gabriel_active = true;
+L1187: set(gabrielToggle,'Value',1);
+L1225: if gabriel_active
+L1226: set(gabrielReloadBtn,'String','Revert to RAW data','BackgroundColor',C.red);
+L1229: set(gabrielReloadBtn,'String','Apply Imregdemons preprocessing','BackgroundColor',C.green);
+
+===== studio_resolve_paths.m =====
+L59: P.qcGabrielDir     = P.qcImregdemonsDir;
+L96: if contains(s,'imregdemons') || contains(s,'gabriel')
+
+===== play_fusi_video_final.m =====
+L1864: if contains(rawLabel,'gabriel') || contains(rawLabel,'imregdemons'), tags{end+1} = 'imreg'; end

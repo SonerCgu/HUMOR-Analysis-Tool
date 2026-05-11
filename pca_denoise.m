@@ -1,5 +1,5 @@
 function [newData, stats] = pca_denoise(dataIn, saveRoot, tag, opts)
-% PCA_DENOISE — interactive PCA removal (MATLAB 2017b + 2023b)
+% PCA_DENOISE â€” interactive PCA removal (MATLAB 2017b + 2023b)
 % ==========================================================
 % - 25 PCs/page grid selector (dark theme)
 % - Left-click: toggle select (red border = removed)
@@ -299,9 +299,12 @@ selRed  = [1.00 0.25 0.25];
 % STRONGER (less washed) blue for UI
 lineCol = [0.35 0.80 1];   % lightblue (more visible than light blue)
 
-fig = figure('Name','PCA Components — left click select, right click deselect', ...
+fig = figure('Name','PCA Components â€” left click select, right click deselect', ...
     'Color',bgFig,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
     'Position',[160 90 1500 860]);
+% HUMoR_FORCE_FULLSCREEN_PATCH31
+try, HUMoR_force_fullscreen_fig(fig); catch, end
+
 
 try, set(fig,'Renderer','opengl'); catch, end
 
@@ -450,7 +453,7 @@ uiwait(fig);
     function renderPage()
         firstPC = (page-1)*perPage + 1;
         lastPC  = min(K, page*perPage);
-        set(hdr,'String',sprintf('PCs %d–%d of %d   (Page %d/%d)', firstPC, lastPC, K, page, nPages));
+        set(hdr,'String',sprintf('PCs %dâ€“%d of %d   (Page %d/%d)', firstPC, lastPC, K, page, nPages));
 
         set(btnPrev,'Enable', onoff(page>1));
         set(btnNext,'Enable', onoff(page<nPages));
@@ -880,7 +883,7 @@ for p = 1:nPages
 
     % header (sgtitle not in 2017b)
     annotation(fig,'textbox',[0.03 0.965 0.66 0.03], ...
-        'String',sprintf('PCA grid (exact look) — Page %d/%d — tag=%s', p, nPages, tag), ...
+        'String',sprintf('PCA grid (exact look) â€” Page %d/%d â€” tag=%s', p, nPages, tag), ...
         'Color',fg,'FontSize',13,'FontWeight','bold','EdgeColor','none', ...
         'Interpreter','none','HorizontalAlignment','left');
 

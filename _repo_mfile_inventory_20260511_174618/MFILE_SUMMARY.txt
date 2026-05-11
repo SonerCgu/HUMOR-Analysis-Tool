@@ -1,0 +1,395 @@
+HUMoR / fUSI Studio MATLAB file summary
+Root: D:\Github\HUMOR-Analysis-Tool
+Date: 11-May-2026 17:46:18
+============================================================
+
+  1) FunctionalConnectivity.m
+    Bytes: 199815
+    Lines: 5437
+    First function/script marker: function fig = FunctionalConnectivity(dataIn, saveRoot, tag, opts)
+
+  2) GA_exportGroupAnalysisPPTBundleFix_20260504.m
+    Bytes: 202
+    Lines: 5
+    First function/script marker: function out = GA_exportGroupAnalysisPPTBundleFix_20260504(varargin)
+
+  3) GA_exportGroupAnalysisPPTBundleFix_20260511.m
+    Bytes: 23589
+    Lines: 622
+    First function/script marker: function out = GA_exportGroupAnalysisPPTBundleFix_20260511(fig, mode)
+
+  4) GA_exportGroupAnalysisPPTBundleFix_20260511_BACKUP_20260511_172713.m
+    Bytes: 30548
+    Lines: 891
+    First function/script marker: function out = GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,mode)
+
+  5) GA_exportGroupAnalysisPPTBundleFix_20260511_BACKUP_20260511_173537.m
+    Bytes: 43195
+    Lines: 1366
+    First function/script marker: function out = GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,mode)
+
+  6) GA_exportGroupAnalysisPPTBundleFix_20260511_BEFORE_DOUBLECALL_PATCH_20260511_174255.m
+    Bytes: 23206
+    Lines: 592
+    First function/script marker: function out = GA_exportGroupAnalysisPPTBundleFix_20260511(fig, mode)
+
+  7) GHA_exportGroupAnalayisPPtNBundleFix_20260504.m
+    Bytes: 127
+    Lines: 4
+    First function/script marker: function GHA_exportGroupAnalayisPPtNBundleFix_20260504(varargin)
+
+  8) GroupAnalysis.m
+    Bytes: 248975
+    Lines: 7431
+    First function/script marker: function hFig = GroupAnalysis(varargin)
+
+  9) GroupAnalysis_Common.m
+    Bytes: 127280
+    Lines: 5017
+    First function/script marker: function varargout = GroupAnalysis_Common(action, varargin)
+
+ 10) GroupAnalysis_FC.m
+    Bytes: 120433
+    Lines: 4919
+    First function/script marker: function varargout = GroupAnalysis_FC(action, varargin)
+
+ 11) GroupAnalysis_Map.m
+    Bytes: 37197
+    Lines: 1199
+    First function/script marker: function varargout = GroupAnalysis_Map(action, varargin)
+
+ 12) HUMoR_force_fullscreen_fig.m
+    Bytes: 827
+    Lines: 47
+    First function/script marker: function HUMoR_force_fullscreen_fig(hFig)
+
+ 13) HUMoR_popup_autofit_apply.m
+    Bytes: 243
+    Lines: 11
+    First function/script marker: function HUMoR_popup_autofit_apply(hFig)
+
+ 14) HUMoR_popup_autofit_timer.m
+    Bytes: 1265
+    Lines: 51
+    First function/script marker: function HUMoR_popup_autofit_timer(action)
+
+ 15) HUMoR_popup_polish_now.m
+    Bytes: 10656
+    Lines: 375
+    First function/script marker: function HUMoR_popup_polish_now(h)
+
+ 16) HUMoR_segmentation_popup_fix_now.m
+    Bytes: 7092
+    Lines: 313
+    First function/script marker: function HUMoR_segmentation_popup_fix_now(varargin)
+
+ 17) SCM_gui.m
+    Bytes: 233542
+    Lines: 6625
+    First function/script marker: function fig = SCM_gui(PSC, bg, TR, par, baseline, nVolsOrig, varargin)
+
+ 18) Segmentation.m
+    Bytes: 64613
+    Lines: 2020
+    First function/script marker: function Seg = Segmentation(studio, data, logFcn)
+
+ 19) apply_coronal_registration_to_map.m
+    Bytes: 4647
+    Lines: 168
+    First function/script marker: function [mapReg, atlasRGB, Reg2D, coverageMask] = apply_coronal_registration_to_map(mapData, regInput, atlasInput)
+
+ 20) apply_reg2d_to_stack.m
+    Bytes: 1404
+    Lines: 49
+    First function/script marker: function [J, coverageMask] = apply_reg2d_to_stack(I, Reg2D)
+
+ 21) blackbdy_iso.m
+    Bytes: 7805
+    Lines: 287
+    First function/script marker: function cm = blackbdy_iso(n)
+
+ 22) cleanupMask.m
+    Bytes: 929
+    Lines: 40
+    First function/script marker: function BW = cleanupMask(BW, minPix)
+
+ 23) computeBackground.m
+    Bytes: 610
+    Lines: 29
+    First function/script marker: function bg = computeBackground(I)
+
+ 24) computeGabrielSignalChange.m
+    Bytes: 501
+    Lines: 14
+    First function/script marker: function varargout = computeGabrielSignalChange(varargin)
+
+ 25) computeImregdemonsSignalChange.m
+    Bytes: 1516
+    Lines: 77
+    First function/script marker: function proc = computeImregdemonsSignalChange(Ic, temporalWin)
+
+ 26) computePSC.m
+    Bytes: 7011
+    Lines: 269
+    First function/script marker: function proc = computePSC(I, TR, par, baseline)
+
+ 27) coreg.m
+    Bytes: 24355
+    Lines: 852
+    First function/script marker: function RegOut = coreg(studio, mode)
+
+ 28) coreg_3d.m
+    Bytes: 20782
+    Lines: 783
+    First function/script marker: function Transf = coreg_3d(studio, forcedAnatomyFile)
+
+ 29) coreg_coronal_2d.m
+    Bytes: 46293
+    Lines: 1443
+    First function/script marker: function Reg2D = coreg_coronal_2d(studio, forcedSourceFile)
+
+ 30) despike.m
+    Bytes: 2945
+    Lines: 132
+    First function/script marker: function [out, stats] = despike(data, zthr, saveRoot, tag)
+
+ 31) draw_borders.m
+    Bytes: 1137
+    Lines: 37
+    First function/script marker: function draw_borders(atlas,orientation,plane)
+
+ 32) example01_registering.m
+    Bytes: 1109
+    Lines: 23
+    First function/script marker: (script or no function found in first 200 lines)
+
+ 33) fUSI_Live_Studio.m
+    Bytes: 72084
+    Lines: 2304
+    First function/script marker: function fig = fUSI_Live_Studio(I, TR, metadata, datasetName)
+
+ 34) figviewscan.m
+    Bytes: 9506
+    Lines: 239
+    First function/script marker: function varargout = figviewscan(varargin)
+
+ 35) filtering.m
+    Bytes: 12251
+    Lines: 441
+    First function/script marker: function [I_filt, stats] = filtering(I, TR, exportPath, opts)
+
+ 36) frameRateQC.m
+    Bytes: 4502
+    Lines: 150
+    First function/script marker: function QC = frameRateQC(I, TR, tag, savePNG)
+
+ 37) fusi_studio.m
+    Bytes: 340767
+    Lines: 11707
+    First function/script marker: function fusi_studio
+
+ 38) gabriel_param_gui.m
+    Bytes: 438
+    Lines: 14
+    First function/script marker: function varargout = gabriel_param_gui(varargin)
+
+ 39) gabriel_preprocess.m
+    Bytes: 445
+    Lines: 14
+    First function/script marker: function varargout = gabriel_preprocess(varargin)
+
+ 40) ica_denoise.m
+    Bytes: 32809
+    Lines: 1100
+    First function/script marker: function [newData, stats] = ica_denoise(dataIn, saveRoot, tag, opts)
+
+ 41) imregdemons_param_gui.m
+    Bytes: 953
+    Lines: 50
+    First function/script marker: function par = imregdemons_param_gui(par)
+
+ 42) imregdemons_preprocess.m
+    Bytes: 14121
+    Lines: 483
+    First function/script marker: function out = imregdemons_preprocess(Iin, TRin, opts)
+
+ 43) interpolate3D.m
+    Bytes: 2724
+    Lines: 90
+    First function/script marker: function scanInt = interpolate3D(atlas, scan)
+
+ 44) interpolateRejectedVolumes.m
+    Bytes: 947
+    Lines: 42
+    First function/script marker: function Iout = interpolateRejectedVolumes(I, outliers)
+
+ 45) loadFUSIData.m
+    Bytes: 23291
+    Lines: 880
+    First function/script marker: function [data, meta] = loadFUSIData(dataFile, fallbackTR)
+
+ 46) makeBrushMask.m
+    Bytes: 759
+    Lines: 38
+    First function/script marker: function B = makeBrushMask(x, y, r, nz, nx)
+
+ 47) mapscan.m
+    Bytes: 2535
+    Lines: 110
+    First function/script marker: function M=mapscan(data,cmap,method)
+
+ 48) mask.m
+    Bytes: 100928
+    Lines: 3277
+    First function/script marker: function out = mask(varargin)
+
+ 49) motor.m
+    Bytes: 46052
+    Lines: 1639
+    First function/script marker: function [I3D, motorInfo] = motor(I, TR, qcFolder)
+
+ 50) motor_patch17_start_popup_guard.m
+    Bytes: 9378
+    Lines: 372
+    First function/script marker: function motor_patch17_start_popup_guard()
+
+ 51) moveimage.m
+    Bytes: 4820
+    Lines: 234
+    First function/script marker: function M = moveimage(axesHandle, imageHandle)
+
+ 52) pca_denoise.m
+    Bytes: 31237
+    Lines: 1020
+    First function/script marker: function [newData, stats] = pca_denoise(dataIn, saveRoot, tag, opts)
+
+ 53) play_fusi_video_final.m
+    Bytes: 182002
+    Lines: 6196
+    First function/script marker: function fig = play_fusi_video_final( ...
+
+ 54) preproc_param_gui.m
+    Bytes: 745
+    Lines: 36
+    First function/script marker: function par = preproc_param_gui(par)
+
+ 55) preview_registered_mean_with_atlas.m
+    Bytes: 971
+    Lines: 41
+    First function/script marker: function [meanReg, atlasUnder] = preview_registered_mean_with_atlas(scanfus, atlas, Transf, atlasMode)
+
+ 56) print_region_list.m
+    Bytes: 2076
+    Lines: 74
+    First function/script marker: function print_region_list(atlas,namefile)
+
+ 57) qc_fusi.m
+    Bytes: 55192
+    Lines: 1822
+    First function/script marker: function qc_fusi(data, meta, exportPath, opts)
+
+ 58) readFileList.m
+    Bytes: 2667
+    Lines: 118
+    First function/script marker: function D=readFileList(filename,sa)
+
+ 59) regionGrowSimilarity.m
+    Bytes: 2109
+    Lines: 86
+    First function/script marker: function region = regionGrowSimilarity(sig, sy, sx, winR, sigmaFactor, maxPix)
+
+ 60) register_data.m
+    Bytes: 878
+    Lines: 27
+    First function/script marker: function ras=register_data(atlas,x,Transf)
+
+ 61) registration_ccf.m
+    Bytes: 59019
+    Lines: 1770
+    First function/script marker: function R = registration_ccf(atlas, scananatomy, varargin)
+
+ 62) registration_coronal_2d.m
+    Bytes: 59325
+    Lines: 1734
+    First function/script marker: function Reg2Dout = registration_coronal_2d(atlas, src2D, sourceInfo, initialReg, saveDir, funcCandidates, defaultFuncIndex, logFcn)
+
+ 63) run_fusi_studio.m
+    Bytes: 1346
+    Lines: 58
+    First function/script marker: function run_fusi_studio()
+
+ 64) save_atlas_underlays_from_reg2d.m
+    Bytes: 3161
+    Lines: 124
+    First function/script marker: function outFiles = save_atlas_underlays_from_reg2d(atlas, Reg2D, saveDir)
+
+ 65) scrubbing.m
+    Bytes: 17539
+    Lines: 589
+    First function/script marker: function [out, stats] = scrubbing(data, TR, saveRoot, tag)
+
+ 66) showScmVideoSetupDialog.m
+    Bytes: 26337
+    Lines: 1024
+    First function/script marker: function cfg = showScmVideoSetupDialog(modeName, defaultBaseStart, defaultBaseEnd, defaultUnderlayIdx, varargin)
+
+ 67) studio_load_options_dark_dialog_patch16.m
+    Bytes: 22201
+    Lines: 571
+    First function/script marker: function [TR, datasetFolder, wasCancelled, probeType, defaultTR] = studio_load_options_dark_dialog_patch16(initialTR, autoDatasetFolder, analysedRoot, datasetName, probeTypeIn, defaultTRIn, data, meta, fullInputFile)
+
+ 68) studio_mkdir.m
+    Bytes: 75
+    Lines: 6
+    First function/script marker: function studio_mkdir(p)
+
+ 69) studio_resolve_paths.m
+    Bytes: 4346
+    Lines: 175
+    First function/script marker: function P = studio_resolve_paths(par, fileLabel, exportRootOverride)
+
+ 70) temporalsmoothing.m
+    Bytes: 6857
+    Lines: 261
+    First function/script marker: function [Iout, stats] = temporalsmoothing(Iin, TR, winSec, opts)
+
+ 71) timeToVolume.m
+    Bytes: 544
+    Lines: 22
+    First function/script marker: function volume = timeToVolume(t, TR, nVols)
+
+ 72) tryReadSCMroiExportTxt.m
+    Bytes: 1143
+    Lines: 48
+    First function/script marker: function [ok, tMin, psc] = tryReadSCMroiExportTxt(fname)
+
+ 73) vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND.m
+    Bytes: 114453
+    Lines: 3196
+    First function/script marker: function vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg)
+
+ 74) vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_OBJECT.m
+    Bytes: 29806
+    Lines: 773
+    First function/script marker: function obj = vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_OBJECT(port)
+
+ 75) vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_PARAMETERS.m
+    Bytes: 88839
+    Lines: 2687
+    First function/script marker: function localLaunchMainGUI()
+
+ 76) volumeToFrame.m
+    Bytes: 630
+    Lines: 25
+    First function/script marker: function frame = volumeToFrame(volume, interpol, nFrames)
+
+ 77) volumeToTime.m
+    Bytes: 512
+    Lines: 23
+    First function/script marker: function t = volumeToTime(volume, TR)
+
+ 78) winter_brain_fsl.m
+    Bytes: 9997
+    Lines: 286
+    First function/script marker: function cm = winter_brain_fsl(n)
+

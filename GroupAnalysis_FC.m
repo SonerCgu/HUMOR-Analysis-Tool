@@ -1,8 +1,4 @@
-% GA_AUTO_ERROR_PRINT_PATCH_V1
 function varargout = GroupAnalysis_FC(action, varargin)
-% GroupAnalysis_FC - dynamic dispatcher for split GroupAnalysis module.
-% Safe dispatcher header repaired after line-26 quote error.
-% MATLAB 2017b + 2023b compatible.
 
 if nargin < 1 || isempty(action)
     error('GroupAnalysis_FC requires an action string.');
@@ -79,7 +75,6 @@ for ii = 1:numel(tok)
     names{ii} = tok{ii}{1};
 end
 
-% Remove dispatcher/helper itself.
 skip = strcmpi(names, mfilename) | strcmpi(names, 'resolveLocalActionName_GA_dispatch');
 names = names(~skip);
 
@@ -1240,7 +1235,6 @@ for i = 1:n
     end
 end
 end
-
 
 
 %%% =====================================================================
@@ -4920,4 +4914,5 @@ end
             row{5} = subj;
         end
     end
+
 

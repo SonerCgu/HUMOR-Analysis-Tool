@@ -1,0 +1,48 @@
+HUMoR / fUSI Studio Patch 23 Comment Cleanup Report
+====================================================
+Date: 11-May-2026 15:15:36
+Root: D:\Github\HUMOR-Analysis-Tool
+Backup: D:\Github\HUMOR-Analysis-Tool\_backup_before_patch23_comment_cleanup_20260511_151536
+
+Executable code is not intentionally modified.
+Only full-line comments matching cleanup patterns are removed.
+
+
+[CLEANED] run_fusi_studio.m | removed comment lines: 0
+
+[CLEANED] fusi_studio.m | removed comment lines: 0
+
+[OK no changes] loadFUSIData.m
+
+[CLEANED] fUSI_Live_Studio.m | removed comment lines: 0
+
+[CLEANED] motor.m | removed comment lines: 0
+
+[CLEANED] imregdemons_preprocess.m | removed comment lines: 0
+
+[CLEANED] imregdemons_param_gui.m | removed comment lines: 0
+
+[CLEANED] gabriel_preprocess.m | removed comment lines: 0
+
+[CLEANED] gabriel_param_gui.m | removed comment lines: 0
+
+[OK no changes] computeImregdemonsSignalChange.m
+
+[CLEANED] computeGabrielSignalChange.m | removed comment lines: 0
+
+[CLEANED] computePSC.m | removed comment lines: 0
+
+[CLEANED] SCM_gui.m | removed comment lines: 0
+
+[CLEANED] play_fusi_video_final.m | removed comment lines: 0
+
+[CLEANED] mask.m | removed comment lines: 0
+
+[OK no changes] studio_resolve_paths.m
+
+SUMMARY
+-------
+Files changed: 13
+Comment lines removed: 0
+Backup folder: D:\Github\HUMOR-Analysis-Tool\_backup_before_patch23_comment_cleanup_20260511_151536
+Report file: D:\Github\HUMOR-Analysis-Tool\_health_reports\patch23_comment_cleanup_report_20260511_151536.txt

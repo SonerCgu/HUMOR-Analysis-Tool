@@ -1,0 +1,25 @@
+HUMoR / fUSI Studio Patch 24 Report
+===================================
+Date: 11-May-2026 15:33:52
+Root: D:\Github\HUMOR-Analysis-Tool
+Backup: D:\Github\HUMOR-Analysis-Tool\_backup_before_patch24_rejection_popup_polish_20260511_153352
+
+
+Patching fusi_studio.m
+  Auto-confirmed frame rejection dialog near line 1806 -> choice = 'Yes'
+  Auto-confirmed dialogs: 1
+  Popup-size hooks added: 8
+  Helper added: 1
+
+Patching fUSI_Live_Studio.m
+  Auto-confirmed dialogs: 0
+  Popup-size hooks added: 0
+  Helper added: 1
+
+SUMMARY
+-------
+Frame rejection dialogs auto-confirmed: 1
+Popup-size hooks added: 8
+Helpers added: 2
+Backup folder: D:\Github\HUMOR-Analysis-Tool\_backup_before_patch24_rejection_popup_polish_20260511_153352
+Report file: D:\Github\HUMOR-Analysis-Tool\_health_reports\patch24_rejection_popup_polish_report_20260511_153352.txt

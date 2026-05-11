@@ -55,7 +55,8 @@ P.scmSeriesDir  = fullfile(P.scmDir, 'Series');
 P.scmTcDir      = fullfile(P.scmDir, 'TimeCoursePNG');
 
 P.preprocRoot   = fullfile(analysedRoot, 'Preprocessing');
-P.qcGabrielDir  = fullfile(P.preprocRoot, 'QC_gabriel');
+P.qcImregdemonsDir = fullfile(P.preprocRoot, 'QC_imregdemons');
+P.qcGabrielDir     = P.qcImregdemonsDir;
 P.qcDespikeDir  = fullfile(P.preprocRoot, 'QC_despike');
 P.qcFilterDir   = fullfile(P.preprocRoot, 'QC_filtering');
 P.qcScrubDir    = fullfile(P.preprocRoot, 'QC_scrubbing');
@@ -92,8 +93,8 @@ end
 
 s = lower(strtrim(s));
 
-if contains(s,'gabriel')
-    s = 'gabriel';
+if contains(s,'imregdemons') || contains(s,'gabriel')
+    s = 'imregdemons';
 
 elseif ~isempty(regexp(s,'(^|[_\-\s])raw([_\-\s]|$)','once'))
     s = 'raw';

@@ -42,6 +42,9 @@ meta = struct( ...
 
 extKey = getFileTypeKey(dataFile);
 
+TRWasImputed = false;
+TRDetectionSource = '';
+
 switch extKey
 
     case '.mat'
@@ -185,11 +188,33 @@ meta.rawMetadata.fallbackTREffectiveSec = fallbackTR_eff;
         TR = [];
         TotalTimeSec = [];
 
-        TR = firstPositiveScalarFound(S, {'TR','tr','dt','Dt','deltaT','DeltaT'});
+        TR = firstPositiveScalarFound(S, {'TR','tr','Tr','dt','Dt','deltaT','DeltaT', ...
+    'TR_sec','tr_sec','TRs','tr_s','repetitionTime','RepetitionTime', ...
+    'repetition_time','temporalResolution','TemporalResolution', ...
+    'framePeriod','FramePeriod','frameDuration','FrameDuration', ...
+    'volumePeriod','VolumePeriod','samplingInterval','SamplingInterval', ...
+    'acquisitionPeriod','AcquisitionPeriod'});
+if ~isempty(TR)
+    TRDetectionSource = 'explicit seconds field';
+end
+
+if isempty(TR)
+    TRms = firstPositiveScalarFound(S, {'TRms','trMs','TR_ms','tr_ms', ...
+        'repetitionTimeMs','RepetitionTimeMs', ...
+        'framePeriodMs','FramePeriodMs','frameDurationMs','FrameDurationMs', ...
+        'volumePeriodMs','VolumePeriodMs','samplingIntervalMs','SamplingIntervalMs'});
+    if ~isempty(TRms)
+        TR = double(TRms) / 1000;
+        TRDetectionSource = 'explicit milliseconds field';
+    end
+end
         if isempty(TR)
-            Fs = firstPositiveScalarFound(S, {'Fs','fs','samplingRate','SampleRate'});
+            Fs = firstPositiveScalarFound(S, {'Fs','fs','samplingRate','SampleRate', ...
+    'SamplingRate','sampling_rate','frameRate','FrameRate','frameRateHz', ...
+    'FrameRateHz','fps','FPS','volumeRate','VolumeRate'});
             if ~isempty(Fs)
                 TR = 1 / double(Fs);
+                TRDetectionSource = 'frame/sampling rate field';
             end
         end
 
@@ -202,11 +227,21 @@ meta.rawMetadata.fallbackTREffectiveSec = fallbackTR_eff;
             dt = dt(isfinite(dt) & dt > 0);
 
             if ~isempty(dt)
+                medDt = median(dt);
+                timeSpan = double(timeVec(end) - timeVec(1));
+
+                % If timestamps are in milliseconds, convert to seconds.
+                if medDt > 20
+                    medDt = medDt / 1000;
+                    timeSpan = timeSpan / 1000;
+                end
+
                 if isempty(TR)
-                    TR = median(dt);
+                    TR = medDt;
+                    TRDetectionSource = 'timestamp vector';
                 end
                 if isempty(TotalTimeSec)
-                    TotalTimeSec = (timeVec(end) - timeVec(1)) + median(dt);
+                    TotalTimeSec = timeSpan + medDt;
                 end
             end
         end
@@ -220,7 +255,7 @@ if isempty(TR) || ~isfinite(TR) || TR <= 0
     TR = fallbackTR_eff;
     TRWasImputed = true;
 
-elseif TR > 1.0
+elseif TR < 0.02 || TR > 20
     warning('loadFUSIData:SuspiciousTR', ...
         'Suspicious TR = %.3f s found in file. Using default TR = %.3f s for %s instead.', ...
         TR, fallbackTR_eff, probeTypeAuto);
@@ -230,6 +265,12 @@ end
 
 meta.rawMetadata.TRWasImputed = TRWasImputed;
 meta.rawMetadata.TRBeforeUserChoiceSec = TR;
+meta.rawMetadata.TRDetectionSource = TRDetectionSource;
+if ~TRWasImputed
+    meta.rawMetadata.TRDetectedFromFileSec = TR;
+else
+    meta.rawMetadata.TRDetectedFromFileSec = [];
+end
 
         if isempty(TotalTimeSec) || ~isfinite(TotalTimeSec) || TotalTimeSec <= 0
             TotalTimeSec = size(I, ndims(I)) * TR;

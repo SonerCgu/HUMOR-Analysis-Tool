@@ -207,6 +207,9 @@ fig = figure('Color','k', ...
     'NumberTitle','off', ...
     'MenuBar','none', ...
     'ToolBar','none');
+% HUMoR_FORCE_FULLSCREEN_PATCH32
+try, HUMoR_force_fullscreen_fig(fig); catch, end
+
 
 set(fig,'DefaultUicontrolFontName','Arial');
 set(fig,'DefaultUicontrolFontSize',13);
@@ -1861,7 +1864,7 @@ function saveVideo(~,~)
 
         tags = {};
         if contains(rawLabel,'raw'),     tags{end+1} = 'raw'; end
-        if contains(rawLabel,'gabriel'), tags{end+1} = 'gab'; end
+        if contains(rawLabel,'gabriel') || contains(rawLabel,'imregdemons'), tags{end+1} = 'imreg'; end
         if contains(rawLabel,'median'),  tags{end+1} = 'median'; end
         if contains(rawLabel,'mean'),    tags{end+1} = 'mean'; end
         if contains(rawLabel,'pca'),     tags{end+1} = 'pca'; end
@@ -6188,3 +6191,5 @@ end
     end
 
 end
+
+

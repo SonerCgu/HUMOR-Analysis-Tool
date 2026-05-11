@@ -1439,3 +1439,4 @@ function tf = isNumericClassName(cl)
 tf = strcmp(cl,'double') || strcmp(cl,'single') || strcmp(cl,'uint16') || ...
      strcmp(cl,'uint8') || strcmp(cl,'int16') || strcmp(cl,'logical');
 end
+

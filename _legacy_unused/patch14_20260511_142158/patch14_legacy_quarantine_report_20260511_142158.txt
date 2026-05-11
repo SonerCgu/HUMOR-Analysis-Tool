@@ -1,0 +1,31 @@
+Patch 14 legacy quarantine report
+Root: D:\Github\HUMOR-Analysis-Tool
+Quarantine folder: D:\Github\HUMOR-Analysis-Tool\_legacy_unused\patch14_20260511_142158
+Date: 11-May-2026 14:21:59
+
+FILES PROPOSED FOR QUARANTINE
+------------------------------------------------------------
+ 1) autoThreshold.m
+    Reason: contains legacy-like keyword
+    Source: D:\Github\HUMOR-Analysis-Tool\autoThreshold.m
+    Target: D:\Github\HUMOR-Analysis-Tool\_legacy_unused\patch14_20260511_142158\autoThreshold.m
+
+
+LEGACY-LOOKING FILES KEPT BECAUSE REFERENCED
+------------------------------------------------------------
+ 1) temporalsmoothing.m
+    Reason: contains legacy-like keyword
+    Referenced by:
+      - fusi_studio.m
+
+
+MOVE SUMMARY
+------------------------------------------------------------
+Moved files:
+  - autoThreshold.m
+
+Failed files:
+None.
+
+Restore script:
+D:\Github\HUMOR-Analysis-Tool\_legacy_unused\patch14_20260511_142158\RESTORE_patch14_20260511_142158.m

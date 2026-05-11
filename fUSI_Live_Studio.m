@@ -67,7 +67,7 @@ I_proc  = I;
 TR_proc = TR;
 
 if gabriel_use
-    fprintf('[Gabriel] ENABLED (on load): nsub=%d, regSmooth=%.2f\n', ...
+    fprintf('[Imregdemons] ENABLED (on load): nsub=%d, regSmooth=%.2f\n', ...
         gabriel_nsub, gabriel_regSmooth);
 
     opts = struct();
@@ -76,7 +76,7 @@ if gabriel_use
     opts.showQC = false;
 
     if dims == 3
-        out     = gabriel_preprocess(I, TR, opts);
+        out     = imregdemons_preprocess(I, TR, opts);
         I_proc  = out.I;
         TR_proc = out.blockDur;
         T       = out.nVols;
@@ -85,7 +85,7 @@ if gabriel_use
         I_proc = zeros(Ny, Nx, Nz, nr, 'like', I);
 
         for z = 1:Nz
-            outz = gabriel_preprocess(squeeze(I(:,:,z,:)), TR, opts);
+            outz = imregdemons_preprocess(squeeze(I(:,:,z,:)), TR, opts);
             I_proc(:,:,z,:) = outz.I;
         end
 
@@ -95,7 +95,7 @@ if gabriel_use
 
     I  = I_proc;
     TR = TR_proc;
-    fprintf('[Gabriel] Effective TR: %.3f s | New T: %d\n', TR, T);
+    fprintf('[Imregdemons] Effective TR: %.3f s | New T: %d\n', TR, T);
 end
 
 % -------------------------------------------------------------------------
@@ -157,6 +157,9 @@ fig = figure('Name',['fUSI Viewer v8 - ' systemType], ...
     'DefaultUicontrolFontSize',11, ...
     'DefaultAxesFontName','Helvetica', ...
     'DefaultAxesFontSize',11);
+% HUMoR_FORCE_FULLSCREEN_PATCH31
+try, HUMoR_force_fullscreen_fig(fig); catch, end
+
 
 drawnow;
 
@@ -292,8 +295,8 @@ histEQ = uicontrol(sidebar,'Style','checkbox', ...
     'FontSize',11);
 Y = Y - dBlock;
 
-% Gabriel
-uicontrol(sidebar,'Style','text','String','Gabriel preprocessing', ...
+% Imregdemons
+uicontrol(sidebar,'Style','text','String','Imregdemons preprocessing', ...
     'Units','normalized','Position',[0.05 Y 0.90 0.028], ...
     'ForegroundColor',C.gold,'BackgroundColor',C.sidebar, ...
     'FontSize',12,'FontWeight','bold');
@@ -321,7 +324,7 @@ gabrielNsub = uicontrol(sidebar,'Style','edit', ...
     'BackgroundColor',C.ctrlDark,'ForegroundColor',C.text);
 Y = Y - dBlock;
 
-uicontrol(sidebar,'Style','text','String','Z slice range (Gabriel)', ...
+uicontrol(sidebar,'Style','text','String','Z slice range (Imregdemons)', ...
     'Units','normalized','Position',[0.05 Y 0.55 0.028], ...
     'ForegroundColor',C.text,'BackgroundColor',C.sidebar, ...
     'FontSize',11);
@@ -338,7 +341,7 @@ gabrielZend = uicontrol(sidebar,'Style','edit', ...
 Y = Y - dBlock;
 
 gabrielReloadBtn = uicontrol(sidebar,'Style','pushbutton', ...
-    'String','Apply Gabriel preprocessing', ...
+    'String','Apply Imregdemons preprocessing', ...
     'Units','normalized','Position',[0.05 Y 0.90 0.035], ...
     'FontSize',11,'FontWeight','bold', ...
     'BackgroundColor',C.green,'ForegroundColor',C.text, ...
@@ -1111,7 +1114,7 @@ set(fig,'CloseRequestFcn',@cleanup);
         z2 = min(Nz, round(str2double(get(gabrielZend,'String'))));
 
         if isnan(z1) || isnan(z2) || z2 < z1
-            errordlg('Invalid Gabriel slice range');
+            errordlg('Invalid Imregdemons slice range');
             return;
         end
 
@@ -1129,7 +1132,7 @@ set(fig,'CloseRequestFcn',@cleanup);
             set(gabrielToggle,'Value',0);
 
         else
-            fprintf('[Viewer] Applying Gabriel preprocessing\n');
+            fprintf('[Viewer] Applying Imregdemons preprocessing\n');
 
             nsub = str2double(get(gabrielNsub,'String'));
             if isnan(nsub) || nsub < 2
@@ -1141,7 +1144,7 @@ set(fig,'CloseRequestFcn',@cleanup);
             opts.nsub = nsub;
 
             if dims == 3
-                out = gabriel_preprocess(I_raw_loaded, TR_raw_loaded, opts);
+                out = imregdemons_preprocess(I_raw_loaded, TR_raw_loaded, opts);
                 I  = out.I;
                 TR = out.blockDur;
                 T  = out.nVols;
@@ -1155,7 +1158,7 @@ set(fig,'CloseRequestFcn',@cleanup);
                 zRef = round((z1 + z2)/2);
                 Iref = mean(Inew(:,:,zRef,1:min(10,nr)),4);
 
-                fprintf('[Gabriel] FAST mode | zRef=%d | range=%d:%d\n', zRef, z1, z2);
+                fprintf('[Imregdemons] FAST mode | zRef=%d | range=%d:%d\n', zRef, z1, z2);
 
                 defFields = cell(1,nr);
                 for t = 1:nr
@@ -1224,10 +1227,10 @@ set(fig,'CloseRequestFcn',@cleanup);
 
         if gabriel_active
             set(gabrielReloadBtn,'String','Revert to RAW data','BackgroundColor',C.red);
-            fprintf('[Viewer] Gabriel ON | TR=%.3f s | T=%d\n', TR, T);
+            fprintf('[Viewer] Imregdemons ON | TR=%.3f s | T=%d\n', TR, T);
         else
-            set(gabrielReloadBtn,'String','Apply Gabriel preprocessing','BackgroundColor',C.green);
-            fprintf('[Viewer] Gabriel OFF | RAW restored | TR=%.3f s | T=%d\n', TR, T);
+            set(gabrielReloadBtn,'String','Apply Imregdemons preprocessing','BackgroundColor',C.green);
+            fprintf('[Viewer] Imregdemons OFF | RAW restored | TR=%.3f s | T=%d\n', TR, T);
         end
 
         updateFrame();
@@ -1530,8 +1533,6 @@ function s = makeSafeAsciiFileName(s)
 end
 
 
-
-
  function exportVideoCB(~,~)
     txtExp = [];
     vid = [];
@@ -1800,8 +1801,6 @@ end
         end
 
 
-       
-
         function restoreAfterExport()
             currentFrame = oldFrame;
 
@@ -1923,7 +1922,7 @@ end
             '  - Robust median and MAD based despiking is applied to ROI timecourses'; ...
             '  - Spikes above the selected Z-threshold are replaced by interpolation'; ...
             ''; ...
-            '7) GABRIEL PREPROCESSING'; ...
+            '7) IMREGDEMONS PREPROCESSING'; ...
             '  - Optional mean block averaging'; ...
             '  - For matrix data, demons registration is applied to the selected slice range'; ...
             ''; ...
@@ -1981,67 +1980,324 @@ end
 O = V;
 end
 
-% =========================================================================
-% Gabriel preprocessing
-% =========================================================================
-function out = gabriel_preprocess(Iin, TRin, opts)
-% Clean Gabriel-style preprocessing (MATLAB 2017b compatible)
 
-fprintf('\n[Viewer] GABRIEL PREPROCESSING APPLIED\n');
-fprintf('    Input size: %s\n', mat2str(size(Iin)));
-fprintf('    Input TR: %.3f s\n', TRin);
 
-if nargin < 3
-    error('gabriel_preprocess requires inputs: Iin, TRin, opts');
+
+%% =========================================================
+%  SETUP POPUP SIZE HELPER
+% =========================================================
+function studio_enlarge_setup_popup_if_needed(hFig)
+    try
+        if isempty(hFig) || ~ishghandle(hFig)
+            return;
+        end
+        if ~strcmpi(get(hFig,'Type'),'figure')
+            return;
+        end
+
+        tagName = 'Patch25SetupPopupScaled';
+        try
+            if isappdata(hFig,tagName)
+                return;
+            end
+            setappdata(hFig,tagName,true);
+        catch
+        end
+
+        blob = '';
+        try
+            blob = lower(char(get(hFig,'Name')));
+        catch
+            blob = '';
+        end
+
+        try
+            hsText = findall(hFig,'Type','uicontrol');
+            for kk = 1:numel(hsText)
+                try
+                    s = get(hsText(kk),'String');
+                    if iscell(s)
+                        tmp = '';
+                        for jj = 1:numel(s)
+                            tmp = [tmp ' ' char(s{jj})]; %#ok<AGROW>
+                        end
+                        s = tmp;
+                    end
+                    if isnumeric(s)
+                        s = num2str(s);
+                    end
+                    blob = [blob ' ' lower(char(s))]; %#ok<AGROW>
+                catch
+                end
+            end
+        catch
+        end
+
+        isScrub = ~isempty(strfind(blob,'scrub')) || ~isempty(strfind(blob,'dvars'));
+        isTemp  = ~isempty(strfind(blob,'temporal smoothing')) || ~isempty(strfind(blob,'subsampling')) || ~isempty(strfind(blob,'subsample'));
+        isFilt  = ~isempty(strfind(blob,'filtering')) || ~isempty(strfind(blob,' filter')) || ~isempty(strfind(blob,'bandpass')) || ~isempty(strfind(blob,'high-pass')) || ~isempty(strfind(blob,'low-pass'));
+
+        if ~(isScrub || isTemp || isFilt)
+            return;
+        end
+
+        if isScrub
+            growW = 1.38;
+            growH = 1.30;
+            fontScale = 1.35;
+            minFont = 13;
+        elseif isTemp
+            growW = 1.36;
+            growH = 1.24;
+            fontScale = 1.24;
+            minFont = 12;
+        else
+            growW = 1.34;
+            growH = 1.24;
+            fontScale = 1.24;
+            minFont = 12;
+        end
+
+        try
+            set(hFig,'Units','pixels');
+            pos = get(hFig,'Position');
+            scr = get(0,'ScreenSize');
+
+            hs = findall(hFig);
+            maxX = pos(3);
+            maxY = pos(4);
+            minX = inf;
+            minY = inf;
+            for kk = 1:numel(hs)
+                h = hs(kk);
+                if isequal(h,hFig)
+                    continue;
+                end
+                try
+                    typ = get(h,'Type');
+                catch
+                    typ = '';
+                end
+                if strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel') || strcmpi(typ,'axes')
+                    try
+                        oldUnits = get(h,'Units');
+                        set(h,'Units','pixels');
+                        p = get(h,'Position');
+                        set(h,'Units',oldUnits);
+                        if isnumeric(p) && numel(p) >= 4
+                            minX = min(minX,p(1));
+                            minY = min(minY,p(2));
+                            maxX = max(maxX,p(1)+p(3));
+                            maxY = max(maxY,p(2)+p(4));
+                        end
+                    catch
+                    end
+                end
+            end
+
+            margin = 70;
+            needW = max(round(pos(3)*growW), round(maxX + margin));
+            needH = max(round(pos(4)*growH), round(maxY + margin));
+
+            maxAllowedW = max(760, scr(3) - 80);
+            maxAllowedH = max(560, scr(4) - 110);
+
+            newW = min(needW, maxAllowedW);
+            newH = min(needH, maxAllowedH);
+
+            newX = round((scr(3)-newW)/2);
+            newY = round((scr(4)-newH)/2);
+            newX = max(20,newX);
+            newY = max(35,newY);
+
+            set(hFig,'Position',[newX newY newW newH]);
+        catch
+            newW = [];
+            newH = [];
+        end
+
+        try
+            hs = findall(hFig);
+            for kk = 1:numel(hs)
+                h = hs(kk);
+                if isequal(h,hFig)
+                    continue;
+                end
+
+                try
+                    typ = get(h,'Type');
+                catch
+                    typ = '';
+                end
+
+                if strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel')
+                    try
+                        oldUnits = get(h,'Units');
+                        set(h,'Units','pixels');
+                        p = get(h,'Position');
+                        if isnumeric(p) && numel(p) >= 4
+                            p(3) = round(p(3) * 1.04);
+                            p(4) = round(p(4) * 1.08);
+                            set(h,'Position',p);
+                        end
+                        set(h,'Units',oldUnits);
+                    catch
+                    end
+                end
+
+                try
+                    fs = get(h,'FontSize');
+                    if isnumeric(fs) && isfinite(fs) && fs > 0
+                        set(h,'FontSize',max(minFont,round(fs*fontScale)));
+                    end
+                catch
+                end
+
+                try
+                    set(h,'FontWeight','bold');
+                catch
+                end
+            end
+        catch
+        end
+
+        try
+            studio_fit_popup_children_to_window(hFig);
+        catch
+        end
+
+        try
+            drawnow;
+        catch
+        end
+    catch
+    end
 end
 
-if ~isfield(opts,'nsub')
-    error('opts.nsub is required');
+function studio_fit_popup_children_to_window(hFig)
+    if isempty(hFig) || ~ishghandle(hFig)
+        return;
+    end
+
+    try
+        set(hFig,'Units','pixels');
+        figPos = get(hFig,'Position');
+    catch
+        return;
+    end
+
+    marginLeft = 35;
+    marginRight = 45;
+    marginBottom = 35;
+    marginTop = 35;
+
+    hs = findall(hFig);
+    maxX = -inf;
+    maxY = -inf;
+    minX = inf;
+    minY = inf;
+
+    keep = false(size(hs));
+    posCell = cell(size(hs));
+
+    for kk = 1:numel(hs)
+        h = hs(kk);
+        if isequal(h,hFig)
+            continue;
+        end
+        try
+            typ = get(h,'Type');
+        catch
+            typ = '';
+        end
+        if strcmpi(typ,'uicontrol') || strcmpi(typ,'uipanel') || strcmpi(typ,'axes')
+            try
+                oldUnits = get(h,'Units');
+                set(h,'Units','pixels');
+                p = get(h,'Position');
+                set(h,'Units',oldUnits);
+                if isnumeric(p) && numel(p) >= 4
+                    keep(kk) = true;
+                    posCell{kk} = p;
+                    minX = min(minX,p(1));
+                    minY = min(minY,p(2));
+                    maxX = max(maxX,p(1)+p(3));
+                    maxY = max(maxY,p(2)+p(4));
+                end
+            catch
+            end
+        end
+    end
+
+    if ~isfinite(maxX) || ~isfinite(maxY)
+        return;
+    end
+
+    scr = get(0,'ScreenSize');
+    needW = round(maxX + marginRight);
+    needH = round(maxY + marginTop);
+    maxAllowedW = max(760, scr(3)-80);
+    maxAllowedH = max(560, scr(4)-110);
+
+    newW = min(max(figPos(3),needW),maxAllowedW);
+    newH = min(max(figPos(4),needH),maxAllowedH);
+
+    if newW ~= figPos(3) || newH ~= figPos(4)
+        figPos(3) = newW;
+        figPos(4) = newH;
+        figPos(1) = max(20,round((scr(3)-newW)/2));
+        figPos(2) = max(35,round((scr(4)-newH)/2));
+        set(hFig,'Position',figPos);
+    end
+
+    figW = figPos(3);
+    figH = figPos(4);
+
+    overflowX = maxX - (figW - marginRight);
+    overflowY = maxY - (figH - marginTop);
+
+    shiftX = 0;
+    shiftY = 0;
+    if minX < marginLeft
+        shiftX = marginLeft - minX;
+    elseif overflowX > 0
+        shiftX = -overflowX;
+    end
+    if minY < marginBottom
+        shiftY = marginBottom - minY;
+    elseif overflowY > 0
+        shiftY = -overflowY;
+    end
+
+    for kk = 1:numel(hs)
+        if ~keep(kk)
+            continue;
+        end
+        h = hs(kk);
+        p = posCell{kk};
+        try
+            oldUnits = get(h,'Units');
+            set(h,'Units','pixels');
+            p(1) = p(1) + shiftX;
+            p(2) = p(2) + shiftY;
+
+            if p(1) + p(3) > figW - marginRight
+                p(3) = max(40, figW - marginRight - p(1));
+            end
+            if p(2) + p(4) > figH - marginTop
+                p(4) = max(20, figH - marginTop - p(2));
+            end
+            if p(1) < marginLeft
+                p(1) = marginLeft;
+            end
+            if p(2) < marginBottom
+                p(2) = marginBottom;
+            end
+
+            set(h,'Position',p);
+            set(h,'Units',oldUnits);
+        catch
+        end
+    end
 end
 
-nsub = opts.nsub;
-if ~isscalar(nsub) || nsub < 2
-    error('opts.nsub must be integer >= 2');
-end
-
-if ~isfield(opts,'regSmooth') || isempty(opts.regSmooth)
-    opts.regSmooth = 1.3;
-end
-
-[ny,nx,nt] = size(Iin);
-nr = floor(nt / nsub);
-
-if nr < 1
-    error('Not enough frames (%d) for nsub=%d', nt, nsub);
-end
-
-fprintf('[Gabriel] block averaging (nsub=%d -> %d vols)\n', nsub, nr);
-
-Ir = zeros(ny, nx, nr, 'like', Iin);
-for i = 1:nr
-    idx = (i-1)*nsub + (1:nsub);
-    Ir(:,:,i) = mean(Iin(:,:,idx), 3);
-end
-
-fprintf('[Gabriel] demons registration\n');
-
-nRef = min(10, nr);
-Iref = mean(Ir(:,:,1:nRef), 3);
-
-Ic = Ir;
-for i = 1:nr
-    [~, tmp] = imregdemons(Ir(:,:,i), Iref, 'DisplayWaitbar', false);
-    Ic(:,:,i) = tmp;
-end
-
-out = struct();
-out.I         = Ic;
-out.TR        = TRin;
-out.blockDur  = TRin * nsub;
-out.nVols     = nr;
-out.totalTime = nt * TRin;
-out.method    = sprintf('Gabriel block avg (nsub=%d) + demons', nsub);
-
-fprintf('[Gabriel] blockDur = %.3f s | totalTime = %.1f s\n', ...
-    out.blockDur, out.totalTime);
-end
