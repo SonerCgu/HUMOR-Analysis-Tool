@@ -1645,6 +1645,9 @@ catch ME_final_layout
 end
 % FC_FINAL_HEATMAP_GRAPH_LAYOUT_20260512_END
 
+% FC_FISHERZ_STATS_PATCH_20260512_START
+% FC bundle convention: Fisher z for averaging/statistics, Pearson r for display.
+% FC_FISHERZ_STATS_PATCH_20260512_END
 guidata(fig,st);
 refreshAll();
 
@@ -5063,47 +5066,107 @@ end
 end
 
 function fc_colorbar_legend(ax,cmap,clim,labelStr,C)
-cla(ax);
-pos = get(ax,'Position');
-isVertical = numel(pos) >= 4 && pos(4) > pos(3) * 2;
-nC = size(cmap,1);
+% Robust colorbar legend.
+% Fixes duplicate tick errors when zero is at the color limit edge.
+try
+    cla(ax);
+catch
+end
 
-if ~isfinite(clim(1)) || ~isfinite(clim(2)) || clim(2) <= clim(1)
+if nargin < 2 || isempty(cmap)
+    cmap = jet(256);
+end
+if nargin < 3 || isempty(clim) || numel(clim) < 2 || ~all(isfinite(clim)) || clim(2) <= clim(1)
     clim = [-1 1];
 end
+if nargin < 4 || isempty(labelStr)
+    labelStr = '';
+end
+
+nC = size(cmap,1);
+if nC < 2
+    cmap = jet(256);
+    nC = size(cmap,1);
+end
+
+pos = get(ax,'Position');
+isVertical = false;
+try
+    isVertical = numel(pos) >= 4 && pos(4) > pos(3) * 2;
+catch
+end
+
+zeroFrac = (0 - clim(1)) ./ max(eps,(clim(2)-clim(1)));
+zeroFrac = max(0,min(1,zeroFrac));
 
 if isVertical
     img = reshape(nC:-1:1,[],1);
     imagesc(ax,img);
+    colormap(ax,cmap);
     hold(ax,'on');
-    y0 = round(1 + (clim(2) - 0) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+
+    y0 = round(1 + (1-zeroFrac) .* (nC - 1));
     y0 = max(1,min(nC,y0));
-    line(ax,[0.55 1.45],[y0 y0],'Color',[1 1 1],'LineWidth',2.2);
-    set(ax,'YDir','reverse','XTick',[], ...
-        'YTick',[1 y0 nC], ...
-        'YTickLabel',{num2str(clim(2),'%.2g'),'0',num2str(clim(1),'%.2g')}, ...
-        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
-        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
-    ylabel(ax,labelStr,'Color',C.fg,'FontSize',16, ...
-        'FontWeight','bold','Interpreter','none');
+    try, line(ax,[0.55 1.45],[y0 y0],'Color',[1 1 1],'LineWidth',1.8); catch, end
+
+    tickVals = [1 y0 nC];
+    tickLabs = {num2str(clim(2),'%.2g'),'0',num2str(clim(1),'%.2g')};
+    [tickVals,ia] = unique(tickVals,'stable');
+    tickLabs = tickLabs(ia);
+    [tickVals,ord] = sort(tickVals,'ascend');
+    tickLabs = tickLabs(ord);
+
+    set(ax, ...
+        'YDir','normal', ...
+        'XTick',[], ...
+        'YTick',tickVals, ...
+        'YTickLabel',tickLabs, ...
+        'XColor',C.fg, ...
+        'YColor',C.fg, ...
+        'Color',C.bgPane, ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'LineWidth',1.1);
+
+    try
+        ylabel(ax,labelStr,'Color',C.fg,'FontSize',11,'FontWeight','bold','Interpreter','none');
+    catch
+    end
     hold(ax,'off');
 else
     img = reshape(1:nC,1,[]);
     imagesc(ax,img);
+    colormap(ax,cmap);
     hold(ax,'on');
-    x0 = round(1 + (0 - clim(1)) ./ max(eps,(clim(2)-clim(1))) .* (nC - 1));
+
+    x0 = round(1 + zeroFrac .* (nC - 1));
     x0 = max(1,min(nC,x0));
-    line(ax,[x0 x0],[0.55 1.45],'Color',[1 1 1],'LineWidth',2.2);
-    set(ax,'YTick',[], ...
-        'XTick',[1 x0 nC], ...
-        'XTickLabel',{num2str(clim(1),'%.2g'),'0',num2str(clim(2),'%.2g')}, ...
-        'XColor',C.fg,'YColor',C.fg,'Color',C.bgPane, ...
-        'FontSize',14,'FontWeight','bold','LineWidth',1.3);
-    title(ax,labelStr,'Color',C.fg,'FontSize',16, ...
-        'FontWeight','bold','Interpreter','none');
+    try, line(ax,[x0 x0],[0.55 1.45],'Color',[1 1 1],'LineWidth',1.8); catch, end
+
+    tickVals = [1 x0 nC];
+    tickLabs = {num2str(clim(1),'%.2g'),'0',num2str(clim(2),'%.2g')};
+    [tickVals,ia] = unique(tickVals,'stable');
+    tickLabs = tickLabs(ia);
+    [tickVals,ord] = sort(tickVals,'ascend');
+    tickLabs = tickLabs(ord);
+
+    set(ax, ...
+        'YTick',[], ...
+        'XTick',tickVals, ...
+        'XTickLabel',tickLabs, ...
+        'XColor',C.fg, ...
+        'YColor',C.fg, ...
+        'Color',C.bgPane, ...
+        'FontSize',10, ...
+        'FontWeight','bold', ...
+        'LineWidth',1.1);
+
+    try
+        title(ax,labelStr,'Color',C.fg,'FontSize',11,'FontWeight','bold','Interpreter','none');
+    catch
+    end
     hold(ax,'off');
 end
-colormap(ax,cmap);
 end
 
 function cmap = fc_bwr(n)
@@ -5767,7 +5830,11 @@ fcBundle.settings.analysisStartSec = s.analysisStartSec;
 fcBundle.settings.analysisEndSec = s.analysisEndSec;
 fcBundle.settings.currentEpoch = s.currentEpoch;
 fcBundle.settings.epochName = s.epochs(s.currentEpoch).name;
-fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use tanh(Z) only for display.';
+fcBundle.settings.note = 'Average/statistically compare Fisher Z. Use Pearson R mainly for visual display.';
+fcBundle.settings.statsMatrix = 'Z';
+fcBundle.settings.statsSpace = 'Fisher z';
+fcBundle.settings.displayMatrix = 'R';
+fcBundle.settings.displaySpace = 'Pearson r';
 fcBundle.settings.regionMode = fc_region_mode_from_state(s);
 
 fcBundle.subjects = struct([]);
@@ -5829,6 +5896,10 @@ for i = 1:s.nSub
     Z(1:size(Z,1)+1:end) = 0;
 
     fcBundle.subjects(i).Z = Z;
+    fcBundle.subjects(i).statMatrix = Z;
+    fcBundle.subjects(i).statSpace = 'Fisher z';
+    fcBundle.subjects(i).displayMatrix = res.M;
+    fcBundle.subjects(i).displaySpace = 'Pearson r';
 
     % Current display-mode matrix for GroupAnalysis convenience.
     try
@@ -5842,6 +5913,10 @@ for i = 1:s.nSub
         Zdisp = atanh(Zdisp);
         Zdisp(1:size(Zdisp,1)+1:end) = 0;
         fcBundle.subjects(i).displayZ = Zdisp;
+        fcBundle.subjects(i).displayStatMatrix = Zdisp;
+        fcBundle.subjects(i).displayStatSpace = 'Fisher z';
+        fcBundle.subjects(i).displayMatrix = Rdisp;
+        fcBundle.subjects(i).displaySpace = 'Pearson r';
     catch
         fcBundle.subjects(i).displayRegionMode = 'both';
         fcBundle.subjects(i).displayNames = res.names;
@@ -5849,6 +5924,10 @@ for i = 1:s.nSub
         fcBundle.subjects(i).displayGroups = {};
         fcBundle.subjects(i).displayR = res.M;
         fcBundle.subjects(i).displayZ = Z;
+        fcBundle.subjects(i).displayStatMatrix = Z;
+        fcBundle.subjects(i).displayStatSpace = 'Fisher z';
+        fcBundle.subjects(i).displayMatrix = res.M;
+        fcBundle.subjects(i).displaySpace = 'Pearson r';
     end
 end
 

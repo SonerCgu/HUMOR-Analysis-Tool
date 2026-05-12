@@ -1,3 +1,7 @@
+
+% GA_FISHERZ_STATS_PATCH_20260512
+% FC group matrices are averaged/statistically compared in Fisher z space.
+% Convert back with tanh(Z) only for Pearson-r display if needed.
 %% GA_ALPHA_MOD_SCM_STYLE_20260504_START
 % AlphaData set-lines are wrapped with GA_alphaModFixFromCData_20260504.
 % This keeps blackbody 0-percent pixels transparent below Mod Min.
@@ -7425,6 +7429,68 @@ try
     s = [a b];
 catch
     s = fp;
+end
+end
+
+
+
+function M = ga_fc_prefer_fisher_z_matrix(subj)
+% GA helper: use Fisher z for FC averaging/statistics.
+% Priority: displayStatMatrix/displayZ/statMatrix/Z, fallback atanh(displayR/R).
+M = [];
+try
+    if isstruct(subj)
+        if isfield(subj,'displayStatMatrix') && ~isempty(subj.displayStatMatrix)
+            M = double(subj.displayStatMatrix); return;
+        end
+        if isfield(subj,'displayZ') && ~isempty(subj.displayZ)
+            M = double(subj.displayZ); return;
+        end
+        if isfield(subj,'statMatrix') && ~isempty(subj.statMatrix)
+            M = double(subj.statMatrix); return;
+        end
+        if isfield(subj,'Z') && ~isempty(subj.Z)
+            M = double(subj.Z); return;
+        end
+        if isfield(subj,'displayR') && ~isempty(subj.displayR)
+            R = max(-0.999999,min(0.999999,double(subj.displayR)));
+            M = atanh(R);
+            M(1:size(M,1)+1:end) = 0;
+            return;
+        end
+        if isfield(subj,'R') && ~isempty(subj.R)
+            R = max(-0.999999,min(0.999999,double(subj.R)));
+            M = atanh(R);
+            M(1:size(M,1)+1:end) = 0;
+            return;
+        end
+    end
+catch
+end
+end
+
+function R = ga_fc_prefer_pearson_r_matrix(subj)
+% GA helper: use Pearson r for visual display.
+R = [];
+try
+    if isstruct(subj)
+        if isfield(subj,'displayMatrix') && ~isempty(subj.displayMatrix)
+            R = double(subj.displayMatrix); return;
+        end
+        if isfield(subj,'displayR') && ~isempty(subj.displayR)
+            R = double(subj.displayR); return;
+        end
+        if isfield(subj,'R') && ~isempty(subj.R)
+            R = double(subj.R); return;
+        end
+        if isfield(subj,'displayZ') && ~isempty(subj.displayZ)
+            R = tanh(double(subj.displayZ)); return;
+        end
+        if isfield(subj,'Z') && ~isempty(subj.Z)
+            R = tanh(double(subj.Z)); return;
+        end
+    end
+catch
 end
 end
 
