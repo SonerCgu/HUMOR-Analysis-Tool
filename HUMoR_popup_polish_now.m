@@ -1,10 +1,10 @@
 function HUMoR_popup_polish_now(h)
+% HUMoR_popup_polish_now
+% NO-VIBRATE PATCH: do not call HUMoR_segmentation_popup_fix_now() here.
+% That second helper resizes the segmentation popup to a different size,
+% and the autofit timer can make the popup grow/shrink repeatedly.
 % HUMoR_SEGMENTATION_PATCH30B_CALL
-try
-    HUMoR_segmentation_popup_fix_now();
-catch
-end
-
+% NO-VIBRATE PATCH: removed direct segmentation popup resizing call.
 % HUMoR_popup_polish_now
 % Enlarges and polishes selected HUMoR/fUSI popup windows.
 % Size is applied once per popup. Fonts/controls can be refreshed safely.
@@ -60,7 +60,10 @@ elseif localHasAny(s,{'temporal smoothing','subsampling','smoothing/subsampling'
 elseif localHasAny(s,{'filtering','butterworth','bandpass','band-pass','high-pass','low-pass','temporal filter'})
     kind = 'filter';
 elseif localHasAny(s,{'segmentation','atlas segmentation','roi segmentation','parcellation','roi atlas','atlas labels','region labels'})
-    kind = 'segmentation';
+    % NO-VIBRATE PATCH: Segmentation.m handles its own fixed layout.
+    % Do not let global popup polish resize this window.
+    kind = '';
+    return;
 elseif localHasAny(s,{'functional connectivity','connectivity','fc setup','seed correlation','roi heatmap','pair roi','graph matrix'})
     kind = 'fc';
 end
@@ -291,14 +294,19 @@ end
 
 function localPolishSegmentationSpecific(f)
 % Extra layout cleanup for the Atlas Segmentation popup.
+% NO-VIBRATE PATCH: apply figure size only once per popup.
 try
-    set(f,'Units','pixels');
-    pos = get(f,'Position');
-    scr = get(0,'ScreenSize');
-    targetW = min(1680, max(1300, scr(3)-70));
-    targetH = min(980,  max(820,  scr(4)-90));
-    pos = [max(20,round((scr(3)-targetW)/2)) max(30,round((scr(4)-targetH)/2)) targetW targetH];
-    set(f,'Position',pos);
+    alreadySized = false;
+    try, alreadySized = isappdata(f,'HUMoR_SEGMENTATION_SIZE_FIXED_NO_VIBRATE'); catch, end
+    if ~alreadySized
+        set(f,'Units','pixels');
+        scr = get(0,'ScreenSize');
+        targetW = min(1680, max(1300, scr(3)-70));
+        targetH = min(980,  max(820,  scr(4)-90));
+        pos = [max(20,round((scr(3)-targetW)/2)) max(30,round((scr(4)-targetH)/2)) targetW targetH];
+        set(f,'Position',pos);
+        setappdata(f,'HUMoR_SEGMENTATION_SIZE_FIXED_NO_VIBRATE',true);
+    end
 catch
 end
 

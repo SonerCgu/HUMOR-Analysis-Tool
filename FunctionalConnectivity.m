@@ -3,7 +3,21 @@ function fig = FunctionalConnectivity(dataIn, saveRoot, tag, opts)
 % fUSI Studio - Functional Connectivity GUI
 % MATLAB 2017b compatible, ASCII-only.
 %
+% Updated Soner/HUMoR version
 % ------------------------------------------------------------
+% Fixes included in this full copy-paste version:
+%   1) ROI heatmap is larger.
+%   2) Graph matrix heatmap is larger.
+%   3) Larger gaps between heatmap labels to avoid overlap.
+%   4) Compare ROI dropdowns and labels use region abbreviations.
+%   5) Pair ROI tab top controls/text are moved down and no longer cut off.
+%   6) ROI heatmap no longer shows subject name.
+%   7) Graph tab removes degree plot and degree text.
+%   8) Vertical heatmap legends are reversed correctly: +1/high at top, -1/low at bottom.
+%   9) File pickers robustly start in Registration folder via temporary cd().
+%  10) Underlay remains separated from ROI labels.
+%  11) Can load HUMoR Segmentation.mat region-time outputs directly into ROI FC.
+%
 % INPUT
 %   dataIn:
 %       numeric [Y X T] or [Y X Z T]
@@ -109,10 +123,14 @@ st.analysisEndSec = inf;
 st.epochs = struct('name', {'Whole'}, 'start', {0}, 'end', {inf});
 st.currentEpoch = 1;
 
+% FC_LR_EPOCH_PATCH_20260505_STATE
+% Injection/window settings are in minutes for user readability.
 st.fcEpochMode = 'whole';      % whole | pre | during | post
 st.fcInjStartMin = 14;          % edit in GUI
 st.fcInjEndMin   = 15;          % edit in GUI
 st.fcEpochWinMin = 3;           % first N minutes for pre/during/post
+
+st.fcUseEpochWin = false;     % OFF = use full pre/during/post period; ON = use Win minutes% FC_LR_EPOCH_PATCH_20260505_STATE_END
 
 st.underlayMode = fc_initial_underlay_mode(st.subjects(1), opts);
 st.underlayViewMode = opts.defaultUnderlayViewMode;
@@ -136,13 +154,13 @@ st.overlayMode = 'seed_fc';
 st.seedAbsThr = 0.20;
 st.seedAlpha = 0.70;
 st.seedDisplay = 'r';
-st.seedCLim = 2.5;
+st.seedCLim = 1.0;
 
 st.roiAbsThr = 0.20;
-st.roiDisplaySpace = 'z';
+st.roiDisplaySpace = 'r';
 st.roiOrder = 'name';
 st.roiCLim = 1.0;
-st.roiZCLim = 2.5;
+st.roiZCLim = 1.0;
 
 st.cmapName = 'bwr';
 st.graphCmapName = 'bwr';
@@ -165,6 +183,10 @@ st.loadedRegionNameFile = '';
 st.loadedSegmentationFile = '';
 st.showHemisphere = true;  % FC_LR_LABEL_DISPLAY_PATCH_V2_STATE
 st.roiHemiMode = 'both';   % both | left | right | merged
+% FC_REGION_PICKER_STATE_20260512
+st.fcSelectedRegionIdx = [];
+st.fcSelectedRegionY = [];
+st.fcSelectedRegionX = [];
 
 % -------------------------------------------------------------------------
 % COLORS / FONT
@@ -188,29 +210,32 @@ C.seedBox = [1.00 0.88 0.10];
 C.line    = [0.95 0.95 0.95];
 C.mask    = [0.20 0.95 0.40];
 C.font    = 'Arial';
-C.fsTiny  = 12;
-C.fsSmall = 14;
-C.fs      = 15;
-C.fsBig   = 17;
+C.fsTiny  = 8;
+C.fsSmall = 9;
+C.fs      = 10;
+C.fsBig   = 11;
 
 % -------------------------------------------------------------------------
 % FIGURE
 % -------------------------------------------------------------------------
 scr = get(0,'ScreenSize');
-fig = figure('Position',[35 35 1650 960],  ...
+fig = figure( ...
     'Name','fUSI Studio - Functional Connectivity', ...
     'Color',C.bgFig, ...
     'MenuBar','none', ...
     'ToolBar','none', ...
     'NumberTitle','off', ...
-    'Units','pixels', ...
-    'Position',scr, ...
+    'Units','normalized', ...
+    'Position',[0.020 0.050 0.960 0.880], ...
     'CloseRequestFcn',@onClose, ...
     'WindowScrollWheelFcn',@onMouseWheel);
-try, HUMoR_popup_polish_now(gcf); catch, end
-
-try, set(fig,'WindowState','maximized'); catch, end
+try, set(fig,'Units','normalized','Position',[0.035 0.060 0.930 0.850]); catch, end
+try, movegui(fig,'center'); catch, end
+% FC_CLEAN_FULLSIZE_FIXED_WINDOWSTATE
+try, set(fig,'Units','normalized','Position',[0.035 0.060 0.930 0.850]); catch, end
+try, movegui(fig,'center'); catch, end
 try, set(fig,'Renderer','opengl'); catch, end
+% FC_LR_LABEL_DISPLAY_PATCH_V2_INTERPRETER
 try
     set(fig,'DefaultTextInterpreter','none');
     set(fig,'DefaultAxesTickLabelInterpreter','none');
@@ -218,21 +243,21 @@ try
 catch
 end
 
-panelCtrl = uipanel('Parent',fig,'Units','normalized','Position',[0.006 0.015 0.350 0.97], ...
+panelCtrl = uipanel('Parent',fig,'Units','normalized','Position',[0.010 0.015 0.385 0.970], ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
-    'Title','Controls','FontName',C.font,'FontSize',14,'FontWeight','bold');
+    'Title','Controls','FontName',C.font,'FontSize',11,'FontWeight','bold','FontSize',14);
 
-panelViewWrap = uipanel('Parent',fig,'Units','normalized','Position',[0.365 0.015 0.629 0.97], ...
+panelViewWrap = uipanel('Parent',fig,'Units','normalized','Position',[0.405 0.015 0.585 0.970], ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
-    'Title','Views','FontName',C.font,'FontSize',14,'FontWeight','bold');
+    'Title','Views','FontName',C.font,'FontSize',11,'FontWeight','bold','FontSize',14);
 
 % -------------------------------------------------------------------------
 % CONTROL PANELS
 % -------------------------------------------------------------------------
-pData = fc_panel(panelCtrl,[0.015 0.735 0.970 0.245],'1. Data / ROI labels',C);
-pSeed = fc_panel(panelCtrl,[0.015 0.540 0.970 0.185],'2. Seed-based FC',C);
-pROI  = fc_panel(panelCtrl,[0.015 0.295 0.970 0.235],'3. Region-based FC',C);
-pSave = fc_panel(panelCtrl,[0.015 0.020 0.970 0.265],'4. Display / Save',C);
+pData = fc_panel(panelCtrl,[0.015 0.760 0.970 0.220],'1. Data / ROI labels',C);
+pSeed = fc_panel(panelCtrl,[0.015 0.575 0.970 0.175],'2. Seed-based FC',C);
+pROI  = fc_panel(panelCtrl,[0.015 0.315 0.970 0.250],'3. Region-based FC',C);
+pSave = fc_panel(panelCtrl,[0.015 0.020 0.970 0.285],'4. Display / Save',C);
 
 % -------------------------------------------------------------------------
 % DATA PANEL
@@ -387,11 +412,11 @@ uicontrol('Parent',pROI,'Style','pushbutton','Units','normalized', ...
 
 fc_label(pROI,[0.48 0.815 0.16 0.08],'Matrix value',C);
 ddROISpace = uicontrol('Parent',pROI,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.61 0.79 0.18 0.12], 'String',{'Fisher z','Pearson r'}, 'Value',1, ...
+    'Position',[0.61 0.79 0.18 0.12], 'String',{'Fisher z','Pearson r'}, 'Value',2, ...
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
     'FontName',C.font,'FontSize',C.fsTiny,'Callback',@onROISpace);
 
-fc_label(pROI,[0.82 0.815 0.06 0.08],'Thr',C);
+fc_label(pROI,[0.805 0.815 0.075 0.08],'|r| thr',C);
 edROIThr = uicontrol('Parent',pROI,'Style','edit','Units','normalized', ...
     'Position',[0.88 0.79 0.08 0.12], 'String',sprintf('%.2f',st.roiAbsThr), ...
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
@@ -459,6 +484,7 @@ txtROI = uicontrol('Parent',pROI,'Style','text','Units','normalized', ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.dim, ...
     'HorizontalAlignment','left','FontName',C.font,'FontSize',C.fsTiny);
 
+% FC_LR_EPOCH_PATCH_20260505_UI
 fc_label(pROI,[0.02 0.205 0.105 0.085],'Window',C);
 ddEpochMode = uicontrol('Parent',pROI,'Style','popupmenu','Units','normalized', ...
     'Position',[0.125 0.185 0.205 0.115], ...
@@ -490,6 +516,15 @@ uicontrol('Parent',pROI,'Style','pushbutton','Units','normalized', ...
     'Position',[0.835 0.185 0.125 0.115], 'String','Apply win', ...
     'BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onEpochApply);
+% FC_USE_WINDOW_CHECKBOX_20260512
+cbEpochUseWin = uicontrol('Parent',pROI,'Style','checkbox','Units','normalized', ...
+    'Position',[0.745 0.185 0.085 0.115], ...
+    'String','Use win', 'Value',0, ...
+    'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
+    'FontName',C.font,'FontSize',C.fsTiny,'FontWeight','bold', ...
+    'Callback',@onEpochEdit);
+% FC_USE_WINDOW_CHECKBOX_20260512_END
+% FC_LR_EPOCH_PATCH_20260505_UI_END
 
 % -------------------------------------------------------------------------
 % DISPLAY / SAVE PANEL
@@ -509,17 +544,17 @@ ddCmapGlobal = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized'
     'FontName',C.font,'FontSize',C.fsTiny,'Callback',@onColorSettings);
 
 uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.18 0.045 0.16 0.13], 'String','Reset view', ...
+    'Position',[0.18 0.045 0.15 0.13], 'String','Reset view', ...
     'BackgroundColor',C.bgBtn,'ForegroundColor',C.fg, ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onResetView);
 
 uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.36 0.045 0.16 0.13], 'String','Region key', ...
+    'Position',[0.35 0.045 0.15 0.13], 'String','Region key', ...
     'BackgroundColor',C.orange,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onOpenRegionKey);
 
 uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.54 0.045 0.12 0.13], 'String','Save', ...
+    'Position',[0.52 0.045 0.12 0.13], 'String','Save', ...
     'BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onSaveAll);
 
@@ -563,6 +598,7 @@ edSeedAlpha = uicontrol('Parent',pSave,'Style','edit','Units','normalized', ...
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, 'FontName',C.font, ...
     'FontSize',C.fsTiny,'Callback',@onColorSettings);
 
+% FC_LR_LABEL_DISPLAY_PATCH_V2_CHECKBOX
 cbShowLR = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
     'Position',[0.705 0.385 0.245 0.105], ...
     'String','Show L/R', 'Value',1, ...
@@ -570,6 +606,7 @@ cbShowLR = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
     'Callback',@onShowHemisphere);
 
+% FC_REGION_MODE_PATCH_20260504_UI
 fc_label(pSave,[0.02 0.205 0.14 0.10],'Regions',C);
 ddRegionMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized', ...
     'Position',[0.16 0.19 0.34 0.12], ...
@@ -578,7 +615,32 @@ ddRegionMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized'
     'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
     'FontName',C.font,'FontSize',C.fsTiny,'FontWeight','bold', ...
     'Callback',@onRegionMode);
+% FC_REGION_MODE_PATCH_20260504_UI_END
 
+% FC_LABEL_REGION_PICK_UI_20260512_START
+try
+    fc_label(pSave,[0.500 0.455 0.075 0.060],'Labels',C);
+    ddMatrixTickMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized', ...
+        'Position',[0.580 0.420 0.175 0.090], ...
+        'String',{'Auto','All','Every 2','Every 3','Every 5','Every 10'}, ...
+        'Value',2,'Tag','FC_MatrixTickMode', ...
+        'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
+        'FontName',C.font,'FontSize',C.fsTiny,'FontWeight','bold', ...
+        'Callback',@onMatrixTickMode);
+    uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
+        'Position',[0.765 0.420 0.095 0.090],'String','Pick', ...
+        'BackgroundColor',C.bgBtn,'ForegroundColor',C.fg, ...
+        'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
+        'Callback',@onCustomRegionList);
+    uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
+        'Position',[0.870 0.420 0.080 0.090],'String','All', ...
+        'BackgroundColor',C.bgBtn,'ForegroundColor',C.fg, ...
+        'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
+        'Callback',@onClearCustomRegions);
+catch ME_label_ui
+    try, fprintf('FC label/custom-region UI warning: %s\n',ME_label_ui.message); catch, end
+end
+% FC_LABEL_REGION_PICK_UI_20260512_END
 
 fc_label(pSave,[0.02 0.205 0.14 0.10],'',C);
 
@@ -607,12 +669,12 @@ uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onFlipUnderlayUD);
 
 uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.68 0.045 0.12 0.13], 'String','Help', ...
+    'Position',[0.66 0.045 0.12 0.13], 'String','Help', ...
     'BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onHelp);
 
 uicontrol('Parent',pSave,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.82 0.045 0.12 0.13], 'String','Close', ...
+    'Position',[0.80 0.045 0.14 0.13], 'String','Close', ...
     'BackgroundColor',C.red,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny,'Callback',@onClose);
 
@@ -621,16 +683,817 @@ txtStatus = uicontrol('Parent',pSave,'Style','text','Units','normalized', ...
     'String','', 'Visible','off', ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.dim, ...
     'HorizontalAlignment','left','FontName',C.font,'FontSize',C.fsTiny);
-
 % -------------------------------------------------------------------------
+% FC_LEFT_GUI_REPACK_20260512_START
+try
+    try, set(fig,'Units','normalized','Position',[0.035 0.060 0.930 0.850]); catch, end
+    try, movegui(fig,'center'); catch, end
+
+    set(panelCtrl,'Position',[0.010 0.015 0.390 0.970],'FontSize',10,'FontWeight','bold','FontSize',14);
+    set(panelViewWrap,'Position',[0.410 0.015 0.580 0.970],'FontSize',10,'FontWeight','bold','FontSize',14);
+
+    set(pData,'Position',[0.015 0.800 0.970 0.170],'FontSize',10,'FontWeight','bold','FontSize',14);
+    set(pSeed,'Position',[0.015 0.615 0.970 0.175],'FontSize',10,'FontWeight','bold','FontSize',14);
+    set(pROI, 'Position',[0.015 0.400 0.970 0.205],'FontSize',10,'FontWeight','bold','FontSize',14);
+    set(pSave,'Position',[0.015 0.020 0.970 0.370],'FontSize',10,'FontWeight','bold','FontSize',14);
+
+    hCtl = findall(panelCtrl,'Type','uicontrol');
+    for ii = 1:numel(hCtl)
+        try
+            sty = get(hCtl(ii),'Style');
+            if strcmpi(sty,'text')
+                set(hCtl(ii),'FontName',C.font,'FontSize',7.5,'FontWeight','bold','FontSize',14);
+            else
+                set(hCtl(ii),'FontName',C.font,'FontSize',8,'FontWeight','bold','FontSize',14);
+            end
+        catch
+        end
+    end
+
+    % ---------------- Box 1: compact and aligned ----------------
+    try, set(findobj(pData,'Style','text','String','Subject'),'Position',[0.020 0.795 0.110 0.090]); catch, end
+    try, set(ddSubject,'Position',[0.130 0.655 0.370 0.145]); catch, end
+    try, set(findobj(pData,'Style','text','String','Slice Z'),'Position',[0.535 0.795 0.090 0.090]); catch, end
+    try, set(slSlice,'Position',[0.625 0.700 0.205 0.070]); catch, end
+    try, set(edSlice,'Position',[0.850 0.630 0.110 0.150]); catch, end
+
+    try, set(findobj(pData,'String','Load data'),'Position',[0.020 0.430 0.190 0.145]); catch, end
+    try, set(findobj(pData,'String','Load mask'),'Position',[0.230 0.430 0.190 0.145]); catch, end
+    try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
+    try, set(findobj(pData,'String','ROI labels'),'Position',[0.445 0.430 0.230 0.145]); catch, end
+    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Region names'),'Position',[0.700 0.430 0.260 0.145]); catch, end
+
+    try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.020 0.205 0.120 0.085]); catch, end
+    try, set(findobj(pData,'String','Load underlay / histology'),'String','Underlay / histology'); catch, end
+    try, set(findobj(pData,'String','Underlay / histology'),'Position',[0.160 0.160 0.345 0.140]); catch, end
+    try, set(cbAtlasLine,'Position',[0.560 0.195 0.160 0.090],'String','ROI lines'); catch, end
+    try, set(cbMaskLine,'Position',[0.755 0.195 0.140 0.090],'String','Mask'); catch, end
+    try, set(txtSummary,'Visible','off'); catch, end
+
+    % ---------------- Box 2: reduce right-side empty gap ----------------
+    try, set(edSeedX,'Position',[0.070 0.690 0.095 0.150]); catch, end
+    try, set(edSeedY,'Position',[0.235 0.690 0.095 0.150]); catch, end
+    try, set(edSeedSize,'Position',[0.445 0.690 0.100 0.150]); catch, end
+    try, set(cbSliceOnly,'Position',[0.610 0.720 0.180 0.095]); catch, end
+    try, set(ddSeedDisplay,'Position',[0.170 0.435 0.240 0.130]); catch, end
+    try, set(edSeedThr,'Position',[0.610 0.435 0.110 0.130]); catch, end
+    try, set(findobj(pSeed,'String','Seed current'),'Position',[0.020 0.130 0.285 0.170]); catch, end
+    try, set(findobj(pSeed,'String','Seed all'),'Position',[0.330 0.130 0.250 0.170]); catch, end
+    try, set(findobj(pSeed,'String','Load ROI TXT'),'Position',[0.605 0.130 0.345 0.170]); catch, end
+    try, set(txtSeed,'Visible','off'); catch, end
+
+    % ---------------- Box 3: tighter bottom gap ----------------
+    try, set(findobj(pROI,'String','ROI current'),'Position',[0.020 0.735 0.220 0.150]); catch, end
+    try, set(findobj(pROI,'String','ROI all'),'Position',[0.260 0.735 0.190 0.150]); catch, end
+    try, set(findobj(pROI,'Style','text','String','Matrix value'),'Position',[0.475 0.770 0.160 0.085]); catch, end
+    try, set(ddROISpace,'Position',[0.610 0.735 0.180 0.150]); catch, end
+    try, set(findobj(pROI,'Style','text','String','Thr'),'Position',[0.820 0.770 0.060 0.085]); catch, end
+    try, set(edROIThr,'Position',[0.875 0.735 0.085 0.150]); catch, end
+    try, set(findobj(pROI,'Style','text','String','Compare ROI'),'Position',[0.020 0.505 0.175 0.090]); catch, end
+    try, set(ddCompareROI,'Position',[0.200 0.480 0.415 0.140]); catch, end
+    try, set(findobj(pROI,'String','Compare'),'Position',[0.635 0.480 0.180 0.140]); catch, end
+    try, set(findobj(pROI,'Style','text','String','Top'),'Position',[0.845 0.505 0.050 0.090]); catch, end
+    try, set(edTopN,'Position',[0.905 0.480 0.060 0.140]); catch, end
+    try, set(findobj(pROI,'String','Load Seg MAT'),'Position',[0.020 0.145 0.260 0.155]); catch, end
+    try, set(btnComparePrev,'Position',[0.310 0.145 0.145 0.155],'String','< Prev'); catch, end
+    try, set(btnCompareNext,'Position',[0.470 0.145 0.145 0.155],'String','Next >'); catch, end
+    try, set(findobj(pROI,'String','Export CSV'),'Position',[0.760 0.145 0.200 0.155]); catch, end
+    try, set(txtComparePage,'Visible','off'); catch, end
+    try, set(txtROI,'Visible','off'); catch, end
+
+    % Move window controls from Box 3 to Box 4
+    try, set(findobj(fig,'Style','text','String','Window'),'Parent',pSave,'Position',[0.020 0.305 0.095 0.060]); catch, end
+    try, set(ddEpochMode,'Parent',pSave,'Position',[0.125 0.270 0.180 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Inj start'),'String','Start','Parent',pSave,'Position',[0.325 0.305 0.060 0.060]); catch, end
+    try, set(edInjStart,'Parent',pSave,'Position',[0.385 0.270 0.075 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Inj end'),'String','End','Parent',pSave,'Position',[0.475 0.305 0.055 0.060]); catch, end
+    try, set(edInjEnd,'Parent',pSave,'Position',[0.525 0.270 0.075 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Win'),'Parent',pSave,'Position',[0.615 0.305 0.045 0.060]); catch, end
+    try, set(edEpochWin,'Parent',pSave,'Position',[0.660 0.270 0.070 0.090]); catch, end
+    try, set(findobj(fig,'String','Apply win'),'Parent',pSave,'Position',[0.760 0.270 0.190 0.090],'String','Apply window'); catch, end
+
+    % ---------------- Box 4: full clean repack ----------------
+    try, set(ddOverlay,'Position',[0.145 0.830 0.300 0.090]); catch, end
+    try, set(ddCmapGlobal,'Position',[0.580 0.830 0.370 0.090]); catch, end
+
+    try, set(ddUnderlayStyle,'Position',[0.200 0.690 0.300 0.090]); catch, end
+    try, set(edUGamma,'Position',[0.650 0.690 0.085 0.090]); catch, end
+    try, set(edUSharp,'Position',[0.865 0.690 0.085 0.090]); catch, end
+
+    try, set(edSeedCLim,'Position',[0.190 0.555 0.085 0.090]); catch, end
+    try, set(edSeedAlpha,'Position',[0.555 0.555 0.085 0.090]); catch, end
+    try, set(cbShowLR,'Position',[0.705 0.560 0.245 0.080]); catch, end
+
+    try, set(ddRegionMode,'Position',[0.160 0.420 0.330 0.090]); catch, end
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Position',[0.580 0.420 0.175 0.090]); catch, end
+    try, set(findobj(pSave,'String','Pick'),'Position',[0.765 0.420 0.095 0.090]); catch, end
+    try, set(findobj(pSave,'String','All'),'Position',[0.870 0.420 0.080 0.090]); catch, end
+
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.045 0.155 0.105]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.190 0.045 0.120 0.105]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.325 0.045 0.160 0.105]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.500 0.045 0.115 0.105]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.630 0.045 0.115 0.105]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.760 0.045 0.190 0.105]); catch, end
+    try, set(txtStatus,'Visible','off'); catch, end
+
+    % Make colors cleaner/consistent for main action buttons
+    try, set(findobj(panelCtrl,'String','ROI labels'),'BackgroundColor',C.orange,'ForegroundColor','w'); catch, end
+    try, set(findobj(panelCtrl,'String','Region names'),'BackgroundColor',C.blue,'ForegroundColor','w'); catch, end
+    try, set(findobj(panelCtrl,'String','Load Seg MAT'),'BackgroundColor',C.orange,'ForegroundColor','w'); catch, end
+    try, set(findobj(panelCtrl,'String','Export GA'),'BackgroundColor',C.green,'ForegroundColor','w'); catch, end
+    try, set(findobj(panelCtrl,'String','Region key'),'BackgroundColor',C.orange,'ForegroundColor','w'); catch, end
+catch ME_left_layout
+    try, fprintf('FC left GUI repack warning: %s\n',ME_left_layout.message); catch, end
+end
+% FC_LEFT_GUI_REPACK_20260512_END
+% FC_LEFT_GUI_FINAL_ALIGN_20260512_START
+try
+    try, set(fig,'Units','normalized','Position',[0.030 0.055 0.940 0.860]); catch, end
+    try, movegui(fig,'center'); catch, end
+
+    set(panelCtrl,'Position',[0.010 0.015 0.395 0.970],'FontSize',10,'FontWeight','bold','FontSize',14);
+    set(panelViewWrap,'Position',[0.415 0.015 0.575 0.970],'FontSize',10,'FontWeight','bold','FontSize',14);
+
+    set(pData,'Position',[0.015 0.790 0.970 0.185],'FontSize',9,'FontWeight','bold','FontSize',14);
+    set(pSeed,'Position',[0.015 0.600 0.970 0.180],'FontSize',9,'FontWeight','bold','FontSize',14);
+    set(pROI, 'Position',[0.015 0.380 0.970 0.210],'FontSize',9,'FontWeight','bold','FontSize',14);
+    set(pSave,'Position',[0.015 0.020 0.970 0.350],'FontSize',9,'FontWeight','bold','FontSize',14);
+
+    hCtl = findall(panelCtrl,'Type','uicontrol');
+    for ii = 1:numel(hCtl)
+        try
+            sty = get(hCtl(ii),'Style');
+            if strcmpi(sty,'text')
+                set(hCtl(ii),'FontName',C.font,'FontSize',7.2,'FontWeight','bold','FontSize',14);
+            else
+                set(hCtl(ii),'FontName',C.font,'FontSize',7.8,'FontWeight','bold','FontSize',14);
+            end
+        catch
+        end
+    end
+
+    % ---------- Box 1: Data / ROI labels, clean 3-row layout ----------
+    try, set(findobj(pData,'Style','text','String','Subject'),'Position',[0.020 0.790 0.110 0.090]); catch, end
+    try, set(ddSubject,'Position',[0.130 0.665 0.370 0.130]); catch, end
+    try, set(findobj(pData,'Style','text','String','Slice Z'),'Position',[0.535 0.790 0.090 0.090]); catch, end
+    try, set(slSlice,'Position',[0.625 0.720 0.205 0.060]); catch, end
+    try, set(edSlice,'Position',[0.850 0.650 0.110 0.135]); catch, end
+
+    try, set(findobj(pData,'String','Load data'),'Position',[0.020 0.455 0.185 0.140]); catch, end
+    try, set(findobj(pData,'String','Load mask'),'Position',[0.220 0.455 0.185 0.140]); catch, end
+    try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
+    try, set(findobj(pData,'String','ROI labels'),'Position',[0.420 0.455 0.240 0.140]); catch, end
+    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Region names'),'Position',[0.680 0.455 0.280 0.140]); catch, end
+
+    try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.020 0.225 0.120 0.080]); catch, end
+    try, set(findobj(pData,'String','Load underlay / histology'),'String','Underlay / histology'); catch, end
+    try, set(findobj(pData,'String','Underlay / histology'),'Position',[0.155 0.180 0.350 0.130]); catch, end
+    try, set(cbAtlasLine,'Position',[0.555 0.220 0.155 0.080],'String','ROI lines'); catch, end
+    try, set(cbMaskLine,'Position',[0.745 0.220 0.130 0.080],'String','Mask'); catch, end
+    try, set(txtSummary,'Visible','off'); catch, end
+
+    % ---------- Box 4: Display / Save, clean 6-row layout ----------
+    try, set(findobj(pSave,'Style','text','String','Overlay'),'Position',[0.020 0.840 0.110 0.060]); catch, end
+    try, set(ddOverlay,'Position',[0.140 0.815 0.315 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Color'),'Position',[0.490 0.840 0.080 0.060]); catch, end
+    try, set(ddCmapGlobal,'Position',[0.570 0.815 0.380 0.090]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Underlay style'),'Position',[0.020 0.700 0.160 0.060]); catch, end
+    try, set(ddUnderlayStyle,'Position',[0.200 0.675 0.295 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Gamma'),'Position',[0.525 0.700 0.080 0.060]); catch, end
+    try, set(edUGamma,'Position',[0.610 0.675 0.090 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Sharp'),'Position',[0.730 0.700 0.080 0.060]); catch, end
+    try, set(edUSharp,'Position',[0.840 0.675 0.110 0.090]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Seed z-limit'),'Position',[0.020 0.560 0.160 0.060]); catch, end
+    try, set(edSeedCLim,'Position',[0.190 0.535 0.090 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Overlay opacity'),'Position',[0.335 0.560 0.195 0.060]); catch, end
+    try, set(edSeedAlpha,'Position',[0.545 0.535 0.090 0.090]); catch, end
+    try, set(cbShowLR,'Position',[0.685 0.545 0.240 0.080]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Regions'),'Position',[0.020 0.420 0.120 0.060]); catch, end
+    try, set(ddRegionMode,'Position',[0.140 0.395 0.350 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Labels'),'Position',[0.510 0.420 0.070 0.060]); catch, end
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Position',[0.585 0.395 0.165 0.090]); catch, end
+    try, set(findobj(pSave,'String','Pick'),'Position',[0.765 0.395 0.090 0.090]); catch, end
+    try, set(findobj(pSave,'String','All'),'Position',[0.865 0.395 0.085 0.090]); catch, end
+
+    try, set(findobj(fig,'Style','text','String','Window'),'Parent',pSave,'Position',[0.020 0.280 0.090 0.060]); catch, end
+    try, set(ddEpochMode,'Parent',pSave,'Position',[0.115 0.255 0.165 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Inj start'),'String','Start'); catch, end
+    try, set(findobj(fig,'Style','text','String','Start'),'Parent',pSave,'Position',[0.300 0.280 0.055 0.060]); catch, end
+    try, set(edInjStart,'Parent',pSave,'Position',[0.360 0.255 0.075 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Inj end'),'String','End'); catch, end
+    try, set(findobj(fig,'Style','text','String','End'),'Parent',pSave,'Position',[0.455 0.280 0.050 0.060]); catch, end
+    try, set(edInjEnd,'Parent',pSave,'Position',[0.505 0.255 0.075 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Win'),'Parent',pSave,'Position',[0.600 0.280 0.045 0.060]); catch, end
+    try, set(edEpochWin,'Parent',pSave,'Position',[0.645 0.255 0.070 0.090]); catch, end
+    try, set(findobj(fig,'String','Apply win'),'String','Apply window'); catch, end
+    try, set(findobj(fig,'String','Apply window'),'Parent',pSave,'Position',[0.735 0.255 0.215 0.090]); catch, end
+
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.055 0.155 0.105]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.190 0.055 0.125 0.105]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.330 0.055 0.160 0.105]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.505 0.055 0.115 0.105]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.635 0.055 0.115 0.105]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.765 0.055 0.185 0.105]); catch, end
+    try, set(txtStatus,'Visible','off'); catch, end
+
+catch ME_align2
+    try, fprintf('FC final left layout warning: %s\n',ME_align2.message); catch, end
+end
+% FC_LEFT_GUI_FINAL_ALIGN_20260512_END
+
+% FC_LEFT_GUI_EXTRA_SPACING_20260512_START
+try
+    % Slightly wider left control column
+    try, set(panelCtrl,'Position',[0.010 0.015 0.400 0.970]); catch, end
+    try, set(panelViewWrap,'Position',[0.420 0.015 0.570 0.970]); catch, end
+
+    % Panel heights with clean gaps
+    try, set(pData,'Position',[0.015 0.785 0.970 0.190]); catch, end
+    try, set(pSeed,'Position',[0.015 0.595 0.970 0.180]); catch, end
+    try, set(pROI, 'Position',[0.015 0.380 0.970 0.205]); catch, end
+    try, set(pSave,'Position',[0.015 0.020 0.970 0.350]); catch, end
+
+    % Smaller clean font only inside the left controls
+    hCtl2 = findall(panelCtrl,'Type','uicontrol');
+    for jj = 1:numel(hCtl2)
+        try
+            sty2 = get(hCtl2(jj),'Style');
+            if strcmpi(sty2,'text')
+                set(hCtl2(jj),'FontSize',7.4,'FontWeight','bold','FontSize',14);
+            else
+                set(hCtl2(jj),'FontSize',7.8,'FontWeight','bold','FontSize',14);
+            end
+        catch
+        end
+    end
+
+    % ======================================================
+    % BOX 1: larger horizontal gaps and better alignment
+    % ======================================================
+    try, set(findobj(pData,'Style','text','String','Subject'),'Position',[0.020 0.790 0.100 0.080]); catch, end
+    try, set(ddSubject,'Position',[0.130 0.665 0.350 0.125]); catch, end
+    try, set(findobj(pData,'Style','text','String','Slice Z'),'Position',[0.535 0.790 0.090 0.080]); catch, end
+    try, set(slSlice,'Position',[0.625 0.715 0.200 0.060]); catch, end
+    try, set(edSlice,'Position',[0.865 0.650 0.095 0.125]); catch, end
+
+    try, set(findobj(pData,'String','Load data'),'Position',[0.020 0.450 0.175 0.140]); catch, end
+    try, set(findobj(pData,'String','Load mask'),'Position',[0.220 0.450 0.175 0.140]); catch, end
+    try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
+    try, set(findobj(pData,'String','ROI labels'),'Position',[0.425 0.450 0.225 0.140]); catch, end
+    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Region names'),'Position',[0.690 0.450 0.270 0.140]); catch, end
+
+    try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.020 0.215 0.115 0.080]); catch, end
+    try, set(findobj(pData,'String','Load underlay / histology'),'String','Underlay / histology'); catch, end
+    try, set(findobj(pData,'String','Underlay / histology'),'Position',[0.160 0.165 0.330 0.130]); catch, end
+    try, set(cbAtlasLine,'Position',[0.560 0.205 0.160 0.080],'String','ROI lines'); catch, end
+    try, set(cbMaskLine,'Position',[0.765 0.205 0.140 0.080],'String','Mask'); catch, end
+
+    % ======================================================
+    % BOX 4: wider gaps, centered labels, separated buttons
+    % ======================================================
+    try, set(findobj(pSave,'Style','text','String','Overlay'),'Position',[0.020 0.835 0.110 0.060]); catch, end
+    try, set(ddOverlay,'Position',[0.145 0.805 0.310 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Color'),'Position',[0.500 0.835 0.070 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(ddCmapGlobal,'Position',[0.580 0.805 0.370 0.090]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Underlay style'),'Position',[0.020 0.690 0.160 0.060]); catch, end
+    try, set(ddUnderlayStyle,'Position',[0.205 0.660 0.295 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Gamma'),'Position',[0.535 0.690 0.085 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edUGamma,'Position',[0.630 0.660 0.085 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Sharp'),'Position',[0.755 0.690 0.080 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edUSharp,'Position',[0.865 0.660 0.085 0.090]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Seed z-limit'),'Position',[0.020 0.545 0.160 0.060]); catch, end
+    try, set(edSeedCLim,'Position',[0.190 0.515 0.085 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Overlay opacity'),'Position',[0.340 0.545 0.190 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edSeedAlpha,'Position',[0.555 0.515 0.085 0.090]); catch, end
+    try, set(cbShowLR,'Position',[0.695 0.525 0.245 0.075]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Regions'),'Position',[0.020 0.405 0.110 0.060]); catch, end
+    try, set(ddRegionMode,'Position',[0.145 0.375 0.330 0.090]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Labels'),'Position',[0.505 0.405 0.080 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Position',[0.595 0.375 0.150 0.090]); catch, end
+    try, set(findobj(pSave,'String','Pick'),'Position',[0.765 0.375 0.085 0.090]); catch, end
+    try, set(findobj(pSave,'String','All'),'Position',[0.875 0.375 0.075 0.090]); catch, end
+
+    try, set(findobj(fig,'Style','text','String','Window'),'Parent',pSave,'Position',[0.020 0.255 0.085 0.060]); catch, end
+    try, set(ddEpochMode,'Parent',pSave,'Position',[0.110 0.225 0.170 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Inj start'),'String','Start'); catch, end
+    try, set(findobj(fig,'Style','text','String','Start'),'Parent',pSave,'Position',[0.300 0.255 0.055 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edInjStart,'Parent',pSave,'Position',[0.365 0.225 0.075 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Inj end'),'String','End'); catch, end
+    try, set(findobj(fig,'Style','text','String','End'),'Parent',pSave,'Position',[0.465 0.255 0.050 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edInjEnd,'Parent',pSave,'Position',[0.525 0.225 0.075 0.090]); catch, end
+    try, set(findobj(fig,'Style','text','String','Win'),'Parent',pSave,'Position',[0.620 0.255 0.045 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edEpochWin,'Parent',pSave,'Position',[0.670 0.225 0.070 0.090]); catch, end
+    try, set(findobj(fig,'String','Apply win'),'String','Apply window'); catch, end
+    try, set(findobj(fig,'String','Apply window'),'Parent',pSave,'Position',[0.770 0.225 0.180 0.090]); catch, end
+
+    % Bottom row: separated, equal-looking buttons
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.055 0.145 0.105]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.185 0.055 0.120 0.105]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.330 0.055 0.155 0.105]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.515 0.055 0.110 0.105]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.650 0.055 0.110 0.105]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.790 0.055 0.160 0.105]); catch, end
+
+    % Cleaner text centering inside edits/buttons
+    hEd = findall(pSave,'Style','edit');
+    for jj = 1:numel(hEd), try, set(hEd(jj),'HorizontalAlignment','center'); catch, end, end
+    hBtn = findall(pSave,'Style','pushbutton');
+    for jj = 1:numel(hBtn), try, set(hBtn(jj),'FontSize',7.8,'FontWeight','bold','FontSize',14); catch, end, end
+
+catch ME_space
+    try, fprintf('FC extra spacing warning: %s\n',ME_space.message); catch, end
+end
+% FC_LEFT_GUI_EXTRA_SPACING_20260512_END
+
 % RIGHT-SIDE TAB STRIP
 % -------------------------------------------------------------------------
+% FC_BOX4_PICK_LAYOUT_FIX_20260512_START
+try
+    % ================================================================
+    % Final left-control layout cleanup: Box 1 and Box 4
+    % ================================================================
+    try, set(pData,'Position',[0.015 0.800 0.970 0.170]); catch, end
+    try, set(pSave,'Position',[0.015 0.020 0.970 0.370]); catch, end
+
+    % Make all controls slightly smaller so the gaps are visible.
+    try
+        hLeft = findall(panelCtrl,'Type','uicontrol');
+        for ii = 1:numel(hLeft)
+            try
+                sty = get(hLeft(ii),'Style');
+                if strcmpi(sty,'text')
+                    set(hLeft(ii),'FontName',C.font,'FontSize',7.5,'FontWeight','bold','FontSize',14);
+                else
+                    set(hLeft(ii),'FontName',C.font,'FontSize',8,'FontWeight','bold','FontSize',14);
+                end
+            catch
+            end
+        end
+    catch
+    end
+
+    % ---------------- Box 1: bigger horizontal/vertical gaps ----------------
+    try, set(findobj(pData,'Style','text','String','Subject'),'Position',[0.025 0.790 0.120 0.090]); catch, end
+    try, set(ddSubject,'Position',[0.150 0.645 0.360 0.145]); catch, end
+    try, set(findobj(pData,'Style','text','String','Slice Z'),'Position',[0.545 0.790 0.100 0.090]); catch, end
+    try, set(slSlice,'Position',[0.640 0.700 0.200 0.070]); catch, end
+    try, set(edSlice,'Position',[0.865 0.625 0.095 0.155]); catch, end
+
+    try, set(findobj(pData,'String','Load data'),'Position',[0.025 0.425 0.180 0.145]); catch, end
+    try, set(findobj(pData,'String','Load mask'),'Position',[0.230 0.425 0.180 0.145]); catch, end
+    try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
+    try, set(findobj(pData,'String','ROI labels'),'Position',[0.435 0.425 0.230 0.145]); catch, end
+    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Region names'),'Position',[0.690 0.425 0.270 0.145]); catch, end
+
+    try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.025 0.205 0.120 0.085]); catch, end
+    try, set(findobj(pData,'String','Load underlay / histology'),'String','Underlay / histology'); catch, end
+    try, set(findobj(pData,'String','Underlay / histology'),'Position',[0.170 0.150 0.350 0.145]); catch, end
+    try, set(cbAtlasLine,'Position',[0.575 0.185 0.160 0.090],'String','ROI lines'); catch, end
+    try, set(cbMaskLine,'Position',[0.770 0.185 0.140 0.090],'String','Mask'); catch, end
+
+    % ---------------- Box 4: clean grid, no overlaps ----------------
+    try, set(findobj(pSave,'Style','text','String','Overlay'),'Position',[0.020 0.825 0.105 0.070]); catch, end
+    try, set(ddOverlay,'Position',[0.145 0.805 0.310 0.095]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Color'),'Position',[0.505 0.825 0.070 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(ddCmapGlobal,'Position',[0.585 0.805 0.365 0.095]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Underlay style'),'Position',[0.020 0.655 0.165 0.070]); catch, end
+    try, set(ddUnderlayStyle,'Position',[0.205 0.635 0.300 0.095]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Gamma'),'Position',[0.545 0.655 0.075 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(edUGamma,'Position',[0.635 0.625 0.090 0.115]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Sharp'),'Position',[0.770 0.655 0.070 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(edUSharp,'Position',[0.860 0.625 0.090 0.115]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Seed z-limit'),'Position',[0.020 0.495 0.145 0.070]); catch, end
+    try, set(edSeedCLim,'Position',[0.185 0.465 0.090 0.115]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Overlay opacity'),'Position',[0.345 0.495 0.180 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(edSeedAlpha,'Position',[0.545 0.465 0.090 0.115]); catch, end
+    try, set(cbShowLR,'Position',[0.700 0.485 0.210 0.080]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Regions'),'Position',[0.020 0.335 0.120 0.070]); catch, end
+    try, set(ddRegionMode,'Position',[0.145 0.315 0.345 0.095]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Labels'),'Position',[0.510 0.335 0.070 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Position',[0.595 0.315 0.130 0.095]); catch, end
+
+    % Pick/All buttons: separated and callback restored.
+    try
+        hPick = findobj(pSave,'Style','pushbutton','String','Pick');
+        set(hPick,'Position',[0.745 0.305 0.095 0.115],'Callback',@onCustomRegionList,'Enable','on','Visible','on');
+    catch
+    end
+    try
+        hAll = findobj(pSave,'Style','pushbutton','String','All');
+        set(hAll,'Position',[0.855 0.305 0.095 0.115],'Callback',@onClearCustomRegions,'Enable','on','Visible','on');
+    catch
+    end
+
+    try, set(findobj(pSave,'Style','text','String','Window'),'Position',[0.020 0.180 0.085 0.070]); catch, end
+    try, set(ddEpochMode,'Position',[0.115 0.155 0.185 0.100]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Start'),'Position',[0.325 0.180 0.055 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(edInjStart,'Position',[0.385 0.145 0.075 0.120]); catch, end
+    try, set(findobj(pSave,'Style','text','String','End'),'Position',[0.475 0.180 0.050 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(edInjEnd,'Position',[0.530 0.145 0.075 0.120]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Win'),'Position',[0.625 0.180 0.045 0.070],'HorizontalAlignment','center'); catch, end
+    try, set(edEpochWin,'Position',[0.675 0.145 0.070 0.120]); catch, end
+    try, set(findobj(pSave,'String','Apply window'),'Position',[0.765 0.145 0.185 0.120]); catch, end
+    try, set(findobj(pSave,'String','Apply win'),'String','Apply window','Position',[0.765 0.145 0.185 0.120]); catch, end
+
+    % Bottom buttons: clear gaps between Reset / Region key / Save / Help / Close.
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.035 0.145 0.100]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.185 0.035 0.125 0.100]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.335 0.035 0.160 0.100]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.520 0.035 0.120 0.100]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.665 0.035 0.120 0.100]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.810 0.035 0.140 0.100]); catch, end
+
+    try, set(txtStatus,'Visible','off'); catch, end
+catch ME_box4_final_layout
+    try, fprintf('FC Box4 final layout warning: %s\n',ME_box4_final_layout.message); catch, end
+end
+% FC_BOX4_PICK_LAYOUT_FIX_20260512_END
+
+% FC_EQUAL_GAPS_BOX4_COMPACT_FIX_20260512_START
+try
+    % ================================================================
+    % Equal panel gaps + compact Box 4 layout
+    % ================================================================
+
+    % Equal vertical gaps between Box 1-2, 2-3, and 3-4.
+    % Bottom margin = 0.020, top margin = 0.030, internal gaps = 0.020.
+    try, set(pData,'Position',[0.015 0.795 0.970 0.175]); catch, end
+    try, set(pSeed,'Position',[0.015 0.605 0.970 0.170]); catch, end
+    try, set(pROI, 'Position',[0.015 0.385 0.970 0.200]); catch, end
+    try, set(pSave,'Position',[0.015 0.020 0.970 0.345]); catch, end
+
+    % Smaller fonts for the crowded left controls.
+    try
+        hLeft = findall(panelCtrl,'Type','uicontrol');
+        for ii = 1:numel(hLeft)
+            try
+                sty = get(hLeft(ii),'Style');
+                if strcmpi(sty,'text')
+                    set(hLeft(ii),'FontName',C.font,'FontSize',7.0,'FontWeight','bold','FontSize',14);
+                else
+                    set(hLeft(ii),'FontName',C.font,'FontSize',7.5,'FontWeight','bold','FontSize',14);
+                end
+            catch
+            end
+        end
+    catch
+    end
+
+    % ---------------- Box 1: more even spacing ----------------
+    try, set(findobj(pData,'Style','text','String','Subject'),'Position',[0.025 0.790 0.120 0.085]); catch, end
+    try, set(ddSubject,'Position',[0.150 0.640 0.355 0.135]); catch, end
+    try, set(findobj(pData,'Style','text','String','Slice Z'),'Position',[0.555 0.790 0.095 0.085]); catch, end
+    try, set(slSlice,'Position',[0.645 0.695 0.200 0.065]); catch, end
+    try, set(edSlice,'Position',[0.870 0.615 0.090 0.145]); catch, end
+
+    try, set(findobj(pData,'String','Load data'),'Position',[0.025 0.425 0.175 0.135]); catch, end
+    try, set(findobj(pData,'String','Load mask'),'Position',[0.225 0.425 0.175 0.135]); catch, end
+    try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
+    try, set(findobj(pData,'String','ROI labels'),'Position',[0.430 0.425 0.225 0.135]); catch, end
+    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Region names'),'Position',[0.685 0.425 0.275 0.135]); catch, end
+
+    try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.025 0.205 0.120 0.080]); catch, end
+    try, set(findobj(pData,'String','Load underlay / histology'),'String','Underlay / histology'); catch, end
+    try, set(findobj(pData,'String','Underlay / histology'),'Position',[0.170 0.150 0.345 0.135]); catch, end
+    try, set(cbAtlasLine,'Position',[0.575 0.180 0.160 0.085],'String','ROI lines'); catch, end
+    try, set(cbMaskLine,'Position',[0.770 0.180 0.140 0.085],'String','Mask'); catch, end
+
+    % ---------------- Box 4: compact, aligned, no overlap ----------------
+    % Row 1
+    try, set(findobj(pSave,'Style','text','String','Overlay'),'Position',[0.020 0.825 0.100 0.060]); catch, end
+    try, set(ddOverlay,'Position',[0.145 0.800 0.305 0.085]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Color'),'Position',[0.500 0.825 0.075 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(ddCmapGlobal,'Position',[0.590 0.800 0.360 0.085]); catch, end
+
+    % Row 2
+    try, set(findobj(pSave,'Style','text','String','Underlay style'),'Position',[0.020 0.665 0.160 0.060]); catch, end
+    try, set(ddUnderlayStyle,'Position',[0.205 0.640 0.300 0.085]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Gamma'),'Position',[0.530 0.665 0.105 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edUGamma,'Position',[0.650 0.625 0.085 0.105]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Sharp'),'Position',[0.765 0.665 0.085 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edUSharp,'Position',[0.865 0.625 0.085 0.105]); catch, end
+
+    % Row 3
+    try, set(findobj(pSave,'Style','text','String','Seed z-limit'),'Position',[0.020 0.510 0.145 0.060]); catch, end
+    try, set(edSeedCLim,'Position',[0.185 0.475 0.085 0.105]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Overlay opacity'),'Position',[0.340 0.510 0.185 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edSeedAlpha,'Position',[0.545 0.475 0.085 0.105]); catch, end
+    try, set(cbShowLR,'Position',[0.700 0.495 0.220 0.075]); catch, end
+
+    % Row 4
+    try, set(findobj(pSave,'Style','text','String','Regions'),'Position',[0.020 0.350 0.115 0.060]); catch, end
+    try, set(ddRegionMode,'Position',[0.145 0.325 0.340 0.085]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Labels'),'Position',[0.505 0.350 0.075 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Position',[0.595 0.325 0.130 0.085]); catch, end
+    try
+        hPick = findobj(pSave,'Style','pushbutton','String','Pick');
+        set(hPick,'Position',[0.750 0.315 0.085 0.105],'Callback',@onCustomRegionList,'Enable','on','Visible','on');
+    catch
+    end
+    try
+        hAll = findobj(pSave,'Style','pushbutton','String','All');
+        set(hAll,'Position',[0.865 0.315 0.085 0.105],'Callback',@onClearCustomRegions,'Enable','on','Visible','on');
+    catch
+    end
+
+    % Row 5
+    try, set(findobj(pSave,'Style','text','String','Window'),'Position',[0.020 0.195 0.085 0.060]); catch, end
+    try, set(ddEpochMode,'Position',[0.110 0.170 0.180 0.085]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Start'),'Position',[0.315 0.195 0.060 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edInjStart,'Position',[0.385 0.155 0.070 0.105]); catch, end
+    try, set(findobj(pSave,'Style','text','String','End'),'Position',[0.475 0.195 0.055 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edInjEnd,'Position',[0.540 0.155 0.070 0.105]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Win'),'Position',[0.630 0.195 0.045 0.060],'HorizontalAlignment','center'); catch, end
+    try, set(edEpochWin,'Position',[0.685 0.155 0.065 0.105]); catch, end
+    try, set(findobj(pSave,'String','Apply win'),'String','Apply window'); catch, end
+    try, set(findobj(pSave,'String','Apply window'),'Position',[0.770 0.155 0.180 0.105]); catch, end
+
+    % Bottom row
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.035 0.145 0.095]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.185 0.035 0.125 0.095]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.335 0.035 0.160 0.095]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.520 0.035 0.120 0.095]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.665 0.035 0.120 0.095]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.810 0.035 0.140 0.095]); catch, end
+
+    try, set(txtStatus,'Visible','off'); catch, end
+catch ME_equal_gap_box4
+    try, fprintf('FC equal-gap/Box4 layout warning: %s\n',ME_equal_gap_box4.message); catch, end
+end
+% FC_EQUAL_GAPS_BOX4_COMPACT_FIX_20260512_END
+
+% FC_HEATMAP_WINDOW_LAYOUT_FIX_20260512_START
+try
+    % Equal panel gaps.
+    try, set(pData,'Position',[0.015 0.795 0.970 0.175]); catch, end
+    try, set(pSeed,'Position',[0.015 0.605 0.970 0.170]); catch, end
+    try, set(pROI, 'Position',[0.015 0.385 0.970 0.200]); catch, end
+    try, set(pSave,'Position',[0.015 0.020 0.970 0.345]); catch, end
+
+    % Slightly smaller controls.
+    try
+        hLeft = findall(panelCtrl,'Type','uicontrol');
+        for ii = 1:numel(hLeft)
+            try
+                sty = get(hLeft(ii),'Style');
+                if strcmpi(sty,'text')
+                    set(hLeft(ii),'FontName',C.font,'FontSize',7.0,'FontWeight','bold','FontSize',14);
+                else
+                    set(hLeft(ii),'FontName',C.font,'FontSize',7.5,'FontWeight','bold','FontSize',14);
+                end
+            catch
+            end
+        end
+    catch
+    end
+
+    % Box 4: move upper controls upward and increase bottom-button gap.
+    try, set(findobj(pSave,'Style','text','String','Overlay'),'Position',[0.020 0.850 0.100 0.055]); catch, end
+    try, set(ddOverlay,'Position',[0.145 0.825 0.300 0.080]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Color'),'Position',[0.500 0.850 0.075 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(ddCmapGlobal,'Position',[0.590 0.825 0.360 0.080]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Underlay style'),'Position',[0.020 0.715 0.160 0.055]); catch, end
+    try, set(ddUnderlayStyle,'Position',[0.205 0.690 0.300 0.080]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Gamma'),'Position',[0.530 0.715 0.105 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edUGamma,'Position',[0.650 0.675 0.085 0.100]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Sharp'),'Position',[0.765 0.715 0.085 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edUSharp,'Position',[0.865 0.675 0.085 0.100]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Seed z-limit'),'Position',[0.020 0.585 0.145 0.055]); catch, end
+    try, set(edSeedCLim,'Position',[0.185 0.545 0.085 0.100]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Overlay opacity'),'Position',[0.330 0.585 0.190 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edSeedAlpha,'Position',[0.540 0.545 0.085 0.100]); catch, end
+    try, set(cbShowLR,'Position',[0.700 0.560 0.220 0.070]); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Regions'),'Position',[0.020 0.445 0.115 0.055]); catch, end
+    try, set(ddRegionMode,'Position',[0.145 0.420 0.330 0.080]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Labels'),'Position',[0.500 0.445 0.075 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Position',[0.590 0.420 0.130 0.080]); catch, end
+    try, set(findobj(pSave,'Style','pushbutton','String','Pick'),'Position',[0.745 0.410 0.090 0.100],'Callback',@onCustomRegionList,'Enable','on','Visible','on'); catch, end
+    try, set(findobj(pSave,'Style','pushbutton','String','All'),'Position',[0.860 0.410 0.090 0.100],'Callback',@onClearCustomRegions,'Enable','on','Visible','on'); catch, end
+
+    try, set(findobj(pSave,'Style','text','String','Window'),'Position',[0.020 0.260 0.080 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(ddEpochMode,'Parent',pSave,'Position',[0.105 0.235 0.175 0.080]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Start'),'Position',[0.300 0.260 0.055 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edInjStart,'Parent',pSave,'Position',[0.360 0.220 0.070 0.100]); catch, end
+    try, set(findobj(pSave,'Style','text','String','End'),'Position',[0.450 0.260 0.055 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edInjEnd,'Parent',pSave,'Position',[0.510 0.220 0.070 0.100]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Win'),'Position',[0.600 0.260 0.045 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edEpochWin,'Parent',pSave,'Position',[0.650 0.220 0.065 0.100]); catch, end
+    try, set(cbEpochUseWin,'Parent',pSave,'Position',[0.730 0.235 0.095 0.075],'String','Use win'); catch, end
+    try, set(findobj(pSave,'String','Apply win'),'String','Apply'); catch, end
+    try, set(findobj(pSave,'String','Apply window'),'String','Apply'); catch, end
+    try, set(findobj(pSave,'String','Apply'),'Position',[0.775 0.165 0.180 0.085]); catch, end
+
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.035 0.145 0.090]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.185 0.035 0.125 0.090]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.335 0.035 0.160 0.090]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.520 0.035 0.120 0.090]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.665 0.035 0.120 0.090]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.810 0.035 0.140 0.090]); catch, end
+catch ME_layout_final
+    try, fprintf('FC layout final warning: %s\n',ME_layout_final.message); catch, end
+end
+% FC_HEATMAP_WINDOW_LAYOUT_FIX_20260512_END
+
+% FC_BOX2_BOX4_HEATMAP_MICROFIX_20260512_START
+try
+    % Keep equal panel gaps.
+    try, set(pData,'Position',[0.015 0.795 0.970 0.175]); catch, end
+    try, set(pSeed,'Position',[0.015 0.605 0.970 0.170]); catch, end
+    try, set(pROI, 'Position',[0.015 0.385 0.970 0.200]); catch, end
+    try, set(pSave,'Position',[0.015 0.020 0.970 0.345]); catch, end
+
+    % Box 2: Seed-based FC, remove overlaps.
+    try, set(findobj(pSeed,'Style','text','String','X'),'Position',[0.025 0.720 0.040 0.105]); catch, end
+    try, set(edSeedX,'Position',[0.080 0.685 0.095 0.165]); catch, end
+    try, set(findobj(pSeed,'Style','text','String','Y'),'Position',[0.205 0.720 0.040 0.105]); catch, end
+    try, set(edSeedY,'Position',[0.260 0.685 0.095 0.165]); catch, end
+    try, set(findobj(pSeed,'Style','text','String','Size'),'Position',[0.390 0.720 0.070 0.105]); catch, end
+    try, set(edSeedSize,'Position',[0.465 0.685 0.105 0.165]); catch, end
+    try, set(cbSliceOnly,'Position',[0.630 0.720 0.200 0.105]); catch, end
+    try, set(findobj(pSeed,'Style','text','String','Map'),'Position',[0.025 0.450 0.070 0.100]); catch, end
+    try, set(ddSeedDisplay,'Position',[0.125 0.425 0.265 0.145]); catch, end
+    try, set(findobj(pSeed,'Style','text','String','|r| thr'),'Position',[0.450 0.450 0.120 0.100]); catch, end
+    try, set(edSeedThr,'Position',[0.590 0.425 0.115 0.145]); catch, end
+    try, set(findobj(pSeed,'String','Seed current'),'Position',[0.025 0.110 0.285 0.185]); catch, end
+    try, set(findobj(pSeed,'String','Seed all'),'Position',[0.335 0.110 0.255 0.185]); catch, end
+    try, set(findobj(pSeed,'String','Load ROI TXT'),'Position',[0.620 0.110 0.330 0.185]); catch, end
+
+    % Box 4: Use win and Apply separated. Apply stays blue and clickable.
+    try, set(findobj(pSave,'Style','text','String','Window'),'Position',[0.020 0.265 0.075 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(ddEpochMode,'Parent',pSave,'Position',[0.100 0.235 0.160 0.085]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Start'),'Position',[0.280 0.265 0.055 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edInjStart,'Parent',pSave,'Position',[0.340 0.220 0.065 0.105]); catch, end
+    try, set(findobj(pSave,'Style','text','String','End'),'Position',[0.420 0.265 0.050 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edInjEnd,'Parent',pSave,'Position',[0.475 0.220 0.065 0.105]); catch, end
+    try, set(findobj(pSave,'Style','text','String','Win'),'Position',[0.555 0.265 0.045 0.055],'HorizontalAlignment','center'); catch, end
+    try, set(edEpochWin,'Parent',pSave,'Position',[0.605 0.220 0.060 0.105]); catch, end
+    try
+        if exist('cbEpochUseWin','var') && ishandle(cbEpochUseWin)
+            set(cbEpochUseWin,'Parent',pSave,'Position',[0.685 0.240 0.100 0.070],'String','Use win','BackgroundColor',C.bgPane,'ForegroundColor',C.fg);
+        end
+    catch
+    end
+    try, set(findobj(pSave,'String','Apply win'),'String','Apply'); catch, end
+    try, set(findobj(pSave,'String','Apply window'),'String','Apply'); catch, end
+    try
+        hApply = findobj(pSave,'Style','pushbutton','String','Apply');
+        set(hApply,'Position',[0.810 0.220 0.140 0.105],'BackgroundColor',C.blue,'ForegroundColor','w','Callback',@onEpochApply,'Enable','on','Visible','on');
+    catch
+    end
+
+    % Give bottom buttons a little more breathing room.
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.035 0.145 0.090]); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.185 0.035 0.125 0.090]); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.335 0.035 0.160 0.090]); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.520 0.035 0.120 0.090]); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.665 0.035 0.120 0.090]); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.810 0.035 0.140 0.090]); catch, end
+
+    % Bigger heatmap/graph axes after creation as well.
+    try, set(axHeat,'Position',[0.070 0.115 0.845 0.845]); catch, end
+    try, set(axHeatCB,'Position',[0.955 0.215 0.022 0.600]); catch, end
+    try, set(txtHeat,'Position',[0.945 0.865 0.055 0.115]); catch, end
+    try, set(axAdj,'Position',[0.070 0.115 0.845 0.845]); catch, end
+    try, set(axGraphCB,'Position',[0.955 0.215 0.022 0.600]); catch, end
+    try, set(txtGraph,'Position',[0.945 0.865 0.055 0.115]); catch, end
+catch ME_micro
+    try, fprintf('FC micro-layout warning: %s\n',ME_micro.message); catch, end
+end
+% FC_BOX2_BOX4_HEATMAP_MICROFIX_20260512_END
+
+% FC_FINAL_USEWIN_BOX4_LAYOUT_20260512_START
+try
+    % Make Box 4 slightly cleaner.
+    try, set(pSave,'Position',[0.015 0.020 0.970 0.345]); catch, end
+
+    % Window row: keep all labels centered and on one line.
+    try, set(findobj(pSave,'Style','text','String','Window'),'Position',[0.020 0.255 0.090 0.060],'HorizontalAlignment','center','FontSize',8); catch, end
+    try, set(ddEpochMode,'Parent',pSave,'Position',[0.115 0.225 0.155 0.090],'FontSize',8); catch, end
+    try, set(findobj(pSave,'Style','text','String','Start'),'Position',[0.285 0.255 0.055 0.060],'HorizontalAlignment','center','FontSize',8); catch, end
+    try, set(edInjStart,'Parent',pSave,'Position',[0.345 0.215 0.060 0.105],'FontSize',8); catch, end
+    try, set(findobj(pSave,'Style','text','String','End'),'Position',[0.420 0.255 0.050 0.060],'HorizontalAlignment','center','FontSize',8); catch, end
+    try, set(edInjEnd,'Parent',pSave,'Position',[0.475 0.215 0.060 0.105],'FontSize',8); catch, end
+    try, set(findobj(pSave,'Style','text','String','Win'),'Position',[0.550 0.255 0.045 0.060],'HorizontalAlignment','center','FontSize',8); catch, end
+    try, set(edEpochWin,'Parent',pSave,'Position',[0.600 0.215 0.060 0.105],'FontSize',8); catch, end
+
+    % Keep only one visible Apply button.
+    try, set(findobj(pSave,'String','Apply win'),'String','Apply'); catch, end
+    try, set(findobj(pSave,'String','Apply window'),'String','Apply'); catch, end
+    hApply = [];
+    try, hApply = findobj(pSave,'Style','pushbutton','String','Apply'); catch, end
+    if ~isempty(hApply)
+        try, set(hApply(2:end),'Visible','off'); catch, end
+        try
+            set(hApply(1),'Visible','on','Enable','on', ...
+                'Position',[0.780 0.230 0.175 0.095], ...
+                'String','Apply', ...
+                'BackgroundColor',C.blue,'ForegroundColor','w', ...
+                'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+                'Callback',@onEpochApply);
+        catch
+        end
+    end
+
+    % Move Use win BELOW Apply, no overlap.
+    try
+        hUse = findobj(pSave,'String','Use win');
+        if ~isempty(hUse)
+            set(hUse,'Parent',pSave, ...
+                'Position',[0.790 0.155 0.155 0.060], ...
+                'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
+                'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+                'Visible','on','Enable','on');
+        end
+    catch
+    end
+
+    % Bottom buttons: keep separated.
+    try, set(findobj(pSave,'String','Export GA'),'Position',[0.020 0.035 0.145 0.090],'FontSize',8); catch, end
+    try, set(findobj(pSave,'String','Reset view'),'String','Reset'); catch, end
+    try, set(findobj(pSave,'String','Reset'),'Position',[0.185 0.035 0.125 0.090],'FontSize',8); catch, end
+    try, set(findobj(pSave,'String','Region key'),'Position',[0.335 0.035 0.160 0.090],'FontSize',8); catch, end
+    try, set(findobj(pSave,'String','Save'),'Position',[0.520 0.035 0.120 0.090],'FontSize',8); catch, end
+    try, set(findobj(pSave,'String','Help'),'Position',[0.665 0.035 0.120 0.090],'FontSize',8); catch, end
+    try, set(findobj(pSave,'String','Close'),'Position',[0.810 0.035 0.140 0.090],'FontSize',8); catch, end
+catch ME_box4_final
+    try, fprintf('FC final Box 4 layout warning: %s\n',ME_box4_final.message); catch, end
+end
+% FC_FINAL_USEWIN_BOX4_LAYOUT_20260512_END
+
+% FC_LAST_USEWIN_HEATMAP_LAYOUT_20260512_START
+try
+    % --- Box 4: final Use win / Apply separation ---
+    try, set(findobj(pSave,'String','Apply win'),'String','Apply'); catch, end
+    try, set(findobj(pSave,'String','Apply window'),'String','Apply'); catch, end
+    hApply = findobj(pSave,'Style','pushbutton','String','Apply');
+    if ~isempty(hApply)
+        try, set(hApply(2:end),'Visible','off'); catch, end
+        try
+            set(hApply(1),'Visible','on','Enable','on', ...
+                'Position',[0.780 0.265 0.175 0.075], ...
+                'String','Apply', ...
+                'BackgroundColor',C.blue,'ForegroundColor','w', ...
+                'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+                'Callback',@onEpochApply);
+        catch
+        end
+    end
+
+    hUse = findobj(pSave,'String','Use win');
+    if ~isempty(hUse)
+        try
+            set(hUse,'Parent',pSave, ...
+                'Position',[0.800 0.145 0.140 0.055], ...
+                'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
+                'FontName',C.font,'FontSize',8,'FontWeight','bold', ...
+                'Visible','on','Enable','on');
+        catch
+        end
+    end
+
+    % --- Heatmap / Graph: final large plot positions ---
+    try, set(axHeat,'Position',[0.070 0.115 0.845 0.845]); catch, end
+    try, set(axHeatCB,'Position',[0.955 0.215 0.022 0.600]); catch, end
+    try, set(txtHeat,  'Position',[0.935 0.735 0.060 0.185],'FontSize',8,'HorizontalAlignment','left'); catch, end
+    try, set(axAdj,'Position',[0.070 0.115 0.845 0.845]); catch, end
+    try, set(axGraphCB,'Position',[0.955 0.215 0.022 0.600]); catch, end
+    try, set(txtGraph, 'Position',[0.935 0.735 0.060 0.185],'FontSize',8,'HorizontalAlignment','left'); catch, end
+catch ME_last_layout
+    try, fprintf('FC last layout warning: %s\n',ME_last_layout.message); catch, end
+end
+% FC_LAST_USEWIN_HEATMAP_LAYOUT_20260512_END
+
 tabNames = {'Seed Map','ROI Heatmap','Compare ROI','Pair ROI','Graph'};
 tabKeys  = {'seed','heatmap','compare','pair','graph'};
 tabBtns = zeros(numel(tabNames),1);
 for k = 1:numel(tabNames)
     tabBtns(k) = uicontrol('Parent',panelViewWrap,'Style','togglebutton','Units','normalized', ...
-        'Position',[0.020 + (k-1)*0.147 0.940 0.130 0.040], ...
+        'Position',[0.020 + (k-1)*0.182 0.940 0.165 0.040], ...
         'String',tabNames{k}, 'Value',double(k==1), ...
         'BackgroundColor',fc_if(k==1,C.blue,C.bgBtn), ...
         'ForegroundColor',fc_if(k==1,[1 1 1],C.fg), ...
@@ -645,7 +1508,7 @@ pPairView  = fc_view(panelViewWrap,C,'off');
 pGraphView = fc_view(panelViewWrap,C,'off');
 
 % Seed Map tab
-axMap = axes('Parent',pSeedView,'Units','normalized','Position',[0.035 0.075 0.605 0.820], ...
+axMap = axes('Parent',pSeedView,'Units','normalized','Position',[0.035 0.080 0.570 0.810], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
 axis(axMap,'image'); axis(axMap,'off');
 hUnder = image(axMap,fc_get_underlay(st));
@@ -662,11 +1525,11 @@ hold(axMap,'off');
 set([hUnder hOver hAtlas hMask],'ButtonDownFcn',@onMapClick);
 set(axMap,'ButtonDownFcn',@onMapClick);
 
-uicontrol('Parent',pSeedView,'Style','text','Units','normalized','Position',[0.690 0.870 0.260 0.050], ...
+uicontrol('Parent',pSeedView,'Style','text','Units','normalized','Position',[0.665 0.870 0.285 0.050], ...
     'String','Seed-map display','BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
     'HorizontalAlignment','left','FontName',C.font,'FontWeight','bold','FontSize',C.fsBig);
 
-axSeedCB = axes('Parent',pSeedView,'Units','normalized','Position',[0.690 0.775 0.260 0.040], ...
+axSeedCB = axes('Parent',pSeedView,'Units','normalized','Position',[0.665 0.775 0.285 0.040], ...
     'Color',C.bgPane,'XColor',C.dim,'YColor',C.dim);
 
 uicontrol('Parent',pSeedView,'Style','text','Units','normalized','Position',[0.690 0.715 0.270 0.045], ...
@@ -674,20 +1537,20 @@ uicontrol('Parent',pSeedView,'Style','text','Units','normalized','Position',[0.6
     'BackgroundColor',C.bgPane,'ForegroundColor',C.dim, ...
     'HorizontalAlignment','left','FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny);
 
-axSeedTS = axes('Parent',pSeedView,'Units','normalized','Position',[0.700 0.470 0.250 0.170], ...
+axSeedTS = axes('Parent',pSeedView,'Units','normalized','Position',[0.665 0.470 0.285 0.170], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
-axSeedHist = axes('Parent',pSeedView,'Units','normalized','Position',[0.700 0.160 0.250 0.190], ...
+axSeedHist = axes('Parent',pSeedView,'Units','normalized','Position',[0.665 0.160 0.285 0.190], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
 
 % ROI Heatmap tab - bigger
-axHeat = axes('Parent',pHeatView,'Units','normalized','Position',[0.070 0.125 0.795 0.805], ...
+axHeat = axes('Parent',pHeatView,'Units','normalized','Position',[0.070 0.115 0.845 0.845], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
-axHeatCB = axes('Parent',pHeatView,'Units','normalized','Position',[0.890 0.180 0.035 0.700], ...
+axHeatCB = axes('Parent',pHeatView,'Units','normalized','Position',[0.955 0.215 0.022 0.600], ...
     'Color',C.bgPane,'XColor',C.dim,'YColor',C.dim);
 axHeatTS = axes('Parent',pHeatView,'Units','normalized','Position',[0.940 0.630 0.045 0.170],'Visible','off', ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
 txtHeat = uicontrol('Parent',pHeatView,'Style','text','Units','normalized', ...
-    'Position',[0.935 0.180 0.060 0.700], 'String','No heatmap yet.', ...
+    'Position',[0.945 0.865 0.055 0.115], 'String','No heatmap yet.', ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
     'HorizontalAlignment','left','FontName',C.font,'FontSize',C.fsSmall);
 
@@ -755,16 +1618,32 @@ axPairLag = axes('Parent',pPairView,'Units','normalized','Position',[0.540 0.135
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
 
 % Graph tab - bigger heatmap, degree axis hidden
-axAdj = axes('Parent',pGraphView,'Units','normalized','Position',[0.070 0.125 0.795 0.805], ...
+axAdj = axes('Parent',pGraphView,'Units','normalized','Position',[0.070 0.115 0.845 0.845], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
-axGraphCB = axes('Parent',pGraphView,'Units','normalized','Position',[0.890 0.180 0.035 0.700], ...
+axGraphCB = axes('Parent',pGraphView,'Units','normalized','Position',[0.955 0.215 0.022 0.600], ...
     'Color',C.bgPane,'XColor',C.dim,'YColor',C.dim);
 axDeg = axes('Parent',pGraphView,'Units','normalized','Position',[0.940 0.630 0.045 0.170], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim,'Visible','off');
 txtGraph = uicontrol('Parent',pGraphView,'Style','text','Units','normalized', ...
-    'Position',[0.935 0.180 0.060 0.700], 'String','No graph yet.', ...
+    'Position',[0.945 0.865 0.055 0.115], 'String','No graph yet.', ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
     'HorizontalAlignment','left','FontName',C.font,'FontSize',C.fsSmall);
+
+% FC_CLEAN_FULLSIZE_FIXED_NO_BAD_RESIZE
+try, set(fig,'ResizeFcn',''); catch, end
+% FC_FINAL_HEATMAP_GRAPH_LAYOUT_20260512_START
+try
+    try, set(findobj(fig,'Tag','FC_MatrixTickMode'),'Value',2); catch, end
+    try, set(axHeat,'Position',[0.070 0.115 0.845 0.845]); catch, end
+    try, set(axAdj,'Position',[0.070 0.115 0.845 0.845]); catch, end
+    try, set(axHeatCB,'Position',[0.955 0.215 0.022 0.600]); catch, end
+    try, set(axGraphCB,'Position',[0.955 0.215 0.022 0.600]); catch, end
+    try, set(txtHeat,'Position',[0.945 0.865 0.055 0.115],'FontSize',9,'HorizontalAlignment','left'); catch, end
+    try, set(txtGraph,'Position',[0.945 0.865 0.055 0.115],'FontSize',9,'HorizontalAlignment','left'); catch, end
+catch ME_final_layout
+    try, fprintf('FC heatmap/graph final layout warning: %s\n',ME_final_layout.message); catch, end
+end
+% FC_FINAL_HEATMAP_GRAPH_LAYOUT_20260512_END
 
 guidata(fig,st);
 refreshAll();
@@ -971,7 +1850,7 @@ refreshAll();
                 'Position',[0.025 0.085 0.95 0.815], ...
                 'Data',dataCell, ...
                 'ColumnName',{'#','Label','Display','Abbrev','Full region name'}, ...
-                'ColumnEditable',[false false false false], ...
+                'ColumnEditable',[false false false false false], ...
                 'RowName',[], ...
                 'ColumnWidth',{55 90 160 130 820}, ...
                 'FontName','Arial','FontSize',13);
@@ -1001,8 +1880,8 @@ refreshAll();
         s.seedDisplay = 'r';
         s.seedAbsThr = 0.20;
         s.seedAlpha = 0.70;
-        s.seedCLim = 2.5;
-        s.roiDisplaySpace = 'z';
+        s.seedCLim = 1.0;
+        s.roiDisplaySpace = 'r';
         s.roiAbsThr = 0.20;
         s.roiOrder = 'name';
         s.compareSort = 'abs';
@@ -1011,11 +1890,12 @@ refreshAll();
         s.showHemisphere = true; % FC_LR_LABEL_DISPLAY_PATCH_V2_RESET_STATE
         s.roiHemiMode = 'both'; % FC_REGION_MODE_PATCH_RESET
         s.fcEpochMode = 'whole'; % FC_LR_EPOCH_PATCH_RESET_MODE
-        try, set(ddOverlay,'Value',1); catch, end
+
+        s.fcUseEpochWin = false; % FC_USE_WINDOW_RESET        try, set(ddOverlay,'Value',1); catch, end
         try, set(ddUnderlayStyle,'Value',1); catch, end
         try, set(ddCmapGlobal,'Value',1); catch, end
         try, set(ddSeedDisplay,'Value',1); catch, end
-        try, set(ddROISpace,'Value',1); catch, end
+        try, set(ddROISpace,'Value',2); catch, end
         try, set(ddOrder,'Value',1); catch, end
         try, set(ddSort,'Value',1); catch, end
         try, set(cbAtlasLine,'Value',0); catch, end
@@ -1023,9 +1903,10 @@ refreshAll();
         try, set(cbShowLR,'Value',1); catch, end % FC_LR_LABEL_DISPLAY_PATCH_V2_RESET_CHECKBOX
         try, set(ddRegionMode,'Value',1); catch, end % FC_REGION_MODE_PATCH_RESET_POPUP
         try, set(ddEpochMode,'Value',1); catch, end % FC_LR_EPOCH_PATCH_RESET_EPOCH_POPUP
-        try, set(edSeedThr,'String','0.20'); catch, end
+
+        try, set(cbEpochUseWin,'Value',0); catch, end % FC_USE_WINDOW_RESET_CHECKBOX        try, set(edSeedThr,'String','0.20'); catch, end
         try, set(edROIThr,'String','0.20'); catch, end
-        try, set(edSeedCLim,'String','2.5'); catch, end
+        try, set(edSeedCLim,'String','1.0'); catch, end
         try, set(edSeedAlpha,'String','0.70'); catch, end
         try, set(edUGamma,'String','0.95'); catch, end
         try, set(edUSharp,'String','0.35'); catch, end
@@ -1249,7 +2130,7 @@ refreshAll();
     function onROISpace(~,~)
         s = guidata(fig);
         if get(ddROISpace,'Value') == 1
-            s.roiDisplaySpace = 'z';
+            s.roiDisplaySpace = 'r';
         else
             s.roiDisplaySpace = 'r';
         end
@@ -1426,7 +2307,10 @@ refreshAll();
                 s.roiHemiMode = 'both';
             end
 
-            if ~strcmpi(s.roiHemiMode,'both')
+            if strcmpi(s.roiHemiMode,'left') || strcmpi(s.roiHemiMode,'right') || strcmpi(s.roiHemiMode,'both')
+                s.showHemisphere = true;
+                try, set(cbShowLR,'Value',1); catch, end
+            else
                 s.showHemisphere = false;
                 try, set(cbShowLR,'Value',0); catch, end
             end
@@ -1462,24 +2346,42 @@ refreshAll();
     function onEpochApply(~,~)
         s = guidata(fig);
         s = readEpochGuiToState(s);
+        didSeed = false;
+        didROI = false;
         try
-            resNow = s.roiResults{s.currentSubject,s.currentEpoch};
+            % Recompute current seed result when it already exists.
+            try
+                seedNow = s.seedResults{s.currentSubject,s.currentEpoch};
+                if ~isempty(seedNow)
+                    s = computeSeed(s,s.currentSubject,s.currentEpoch);
+                    didSeed = true;
+                end
+            catch
+            end
+
+            % Recompute/apply current ROI result when possible.
+            resNow = [];
+            try, resNow = s.roiResults{s.currentSubject,s.currentEpoch}; catch, end
             if ~isempty(resNow) && isfield(resNow,'meanTSFull') && ~isempty(resNow.meanTSFull)
                 resNow = fc_apply_epoch_to_roi_result(resNow,s);
                 s.roiResults{s.currentSubject,s.currentEpoch} = resNow;
-                guidata(fig,s);
-                setStatus(['Applied FC window to loaded segmentation: ' resNow.epochName],C.good);
+                didROI = true;
             elseif ~isempty(s.subjects(s.currentSubject).roiAtlas)
                 s = computeROI(s,s.currentSubject,s.currentEpoch);
-                guidata(fig,s);
-                resNow = s.roiResults{s.currentSubject,s.currentEpoch};
-                setStatus(['ROI FC recalculated using window: ' resNow.epochName],C.good);
+                didROI = true;
+            end
+
+            guidata(fig,s);
+            if didSeed && didROI
+                setStatus(['Applied FC window to Seed FC and Region FC: ' fc_epoch_label(s)],C.good);
+            elseif didSeed
+                setStatus(['Applied FC window to Seed FC: ' fc_epoch_label(s)],C.good);
+            elseif didROI
+                setStatus(['Applied FC window to Region FC: ' fc_epoch_label(s)],C.good);
             else
-                guidata(fig,s);
-                setStatus('Window saved. Load Seg MAT or ROI labels, then compute ROI current.',C.warn);
+                setStatus('Window saved. Press Seed current or ROI current to calculate with this window.',C.warn);
             end
             refreshAll();
-            switchTab('heatmap');
         catch ME
             guidata(fig,s);
             setStatus(['Apply window error: ' ME.message],C.warn);
@@ -1495,7 +2397,16 @@ refreshAll();
         catch
             if ~isfield(s,'fcEpochMode') || isempty(s.fcEpochMode), s.fcEpochMode = 'whole'; end
         end
-        a = str2double(get(edInjStart,'String'));
+                try
+            if exist('cbEpochUseWin','var') && ishandle(cbEpochUseWin)
+                s.fcUseEpochWin = logical(get(cbEpochUseWin,'Value'));
+            elseif ~isfield(s,'fcUseEpochWin') || isempty(s.fcUseEpochWin)
+                s.fcUseEpochWin = false;
+            end
+        catch
+            s.fcUseEpochWin = false;
+        end % FC_USE_WINDOW_READ_GUI
+a = str2double(get(edInjStart,'String'));
         b = str2double(get(edInjEnd,'String'));
         w = str2double(get(edEpochWin,'String'));
         if ~isfinite(a), a = 14; end
@@ -1509,7 +2420,7 @@ refreshAll();
         set(edInjEnd,'String',sprintf('%.2f',s.fcInjEndMin));
         set(edEpochWin,'String',sprintf('%.2f',s.fcEpochWinMin));
     end
-    function onMapClick(~,~)
+function onMapClick(~,~)
         s = guidata(fig);
         cp = get(axMap,'CurrentPoint');
         x = round(cp(1,1));
@@ -2001,7 +2912,10 @@ end
         if ~isfield(s,'showHemisphere') || isempty(s.showHemisphere)
             s.showHemisphere = true;
         end % FC_LR_LABEL_DISPLAY_PATCH_V2_REFRESH_DEFAULT
-        if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
+                if ~isfield(s,'fcUseEpochWin') || isempty(s.fcUseEpochWin)
+            s.fcUseEpochWin = false;
+        end % FC_USE_WINDOW_REFRESH_DEFAULT
+if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
             s.roiHemiMode = 'both';
         end % FC_REGION_MODE_PATCH_REFRESH_DEFAULT
         s.slice = fc_clip(s.slice,1,s.Z);
@@ -2019,7 +2933,8 @@ end
         try, set(cbShowLR,'Value',double(s.showHemisphere)); catch, end % FC_LR_LABEL_DISPLAY_PATCH_V2_REFRESH_CHECKBOX
         try, set(ddRegionMode,'Value',fc_region_mode_to_popup_value(s.roiHemiMode)); catch, end % FC_REGION_MODE_PATCH_REFRESH_POPUP
         try, set(ddEpochMode,'Value',fc_epoch_mode_to_popup_value(s.fcEpochMode)); catch, end % FC_LR_EPOCH_PATCH_REFRESH_EPOCH_POPUP
-        try, set(edInjStart,'String',sprintf('%.2f',s.fcInjStartMin)); catch, end % FC_LR_EPOCH_PATCH_REFRESH_INJ_START
+
+        try, set(cbEpochUseWin,'Value',double(s.fcUseEpochWin)); catch, end % FC_USE_WINDOW_REFRESH_CHECKBOX        try, set(edInjStart,'String',sprintf('%.2f',s.fcInjStartMin)); catch, end % FC_LR_EPOCH_PATCH_REFRESH_INJ_START
         try, set(edInjEnd,'String',sprintf('%.2f',s.fcInjEndMin)); catch, end % FC_LR_EPOCH_PATCH_REFRESH_INJ_END
         try, set(edEpochWin,'String',sprintf('%.2f',s.fcEpochWinMin)); catch, end % FC_LR_EPOCH_PATCH_REFRESH_WIN
         set(edSeedThr,'String',sprintf('%.2f',s.seedAbsThr));
@@ -2158,9 +3073,9 @@ end
         res = s.roiResults{s.currentSubject,s.currentEpoch};
 
         try
-            set(axHeat,   'Position',[0.070 0.125 0.795 0.805]);
-            set(axHeatCB, 'Position',[0.890 0.180 0.035 0.700]);
-            set(txtHeat,  'Position',[0.935 0.180 0.060 0.700]);
+            set(axHeat,'Position',[0.070 0.115 0.845 0.845]);
+            set(axHeatCB,'Position',[0.955 0.215 0.022 0.600]);
+            set(txtHeat,'Position',[0.945 0.865 0.055 0.115]);
         catch
         end
 
@@ -2179,6 +3094,7 @@ end
         end
 
         [M,names,order,meta] = fc_current_matrix(s,res); %#ok<ASGLU>
+        [M,names,order,meta] = fc_apply_region_visibility(s,M,names,order,meta);
 
         Mshow = M;
         if strcmpi(s.roiDisplaySpace,'z')
@@ -2202,7 +3118,7 @@ end
         if exist('meta','var') && isfield(meta,'isRectangular') && meta.isRectangular
             axis(axHeat,'tight');
         else
-            axis(axHeat,'image');
+            axis(axHeat,'tight'); axis(axHeat,'normal');
         end
         fc_ax(axHeat,C);
         colormap(axHeat,cmap);
@@ -2210,29 +3126,31 @@ end
         title(axHeat,'Region-by-region FC heatmap', ...
             'Color',C.fg, ...
             'Interpreter','none', ...
-            'FontWeight','bold');
-        xlabel(axHeat,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',16);
-        ylabel(axHeat,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',16);
+            'FontWeight','bold','FontSize',14);
+        xlabel(axHeat,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',11);
+        ylabel(axHeat,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',11);
 
         fc_set_matrix_ticks(axHeat,Mdisp,names,meta,s.showHemisphere,C);
-        xlabel(axHeat,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',15);
-        ylabel(axHeat,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',15);
         if isfield(meta,'isRectangular') && meta.isRectangular
+            xlabel(axHeat,'Right atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
+            ylabel(axHeat,'Left atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
             title(axHeat,'Left regions vs Right regions FC heatmap', ...
-                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',15);
+                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',11);
         else
+            xlabel(axHeat,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
+            ylabel(axHeat,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
             title(axHeat,'Region-by-region FC heatmap', ...
-                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',15);
+                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',11);
         end
         fc_colorbar_legend(axHeatCB,cmap,clim,cbLabel,C);
         updateROIDropdowns(names);
 
         if isfield(meta,'isRectangular') && meta.isRectangular
-            regionTxt = sprintf('%d left x %d right',size(Mdisp,1),size(Mdisp,2));
+            regionTxt = sprintf('%d L x %d R',size(Mdisp,1),size(Mdisp,2));
         else
             regionTxt = sprintf('%d',numel(names));
         end
-        set(txtHeat,'String',sprintf('Regions: %s\nValue: %s\nThreshold: %.2f', regionTxt, cbLabel, s.roiAbsThr));
+        set(txtHeat,'String',sprintf('Regions: %s\nValue: %s\n|r| thr: %.2f', regionTxt, cbLabel, s.roiAbsThr));
     end
 
     function refreshCompareView()
@@ -2339,7 +3257,7 @@ end
                 'Location','best','TextColor',C.fg,'Interpreter','none');
             try
                 set(lgdC,'Color',C.bgPane,'EdgeColor',C.dim,'TextColor',C.fg, ...
-                    'FontName',C.font,'FontSize',12,'FontWeight','bold');
+                    'FontName',C.font,'FontSize',12,'FontWeight','bold','FontSize',14);
             catch
             end
         end
@@ -2455,10 +3373,10 @@ end
         res = s.roiResults{s.currentSubject,s.currentEpoch};
 
         try
-            set(axAdj,     'Position',[0.070 0.125 0.795 0.805]);
-            set(axGraphCB, 'Position',[0.890 0.180 0.035 0.700]);
+            set(axAdj,'Position',[0.070 0.115 0.845 0.845]);
+            set(axGraphCB,'Position',[0.955 0.215 0.022 0.600]);
             set(axDeg,     'Visible','off');
-            set(txtGraph,  'Position',[0.935 0.180 0.060 0.700]);
+            set(txtGraph,'Position',[0.945 0.865 0.055 0.115]);
         catch
         end
 
@@ -2480,6 +3398,7 @@ end
         end
 
         [M,names,order,meta] = fc_current_matrix(s,res); %#ok<ASGLU>
+        [M,names,order,meta] = fc_apply_region_visibility(s,M,names,order,meta);
 
         A = abs(M) >= s.roiAbsThr;
         if ~(isfield(meta,'isRectangular') && meta.isRectangular)
@@ -2493,7 +3412,7 @@ end
         if isfield(meta,'isRectangular') && meta.isRectangular
             axis(axAdj,'tight');
         else
-            axis(axAdj,'image');
+            axis(axAdj,'tight'); axis(axAdj,'normal');
         end
         colormap(axAdj,cmap);
         fc_ax(axAdj,C);
@@ -2501,26 +3420,28 @@ end
         title(axAdj,'Thresholded weighted FC matrix', ...
             'Color',C.fg, ...
             'Interpreter','none', ...
-            'FontWeight','bold');
-        xlabel(axAdj,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',16);
-        ylabel(axAdj,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',16);
+            'FontWeight','bold','FontSize',14);
+        xlabel(axAdj,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',11);
+        ylabel(axAdj,'Atlas region','Color',C.dim,'FontWeight','bold','FontSize',11);
 
         fc_set_matrix_ticks(axAdj,W,names,meta,s.showHemisphere,C);
-        xlabel(axAdj,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',15);
-        ylabel(axAdj,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',15);
         if isfield(meta,'isRectangular') && meta.isRectangular
+            xlabel(axAdj,'Right atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
+            ylabel(axAdj,'Left atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
             title(axAdj,'Left-vs-Right thresholded weighted FC matrix', ...
-                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',15);
+                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',11);
         else
+            xlabel(axAdj,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
+            ylabel(axAdj,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
             title(axAdj,'Thresholded weighted FC matrix', ...
-                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',15);
+                'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',11);
         end
         fc_colorbar_legend(axGraphCB,cmap,[-1 1],'Pearson r',C);
 
         if isfield(meta,'isRectangular') && meta.isRectangular
             nEdges = nnz(A);
             possibleEdges = max(1,numel(A));
-            regionTxt = sprintf('%d left x %d right',size(A,1),size(A,2));
+            regionTxt = sprintf('%d L x %d R',size(A,1),size(A,2));
         else
             nEdges = nnz(triu(A,1));
             possibleEdges = max(1,(size(A,1)*(size(A,1)-1)/2));
@@ -2532,14 +3453,75 @@ end
             'Graph matrix\n\n' ...
             'Entry = Pearson r\n' ...
             'shown only when |r| >= threshold.\n\n' ...
-            'Threshold: %.2f\n' ...
+            '|r| threshold: %.2f\n' ...
             'Regions: %s\n' ...
             'Connections: %d\n' ...
             'Density: %.4f'], ...
             s.roiAbsThr,regionTxt,nEdges,density));
     end
+% FC_LABEL_REGION_PICK_CALLBACKS_20260512_START
+    function onMatrixTickMode(~,~)
+        try, refreshHeatmapView(); catch, end
+        try, refreshGraphView(); catch, end
+    end
 
-    function updateROIDropdowns(names)
+    function onClearCustomRegions(~,~)
+        s = guidata(fig);
+        s.fcSelectedRegionIdx = [];
+        s.fcSelectedRegionY = [];
+        s.fcSelectedRegionX = [];
+        guidata(fig,s);
+        refreshHeatmapView();
+        refreshGraphView();
+        setStatus('Showing all regions again.',C.good);
+    end
+
+    function onCustomRegionList(~,~)
+        s = guidata(fig);
+        res = s.roiResults{s.currentSubject,s.currentEpoch};
+        if isempty(res)
+            setStatus('No ROI result yet. Load Seg MAT or compute ROI current first.',C.warn);
+            return;
+        end
+        try
+            [M,names,order,meta] = fc_current_matrix(s,res); %#ok<ASGLU>
+            if isfield(meta,'isRectangular') && meta.isRectangular
+                yNames = fc_abbrev_list(meta.namesY,42,false);
+                xNames = fc_abbrev_list(meta.namesX,42,false);
+                yDefault = 1:numel(yNames);
+                xDefault = 1:numel(xNames);
+                if isfield(s,'fcSelectedRegionY') && ~isempty(s.fcSelectedRegionY), yDefault = s.fcSelectedRegionY; end
+                if isfield(s,'fcSelectedRegionX') && ~isempty(s.fcSelectedRegionX), xDefault = s.fcSelectedRegionX; end
+                [selY,selX,ok] = fc_checkbox_select_two_dialog(yNames,xNames,yDefault,xDefault,'Visible FC regions: Left/Y and Right/X');
+                if ~ok || isempty(selY) || isempty(selX), return; end
+                s.fcSelectedRegionY = selY(:)';
+                s.fcSelectedRegionX = selX(:)';
+                s.fcSelectedRegionIdx = [];
+                guidata(fig,s);
+                refreshHeatmapView();
+                refreshGraphView();
+                setStatus(sprintf('Custom visible regions: %d left/Y x %d right/X.',numel(selY),numel(selX)),C.good);
+            else
+                listNames = fc_abbrev_list(names,46,s.showHemisphere);
+                def = 1:numel(listNames);
+                if isfield(s,'fcSelectedRegionIdx') && ~isempty(s.fcSelectedRegionIdx), def = s.fcSelectedRegionIdx; end
+                [sel,ok] = fc_checkbox_select_dialog(listNames,def,'Visible FC regions');
+                if ~ok || isempty(sel), return; end
+                s.fcSelectedRegionIdx = sel(:)';
+                s.fcSelectedRegionY = [];
+                s.fcSelectedRegionX = [];
+                guidata(fig,s);
+                refreshHeatmapView();
+                refreshGraphView();
+                setStatus(sprintf('Custom visible regions: %d.',numel(sel)),C.good);
+            end
+        catch ME_custom
+            setStatus(['Custom region selector error: ' ME_custom.message],C.warn);
+        end
+    end
+% FC_LABEL_REGION_PICK_CALLBACKS_20260512_END
+
+function updateROIDropdowns(names)
         sTmp = guidata(fig);
         if ~isfield(sTmp,'showHemisphere') || isempty(sTmp.showHemisphere)
             sTmp.showHemisphere = true;
@@ -2596,7 +3578,7 @@ end
 function p = fc_panel(parent,pos,titleStr,C)
 p = uipanel('Parent',parent,'Units','normalized','Position',pos, ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
-    'Title',titleStr,'FontName',C.font,'FontWeight','bold','FontSize',15);
+    'Title',titleStr,'FontName',C.font,'FontWeight','bold','FontSize',10);
 end
 
 function p = fc_view(parent,C,vis)
@@ -3513,6 +4495,7 @@ end
 mode = fc_region_mode_from_state(s);
 hasSignedLR = any(labels0 < 0);
 
+% FC_LR_EPOCH_PATCH_20260505_LVR_MATRIX
 if strcmpi(mode,'lvr')
     leftIdx = [];
     rightIdx = [];
@@ -3558,6 +4541,7 @@ if strcmpi(mode,'lvr')
         return;
     end
 end
+% FC_LR_EPOCH_PATCH_20260505_LVR_MATRIX_END
 
 if strcmpi(mode,'merged') && isfield(res,'meanTS') && ~isempty(res.meanTS) && size(res.meanTS,2) == n0
     [TSmerge,names,labelsDisplay,groups,order] = fc_merge_lr_timecourses(res.meanTS,names0,labels0);
@@ -3614,7 +4598,6 @@ meta.displayLabels = labelsDisplay(:);
 meta.rawLabels = labels0(:);
 meta.rawNames = names0(:);
 end
-
 function mode = fc_region_mode_from_state(s)
 mode = 'both';
 try
@@ -4331,7 +5314,7 @@ end
 
 function fc_nodata(ax,titleStr,C)
 cla(ax);
-text(ax,0.5,0.5,'No data','HorizontalAlignment','center','Color',C.fg,'FontSize',12,'FontWeight','bold');
+text(ax,0.5,0.5,'No data','HorizontalAlignment','center','Color',C.fg,'FontSize',12,'FontWeight','bold','FontSize',14);
 fc_ax(ax,C); title(ax,titleStr,'Color',C.fg,'Interpreter','none');
 set(ax,'XTick',[],'YTick',[]);
 end
@@ -4453,11 +5436,21 @@ end
 end
 
 function label = fc_epoch_label(s)
-[t0,t1,name] = fc_epoch_window_sec(s,1,1); %#ok<ASGLU>
-if isinf(t1)
-    label = name;
-else
-    label = sprintf('%s %.2f-%.2f min',name,t0/60,t1/60);
+mode = 'whole';
+try, if isfield(s,'fcEpochMode') && ~isempty(s.fcEpochMode), mode = lower(strtrim(char(s.fcEpochMode))); end, catch, end
+useWin = false;
+try, if isfield(s,'fcUseEpochWin') && ~isempty(s.fcUseEpochWin), useWin = logical(s.fcUseEpochWin); end, catch, end
+win = 3;
+try, if isfield(s,'fcEpochWinMin') && isfinite(s.fcEpochWinMin), win = double(s.fcEpochWinMin); end, catch, end
+switch mode
+    case 'pre'
+        if useWin, label = sprintf('Pre-injection last %.2f min',win); else, label = 'Pre-injection full period'; end
+    case 'during'
+        if useWin, label = sprintf('During injection first %.2f min',win); else, label = 'During injection full period'; end
+    case 'post'
+        if useWin, label = sprintf('Post-injection first %.2f min',win); else, label = 'Post-injection full remaining period'; end
+    otherwise
+        label = 'Whole recording';
 end
 end
 
@@ -4476,21 +5469,42 @@ inj0 = 14; inj1 = 15; win = 3;
 try, if isfield(s,'fcInjStartMin') && isfinite(s.fcInjStartMin), inj0 = double(s.fcInjStartMin); end, catch, end
 try, if isfield(s,'fcInjEndMin') && isfinite(s.fcInjEndMin), inj1 = double(s.fcInjEndMin); end, catch, end
 try, if isfield(s,'fcEpochWinMin') && isfinite(s.fcEpochWinMin) && s.fcEpochWinMin > 0, win = double(s.fcEpochWinMin); end, catch, end
-inj0 = max(0,inj0); inj1 = max(inj0,inj1); win = max(0.01,win);
+useWin = false;
+try, if isfield(s,'fcUseEpochWin') && ~isempty(s.fcUseEpochWin), useWin = logical(s.fcUseEpochWin); end, catch, useWin = false; end
+inj0 = max(0,inj0);
+inj1 = max(inj0,inj1);
+win = max(0.01,win);
 switch mode
     case 'pre'
-        t0 = max(0,(inj0-win).*60);
-        t1 = inj0.*60;
-        epName = sprintf('Pre-injection first %.2f min',win);
+        if useWin
+            t0 = max(0,(inj0-win).*60);
+            t1 = inj0.*60;
+            epName = sprintf('Pre-injection last %.2f min',win);
+        else
+            t0 = 0;
+            t1 = inj0.*60;
+            epName = 'Pre-injection full period';
+        end
     case 'during'
         t0 = inj0.*60;
-        t1 = min(inj1,inj0+win).*60;
-        if t1 <= t0, t1 = (inj0+win).*60; end
-        epName = sprintf('During injection first %.2f min',win);
+        if useWin
+            t1 = min(inj1,inj0+win).*60;
+            if t1 <= t0, t1 = (inj0+win).*60; end
+            epName = sprintf('During injection first %.2f min',win);
+        else
+            t1 = inj1.*60;
+            if t1 <= t0, t1 = inf; end
+            epName = 'During injection full period';
+        end
     case 'post'
         t0 = inj1.*60;
-        t1 = (inj1+win).*60;
-        epName = sprintf('Post-injection first %.2f min',win);
+        if useWin
+            t1 = (inj1+win).*60;
+            epName = sprintf('Post-injection first %.2f min',win);
+        else
+            t1 = inf;
+            epName = 'Post-injection full remaining period';
+        end
     otherwise
         t0 = 0;
         t1 = inf;
@@ -4550,20 +5564,52 @@ end
 end
 
 function tickIdx = fc_matrix_tick_indices(n)
-if n <= 90
-    tickIdx = 1:n;
-elseif n <= 140
-    tickIdx = 1:2:n;
-elseif n <= 220
-    tickIdx = 1:3:n;
-else
-    tickIdx = 1:max(4,ceil(n/60)):n;
+% Default display: show all labels. User can still choose Auto/Every N.
+if nargin < 1 || isempty(n) || n <= 0
+    tickIdx = [];
+    return;
 end
+mode = 'all';
+try
+    h = findobj(0,'Type','uicontrol','Tag','FC_MatrixTickMode');
+    if ~isempty(h)
+        val = get(h(1),'Value');
+        modes = {'auto','all','every2','every3','every5','every10'};
+        val = max(1,min(numel(modes),round(double(val))));
+        mode = modes{val};
+    end
+catch
+    mode = 'all';
+end
+switch lower(mode)
+    case 'auto'
+        if n <= 90
+            tickIdx = 1:n;
+        elseif n <= 140
+            tickIdx = 1:2:n;
+        elseif n <= 220
+            tickIdx = 1:3:n;
+        else
+            tickIdx = 1:max(4,ceil(n/60)):n;
+        end
+    case 'every2'
+        tickIdx = 1:2:n;
+    case 'every3'
+        tickIdx = 1:3:n;
+    case 'every5'
+        tickIdx = 1:5:n;
+    case 'every10'
+        tickIdx = 1:10:n;
+    otherwise
+        tickIdx = 1:n;
+end
+if isempty(tickIdx), tickIdx = 1:n; end
 end
 
 function fc_set_matrix_ticks(ax,M,names,meta,showHemisphere,C)
 if nargin < 5 || isempty(showHemisphere), showHemisphere = true; end
-nY = size(M,1); nX = size(M,2);
+nY = size(M,1);
+nX = size(M,2);
 namesY = names;
 namesX = names;
 try
@@ -4574,25 +5620,42 @@ try
     end
 catch
 end
+try, namesY = cellstr(namesY(:)); catch, namesY = {'n/a'}; end
+try, namesX = cellstr(namesX(:)); catch, namesX = {'n/a'}; end
 tickY = fc_matrix_tick_indices(nY);
 tickX = fc_matrix_tick_indices(nX);
 tickY = tickY(tickY >= 1 & tickY <= numel(namesY));
 tickX = tickX(tickX >= 1 & tickX <= numel(namesX));
-tickFont = 11;
-if max(nX,nY) > 90, tickFont = 10; end
-if max(nX,nY) > 220, tickFont = 9; end
-labelLen = 9;
-set(ax, ...
-    'XTick',tickX, ...
-    'YTick',tickY, ...
-    'XTickLabel',fc_abbrev_list(namesX(tickX),labelLen,showHemisphere), ...
-    'YTickLabel',fc_abbrev_list(namesY(tickY),labelLen,showHemisphere), ...
-    'TickLength',[0 0], ...
-    'FontName',C.font, ...
-    'FontSize',tickFont, ...
-    'FontWeight','bold');
-try, xtickangle(ax,90); catch, end
+maxN = max(nX,nY);
+tickFont = 8.5;
+if maxN > 90,  tickFont = 7.5; end
+if maxN > 130, tickFont = 6.7; end
+if maxN > 220, tickFont = 5.8; end
+labelLen = 8;
+if maxN <= 80, labelLen = 10; end
+try
+    set(ax, ...
+        'XTick',tickX, ...
+        'YTick',tickY, ...
+        'XTickLabel',fc_abbrev_list(namesX(tickX),labelLen,showHemisphere), ...
+        'YTickLabel',fc_abbrev_list(namesY(tickY),labelLen,showHemisphere), ...
+        'TickLength',[0 0], ...
+        'FontName',C.font, ...
+        'FontSize',tickFont, ...
+        'FontWeight','bold', ...
+        'TickLabelInterpreter','none');
+catch
+    set(ax,'XTick',tickX,'YTick',tickY,'FontSize',tickFont,'FontWeight','bold');
 end
+try, xtickangle(ax,90); catch, end
+try
+    set(get(ax,'Title'),'FontSize',16,'FontWeight','bold','Color',C.fg);
+    set(get(ax,'XLabel'),'FontSize',15,'FontWeight','bold','Color',C.fg);
+    set(get(ax,'YLabel'),'FontSize',15,'FontWeight','bold','Color',C.fg);
+catch
+end
+end
+
 function col = fc_pair_color(list,val)
 if ischar(list), list = cellstr(list); end
 val = max(1,min(numel(list),val));
@@ -5201,7 +6264,7 @@ for ii = 1:numel(bad)
 end
 end
 
-function fc_region_key_dialog('Position',[55 50 1500 900], s,C)
+function fc_region_key_dialog(s,C)
 % Show abbreviation -> full-name mapping for the current ROI/Segmentation result.
 res = [];
 try
@@ -5211,8 +6274,6 @@ end
 
 if isempty(res) || ~isfield(res,'labels') || isempty(res.labels)
     error('No ROI/Segmentation result is loaded yet. Load Seg MAT or compute ROI FC first.');
-try, HUMoR_popup_polish_now(gcf); catch, end
-
 end
 
 labels = double(res.labels(:));
@@ -5373,13 +6434,276 @@ catch
 end
 end
 
+
+
+
+
+function [M,names,order,meta] = fc_apply_region_visibility(s,M,names,order,meta)
+% Optional filtering of displayed heatmap/graph regions.
+try
+    if nargin < 5 || isempty(M) || isempty(names)
+        return;
+    end
+    if isfield(meta,'isRectangular') && meta.isRectangular
+        yKeep = 1:size(M,1);
+        xKeep = 1:size(M,2);
+        if isfield(s,'fcSelectedRegionY') && ~isempty(s.fcSelectedRegionY)
+            yKeep = fc_region_keep_indices(s.fcSelectedRegionY,size(M,1));
+        end
+        if isfield(s,'fcSelectedRegionX') && ~isempty(s.fcSelectedRegionX)
+            xKeep = fc_region_keep_indices(s.fcSelectedRegionX,size(M,2));
+        end
+        if isempty(yKeep) || isempty(xKeep), return; end
+        M = M(yKeep,xKeep);
+        try, meta.namesY = meta.namesY(yKeep); catch, end
+        try, meta.namesX = meta.namesX(xKeep); catch, end
+        try, meta.orderY = meta.orderY(yKeep); catch, end
+        try, meta.orderX = meta.orderX(xKeep); catch, end
+        try, meta.displayLabelsY = meta.displayLabelsY(yKeep); catch, end
+        try, meta.displayLabelsX = meta.displayLabelsX(xKeep); catch, end
+        try, names = meta.namesY; catch, names = names(yKeep); end
+        try, order = meta.orderY; catch, order = order(yKeep); end
+        try, meta.displayLabels = meta.displayLabelsY; catch, end
+        return;
+    end
+    if ~isfield(s,'fcSelectedRegionIdx') || isempty(s.fcSelectedRegionIdx)
+        return;
+    end
+    keep = fc_region_keep_indices(s.fcSelectedRegionIdx,size(M,1));
+    if isempty(keep), return; end
+    M = M(keep,keep);
+    names = names(keep);
+    try, order = order(keep); catch, end
+    try, meta.groups = meta.groups(keep); catch, end
+    try, meta.displayLabels = meta.displayLabels(keep); catch, end
+catch
+end
+end
+
+function keep = fc_region_keep_indices(sel,n)
+keep = [];
+try
+    if isempty(sel) || n < 1, return; end
+    if islogical(sel)
+        sel = sel(:);
+        if numel(sel) == n, keep = find(sel); end
+    else
+        sel = round(double(sel(:)));
+        sel = unique(sel(isfinite(sel) & sel >= 1 & sel <= n));
+        keep = sel(:)';
+    end
+catch
+    keep = [];
+end
+end
+
+function [sel,ok] = fc_checkbox_select_dialog(names,initialIdx,titleStr)
+% Better custom region selector with tick/untick checkboxes.
+if nargin < 2 || isempty(initialIdx), initialIdx = 1:numel(names); end
+if nargin < 3 || isempty(titleStr), titleStr = 'Select regions'; end
+ok = false;
+sel = [];
+names = cellstr(names(:));
+n = numel(names);
+checked = false(n,1);
+initialIdx = round(double(initialIdx(:)));
+initialIdx = initialIdx(isfinite(initialIdx) & initialIdx >= 1 & initialIdx <= n);
+checked(initialIdx) = true;
+data = cell(n,2);
+for ii = 1:n
+    data{ii,1} = checked(ii);
+    data{ii,2} = names{ii};
+end
+bg = [0.06 0.06 0.07];
+fg = [0.96 0.96 0.96];
+fh = figure('Name',titleStr,'Color',bg,'MenuBar','none','ToolBar','none', ...
+    'NumberTitle','off','Units','pixels','Position',[300 120 560 720], ...
+    'WindowStyle','modal','CloseRequestFcn',@onCancel);
+try, movegui(fh,'center'); catch, end
+uicontrol('Parent',fh,'Style','text','Units','normalized', ...
+    'Position',[0.04 0.945 0.92 0.035],'String','Tick/untick regions to display in Heatmap and Graph.', ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'HorizontalAlignment','left', ...
+    'FontName','Arial','FontSize',11,'FontWeight','bold','FontSize',14);
+tbl = uitable('Parent',fh,'Units','normalized','Position',[0.04 0.125 0.92 0.805], ...
+    'Data',data,'ColumnName',{'Show','Region'},'ColumnEditable',[true false], ...
+    'ColumnFormat',{'logical','char'},'ColumnWidth',{55 430},'RowName',[], ...
+    'FontName','Arial','FontSize',10);
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.04 0.045 0.13 0.055],'String','All', ...
+    'BackgroundColor',[0.18 0.55 0.25],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@onAll);
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.19 0.045 0.13 0.055],'String','None', ...
+    'BackgroundColor',[0.45 0.45 0.48],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@onNone);
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.61 0.045 0.16 0.055],'String','Apply', ...
+    'BackgroundColor',[0.10 0.38 0.78],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@onOK);
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.80 0.045 0.16 0.055],'String','Cancel', ...
+    'BackgroundColor',[0.65 0.18 0.18],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@onCancel);
+uiwait(fh);
+if ishandle(fh)
+    try
+        tmp = getappdata(fh,'fc_selected');
+        if ~isempty(tmp)
+            sel = tmp(:)';
+            ok = true;
+        end
+    catch
+    end
+    try, delete(fh); catch, end
+end
+
+    function onAll(~,~)
+        d = get(tbl,'Data');
+        d(:,1) = num2cell(true(size(d,1),1));
+        set(tbl,'Data',d);
+    end
+
+    function onNone(~,~)
+        d = get(tbl,'Data');
+        d(:,1) = num2cell(false(size(d,1),1));
+        set(tbl,'Data',d);
+    end
+
+    function onOK(~,~)
+        d = get(tbl,'Data');
+        c = false(size(d,1),1);
+        for jj = 1:size(d,1)
+            try, c(jj) = logical(d{jj,1}); catch, c(jj) = false; end
+        end
+        idx = find(c);
+        setappdata(fh,'fc_selected',idx);
+        uiresume(fh);
+    end
+
+    function onCancel(~,~)
+        setappdata(fh,'fc_selected',[]);
+        uiresume(fh);
+    end
+end
+
+function [selY,selX,ok] = fc_checkbox_select_two_dialog(namesY,namesX,initY,initX,titleStr)
+% Better selector for Left-vs-Right rectangular heatmaps.
+if nargin < 3 || isempty(initY), initY = 1:numel(namesY); end
+if nargin < 4 || isempty(initX), initX = 1:numel(namesX); end
+if nargin < 5 || isempty(titleStr), titleStr = 'Select visible regions'; end
+ok = false;
+selY = [];
+selX = [];
+namesY = cellstr(namesY(:));
+namesX = cellstr(namesX(:));
+nY = numel(namesY);
+nX = numel(namesX);
+cY = false(nY,1);
+cX = false(nX,1);
+initY = round(double(initY(:))); initY = initY(isfinite(initY) & initY >= 1 & initY <= nY);
+initX = round(double(initX(:))); initX = initX(isfinite(initX) & initX >= 1 & initX <= nX);
+cY(initY) = true;
+cX(initX) = true;
+dataY = cell(nY,2);
+dataX = cell(nX,2);
+for ii = 1:nY, dataY{ii,1} = cY(ii); dataY{ii,2} = namesY{ii}; end
+for ii = 1:nX, dataX{ii,1} = cX(ii); dataX{ii,2} = namesX{ii}; end
+bg = [0.06 0.06 0.07];
+fg = [0.96 0.96 0.96];
+fh = figure('Name',titleStr,'Color',bg,'MenuBar','none','ToolBar','none', ...
+    'NumberTitle','off','Units','pixels','Position',[210 90 980 760], ...
+    'WindowStyle','modal','CloseRequestFcn',@onCancel);
+try, movegui(fh,'center'); catch, end
+uicontrol('Parent',fh,'Style','text','Units','normalized', ...
+    'Position',[0.035 0.945 0.43 0.035],'String','Left/Y axis regions', ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'HorizontalAlignment','left', ...
+    'FontName','Arial','FontSize',12,'FontWeight','bold','FontSize',14);
+uicontrol('Parent',fh,'Style','text','Units','normalized', ...
+    'Position',[0.535 0.945 0.43 0.035],'String','Right/X axis regions', ...
+    'BackgroundColor',bg,'ForegroundColor',fg,'HorizontalAlignment','left', ...
+    'FontName','Arial','FontSize',12,'FontWeight','bold','FontSize',14);
+tblY = uitable('Parent',fh,'Units','normalized','Position',[0.035 0.135 0.43 0.800], ...
+    'Data',dataY,'ColumnName',{'Show','Left/Y region'},'ColumnEditable',[true false], ...
+    'ColumnFormat',{'logical','char'},'ColumnWidth',{55 355},'RowName',[], ...
+    'FontName','Arial','FontSize',10);
+tblX = uitable('Parent',fh,'Units','normalized','Position',[0.535 0.135 0.43 0.800], ...
+    'Data',dataX,'ColumnName',{'Show','Right/X region'},'ColumnEditable',[true false], ...
+    'ColumnFormat',{'logical','char'},'ColumnWidth',{55 355},'RowName',[], ...
+    'FontName','Arial','FontSize',10);
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.035 0.050 0.105 0.055],'String','All L', ...
+    'BackgroundColor',[0.18 0.55 0.25],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@(src,evt)setAll(tblY,true));
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.150 0.050 0.105 0.055],'String','None L', ...
+    'BackgroundColor',[0.45 0.45 0.48],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@(src,evt)setAll(tblY,false));
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.535 0.050 0.105 0.055],'String','All R', ...
+    'BackgroundColor',[0.18 0.55 0.25],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@(src,evt)setAll(tblX,true));
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.650 0.050 0.105 0.055],'String','None R', ...
+    'BackgroundColor',[0.45 0.45 0.48],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@(src,evt)setAll(tblX,false));
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.775 0.050 0.090 0.055],'String','Apply', ...
+    'BackgroundColor',[0.10 0.38 0.78],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@onOK);
+uicontrol('Parent',fh,'Style','pushbutton','Units','normalized', ...
+    'Position',[0.875 0.050 0.090 0.055],'String','Cancel', ...
+    'BackgroundColor',[0.65 0.18 0.18],'ForegroundColor','w','FontWeight','bold', ...
+    'Callback',@onCancel);
+uiwait(fh);
+if ishandle(fh)
+    try
+        a = getappdata(fh,'fc_selected_y');
+        b = getappdata(fh,'fc_selected_x');
+        if ~isempty(a) && ~isempty(b)
+            selY = a(:)';
+            selX = b(:)';
+            ok = true;
+        end
+    catch
+    end
+    try, delete(fh); catch, end
+end
+
+    function setAll(tbl,val)
+        d = get(tbl,'Data');
+        d(:,1) = num2cell(logical(val) .* true(size(d,1),1));
+        set(tbl,'Data',d);
+    end
+
+    function idx = getChecked(tbl)
+        d = get(tbl,'Data');
+        c = false(size(d,1),1);
+        for jj = 1:size(d,1)
+            try, c(jj) = logical(d{jj,1}); catch, c(jj) = false; end
+        end
+        idx = find(c);
+    end
+
+    function onOK(~,~)
+        idxY = getChecked(tblY);
+        idxX = getChecked(tblX);
+        setappdata(fh,'fc_selected_y',idxY);
+        setappdata(fh,'fc_selected_x',idxX);
+        uiresume(fh);
+    end
+
+    function onCancel(~,~)
+        setappdata(fh,'fc_selected_y',[]);
+        setappdata(fh,'fc_selected_x',[]);
+        uiresume(fh);
+    end
+end
+
 function fc_help_dialog(C) %#ok<INUSD>
 bg = [0.06 0.06 0.07]; fg = [0.96 0.96 0.96];
 helpFig = figure('Name','Functional Connectivity - Help', ...
     'Color',bg,'MenuBar','none','ToolBar','none','NumberTitle','off', ...
-    'Units','pixels','Position',[35 35 1650 960], );
-try, HUMoR_popup_polish_now(gcf); catch, end
-
+    'Units','pixels','Position',[250 100 960 800]);
 try, movegui(helpFig,'center'); catch, end
 uicontrol('Parent',helpFig,'Style','edit','Max',2,'Min',0, ...
     'Units','normalized','Position',[0.04 0.04 0.92 0.92], ...
@@ -5433,4 +6757,3 @@ lines = {
 };
 txt = strjoin(lines,newline);
 end
-

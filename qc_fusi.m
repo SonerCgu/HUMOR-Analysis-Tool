@@ -241,7 +241,8 @@ if opts.burst
     ylabel('Count');
     title('BurstRatio histogram (brain)');
 
-    saveas(fig, fullfile(pngDir,'QC_burst_ratio.png'));
+    saveas(fig,fullfile(pngDir,'QC_burst_ratio.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_burst_ratio.png')); catch, end
     close(fig);
 
     fig = figure('Color','w','Position',[140 140 1100 380]);
@@ -252,7 +253,8 @@ if opts.burst
     xlabel('Volume');
     ylabel('Burst coverage (fraction of brain voxels)');
     title('Burst coverage over time (fraction voxels > THbursterror*baseline)');
-    saveas(fig, fullfile(pngDir,'QC_burst_coverage.png'));
+    saveas(fig,fullfile(pngDir,'QC_burst_coverage.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_burst_coverage.png')); catch, end
     close(fig);
 
     burst.has = true;
@@ -284,12 +286,14 @@ if opts.frequency
 
     fig = figure('Color','w','Position',[120 120 900 420]);
     plotPSD(f, Pxx, [0 2], 'Frequency QC (0-2 Hz)');
-    saveas(fig, fullfile(pngDir,'QC_frequency.png'));
+    saveas(fig,fullfile(pngDir,'QC_frequency.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_frequency.png')); catch, end
     close(fig);
 
     fig = figure('Color','w','Position',[140 140 900 420]);
     plotPSD(f, Pxx, [0 0.1], 'Frequency QC (0-0.1 Hz)');
-    saveas(fig, fullfile(pngDir,'QC_frequency_0p1Hz.png'));
+    saveas(fig,fullfile(pngDir,'QC_frequency_0p1Hz.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_frequency_0p1Hz.png')); catch, end
     close(fig);
 end
 
@@ -370,7 +374,8 @@ if opts.spatial
     ylabel('Count');
     title(sprintf('tSNR histogram (masked)  THSNR=%.1f  ACCEPT=%d', opts.THSNR, acceptSNR));
 
-    saveas(fig, fullfile(pngDir,'QC_spatial_tSNR.png'));
+    saveas(fig,fullfile(pngDir,'QC_spatial_tSNR.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_spatial_tSNR.png')); catch, end
     close(fig);
 
     try
@@ -424,7 +429,8 @@ if opts.temporal
     xlabel('Time (s)');
     grid on;
 
-    saveas(fig, fullfile(pngDir,'QC_temporal.png'));
+    saveas(fig,fullfile(pngDir,'QC_temporal.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_temporal.png')); catch, end
     close(fig);
 
     try
@@ -467,12 +473,16 @@ if opts.stability
     fig = figure('Color','w','Position',[200 200 1100 650]);
 
     subplot(2,1,1);
-    stem(1:numel(rejected), double(rejected), 'LineWidth',1.2, 'Marker','o', 'MarkerSize',3);
-    ylim([-0.1 1.1]);
-    set(gca,'YTick',[0 1],'YTickLabel',{'Accepted','Rejected'});
-    xlabel('Volume');
-    title('Rejected volumes over time');
-    grid on;
+    axReject = gca;
+    stem(axReject, 1:numel(rejected), double(rejected), 'filled', 'LineWidth',1.2, 'Marker','o', 'MarkerSize',3);
+    ylim(axReject,[-0.15 1.15]);
+    set(axReject,'YTick',[0 1],'YTickLabel',{'Accepted','Rejected'});
+    xlabel(axReject,'Volume','Color','k','FontWeight','bold');
+    ylabel(axReject,'Frame status','Color','k','FontWeight','bold');
+    title(axReject,'Rejected volumes over time','Color','k','FontWeight','bold');
+    HUMoR_style_rejected_qc_axis(gca);
+    grid(axReject,'on');
+    set(axReject,'Color','w','XColor','k','YColor','k','FontSize',11,'LineWidth',1.0,'Box','on');
 
     subplot(2,1,2);
     plot(gNorm,'k','LineWidth',1.2);
@@ -497,7 +507,7 @@ if opts.stability
         'BackgroundColor',[1 1 1], ...
         'EdgeColor',[0 0 0]);
 
-    saveas(fig, fullfile(pngDir,'QC_stability_trace.png'));
+    HUMoR_save_qc_png_white(fig, fullfile(pngDir,'QC_stability_trace.png'));
     close(fig);
 
     fig = figure('Color','w','Position',[240 240 900 420]);
@@ -510,7 +520,8 @@ if opts.stability
     title(sprintf('Stability histogram (Rejected %.2f%%)', rejPercent));
     xlabel('Normalized global intensity');
     ylabel('Count');
-    saveas(fig, fullfile(pngDir,'QC_stability_hist.png'));
+    saveas(fig,fullfile(pngDir,'QC_stability_hist.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_stability_hist.png')); catch, end
     close(fig);
 
     try
@@ -551,7 +562,8 @@ if opts.motion
     xlabel('Volume');
     grid on;
 
-    saveas(fig, fullfile(pngDir,'QC_motion_COM.png'));
+    saveas(fig,fullfile(pngDir,'QC_motion_COM.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_motion_COM.png')); catch, end
     close(fig);
 
     try
@@ -622,7 +634,8 @@ if opts.cnr
         'FontSize',13,'FontWeight','bold');
     axis off;
 
-    saveas(fig, fullfile(pngDir,'QC_CNR.png'));
+    saveas(fig,fullfile(pngDir,'QC_CNR.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_CNR.png')); catch, end
     close(fig);
 
     try
@@ -671,7 +684,8 @@ if opts.commonmode
         'FontSize',13,'FontWeight','bold');
     axis off;
 
-    saveas(fig, fullfile(pngDir,'QC_common_mode.png'));
+    saveas(fig,fullfile(pngDir,'QC_common_mode.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_common_mode.png')); catch, end
     close(fig);
 
     try
@@ -746,7 +760,8 @@ if opts.outlierframes
     ylabel('Count');
     title(sprintf('Line profile histogram  sigmaLower=%.4f', sigmaLower));
 
-    saveas(fig, fullfile(pngDir,'QC_outlier_lineframes.png'));
+    saveas(fig,fullfile(pngDir,'QC_outlier_lineframes.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_outlier_lineframes.png')); catch, end
     close(fig);
 
     if opts.outlierReplace
@@ -777,7 +792,8 @@ if opts.outlierframes
         ylabel('Global mean');
         legend({'Original','Corrected'});
         title('Outlier correction preview: original vs corrected global mean');
-        saveas(fig, fullfile(pngDir,'QC_outlier_correction_preview.png'));
+        saveas(fig,fullfile(pngDir,'QC_outlier_correction_preview.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_outlier_correction_preview.png')); catch, end
         close(fig);
     end
 
@@ -897,7 +913,8 @@ if opts.reliability
         'FontSize',12, 'FontWeight','bold', 'VerticalAlignment','top');
     axis off;
 
-    saveas(fig, fullfile(pngDir,'QC_reliability.png'));
+    saveas(fig,fullfile(pngDir,'QC_reliability.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_reliability.png')); catch, end
     close(fig);
 
     fig = figure('Color','w','Position',[140 140 900 420]);
@@ -911,7 +928,8 @@ if opts.reliability
     xlabel('Reliability');
     ylabel('Count');
     title(sprintf('Reliability histogram (%s)', relSource));
-    saveas(fig, fullfile(pngDir,'QC_reliability_hist.png'));
+    saveas(fig,fullfile(pngDir,'QC_reliability_hist.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_reliability_hist.png')); catch, end
     close(fig);
 
     try
@@ -994,7 +1012,8 @@ text(ax, 0.02, 0.92, txt, ...
     'Interpreter','none');
 
 drawnow;
-saveas(fig, fullfile(pngDir,'QC_summary.png'));
+saveas(fig,fullfile(pngDir,'QC_summary.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_summary.png')); catch, end
 close(fig);
 
 try
@@ -1055,7 +1074,8 @@ if opts.pca
         ylabel('Explained Variance (%)');
         title('PCA Explained Variance');
         grid on;
-        saveas(figVar, fullfile(pngDir,'QC_pca_variance.png'));
+        saveas(figVar,fullfile(pngDir,'QC_pca_variance.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_pca_variance.png')); catch, end
         close(figVar);
 
         figGrid = figure('Color','w','Position',[100 100 1200 800]);
@@ -1073,7 +1093,8 @@ if opts.pca
             'EdgeColor','none','HorizontalAlignment','center',...
             'FontWeight','bold','FontSize',12);
 
-        saveas(figGrid, fullfile(pngDir,'QC_pca_components_grid.png'));
+        saveas(figGrid,fullfile(pngDir,'QC_pca_components_grid.png'));
+    try, HUMoR_force_png_white_background(fullfile(pngDir,'QC_pca_components_grid.png')); catch, end
         close(figGrid);
 
         try

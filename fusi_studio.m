@@ -1791,11 +1791,11 @@ function frameRateCallback(~,~)
 
         try
             if isfield(QC_before,'figIntensity') && ishghandle(QC_before.figIntensity)
-                saveas(QC_before.figIntensity, ...
-                    fullfile(qcFolder,['FrameRate_ORIGINAL_Intensity_' ts '.png']));
+                HUMoR_save_qc_png_white(QC_before.figIntensity, ...
+                    fullfile(qcFolder,['FrameRate_ORIGINAL_Intensity_Rejection_' ts '.png']));
             end
-            if isfield(QC_before,'figRejected') && ishghandle(QC_before.figRejected)
-                saveas(QC_before.figRejected, ...
+            if isfield(QC_before,'figRejected') && ishghandle(QC_before.figRejected) && (~isfield(QC_before,'figIntensity') || ~isequal(QC_before.figRejected,QC_before.figIntensity))
+                HUMoR_save_qc_png_white(QC_before.figRejected, ...
                     fullfile(qcFolder,['FrameRate_ORIGINAL_Rejected_' ts '.png']));
             end
         catch
@@ -1822,11 +1822,11 @@ function frameRateCallback(~,~)
 
         try
             if isfield(QC_after,'figIntensity') && ishghandle(QC_after.figIntensity)
-                saveas(QC_after.figIntensity, ...
-                    fullfile(qcFolder,['FrameRate_INTERPOLATED_Intensity_' ts '.png']));
+                HUMoR_save_qc_png_white(QC_after.figIntensity, ...
+                    fullfile(qcFolder,['FrameRate_INTERPOLATED_Intensity_Rejection_' ts '.png']));
             end
-            if isfield(QC_after,'figRejected') && ishghandle(QC_after.figRejected)
-                saveas(QC_after.figRejected, ...
+            if isfield(QC_after,'figRejected') && ishghandle(QC_after.figRejected) && (~isfield(QC_after,'figIntensity') || ~isequal(QC_after.figRejected,QC_after.figIntensity))
+                HUMoR_save_qc_png_white(QC_after.figRejected, ...
                     fullfile(qcFolder,['FrameRate_INTERPOLATED_Rejected_' ts '.png']));
             end
         catch
@@ -11703,4 +11703,6 @@ function studio_fit_popup_children_to_window(hFig)
         end
     end
 end
+
+
 
