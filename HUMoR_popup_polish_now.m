@@ -46,6 +46,16 @@ function kind = localClassifyPopup(nm,tg)
 s = lower([char(nm) ' ' char(tg)]);
 kind = '';
 
+% SCRUBBING_SETUP_SKIP_PATCH_V1
+% Skip global popup polishing for the Scrubbing Setup dialog.
+try
+    nmClean = lower(strtrim(char(nm)));
+    if strcmp(nmClean,'scrubbing setup')
+        return;
+    end
+catch
+end
+
 % Do not resize the main Studio window.
 if localHasAny(s,{'humor / fusi studio','humor fusi studio','fusi studio main','main studio'})
     if ~localHasAny(s,{'scrub','scrubbing','frame rejection','temporal smoothing','subsampling','filtering','butterworth','segmentation','functional connectivity'})
