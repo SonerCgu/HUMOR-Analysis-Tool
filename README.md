@@ -14,9 +14,11 @@ The toolbox is built around the recommended launcher, `run_fusi_studio.m`, which
 
 A detailed user manual is available here:
 
-[Download the HUMoR fUSI Studio User Manual PDF](https://github.com/SonerCgu/HUMOR-Analysis-Tool/raw/main/docs/HUMoR_fUSI_Studio_User_Manual.pdf)
+[Open the HUMoR fUSI Studio User Manual PDF](docs/HUMoR_fUSI_Studio_User_Manual.pdf)
 
-The manual explains installation, expected data formats, QC, preprocessing, SCM visualization, mask editing, registration, group analysis, functional connectivity, output folders, and troubleshooting.
+[Direct PDF download](https://github.com/SonerCgu/HUMOR-Analysis-Tool/raw/main/docs/HUMoR_fUSI_Studio_User_Manual.pdf)
+
+The manual explains installation, expected data formats, quality control, preprocessing, SCM visualization, mask editing, registration, group analysis, functional connectivity, output folders, and troubleshooting.
 
 ---
 
@@ -29,7 +31,7 @@ Current development status:
 - **2D probe / single-slice workflow:** functional and actively tested.
 - **Step-motor / 2D motor workflow:** available, but still under development for downstream group analysis and functional connectivity.
 - **3D / matrix probe workflow:** partially supported, but not fully validated for all advanced analyses.
-- **Functional connectivity:** available as a standalone GUI; group-level FC integration is still being improved.
+- **Functional connectivity:** available as a standalone GUI; group-level functional connectivity integration is still being improved.
 - **Group analysis:** available for ROI and map workflows; FC-related group functions are still experimental.
 - **StimBox / PulsePal / motor scripts:** included as optional acquisition-related scripts, but require hardware-specific configuration.
 
@@ -47,7 +49,7 @@ Developed and tested mainly on:
 
 Windows is currently the preferred platform. The analysis GUI has been written with portability in mind where possible, but macOS has not yet been fully tested.
 
-Some acquisition-related scripts use Windows-style serial ports such as `COM9`, `COM8`, or `COM14`. These need platform-specific changes for macOS/Linux systems. PowerPoint export functions may also depend on Microsoft PowerPoint/ActiveX on Windows.
+Some acquisition-related scripts use Windows-style serial ports such as `COM9`, `COM8`, or `COM14`. These must be changed for macOS/Linux systems. Some PowerPoint export functions may depend on Microsoft PowerPoint/ActiveX on Windows.
 
 ---
 
@@ -73,7 +75,7 @@ run_fusi_studio
 
 ---
 
-## Recommended Workflow
+## Recommended Individual Workflow
 
 1. Launch the GUI with `run_fusi_studio`.
 2. Click **Load fUSI Data**.
@@ -275,7 +277,7 @@ For now, the MATLAB files are intentionally kept mostly in the root folder to av
 
 ## Repository Hygiene
 
-Do **not** commit generated analysis outputs or animal/session data to the source-code repository.
+Do **not** commit generated analysis outputs, temporary backup folders, or animal/session data to the source-code repository.
 
 Keep these outside GitHub unless they are tiny curated examples:
 

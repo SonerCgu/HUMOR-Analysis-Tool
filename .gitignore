@@ -28,3 +28,10 @@ gitignore_backup_*.txt
 _backup*/
 *_ARCHIVE_REVIEW/
 
+
+# Large/generated data files
+
+# MATLAB autosave/temporary files
+
+# Local backup/archive folders
+_local_readme_pdf_cleanup_backup_*/
