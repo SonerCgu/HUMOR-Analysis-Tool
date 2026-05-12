@@ -1,0 +1,30 @@
+# HUMoR generated analysis outputs
+QC/
+Preprocessing/
+PSC/
+Visualization/
+Masks/
+Registration/
+Registration2D/
+FunctionalConnectivity/
+GroupAnalysis/
+Reports/
+
+# Large or generated data files
+*.nii
+*.nii.gz
+*.mp4
+*.avi
+*.pptx
+*.xlsx
+
+# MATLAB temporary / autosave files
+*.asv
+*.m~
+
+# Local cleanup backups
+README_backup_*.md
+gitignore_backup_*.txt
+_backup*/
+*_ARCHIVE_REVIEW/
+
