@@ -2,34 +2,11 @@
 
 **HUMoR Analysis Tool / fUSI Studio** is a MATLAB-based graphical toolbox for functional ultrasound imaging (fUSI) data analysis.
 
-<<<<<<< Updated upstream
-The toolbox is built around a single entry point, `fusi_studio.m`, with modular analysis GUIs and helper functions for 2D probe data, step-motor / multi-slice data, and matrix / 3D probe data.
-
-> **Research software notice:** HUMoR outputs should always be manually reviewed. QC plots, raw movies, ROI traces, baseline windows, masks, and atlas registrations must be checked before a dataset is treated as analysis-ready or publication-ready.
-
----
-
-## Main features
-
-- Load raw fUSI data from `.mat`, `.nii`, and `.nii.gz` files.
-- Support common fUSI data shapes:
-  - 2D time series: `[Y X T]`
-  - multi-slice / matrix / 3D time series: `[Y X Z T]`
-  - split step-motor files such as `slice1_t001.mat`, `slice2_t001.mat`, etc.
-- Confirm probe type and TR at load time.
-- Run QC modules for temporal stability, spatial quality, frame-rate artifacts, motion, outliers, CNR, PCA summaries, and reliability.
-- Apply preprocessing modules such as frame rejection, scrubbing, imregdemons drift correction, motor reconstruction, temporal smoothing/subsampling, filtering, PCA/ICA, and despiking.
-- Compute and visualize PSC maps and ROI time courses.
-- Inspect dynamic overlays with the video GUI.
-- Draw and load brain/underlay masks and overlay/signal masks.
-- Register fUSI data to Allen atlas references using 2D or 3D workflows.
-- Run atlas/ROI-based segmentation, group analysis, and functional connectivity workflows where available.
-- Export figures, ROI tables, logs, group summaries, and PowerPoint reports.
-=======
 HUMoR stands for **Hemodynamic Ultrasound Imaging of Molecular Reporters**. The toolbox supports a complete fUSI analysis workflow, including data loading, quality control, preprocessing, percentage signal change (PSC) computation, signal change map (SCM) visualization, masking, atlas registration, group analysis, and functional connectivity.
 
+The toolbox is built around the recommended launcher, `run_fusi_studio.m`, which sets up the MATLAB path and starts the main GUI safely. The main GUI itself is implemented in `fusi_studio.m`, with modular analysis GUIs and helper functions for 2D probe data, step-motor / multi-slice data, and matrix / 3D probe data.
+
 > **Important:** This is research software. All outputs should be manually reviewed before interpretation or publication. Raw movies, QC plots, preprocessing choices, baseline windows, masks, ROI traces, atlas registrations, group labels, and functional connectivity results must be checked carefully.
->>>>>>> Stashed changes
 
 ---
 
@@ -87,7 +64,7 @@ run_fusi_studio
 
 The recommended launcher is `run_fusi_studio`, not direct execution of `fusi_studio`, because the launcher sets up the MATLAB path and starts the main GUI more safely.
 
-Example:
+Example on Windows:
 
 ```matlab
 cd('D:\Github\HUMOR-Analysis-Tool')
@@ -104,7 +81,7 @@ run_fusi_studio
 4. Confirm the detected probe type and TR.
 5. Run **Full QC** before preprocessing.
 6. Review QC outputs.
-7. Apply only justified preprocessing.
+7. Apply only scientifically justified preprocessing.
 8. Inspect the dataset using the **Time-Course Viewer**.
 9. Generate PSC/SCM maps in the **SCM GUI**.
 10. Validate dynamic signal behavior using the **Video & SCM Mask** GUI.
