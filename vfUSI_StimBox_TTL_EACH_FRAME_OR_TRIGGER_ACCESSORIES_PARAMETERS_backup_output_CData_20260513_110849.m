@@ -1866,8 +1866,6 @@ end
 saveOwners = get(H.pSaveOwner, 'String');
 saveOwnerIdx = get(H.pSaveOwner, 'Value');
 cfg.save_owner = strtrim(saveOwners{saveOwnerIdx});
-% HUMOR_OUTPUT_ROOT_CDATA_GUI_V1
-cfg.output_root = 'C:\Data';
 
     cfg.xp_name      = strtrim(get(H.eXpName, 'String'));
     cfg.n_frames     = localParseNumeric(get(H.eNFrames, 'String'), 'Frames / trial');

@@ -456,8 +456,12 @@ end
 
         % The callback object must know the frame count of THIS acquisition.
         localSetObjPropIfExists(pp, 'total_frames', nFramesThisAcq);
-        % HUMOR_SPLIT_TRIGGER_LOCALIZATION_V2
-        % Convert full-trial trigger frames into local frames for this SCAN.doppler call.
+
+        % HUMOR_SPLIT_TRIGGER_LOCALIZATION_V1
+        % The GUI defines StimBox/PulsePal frames in FULL-TRIAL frame numbers.
+        % In split-motor mode, each SCAN.doppler call only records a short slice block
+        % and the callback frame counter restarts at 1. Therefore convert global
+        % trial-frame numbers into local frame numbers for THIS acquisition block.
         try
             if isSplitMotor
                 globalFrameOffsetThisAcq = (iMotor - 1) * framesPerSplitBlock;
@@ -471,6 +475,8 @@ end
             pulsepalTriggerFramesThisAcq = localShiftFrameVectorToCurrentAcq( ...
                 pulsepalTriggerFrames, globalFrameOffsetThisAcq, nFramesThisAcq);
 
+            % Use explicit local frame lists only. Disable shared fallback schedules
+            % so empty split blocks do not accidentally retrigger at local frame 20.
             localSetObjPropIfExists(pp, 'stimbox_enable', logical(cfg.stimbox.enable));
             localSetObjPropIfExists(pp, 'stimbox_d3_frames', stimboxFramesThisAcq.d3_frames);
             localSetObjPropIfExists(pp, 'stimbox_d5_frames', stimboxFramesThisAcq.d5_frames);
@@ -478,8 +484,6 @@ end
             localSetObjPropIfExists(pp, 'd3_trig', localFramesToLegacySpec(stimboxFramesThisAcq.d3_frames, nFramesThisAcq));
             localSetObjPropIfExists(pp, 'd5_trig', localFramesToLegacySpec(stimboxFramesThisAcq.d5_frames, nFramesThisAcq));
             localSetObjPropIfExists(pp, 'd6_trig', localFramesToLegacySpec(stimboxFramesThisAcq.d6_frames, nFramesThisAcq));
-
-            % Disable shared fallback schedule after explicit local-frame conversion.
             localSetObjPropIfExists(pp, 'stimbox_fire_frames', []);
             localSetObjPropIfExists(pp, 'stimbox_start_frame', NaN);
             localSetObjPropIfExists(pp, 'stimbox_repeat_enable', false);
@@ -493,14 +497,40 @@ end
             localSetObjPropIfExists(pp, 'pulsepal_start', NaN);
 
             if logical(cfg.stimbox.enable) && logical(cfg.stimbox.verbose)
-                msgLocal = ['StimBox local frames this acquisition: D3=' num2str(numel(stimboxFramesThisAcq.d3_frames)) ...
-                    ' | D5=' num2str(numel(stimboxFramesThisAcq.d5_frames)) ...
-                    ' | D6=' num2str(numel(stimboxFramesThisAcq.d6_frames)) ...
-                    ' | global offset=' num2str(globalFrameOffsetThisAcq)];
-                localGuiLog(cfg, msgLocal);
-            end
-        catch MEtrigLocal
-            localGuiLog(cfg, ['Trigger localization warning: ' MEtrigLocal.message]);
+                localGuiLog(cfg, sprintf( ...
+                    'StimBox local frames this acquisition: D3=
+
+        % -------------------------------------------------------------
+        % Configure motor behavior for this acquisition.
+        %
+        % Split mode:
+        %   motor movement is disabled inside callback.
+        %
+        % Continuous mode:
+        %   motor movement is enabled inside callback.
+        % -------------------------------------------------------------
+    if isContinuousMotor
+    continuousMotorPlan = localBuildContinuousMotorCallbackPlan( ...
+        cfg.motor, scanMotorPositionsAbsMM, nFramesThisAcq);
+
+    localSetObjPropIfExists(pp, 'motor_enable', true);
+    localSetObjPropIfExists(pp, 'motor_axis', motorAxis);
+    localSetObjPropIfExists(pp, 'motor_settle_pause_s', cfg.motor.settle_pause_s);
+
+    % Use explicit plan so the motor does NOT move again at frame 1.
+    % The command file already moved to slice 1 before SCAN.doppler.
+    localSetObjPropIfExists(pp, 'motor_use_explicit_plan', true);
+    localSetObjPropIfExists(pp, 'motor_move_frames', continuousMotorPlan.frames);
+    localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', continuousMotorPlan.targets_abs_mm);
+    localSetObjPropIfExists(pp, 'motor_display_total', numel(continuousMotorPlan.frames));
+
+        else
+            localSetObjPropIfExists(pp, 'motor_enable', false);
+            localSetObjPropIfExists(pp, 'motor_axis', []);
+            localSetObjPropIfExists(pp, 'motor_use_explicit_plan', false);
+            localSetObjPropIfExists(pp, 'motor_move_frames', []);
+            localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', []);
+            localSetObjPropIfExists(pp, 'motor_display_total', 0);
         end
 
         try
@@ -963,12 +993,6 @@ function cfg = localApplyDefaults(cfg)
 
     if ~isfield(cfg, 'xp_name') || isempty(cfg.xp_name)
         cfg.xp_name = 'Data_w_Triggers';
-    end
-
-    % HUMOR_OUTPUT_ROOT_CDATA_DEFAULT_V1
-    % Default acquisition output root.
-    if ~isfield(cfg, 'output_root') || isempty(cfg.output_root)
-        cfg.output_root = 'C:\Data';
     end
 
     if ~isfield(cfg, 'n_frames') || isempty(cfg.n_frames)
@@ -1726,13 +1750,7 @@ if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
 end
 
 % Default experiment folder
-% HUMOR_OUTPUT_ROOT_CDATA_V1
-if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-    outputRoot = cfg.output_root;
-else
-    outputRoot = 'C:\Data';
-end
-baseFolder = fullfile(outputRoot, cfg.save_owner, cfg.xp_name);
+baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
 if isfield(cfg, 'output_base_folder') && ~isempty(cfg.output_base_folder)
     baseFolder = cfg.output_base_folder;
@@ -2930,13 +2948,7 @@ function cfg = localPrepareSplitMotorSessionFolder(cfg, sessionTag)
         cfg.save_owner = 'Soner';
     end
 
-    % HUMOR_OUTPUT_ROOT_CDATA_V1
-if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-    outputRoot = cfg.output_root;
-else
-    outputRoot = 'C:\Data';
-end
-baseFolder = fullfile(outputRoot, cfg.save_owner, cfg.xp_name);
+    baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
     if ~exist(baseFolder, 'dir')
         mkdir(baseFolder);
@@ -3316,13 +3328,7 @@ function localFallbackWriteJournal(txt, cfg)
         else
             xpName = cfg.xp_name;
         end
-        % HUMOR_OUTPUT_ROOT_CDATA_FALLBACK_V1
-        if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-            outputRoot = cfg.output_root;
-        else
-            outputRoot = 'C:\Data';
-        end
-        outDir = fullfile(outputRoot, saveOwner, xpName);
+        outDir = fullfile(pwd, 'Data', saveOwner, xpName);
         if exist(outDir,'dir') ~= 7
             mkdir(outDir);
         end
