@@ -385,6 +385,47 @@ data.TotalTimeMin = double(TotalTimeSec / 60);
 data.totalTime    = data.TotalTimeSec;
 data.totalTimeMin = data.TotalTimeMin;
 
+% HUMOR_LOAD_MOTOR_METADATA_PATCH_V2
+try
+    [~, dataBaseName, ~] = fileparts(dataFile);
+    dataBaseLow = lower(dataBaseName);
+    fileLooksMotor = ~isempty(strfind(dataBaseLow,'motor')) || ~isempty(strfind(dataBaseLow,'step'));
+    if exist('S','var')
+        if isfield(S,'motorInfo') && ~isempty(S.motorInfo)
+            data.motorInfo = S.motorInfo;
+            data.isStepMotor = true;
+            meta.rawMetadata.motorInfo = S.motorInfo;
+            meta.rawMetadata.isStepMotor = true;
+        end
+        if isfield(S,'newData') && isstruct(S.newData)
+            if isfield(S.newData,'motorInfo') && ~isempty(S.newData.motorInfo)
+                data.motorInfo = S.newData.motorInfo;
+                data.isStepMotor = true;
+                meta.rawMetadata.motorInfo = S.newData.motorInfo;
+                meta.rawMetadata.isStepMotor = true;
+            end
+            if isfield(S.newData,'isStepMotor') && ~isempty(S.newData.isStepMotor)
+                data.isStepMotor = logical(S.newData.isStepMotor(1));
+                meta.rawMetadata.isStepMotor = data.isStepMotor;
+            end
+            if isfield(S.newData,'preprocessing')
+                data.preprocessing = S.newData.preprocessing;
+                meta.rawMetadata.preprocessing = S.newData.preprocessing;
+            end
+            if isfield(S.newData,'displayNameFull')
+                data.displayNameFull = S.newData.displayNameFull;
+                meta.rawMetadata.displayNameFull = S.newData.displayNameFull;
+            end
+        end
+    end
+    if fileLooksMotor && ndims(data.I) == 4
+        data.isStepMotor = true;
+        meta.rawMetadata.isStepMotor = true;
+    end
+catch ME_load_motor
+    warning('HUMoR:LoadMotorMetadata','Could not preserve motor metadata: %s', ME_load_motor.message);
+end
+
 end
 
 

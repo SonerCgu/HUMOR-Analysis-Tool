@@ -1,4 +1,4 @@
-function [I3D, motorInfo] = motor(I, TR, qcFolder, opts)
+function [I3D, motorInfo] = motor(I, TR, qcFolder)
 % =========================================================
 % MOTOR RECONSTRUCTION (FRAME-BASED, TWO MODES, STUDIO-SAFE)
 %
@@ -43,11 +43,6 @@ if nargin < 3 || isempty(qcFolder)
     qcFolder = pwd;
 end
 
-% HUMOR_MOTOR_SPLIT_FOLDER_PATCH_V2
-if nargin < 4 || isempty(opts) || ~isstruct(opts)
-    opts = struct();
-end
-
 if ~isempty(I)
     if ndims(I) ~= 3
         error('Continuous input I must be 3D [Y x X x T].');
@@ -66,21 +61,6 @@ end
 
 hasInputMovie = ~isempty(I);
 defaults = localMotorDefaults(TR, hasInputMovie);
-
-% HUMOR_MOTOR_SPLIT_FOLDER_PATCH_V2
-try
-    if isfield(opts,'rawFolder') && ~isempty(opts.rawFolder) && exist(opts.rawFolder,'dir') == 7
-        defaults.rawFolder = opts.rawFolder;
-    end
-    if isfield(opts,'preferSplitIfFolderLooksSplit') && opts.preferSplitIfFolderLooksSplit
-        if localFolderLooksLikeSplitMotor(defaults.rawFolder)
-            defaults.sourceMode = 2;
-            defaults.nSlices = 0;
-        end
-    end
-catch ME_motor_default
-    warning('HUMoR:MotorSplitDefault','Could not auto-default split motor mode: %s', ME_motor_default.message);
-end
 
 P = localMotorDialog(defaults, TR, hasInputMovie);
 if isempty(P)
@@ -176,36 +156,6 @@ catch ME
     warning('Could not save reconstructed motor dataset: %s', ME.message);
 end
 
-end
-
-% =========================================================
-% SPLIT-FOLDER AUTO-DETECTION
-% =========================================================
-function tf = localFolderLooksLikeSplitMotor(rawFolder)
-tf = false;
-try
-    if isempty(rawFolder) || exist(rawFolder,'dir') ~= 7
-        return;
-    end
-    d = dir(fullfile(rawFolder,'*.mat'));
-    if numel(d) < 2
-        return;
-    end
-    nSliceLike = 0;
-    nTimeLike = 0;
-    for jj = 1:numel(d)
-        nm = d(jj).name;
-        if ~isempty(regexpi(nm,'slice[_\- ]*[0-9]+|(^|[_\-])s[_\- ]*[0-9]+','once'))
-            nSliceLike = nSliceLike + 1;
-        end
-        if ~isempty(regexpi(nm,'(^|[_\-])t[_\- ]*[0-9]+|time[_\- ]*[0-9]+|block[_\- ]*[0-9]+|cycle[_\- ]*[0-9]+','once'))
-            nTimeLike = nTimeLike + 1;
-        end
-    end
-    tf = (nSliceLike >= 2) || (nSliceLike >= 1 && numel(d) >= 2) || (nTimeLike >= 2);
-catch
-    tf = false;
-end
 end
 
 % =========================================================
@@ -1080,14 +1030,6 @@ function out = localForce3DMovie(A)
 out = [];
 
 if ~isnumeric(A) || isempty(A)
-    return;
-end
-
-% HUMOR_MOTOR_SPLIT_FOLDER_PATCH_V2
-% Some split step-motor exports save each small MAT as one 2D frame.
-% Treat a real 2D image as a one-frame movie [Y X 1].
-if ndims(A) == 2 && ~isvector(A) && min(size(A)) >= 16 && numel(A) > 256
-    out = single(reshape(A, size(A,1), size(A,2), 1));
     return;
 end
 
