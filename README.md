@@ -1,4 +1,4 @@
-# HUMoR Analysis Tool / fUSI Studio
+# HUMoR Analysis Tool / fUSI Studio New
 
 **HUMoR Analysis Tool / fUSI Studio** is a MATLAB-based graphical toolbox for functional ultrasound imaging (fUSI) data analysis.
 

@@ -451,32 +451,59 @@ function tf = toLogicalLocal(v)
 end
 
 function tmp = runDemonsSafe(moving, fixed, regSmooth)
-% Safe wrapper around imregdemons with adaptive PyramidLevels.
-% Needed for small motor slices where default PyramidLevels=3 can fail.
-
-    szM = size(moving);
-    szF = size(fixed);
-
-    minDim = min([szM(:); szF(:)]);
-
-    if minDim >= 8
+% HUMOR_IMREG_SAFE_MOTOR_PATCH_V2
+% Safe wrapper around imregdemons for small step-motor slices.
+moving = single(squeeze(moving));
+fixed  = single(squeeze(fixed));
+tmp = moving;
+try
+    if isempty(moving) || isempty(fixed)
+        return;
+    end
+    if numel(size(moving)) ~= numel(size(fixed)) || any(size(moving) ~= size(fixed))
+        warning('HUMoR:ImregdemonsSafe','Skipping demons block: moving/fixed sizes differ.');
+        return;
+    end
+    mv = moving(isfinite(moving));
+    fx = fixed(isfinite(fixed));
+    if isempty(mv) || isempty(fx)
+        return;
+    end
+    fillM = median(double(mv(:)));
+    fillF = median(double(fx(:)));
+    moving(~isfinite(moving)) = single(fillM);
+    fixed(~isfinite(fixed)) = single(fillF);
+    if (max(moving(:)) - min(moving(:))) <= eps(single(1))
+        return;
+    end
+    if (max(fixed(:)) - min(fixed(:))) <= eps(single(1))
+        return;
+    end
+    minDim = min([size(moving) size(fixed)]);
+    if minDim >= 32
         pLevel = 3;
-    elseif minDim >= 4
+    elseif minDim >= 16
         pLevel = 2;
     else
         pLevel = 1;
     end
-
     try
-        [~, tmp] = imregdemons( ...
-            moving, fixed, ...
+        [~, tmp] = imregdemons(moving, fixed, ...
             'DisplayWaitbar', false, ...
             'AccumulatedFieldSmoothing', regSmooth, ...
             'PyramidLevels', pLevel);
-    catch ME
-        error('imregdemons failed (minDim=%d, PyramidLevels=%d): %s', ...
-            minDim, pLevel, ME.message);
+    catch ME1
+        if pLevel > 1
+            [~, tmp] = imregdemons(moving, fixed, ...
+                'DisplayWaitbar', false, ...
+                'AccumulatedFieldSmoothing', regSmooth, ...
+                'PyramidLevels', 1);
+        else
+            rethrow(ME1);
+        end
     end
+catch ME
+    warning('HUMoR:ImregdemonsSafe','One demons block failed, original image kept: %s', ME.message);
+    tmp = moving;
 end
-
-
+end

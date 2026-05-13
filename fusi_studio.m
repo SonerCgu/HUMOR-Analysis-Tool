@@ -1162,6 +1162,21 @@ function imregdemonsCallback(~,~)
         opts.stepMotorMode = true;
     end
 
+    % HUMOR_STUDIO_IMREG_FORCE_MOTOR_PATCH_V2
+    try
+        if studio_is_step_motor_dataset(data, studio)
+            opts.stepMotorMode = true;
+            opts.isStepMotor = true;
+            opts.perSliceDemons = true;
+            if isfield(data,'motorInfo')
+                opts.motorInfo = data.motorInfo;
+            end
+            addLog('Step-motor dataset detected -> forcing per-slice 2D imregdemons.');
+        end
+    catch ME_motor_imreg
+        warning('HUMoR:ImregMotorDetect','Could not auto-force motor imreg mode: %s', ME_motor_imreg.message);
+    end
+
     try
         out = imregdemons_preprocess(data.I, data.TR, opts);
 
@@ -1213,8 +1228,8 @@ function imregdemonsCallback(~,~)
         if isfield(newData,'bg'),  newData.bg  = []; end
 
         baseStem = getCurrentNamingStem(studio);
-
-        fullName = sprintf('%s_imregdemons_%s_nsub%d_%s', ...
+        baseStem = studio_short_output_stem(baseStem, 48);
+        fullName = sprintf('%s_imreg_%s_n%d_%s', ...
             baseStem, blockMethod, nsub, ts);
 
         keyName = makeSafeKey(fullName, studio.datasets);
@@ -1293,6 +1308,15 @@ function cfg = showImregdemonsSetupDialog(data)
     defaultMethodIdx = 1;      % 1 = Median, 2 = Mean
     defaultRegSmooth = 1.3;
     defaultModeIdx = 1;        % 1 = Auto, 2 = Standard, 3 = Step-motor
+    % HUMOR_STUDIO_IMREG_DIALOG_DEFAULT_PATCH_V2
+    try
+        if (isfield(data,'motorInfo') && ~isempty(data.motorInfo)) || ...
+           (isfield(data,'isStepMotor') && ~isempty(data.isStepMotor) && logical(data.isStepMotor(1))) || ...
+           (isfield(data,'stepMotorMode') && ~isempty(data.stepMotorMode) && logical(data.stepMotorMode(1)))
+            defaultModeIdx = 3;
+        end
+    catch
+    end
     defaultSaveQC = 1;
     defaultShowQC = 0;
 
@@ -1855,7 +1879,7 @@ function frameRateCallback(~,~)
         studio.activeDataset = keyName;
         studio.pipeline.preprocDone = true;
 
-        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+        save(HUMOR_short_imreg_save_path(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat'])), ...
             'newData','-v7.3');
 
         guidata(fig, studio);
@@ -1933,7 +1957,7 @@ fullName = [baseStem '_scrub_' methKey '_' interpKey '_' ts];
         studio.activeDataset = keyName;
         studio.pipeline.preprocDone = true;
 
-        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+        save(HUMOR_short_imreg_save_path(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat'])), ...
              'newData','-v7.3');
 
         guidata(fig, studio);
@@ -1973,8 +1997,15 @@ function stepMotorCallback(~,~)
 
     data = getActiveData();
 
+    % HUMOR_STUDIO_MOTOR_SPLIT_LOAD_PATCH_V2
+    if ndims(data.I) == 4 && size(data.I,3) == 1
+        data.I = squeeze(data.I(:,:,1,:));
+    end
+
     if ndims(data.I) ~= 3
-        errordlg('Motor reconstruction only for 2D probe data.');
+        errordlg(['Motor reconstruction should be run from one raw/split 2D MAT file first.' sprintf('\n\n') ...
+            'If this is already an assembled [Y X Z T] motor dataset, do not run Motor again; run Imregdemons directly.'], ...
+            'Motor Reconstruction');
         return;
     end
 
@@ -1988,7 +2019,15 @@ function stepMotorCallback(~,~)
             mkdir(qcFolder);
         end
 
-        [I3D, motorInfo] = motor(data.I, data.TR, qcFolder);
+        % HUMOR_STUDIO_MOTOR_PASS_FOLDER_PATCH_V2
+        motorOpts = struct();
+        try
+            motorOpts.rawFolder = studio.loadedPath;
+        catch
+            motorOpts.rawFolder = '';
+        end
+        motorOpts.preferSplitIfFolderLooksSplit = true;
+        [I3D, motorInfo] = motor(data.I, data.TR, qcFolder, motorOpts);
 
         newData = data;
         newData.I = I3D;
@@ -1999,11 +2038,15 @@ function stepMotorCallback(~,~)
 
         newData.preprocessing = 'Motor slice reconstruction';
         newData.motorInfo = motorInfo;
+        % HUMOR_STUDIO_MARK_MOTOR_PATCH_V2
+        newData.isStepMotor = true;
+        newData.stepMotorMode = true;
 
         ts = datestr(now,'yyyymmdd_HHMMSS');
 
         baseStem = getCurrentNamingStem(studio);
-fullName = [baseStem '_motor_' ts];
+        baseStem = studio_short_output_stem(baseStem, 48);
+        fullName = [baseStem '_motor_' ts];
 
         keyName = makeSafeKey(fullName, studio.datasets);
 
@@ -2014,7 +2057,7 @@ fullName = [baseStem '_motor_' ts];
         studio.activeDataset = keyName;
         studio.pipeline.preprocDone = true;
 
-        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+        save(HUMOR_short_imreg_save_path(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat'])), ...
             'newData','-v7.3');
 
         guidata(fig, studio);
@@ -2096,7 +2139,7 @@ fullName = sprintf('%s_despike_z%s_%s', baseStem, numTag(zthr), ts);
         studio.activeDataset = keyName;
         studio.pipeline.preprocDone = true;
 
-        save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+        save(HUMOR_short_imreg_save_path(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat'])), ...
             'newData','-v7.3');
 
         guidata(fig, studio);
@@ -2854,7 +2897,7 @@ function pcaCallback(~,~)
                 studio.activeDataset = keyName;
                 studio.pipeline.preprocDone = true;
 
-                save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+                save(HUMOR_short_imreg_save_path(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat'])), ...
                     'newData','-v7.3');
 
                 guidata(fig, studio);
@@ -2929,7 +2972,7 @@ function pcaCallback(~,~)
                 studio.activeDataset = keyName;
                 studio.pipeline.preprocDone = true;
 
-                save(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat']), ...
+                save(HUMOR_short_imreg_save_path(fullfile(studio.exportPath,'Preprocessing',[fullName '.mat'])), ...
                     'newData','-v7.3');
 
                 guidata(fig, studio);
@@ -11707,3 +11750,67 @@ end
 
 
 
+
+
+function tf = studio_is_step_motor_dataset(data, studio)
+% HUMOR_STUDIO_IMREG_FORCE_MOTOR_PATCH_V2
+tf = false;
+try
+    if isstruct(data)
+        if isfield(data,'motorInfo') && ~isempty(data.motorInfo)
+            tf = true; return;
+        end
+        if isfield(data,'isStepMotor') && ~isempty(data.isStepMotor) && logical(data.isStepMotor(1))
+            tf = true; return;
+        end
+        if isfield(data,'stepMotorMode') && ~isempty(data.stepMotorMode) && logical(data.stepMotorMode(1))
+            tf = true; return;
+        end
+        if isfield(data,'preprocessing') && ischar(data.preprocessing)
+            s = lower(data.preprocessing);
+            if ~isempty(strfind(s,'motor')) || ~isempty(strfind(s,'step'))
+                tf = true; return;
+            end
+        end
+    end
+    if isstruct(studio)
+        if isfield(studio,'loadedFile') && ischar(studio.loadedFile)
+            s = lower(studio.loadedFile);
+            if ~isempty(strfind(s,'motor')) || ~isempty(strfind(s,'step'))
+                tf = true; return;
+            end
+        end
+        if isfield(studio,'loadedName') && ischar(studio.loadedName)
+            s = lower(studio.loadedName);
+            if ~isempty(strfind(s,'motor')) || ~isempty(strfind(s,'step'))
+                tf = true; return;
+            end
+        end
+        if isfield(studio,'meta') && isstruct(studio.meta) && isfield(studio.meta,'rawMetadata') && isstruct(studio.meta.rawMetadata)
+            R = studio.meta.rawMetadata;
+            if isfield(R,'isStepMotor') && ~isempty(R.isStepMotor) && logical(R.isStepMotor(1))
+                tf = true; return;
+            end
+            if isfield(R,'motorInfo') && ~isempty(R.motorInfo)
+                tf = true; return;
+            end
+        end
+    end
+catch
+    tf = false;
+end
+end
+
+function s = studio_short_output_stem(s, maxN)
+% HUMOR_STUDIO_SHORT_NAMES_PATCH_V2
+if nargin < 2 || isempty(maxN), maxN = 48; end
+try, s = char(s); catch, s = 'dataset'; end
+s = regexprep(s,'[^A-Za-z0-9_\-]','_');
+s = regexprep(s,'_+','_');
+s = regexprep(s,'^_+|_+$','');
+if isempty(s), s = 'dataset'; end
+if numel(s) > maxN
+    s = s(1:maxN);
+    s = regexprep(s,'_+$','');
+end
+end
