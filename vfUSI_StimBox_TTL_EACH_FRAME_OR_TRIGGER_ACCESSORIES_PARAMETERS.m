@@ -1688,7 +1688,10 @@ cfg.gui.frameUpdateEvery = 10;
 % or continuous motor movement.
 %
 % In split motor mode this keeps acquisition close to plain SCAN.doppler.
-cfg.gui.forceProcessRFForLiveFrames = false;
+% HUMOR_LIVE_FRAME_UPDATE_V1
+% Enable processRF only so the top-right Frame/seconds display updates during scanning.
+% GUI update is throttled to every 10 frames to reduce acquisition slowdown.
+cfg.gui.forceProcessRFForLiveFrames = true;
 cfg.gui.frameUpdateEvery = 10;
   try
     vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg);

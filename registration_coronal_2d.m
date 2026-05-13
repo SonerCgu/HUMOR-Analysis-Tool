@@ -578,6 +578,13 @@ set(hOverlay,    'HitTest','on', 'ButtonDownFcn',@onStartDrag);
 set(hMaskContour,'HitTest','on', 'ButtonDownFcn',@onStartDrag);
 set(axFuse,      'HitTest','on', 'ButtonDownFcn',@onStartDrag);
 
+% HUMOR_REG2D_DRAG_HITTEST_FIX_V1
+try
+    set(fig,'WindowButtonDownFcn',@onFigureButtonDown);
+    enableDragHitTesting();
+catch
+end
+
 renderAll();
 uiwait(fig);
 
@@ -824,6 +831,7 @@ uiwait(fig);
                                       'sx %.3f | sy %.3f'], ...
                                       currentSourceSlice, sourceNSlices, S.slice, S.atlasMode, ...
                                       S.tx, S.ty, S.rotDeg, S.sx, S.sy));
+        enableDragHitTesting();
         drawnow limitrate;
     end
 
@@ -1197,6 +1205,48 @@ end
             'FontWeight','bold', ...
             'FontSize',11, ...
             'Callback',@(a,b) delete(helpFig)); %#ok<INUSD>
+    end
+
+    function onFigureButtonDown(~, ~)
+        try
+            if isPointerInsideAxes(axFuse)
+                onStartDrag([], []);
+            end
+        catch
+        end
+    end
+
+    function tf = isPointerInsideAxes(ax)
+        tf = false;
+        try
+            cpFig = get(fig,'CurrentPoint');
+            p = getpixelposition(ax,true);
+            tf = cpFig(1) >= p(1) && cpFig(1) <= p(1)+p(3) && ...
+                 cpFig(2) >= p(2) && cpFig(2) <= p(2)+p(4);
+        catch
+            tf = false;
+        end
+    end
+
+    function enableDragHitTesting()
+        try, zoom(fig,'off'); catch, end
+        try, pan(fig,'off'); catch, end
+        try, rotate3d(fig,'off'); catch, end
+        hh = [hFuseUnder hOverlay hMaskContour axFuse];
+        for kk = 1:numel(hh)
+            try
+                set(hh(kk),'HitTest','on','ButtonDownFcn',@onStartDrag);
+            catch
+            end
+            try
+                set(hh(kk),'PickableParts','all');
+            catch
+            end
+        end
+        try
+            set(fig,'WindowButtonDownFcn',@onFigureButtonDown);
+        catch
+        end
     end
 
     function onStartDrag(~, ~)
