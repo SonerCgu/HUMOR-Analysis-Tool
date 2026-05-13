@@ -965,12 +965,6 @@ function cfg = localApplyDefaults(cfg)
         cfg.xp_name = 'Data_w_Triggers';
     end
 
-    % HUMOR_OUTPUT_ROOT_CDATA_DEFAULT_V1
-    % Default acquisition output root.
-    if ~isfield(cfg, 'output_root') || isempty(cfg.output_root)
-        cfg.output_root = 'C:\Data';
-    end
-
     if ~isfield(cfg, 'n_frames') || isempty(cfg.n_frames)
         cfg.n_frames = 9000;
     end
@@ -1726,13 +1720,7 @@ if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
 end
 
 % Default experiment folder
-% HUMOR_OUTPUT_ROOT_CDATA_V1
-if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-    outputRoot = cfg.output_root;
-else
-    outputRoot = 'C:\Data';
-end
-baseFolder = fullfile(outputRoot, cfg.save_owner, cfg.xp_name);
+baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
 if isfield(cfg, 'output_base_folder') && ~isempty(cfg.output_base_folder)
     baseFolder = cfg.output_base_folder;
@@ -2930,13 +2918,7 @@ function cfg = localPrepareSplitMotorSessionFolder(cfg, sessionTag)
         cfg.save_owner = 'Soner';
     end
 
-    % HUMOR_OUTPUT_ROOT_CDATA_V1
-if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-    outputRoot = cfg.output_root;
-else
-    outputRoot = 'C:\Data';
-end
-baseFolder = fullfile(outputRoot, cfg.save_owner, cfg.xp_name);
+    baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
     if ~exist(baseFolder, 'dir')
         mkdir(baseFolder);
@@ -3316,13 +3298,7 @@ function localFallbackWriteJournal(txt, cfg)
         else
             xpName = cfg.xp_name;
         end
-        % HUMOR_OUTPUT_ROOT_CDATA_FALLBACK_V1
-        if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-            outputRoot = cfg.output_root;
-        else
-            outputRoot = 'C:\Data';
-        end
-        outDir = fullfile(outputRoot, saveOwner, xpName);
+        outDir = fullfile(pwd, 'Data', saveOwner, xpName);
         if exist(outDir,'dir') ~= 7
             mkdir(outDir);
         end

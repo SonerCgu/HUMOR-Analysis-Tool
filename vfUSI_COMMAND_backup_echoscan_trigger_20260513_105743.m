@@ -33,7 +33,9 @@ function vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg)
     cfg = localApplyDefaults(cfg);
     cfg = localApplyBackwardCompatibility(cfg);
     localValidateConfig(cfg);
-    [SCAN, FS] = localResolveScannerAndFileService(cfg);
+
+    SCAN = echoScan;
+    FS   = fService();
 
     port = [];
     pp = [];
@@ -456,51 +458,38 @@ end
 
         % The callback object must know the frame count of THIS acquisition.
         localSetObjPropIfExists(pp, 'total_frames', nFramesThisAcq);
-        % HUMOR_SPLIT_TRIGGER_LOCALIZATION_V2
-        % Convert full-trial trigger frames into local frames for this SCAN.doppler call.
-        try
-            if isSplitMotor
-                globalFrameOffsetThisAcq = (iMotor - 1) * framesPerSplitBlock;
-            else
-                globalFrameOffsetThisAcq = 0;
-            end
 
-            stimboxFramesThisAcq = localShiftStimBoxFramesToCurrentAcq( ...
-                stimboxFrames, globalFrameOffsetThisAcq, nFramesThisAcq);
+        % -------------------------------------------------------------
+        % Configure motor behavior for this acquisition.
+        %
+        % Split mode:
+        %   motor movement is disabled inside callback.
+        %
+        % Continuous mode:
+        %   motor movement is enabled inside callback.
+        % -------------------------------------------------------------
+    if isContinuousMotor
+    continuousMotorPlan = localBuildContinuousMotorCallbackPlan( ...
+        cfg.motor, scanMotorPositionsAbsMM, nFramesThisAcq);
 
-            pulsepalTriggerFramesThisAcq = localShiftFrameVectorToCurrentAcq( ...
-                pulsepalTriggerFrames, globalFrameOffsetThisAcq, nFramesThisAcq);
+    localSetObjPropIfExists(pp, 'motor_enable', true);
+    localSetObjPropIfExists(pp, 'motor_axis', motorAxis);
+    localSetObjPropIfExists(pp, 'motor_settle_pause_s', cfg.motor.settle_pause_s);
 
-            localSetObjPropIfExists(pp, 'stimbox_enable', logical(cfg.stimbox.enable));
-            localSetObjPropIfExists(pp, 'stimbox_d3_frames', stimboxFramesThisAcq.d3_frames);
-            localSetObjPropIfExists(pp, 'stimbox_d5_frames', stimboxFramesThisAcq.d5_frames);
-            localSetObjPropIfExists(pp, 'stimbox_d6_frames', stimboxFramesThisAcq.d6_frames);
-            localSetObjPropIfExists(pp, 'd3_trig', localFramesToLegacySpec(stimboxFramesThisAcq.d3_frames, nFramesThisAcq));
-            localSetObjPropIfExists(pp, 'd5_trig', localFramesToLegacySpec(stimboxFramesThisAcq.d5_frames, nFramesThisAcq));
-            localSetObjPropIfExists(pp, 'd6_trig', localFramesToLegacySpec(stimboxFramesThisAcq.d6_frames, nFramesThisAcq));
+    % Use explicit plan so the motor does NOT move again at frame 1.
+    % The command file already moved to slice 1 before SCAN.doppler.
+    localSetObjPropIfExists(pp, 'motor_use_explicit_plan', true);
+    localSetObjPropIfExists(pp, 'motor_move_frames', continuousMotorPlan.frames);
+    localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', continuousMotorPlan.targets_abs_mm);
+    localSetObjPropIfExists(pp, 'motor_display_total', numel(continuousMotorPlan.frames));
 
-            % Disable shared fallback schedule after explicit local-frame conversion.
-            localSetObjPropIfExists(pp, 'stimbox_fire_frames', []);
-            localSetObjPropIfExists(pp, 'stimbox_start_frame', NaN);
-            localSetObjPropIfExists(pp, 'stimbox_repeat_enable', false);
-            localSetObjPropIfExists(pp, 'stimbox_output_d3', false);
-            localSetObjPropIfExists(pp, 'stimbox_output_d5', false);
-            localSetObjPropIfExists(pp, 'stimbox_output_d6', false);
-
-            localSetObjPropIfExists(pp, 'pulsepal_enable', logical(cfg.pulsepal.enable));
-            localSetObjPropIfExists(pp, 'pulsepal_trigger_frames', pulsepalTriggerFramesThisAcq);
-            localSetObjPropIfExists(pp, 'pulsepal_fire_frames', pulsepalTriggerFramesThisAcq);
-            localSetObjPropIfExists(pp, 'pulsepal_start', NaN);
-
-            if logical(cfg.stimbox.enable) && logical(cfg.stimbox.verbose)
-                msgLocal = ['StimBox local frames this acquisition: D3=' num2str(numel(stimboxFramesThisAcq.d3_frames)) ...
-                    ' | D5=' num2str(numel(stimboxFramesThisAcq.d5_frames)) ...
-                    ' | D6=' num2str(numel(stimboxFramesThisAcq.d6_frames)) ...
-                    ' | global offset=' num2str(globalFrameOffsetThisAcq)];
-                localGuiLog(cfg, msgLocal);
-            end
-        catch MEtrigLocal
-            localGuiLog(cfg, ['Trigger localization warning: ' MEtrigLocal.message]);
+        else
+            localSetObjPropIfExists(pp, 'motor_enable', false);
+            localSetObjPropIfExists(pp, 'motor_axis', []);
+            localSetObjPropIfExists(pp, 'motor_use_explicit_plan', false);
+            localSetObjPropIfExists(pp, 'motor_move_frames', []);
+            localSetObjPropIfExists(pp, 'motor_move_target_abs_mm', []);
+            localSetObjPropIfExists(pp, 'motor_display_total', 0);
         end
 
         try
@@ -963,12 +952,6 @@ function cfg = localApplyDefaults(cfg)
 
     if ~isfield(cfg, 'xp_name') || isempty(cfg.xp_name)
         cfg.xp_name = 'Data_w_Triggers';
-    end
-
-    % HUMOR_OUTPUT_ROOT_CDATA_DEFAULT_V1
-    % Default acquisition output root.
-    if ~isfield(cfg, 'output_root') || isempty(cfg.output_root)
-        cfg.output_root = 'C:\Data';
     end
 
     if ~isfield(cfg, 'n_frames') || isempty(cfg.n_frames)
@@ -1726,13 +1709,7 @@ if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
 end
 
 % Default experiment folder
-% HUMOR_OUTPUT_ROOT_CDATA_V1
-if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-    outputRoot = cfg.output_root;
-else
-    outputRoot = 'C:\Data';
-end
-baseFolder = fullfile(outputRoot, cfg.save_owner, cfg.xp_name);
+baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
 if isfield(cfg, 'output_base_folder') && ~isempty(cfg.output_base_folder)
     baseFolder = cfg.output_base_folder;
@@ -2930,13 +2907,7 @@ function cfg = localPrepareSplitMotorSessionFolder(cfg, sessionTag)
         cfg.save_owner = 'Soner';
     end
 
-    % HUMOR_OUTPUT_ROOT_CDATA_V1
-if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-    outputRoot = cfg.output_root;
-else
-    outputRoot = 'C:\Data';
-end
-baseFolder = fullfile(outputRoot, cfg.save_owner, cfg.xp_name);
+    baseFolder = fullfile(pwd, 'Data', cfg.save_owner, cfg.xp_name);
 
     if ~exist(baseFolder, 'dir')
         mkdir(baseFolder);
@@ -3220,152 +3191,6 @@ function s = localNumToStr(v)
     else
         s = sprintf('%g', v);
     end
-end
-
-% =========================================================================
-% HUMOR_ECHOSCAN_AND_TRIGGER_HELPERS_V1
-% =========================================================================
-function [SCAN, FS] = localResolveScannerAndFileService(cfg)
-    SCAN = [];
-    FS = [];
-    scanErr = '';
-
-    % 1) Prefer objects explicitly passed by an encrypted/company launcher.
-    try
-        if isfield(cfg,'SCAN') && ~isempty(cfg.SCAN)
-            SCAN = cfg.SCAN;
-            localGuiLog(cfg, 'Using SCAN object from cfg.SCAN.');
-        end
-    catch ME
-        scanErr = ME.message;
-    end
-
-    % 2) Try base workspace object, useful when encrypted launcher creates SCAN globally.
-    if isempty(SCAN)
-        try
-            SCAN = evalin('base', 'SCAN');
-            if ~isempty(SCAN)
-                localGuiLog(cfg, 'Using SCAN object from base workspace.');
-            end
-        catch ME
-            scanErr = ME.message;
-        end
-    end
-
-    % 3) Fall back to direct company API call, as in original AUTC script.
-    if isempty(SCAN)
-        try
-            SCAN = echoScan;
-            localGuiLog(cfg, 'Created SCAN using echoScan.');
-        catch ME
-            scanErr = ME.message;
-        end
-    end
-
-    if isempty(SCAN)
-        error(['Cannot create/access echoScan scanner object.' sprintf('\n\n') ...
-               'The original company script requires: SCAN = echoScan;' sprintf('\n') ...
-               'This only works if the OpenfUS/PILOT encrypted launcher or scanner toolbox exposes echoScan.' sprintf('\n\n') ...
-               'Fix options:' sprintf('\n') ...
-               '  1) Start this GUI from the company encrypted launcher / MODE GUI, not from a plain MATLAB path.' sprintf('\n') ...
-               '  2) Add the folder/toolbox that provides echoScan to the MATLAB path.' sprintf('\n') ...
-               '  3) If the launcher creates SCAN internally, modify the launcher to pass cfg.SCAN = SCAN before calling this command.' sprintf('\n\n') ...
-               'Last echoScan error: ' scanErr]);
-    end
-
-    % File service. Use fService if available; otherwise use a lightweight fallback journal writer.
-    try
-        if isfield(cfg,'FS') && ~isempty(cfg.FS)
-            FS = cfg.FS;
-            localGuiLog(cfg, 'Using FS object from cfg.FS.');
-        end
-    catch
-    end
-
-    if isempty(FS)
-        try
-            FS = evalin('base', 'FS');
-            if ~isempty(FS)
-                localGuiLog(cfg, 'Using FS object from base workspace.');
-            end
-        catch
-        end
-    end
-
-    if isempty(FS)
-        try
-            FS = fService();
-            localGuiLog(cfg, 'Created FS using fService.');
-        catch MEfs
-            localGuiLog(cfg, sprintf('fService unavailable; using fallback journal writer: %s', MEfs.message));
-            FS = struct();
-            FS.writeJournal = @(txt)localFallbackWriteJournal(txt, cfg);
-        end
-    end
-end
-
-function localFallbackWriteJournal(txt, cfg)
-    try
-        if ~isfield(cfg, 'save_owner') || isempty(cfg.save_owner)
-            saveOwner = 'Soner';
-        else
-            saveOwner = cfg.save_owner;
-        end
-        if ~isfield(cfg, 'xp_name') || isempty(cfg.xp_name)
-            xpName = 'Data_w_Triggers';
-        else
-            xpName = cfg.xp_name;
-        end
-        % HUMOR_OUTPUT_ROOT_CDATA_FALLBACK_V1
-        if isfield(cfg, 'output_root') && ~isempty(cfg.output_root)
-            outputRoot = cfg.output_root;
-        else
-            outputRoot = 'C:\Data';
-        end
-        outDir = fullfile(outputRoot, saveOwner, xpName);
-        if exist(outDir,'dir') ~= 7
-            mkdir(outDir);
-        end
-        jf = fullfile(outDir, 'journal_fallback.txt');
-        fid = fopen(jf, 'a');
-        if fid > 0
-            fprintf(fid, '[%s] %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS'), txt);
-            fclose(fid);
-        end
-    catch
-    end
-end
-
-function out = localShiftStimBoxFramesToCurrentAcq(inFrames, globalOffset, nFramesThisAcq)
-    out = struct();
-    out.d3_frames = [];
-    out.d5_frames = [];
-    out.d6_frames = [];
-    try
-        if isstruct(inFrames)
-            if isfield(inFrames,'d3_frames')
-                out.d3_frames = localShiftFrameVectorToCurrentAcq(inFrames.d3_frames, globalOffset, nFramesThisAcq);
-            end
-            if isfield(inFrames,'d5_frames')
-                out.d5_frames = localShiftFrameVectorToCurrentAcq(inFrames.d5_frames, globalOffset, nFramesThisAcq);
-            end
-            if isfield(inFrames,'d6_frames')
-                out.d6_frames = localShiftFrameVectorToCurrentAcq(inFrames.d6_frames, globalOffset, nFramesThisAcq);
-            end
-        end
-    catch
-    end
-end
-
-function localFrames = localShiftFrameVectorToCurrentAcq(globalFrames, globalOffset, nFramesThisAcq)
-    localFrames = [];
-    if isempty(globalFrames) || ~isnumeric(globalFrames)
-        return;
-    end
-    globalFrames = unique(round(globalFrames(:)'));
-    globalFrames = globalFrames(isfinite(globalFrames));
-    localFrames = globalFrames - round(globalOffset);
-    localFrames = unique(localFrames(localFrames >= 1 & localFrames <= round(nFramesThisAcq)), 'stable');
 end
 
 end

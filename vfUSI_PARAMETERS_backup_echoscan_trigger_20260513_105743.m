@@ -1688,8 +1688,8 @@ cfg.gui.frameUpdateEvery = 10;
 % or continuous motor movement.
 %
 % In split motor mode this keeps acquisition close to plain SCAN.doppler.
-cfg.gui.forceProcessRFForLiveFrames = false;
-cfg.gui.frameUpdateEvery = 10;
+cfg.gui.forceProcessRFForLiveFrames = true;
+cfg.gui.frameUpdateEvery = 1;
   try
     vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_COMMAND(cfg);
 
@@ -1866,8 +1866,6 @@ end
 saveOwners = get(H.pSaveOwner, 'String');
 saveOwnerIdx = get(H.pSaveOwner, 'Value');
 cfg.save_owner = strtrim(saveOwners{saveOwnerIdx});
-% HUMOR_OUTPUT_ROOT_CDATA_GUI_V1
-cfg.output_root = 'C:\Data';
 
     cfg.xp_name      = strtrim(get(H.eXpName, 'String'));
     cfg.n_frames     = localParseNumeric(get(H.eNFrames, 'String'), 'Frames / trial');

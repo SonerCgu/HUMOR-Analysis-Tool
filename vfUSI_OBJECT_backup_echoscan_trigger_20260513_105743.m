@@ -735,10 +735,8 @@ classdef vfUSI_StimBox_TTL_EACH_FRAME_OR_TRIGGER_ACCESSORIES_OBJECT < handle
 
                 elseif strcmpi(class(obj.port), 'serialport')
                     write(obj.port, uint8(cmdChar), 'uint8');
-                    % Do not call flush(obj.port) here: it can clear pending output.
-                    % If needed, only clear input bytes after writing.
                     try
-                        flush(obj.port, 'input');
+                        flush(obj.port);
                     catch
                     end
 
