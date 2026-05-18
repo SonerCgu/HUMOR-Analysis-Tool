@@ -407,7 +407,26 @@ E.note = 'GroupAnalysis video export generated from group map.';
 end
 
 function localExportGroupMapPPT(hFig)
-GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,true);
+% HUMOR_GA_MAP_EXPORT_PATCH_20260518B
+% Delegate to the main GroupAnalysis Export PPT button callback.
+if nargin < 1 || isempty(hFig) || ~ishghandle(hFig)
+    error('Invalid GroupAnalysis figure handle.');
+end
+h = findall(hFig,'String','Export PPT');
+if isempty(h)
+    error('Could not find main GroupAnalysis Export PPT button.');
+end
+cb = get(h(1),'Callback');
+if isempty(cb)
+    error('Export PPT button has no callback.');
+end
+if isa(cb,'function_handle')
+    feval(cb,h(1),[]);
+elseif iscell(cb) && ~isempty(cb) && isa(cb{1},'function_handle')
+    feval(cb{1},h(1),[],cb{2:end});
+else
+    error('Unsupported Export PPT callback type.');
+end
 end
 
 

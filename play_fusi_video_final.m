@@ -3741,9 +3741,62 @@ function warpFunctionalToAtlasSingleFile()
         T = extractAtlasWarpStruct(S);
         T = askAndApply2DWarpDirection(T, 'Video single atlas warp');
 
+        % HUMOR_VIDEO_3D_GUARD_PATCH_20260518B
+        % Video/SCM coronal display should usually use Reg2D, not old 3D Transformation.mat.
+        try
+            if isfield(T,'warpA') && isequal(size(double(T.warpA)),[4 4])
+                ch3d = questdlg([ ...
+                    'You selected a 3D atlas Transformation.mat.' char(10) char(10) ...
+                    'For Video GUI coronal display, use a Registration2D / CoronalRegistration2D file when possible.' char(10) ...
+                    'Using a 3D transform directly can make the displayed brain look stretched or zoomed.' char(10) char(10) ...
+                    'Continue anyway?'], ...
+                    '3D transform selected', ...
+                    'Cancel and choose Reg2D', 'Continue 3D anyway', 'Cancel and choose Reg2D');
+                if isempty(ch3d) || strcmpi(ch3d,'Cancel and choose Reg2D')
+                    return;
+                end
+            end
+        catch
+        end
+
+        try
+            if isfield(T,'warpA') && isequal(size(double(T.warpA)),[4 4])
+                ch3d = questdlg([ ...
+                    'You selected a 3D atlas Transformation.mat.' char(10) char(10) ...
+                    'For Video/SCM-style coronal display, the safer choice is usually:' char(10) ...
+                    '  - Single slice: CoronalRegistration2D_*.mat' char(10) ...
+                    '  - Motor slices: Registration2D folder with source001/source002 files' char(10) char(10) ...
+                    'A 3D Transformation.mat can change apparent brain proportions if it is applied directly to the video array.' char(10) char(10) ...
+                    'Continue with this 3D transform anyway?'], ...
+                    '3D Transformation selected', ...
+                    'Cancel and choose Reg2D', 'Continue 3D anyway', 'Cancel and choose Reg2D');
+                if isempty(ch3d) || strcmpi(ch3d,'Cancel and choose Reg2D')
+                    return;
+                end
+            end
+        catch ME3Dguard
+            warning('HUMoR:VideoAtlasWarp3DGuard', '3D transform guard failed: %s', ME3Dguard.message);
+        end
+
         Inew       = warpDataSeriesToAtlas(origI,        T, sliceIdx);
         IinterpNew = warpDataSeriesToAtlas(origI_interp, T, sliceIdx);
         PSCnew     = warpDataSeriesToAtlas(origPSC,      T, sliceIdx);
+
+        % HUMOR_VIDEO_SINGLE_ATLAS_UNDERLAY_PATCH_20260518B
+        % After functional data are warped to atlas space, do NOT keep a native-space underlay.
+        % Use the fixed atlas/histology/vascular underlay saved in the same Reg2D MAT file.
+        statusUnderlayMsg = '';
+        try
+            [bgAtlasSingle, bgMsgSingle] = buildSingleFixedAtlasUnderlayVideo(tfFile, T, PSCnew, bgDefaultFull);
+            if ~isempty(bgAtlasSingle)
+                bgDefaultFull = bgAtlasSingle;
+                applyUnderlayMeta(defaultUnderlayMeta(), bgDefaultFull);
+                forceStepMotorAtlasGrayUnderlayVideo();
+                statusUnderlayMsg = [' Underlay: ' bgMsgSingle '.'];
+            end
+        catch ME_bg_single
+            warning('HUMoR:VideoSingleAtlasUnderlay', 'Could not set fixed atlas underlay: %s', ME_bg_single.message);
+        end
 
         I        = Inew;
         I_interp = IinterpNew;
@@ -3780,7 +3833,7 @@ function warpFunctionalToAtlasSingleFile()
             set(txtTitle,'String',sprintf('%s | warped to atlas', safeStr(fileLabel)));
         end
 
-        statusLine = 'Functional data warped to atlas.';
+        statusLine = ['Functional data warped to atlas.' statusUnderlayMsg];
         render();
 
     catch ME
@@ -5515,15 +5568,19 @@ function setPopupByName(hPop, targetName)
     end
 end
 function T = askAndApply2DWarpDirection(T, dlgTitle)
+    % Ask once whether to use saved affine matrix or its inverse.
+    % For your current symptom, inverse is the first thing to test.
 
     try
+                % Simple coronal 2D Reg2D files from registration_coronal_2d.m
+        % are already saved as MATLAB affine2d source -> atlas matrices.
+        % Do not ask saved/inverse and do not invert.
         if isfield(T,'type') && strcmpi(char(T.type), 'simple_coronal_2d')
             T.scmWarpDirection = 'as_saved';
             T.scmAffineChoice = 'row_saved';
             state.atlas2DWarpDirection = 'as_saved';
             return;
         end
-
         if isempty(T) || ~isfield(T,'warpA') || isempty(T.warpA)
             return;
         end
@@ -5547,14 +5604,17 @@ function T = askAndApply2DWarpDirection(T, dlgTitle)
         end
 
         msg = [ ...
-            'Choose how Video GUI should apply the 2D affine transform.' char(10) char(10) ...
-            'For new CoronalRegistration2D_sourceXXX files from your updated registration GUI,' char(10) ...
-            'the correct choice is usually: Use saved matrix.' char(10) char(10) ...
-            'Try inverse only for older Transformation files if alignment is wrong.'];
+            'Choose how Video GUI should apply the 2D affine transform.' newline newline ...
+            'Use saved matrix:' newline ...
+            '  Functional image is warped using T directly.' newline newline ...
+            'Use inverse matrix:' newline ...
+            '  Functional image is warped using inv(T).' newline ...
+            '  Try this if histology appears in the right place but functional data does not align.' newline newline ...
+            'Recommendation for your current problem: Use inverse matrix first.'];
 
         ch = questdlg(msg, dlgTitle, ...
             'Use saved matrix', 'Use inverse matrix', 'Cancel', ...
-            'Use saved matrix');
+            'Use inverse matrix');
 
         if isempty(ch) || strcmpi(ch,'Cancel')
             error('Atlas warp cancelled.');
@@ -5575,6 +5635,8 @@ function T = askAndApply2DWarpDirection(T, dlgTitle)
         T.scmWarpDirection = 'as_saved';
     end
 end
+
+
 
 
 function regList = askAndApply2DWarpDirectionToRegListVideo(regList, dlgTitle)
@@ -5598,18 +5660,23 @@ end
 
 
 function Ause = apply2DWarpDirectionToMatrixVideo(Araw, T)
+    % Convert saved 2D transform to a MATLAB affine2d-compatible matrix.
+    %
+    % MATLAB affine2d requires translation in the LAST ROW:
+    %   [a b 0
+    %    c d 0
+    %    tx ty 1]
+    %
+    % Many manual registration tools save column-vector matrices:
+    %   [a b tx
+    %    c d ty
+    %    0 0 1]
+    %
+    % For those, MATLAB needs Araw'.
 
     Araw = double(Araw);
-
-    if ~isequal(size(Araw), [3 3])
-        error('2D affine matrix must be 3x3.');
-    end
-
-    if any(~isfinite(Araw(:)))
-        error('2D affine matrix contains NaN/Inf.');
-    end
-
-    % New Reg2D files save A directly in MATLAB affine2d row-vector format.
+        % New Reg2D files save A directly in MATLAB affine2d row-vector format.
+    % Use it directly.
     try
         if isfield(T,'scmAffineChoice') && strcmpi(char(T.scmAffineChoice), 'row_saved')
             if ~isValidMatlabAffine2DVideo(Araw)
@@ -5622,42 +5689,115 @@ function Ause = apply2DWarpDirectionToMatrixVideo(Araw, T)
         error(ME.message);
     end
 
-    if isfield(T,'scmWarpDirection') && strcmpi(char(T.scmWarpDirection),'inverse')
-        if abs(det(Araw(1:2,1:2))) < eps
-            error('Cannot invert 2D affine matrix.');
-        end
-        Ause = inv(Araw);
-    else
-        Ause = Araw;
+    if ~isequal(size(Araw), [3 3])
+        error('2D affine matrix must be 3x3.');
     end
 
-    if ~isValidMatlabAffine2DVideo(Ause)
-        At = Araw.';
+    if any(~isfinite(Araw(:)))
+        error('2D affine matrix contains NaN/Inf.');
+    end
 
-        if isValidMatlabAffine2DVideo(At)
-            Ause = At;
-        else
-            error('Could not convert saved matrix to MATLAB affine2d format.');
+    cand = {};
+    label = {};
+    key = {};
+
+    % Candidate 1: raw already valid for MATLAB affine2d.
+    if isValidMatlabAffine2DVideo(Araw)
+        cand{end+1} = Araw; %#ok<AGROW>
+        label{end+1} = 'saved matrix, MATLAB row-vector format'; %#ok<AGROW>
+        key{end+1} = 'row_saved'; %#ok<AGROW>
+
+        if abs(det(Araw(1:2,1:2))) > eps
+            Ai = inv(Araw);
+            if isValidMatlabAffine2DVideo(Ai)
+                cand{end+1} = Ai; %#ok<AGROW>
+                label{end+1} = 'inverse saved matrix, MATLAB row-vector format'; %#ok<AGROW>
+                key{end+1} = 'row_inverse'; %#ok<AGROW>
+            end
         end
+    end
+
+    % Candidate 2: raw is column-vector style, transpose for affine2d.
+    At = Araw.';
+    if isValidMatlabAffine2DVideo(At)
+        cand{end+1} = At; %#ok<AGROW>
+        label{end+1} = 'transpose saved matrix, column-vector source -> atlas'; %#ok<AGROW>
+        key{end+1} = 'col_saved_transpose'; %#ok<AGROW>
+
+        if abs(det(At(1:2,1:2))) > eps
+            Ati = inv(At);
+            if isValidMatlabAffine2DVideo(Ati)
+                cand{end+1} = Ati; %#ok<AGROW>
+                label{end+1} = 'inverse transpose, column-vector atlas -> source'; %#ok<AGROW>
+                key{end+1} = 'col_inverse_transpose'; %#ok<AGROW>
+            end
+        end
+    end
+
+    if isempty(cand)
+        error(['No valid affine2d matrix could be made from saved A.' newline ...
+               'This means A is not in a valid 2D affine format.']);
+    end
+
+    % Strong default:
+    % If raw is invalid but transpose is valid, use transpose.
+    useIdx = 1;
+    if ~isValidMatlabAffine2DVideo(Araw) && isValidMatlabAffine2DVideo(At)
+        hit = find(strcmp(key, 'col_saved_transpose'), 1);
+        if ~isempty(hit), useIdx = hit; end
+    end
+
+        % Video patch: honor the dialog choice using the same candidate set.
+    % This fixes cases where saved/inverse/transpose were handled differently
+    % from SCM and caused weird atlas proportions in Video GUI.
+    try
+        if isfield(T,'scmWarpDirection') && ~isempty(T.scmWarpDirection)
+            dkey = char(T.scmWarpDirection);
+            if strcmpi(dkey,'inverse')
+                hit = find(strcmp(key,'row_inverse'),1);
+                if isempty(hit), hit = find(strcmp(key,'col_inverse_transpose'),1); end
+                if ~isempty(hit), useIdx = hit; end
+            elseif strcmpi(dkey,'as_saved')
+                hit = find(strcmp(key,'row_saved'),1);
+                if isempty(hit), hit = find(strcmp(key,'col_saved_transpose'),1); end
+                if ~isempty(hit), useIdx = hit; end
+            end
+        end
+    catch
+    end
+
+% Optional override stored in T.
+    try
+        if isfield(T,'scmAffineChoice') && ~isempty(T.scmAffineChoice)
+            hit = find(strcmp(key, char(T.scmAffineChoice)), 1);
+            if ~isempty(hit), useIdx = hit; end
+        end
+    catch
+    end
+
+    Ause = cand{useIdx};
+
+    try
+        fprintf('\n[Video affine2d] Using %s\n', label{useIdx});
+        fprintf('[Video affine2d] Raw saved A:\n');
+        disp(Araw);
+        fprintf('[Video affine2d] MATLAB affine2d Ause:\n');
+        disp(Ause);
+    catch
     end
 end
 
 
+
+
 function tf = isValidMatlabAffine2DVideo(A)
-
     tf = false;
-
     try
         A = double(A);
+        if ~isequal(size(A), [3 3]), return; end
+        if any(~isfinite(A(:))), return; end
 
-        if ~isequal(size(A), [3 3])
-            return;
-        end
-
-        if any(~isfinite(A(:)))
-            return;
-        end
-
+        % affine2d requires third column [0;0;1]
         tf = norm(A(:,3) - [0;0;1]) < 1e-8;
     catch
         tf = false;
@@ -5705,30 +5845,85 @@ function X2 = prepareFunctionalSliceForReg2DVideo(X2, T, zSrc)
 end
 
 
-function [Uatlas, msg] = buildStepMotorFixedAtlasUnderlayOnlyVideo(usedRegList, outSize2, currentUnderlay)
-
+function [Uatlas, msg] = buildSingleFixedAtlasUnderlayVideo(tfFile, T, PSCnew, currentUnderlay)
+% HUMOR_VIDEO_UNDERLAY_BUILDERS_PATCH_20260518B
+% Single-slice Reg2D atlas warp: use fixed target underlay from the Reg2D MAT.
     Uatlas = [];
     msg = 'none';
-
-    if isempty(usedRegList) || isempty(outSize2)
-        return;
+    if isempty(PSCnew), return; end
+    outSize2 = [size(PSCnew,1) size(PSCnew,2)];
+    yy = outSize2(1); xx = outSize2(2);
+    try
+        Uplane = extractFixedAtlasUnderlayFromReg2DFileVideo(tfFile, T, outSize2);
+        if ~isempty(Uplane)
+            Uplane = fitPlaneToSizeVideo(Uplane, yy, xx);
+            Uplane(~isfinite(Uplane)) = 0;
+            if hasUsableUnderlaySignalVideo(Uplane)
+                Uatlas = double(Uplane);
+                msg = 'fixed atlas/histology underlay from Reg2D file';
+                return;
+            end
+        end
+    catch
     end
+    try
+        U = squeeze(currentUnderlay);
+        if ~isempty(U) && ndims(U) == 2 && size(U,1) == yy && size(U,2) == xx && hasUsableUnderlaySignalVideo(U)
+            Uatlas = double(U);
+            msg = 'kept existing atlas-sized underlay';
+            return;
+        end
+    catch
+    end
+    try
+        Uatlas = makeFunctionalContrastFallbackUnderlayVideo(PSCnew);
+        msg = 'functional contrast fallback; no fixed atlas underlay found';
+    catch
+        Uatlas = [];
+    end
+end
 
+function [Uatlas, msg] = buildStepMotorFixedAtlasUnderlayOnlyVideo(usedRegList, outSize2, currentUnderlay)
+    Uatlas = [];
+    msg = 'none';
+    if isempty(usedRegList) || isempty(outSize2), return; end
     yy = round(outSize2(1));
     xx = round(outSize2(2));
     nUse = numel(usedRegList);
 
-    % If current underlay already is a true atlas-space stack, keep it.
+    % Important: first try the fixed atlas/histology underlay stored in each Reg2D file.
+    % This avoids resizing/zooming a native underlay after functional data enter atlas space.
+    Utmp = zeros(yy, xx, nUse, 'single');
+    got = false(1, nUse);
+    for rr = 1:nUse
+        try
+            T = usedRegList(rr).T;
+            Uplane = extractFixedAtlasUnderlayFromReg2DFileVideo(usedRegList(rr).file, T, [yy xx]);
+            if isempty(Uplane), continue; end
+            Uplane = fitPlaneToSizeVideo(Uplane, yy, xx);
+            Uplane(~isfinite(Uplane)) = 0;
+            if hasUsableUnderlaySignalVideo(Uplane)
+                Utmp(:,:,rr) = single(Uplane);
+                got(rr) = true;
+            end
+        catch
+        end
+    end
+    if all(got)
+        Uatlas = double(Utmp);
+        msg = 'used fixed atlas/histology underlays saved in Registration2D files';
+        return;
+    end
+
+    % Only keep the current underlay if it is already exactly atlas-sized.
     try
         U = squeeze(currentUnderlay);
-
         if ~isempty(U)
             if ndims(U) == 2 && nUse == 1 && size(U,1) == yy && size(U,2) == xx
                 Uatlas = double(U);
                 msg = 'kept current fixed atlas underlay';
                 return;
             end
-
             if ndims(U) == 3 && size(U,1) == yy && size(U,2) == xx
                 if size(U,3) == nUse && ~state.isColorUnderlay
                     Uatlas = double(U);
@@ -5739,37 +5934,7 @@ function [Uatlas, msg] = buildStepMotorFixedAtlasUnderlayOnlyVideo(usedRegList, 
         end
     catch
     end
-
-    Utmp = zeros(yy, xx, nUse, 'single');
-    got = false(1, nUse);
-
-    for rr = 1:nUse
-        try
-            T = usedRegList(rr).T;
-            Uplane = extractFixedAtlasUnderlayFromReg2DFileVideo(usedRegList(rr).file, T, [yy xx]);
-
-            if isempty(Uplane)
-                continue;
-            end
-
-            Uplane = fitPlaneToSizeVideo(Uplane, yy, xx);
-            Uplane(~isfinite(Uplane)) = 0;
-
-            if hasUsableUnderlaySignalVideo(Uplane)
-                Utmp(:,:,rr) = single(Uplane);
-                got(rr) = true;
-            end
-        catch
-        end
-    end
-
-    if all(got)
-        Uatlas = double(Utmp);
-        msg = 'used fixed atlas/histology underlays saved in Registration2D files';
-        return;
-    end
 end
-
 
 function Uplane = extractFixedAtlasUnderlayFromReg2DFileVideo(matFile, T, outSize2)
 

@@ -296,9 +296,18 @@ applyFlag = false;
 perPage = 25;
 nPages = max(1, ceil(K / perPage));
 page = 1;
-currentPreviewK = 1; %#ok<NASGU>
+currentPreviewK = 1;
 currentMap2D = [];
+currentMapRaw2D = [];
+currentMapZ = 1;
 currentMapTitle = '';
+% HUMOR_ICA_ROI_QUERY_PATCH_V1
+roiCenterXY = [];
+roiRadiusPix = 8;
+roiRankedICs = [];
+roiPatchH = [];
+roiMarkerH = [];
+roiListMax = 12;
 
 % theme
 bgFig     = [0.06 0.06 0.07];
@@ -434,8 +443,48 @@ mapDropdown = uicontrol('Parent',rightPanel,'Style','popupmenu', ...
     'FontWeight','bold', ...
     'Callback',@updateSpatialControls);
 
+% HUMOR_ICA_ROI_QUERY_PATCH_V1: click spatial map, rank ICs by ROI spatial weights
+uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
+    'Position',[0.58 0.305 0.17 0.03], ...
+    'String','ROI size', ...
+    'BackgroundColor',bgPanel, ...
+    'ForegroundColor',fgDim, ...
+    'HorizontalAlignment','left', ...
+    'FontWeight','bold','FontSize',11);
+
+roiRadiusSlider = uicontrol('Parent',rightPanel,'Style','slider', ...
+    'Units','normalized','Position',[0.70 0.305 0.16 0.03], ...
+    'Min',2,'Max',40,'Value',roiRadiusPix, ...
+    'BackgroundColor',[0.18 0.18 0.19], ...
+    'Callback',@updateRoiRadius);
+
+roiRadiusValueText = uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
+    'Position',[0.87 0.302 0.07 0.032], ...
+    'String',sprintf('%d px', roiRadiusPix), ...
+    'BackgroundColor',bgPanel, ...
+    'ForegroundColor',[0.70 0.90 1.00], ...
+    'HorizontalAlignment','left', ...
+    'FontWeight','bold','FontSize',10);
+
+uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
+    'Position',[0.58 0.252 0.34 0.03], ...
+    'String','ROI-ranked ICs: click row to preview', ...
+    'BackgroundColor',bgPanel, ...
+    'ForegroundColor',fg, ...
+    'HorizontalAlignment','left', ...
+    'FontWeight','bold','FontSize',10);
+
+roiResultList = uicontrol('Parent',rightPanel,'Style','listbox','Units','normalized', ...
+    'Position',[0.58 0.165 0.34 0.075], ...
+    'String',{'Click spatial map to rank ICs'}, ...
+    'BackgroundColor',[0.16 0.16 0.18], ...
+    'ForegroundColor',fg, ...
+    'FontName','Courier New', ...
+    'FontSize',9, ...
+    'Callback',@onRoiListClick);
+
 txtInfo = uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
-    'Position',[0.10 0.295 0.82 0.04], ...
+    'Position',[0.10 0.295 0.45 0.04], ...
     'String','Selected: 0 ICs | Removed: 0.00%', ...
     'BackgroundColor',bgPanel, ...
     'ForegroundColor',[0.70 0.90 1.00], ...
@@ -443,7 +492,7 @@ txtInfo = uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
     'HorizontalAlignment','left');
 
 uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
-    'Position',[0.10 0.252 0.82 0.03], ...
+    'Position',[0.10 0.252 0.45 0.03], ...
     'String','Selected for removal:', ...
     'BackgroundColor',bgPanel, ...
     'ForegroundColor',fg, ...
@@ -451,7 +500,7 @@ uicontrol('Parent',rightPanel,'Style','text','Units','normalized', ...
     'FontWeight','bold','FontSize',11);
 
 lb = uicontrol('Parent',rightPanel,'Style','listbox','Units','normalized', ...
-    'Position',[0.10 0.165 0.82 0.075], ...
+    'Position',[0.10 0.165 0.45 0.075], ...
     'String',{'<none>'}, ...
     'BackgroundColor',[0.16 0.16 0.18], ...
     'ForegroundColor',fg, ...
@@ -648,10 +697,14 @@ uiwait(fig);
                 sliceScore(zz) = max(tmp(:));
             end
             [~, zShow] = max(sliceScore);
-            currentMap2D = abs(mapk(:,:,zShow));
+            currentMapZ = zShow;
+            currentMapRaw2D = double(mapk(:,:,zShow));
+            currentMap2D = abs(currentMapRaw2D);
             currentMapTitle = sprintf('Spatial weight preview (Z=%d)', zShow);
         else
-            currentMap2D = abs(mapk(:,:,1));
+            currentMapZ = 1;
+            currentMapRaw2D = double(mapk(:,:,1));
+            currentMap2D = abs(currentMapRaw2D);
             currentMapTitle = 'Spatial weight preview';
         end
 
@@ -687,7 +740,10 @@ uiwait(fig);
         map2 = max(0, min(1, map2));
         map2 = map2 .^ previewGamma;
 
-        imagesc(axMap, map2, [0 1]);
+        hImg = imagesc(axMap, map2, [0 1]);
+        try, set(hImg,'ButtonDownFcn',@onMapClick,'HitTest','on'); catch, end
+        try, set(axMap,'ButtonDownFcn',@onMapClick,'HitTest','on'); catch, end
+        try, set(axMap,'PickableParts','all'); catch, end
         axis(axMap,'image');
         axis(axMap,'off');
 
@@ -696,6 +752,130 @@ uiwait(fig);
         maps = get(mapDropdown,'String');
         cmapName = maps{get(mapDropdown,'Value')};
         colormap(axMap, cmapName);
+        drawRoiOverlay();
+    end
+
+    function onMapClick(~,~)
+        if isempty(currentMapRaw2D)
+            return;
+        end
+        cp = get(axMap,'CurrentPoint');
+        x = round(cp(1,1));
+        y = round(cp(1,2));
+        if x < 1 || x > volSize(2) || y < 1 || y > volSize(1)
+            return;
+        end
+        roiCenterXY = [x y];
+        rankIcsAtRoi();
+        refreshSpatialPreview();
+        safeDrawnow();
+    end
+
+    function updateRoiRadius(~,~)
+        roiRadiusPix = round(get(roiRadiusSlider,'Value'));
+        if roiRadiusPix < 2, roiRadiusPix = 2; end
+        set(roiRadiusSlider,'Value',roiRadiusPix);
+        set(roiRadiusValueText,'String',sprintf('%d px', roiRadiusPix));
+        if ~isempty(roiCenterXY)
+            rankIcsAtRoi();
+            refreshSpatialPreview();
+        end
+        safeDrawnow();
+    end
+
+    function rankIcsAtRoi()
+        if isempty(roiCenterXY)
+            return;
+        end
+        yDim = volSize(1);
+        xDim = volSize(2);
+        zDim = volSize(3);
+        zUse = max(1, min(zDim, currentMapZ));
+
+        [xx, yy] = meshgrid(1:xDim, 1:yDim);
+        roiMask = ((xx - roiCenterXY(1)).^2 + (yy - roiCenterXY(2)).^2) <= roiRadiusPix.^2;
+        if ~any(roiMask(:))
+            roiRankedICs = [];
+            set(roiResultList,'String',{'ROI outside map'},'Value',1);
+            return;
+        end
+
+        roiScore = zeros(1,K);
+        roiSigned = zeros(1,K);
+        roiLocal = zeros(1,K);
+        for kk = 1:K
+            mk = reshape(Avox(:,kk), volSize);
+            m2 = double(mk(:,:,zUse));
+            vals = m2(roiMask);
+            roiScore(kk) = mean(abs(vals(:)));
+            roiSigned(kk) = mean(vals(:));
+            denom = prctile(abs(m2(:)),99);
+            if ~isfinite(denom) || denom <= eps
+                denom = max(abs(m2(:)));
+            end
+            if isfinite(denom) && denom > eps
+                roiLocal(kk) = 100 * roiScore(kk) / denom;
+            else
+                roiLocal(kk) = 0;
+            end
+        end
+
+        totalScore = sum(roiScore);
+        if totalScore > eps
+            roiPct = 100 * roiScore ./ totalScore;
+        else
+            roiPct = zeros(size(roiScore));
+        end
+
+        [~, ord] = sort(roiScore, 'descend');
+        nShow = min(roiListMax, numel(ord));
+        roiRankedICs = ord(1:nShow);
+
+        out = cell(nShow+1,1);
+        out{1} = sprintf('ROI x=%d y=%d z=%d r=%dpx', roiCenterXY(1), roiCenterXY(2), zUse, roiRadiusPix);
+        for rr = 1:nShow
+            kk = roiRankedICs(rr);
+            if roiSigned(kk) >= 0
+                sg = '+';
+            else
+                sg = '-';
+            end
+            out{rr+1} = sprintf('%02d) IC%-3d ROI %5.1f%% loc %5.1f%% %s E %4.1f%%', rr, kk, roiPct(kk), roiLocal(kk), sg, 100*proxy(kk));
+        end
+        set(roiResultList,'String',out,'Value',1);
+    end
+
+    function drawRoiOverlay()
+        if isempty(roiCenterXY) || isempty(currentMap2D)
+            return;
+        end
+        hold(axMap,'on');
+        th = linspace(0, 2*pi, 120);
+        x = roiCenterXY(1) + roiRadiusPix * cos(th);
+        y = roiCenterXY(2) + roiRadiusPix * sin(th);
+        roiPatchH = plot(axMap, x, y, 'w-', 'LineWidth', 1.5); %#ok<NASGU>
+        roiMarkerH = plot(axMap, roiCenterXY(1), roiCenterXY(2), 'wo', 'MarkerSize', 5, 'LineWidth', 1.3); %#ok<NASGU>
+        try, set(roiPatchH,'ButtonDownFcn',@onMapClick,'HitTest','on'); catch, end
+        try, set(roiMarkerH,'ButtonDownFcn',@onMapClick,'HitTest','on'); catch, end
+        hold(axMap,'off');
+    end
+
+    function onRoiListClick(~,~)
+        if isempty(roiRankedICs)
+            return;
+        end
+        val = get(roiResultList,'Value');
+        if val <= 1
+            return;
+        end
+        rr = val - 1;
+        if rr < 1 || rr > numel(roiRankedICs)
+            return;
+        end
+        k = roiRankedICs(rr);
+        page = max(1, min(nPages, ceil(k / perPage)));
+        renderPage();
+        previewComponent(k);
     end
 
     function updateSpatialControls(~,~)
@@ -742,6 +922,9 @@ uiwait(fig);
             ''
             'Spatial weight preview'
             'This shows where that IC contributes strongly across voxels.'
+            'Click the spatial map to define an ROI and rank ICs by local spatial weight.'
+            'Use ROI size to scale the circular query region.'
+            'Click a row in ROI-ranked ICs to preview that component.'
             'Use the small Contrast/Gamma/Colormap controls only for display.'
             ''
             'Display hints'
