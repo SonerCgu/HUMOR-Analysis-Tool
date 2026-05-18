@@ -1971,7 +1971,7 @@ end
  cfg.motor.frames_per_position = localParseNumeric(get(H.eMFrames, 'String'), 'Frames per slice');
     cfg.motor.periodic = logical(get(H.cPeriodic, 'Value'));
     cfg.motor.return_to_zero = logical(get(H.cReturnZero, 'Value'));
-    cfg.motor.settle_pause_s = 1.0;
+    cfg.motor.settle_pause_s = 0.05;  % reduced split-mode motor settling pause
 
     % Optional compatibility metadata
     if cfg.stimbox.enable

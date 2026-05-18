@@ -3512,6 +3512,7 @@ meta = struct('animalID','N/A','session','N/A','scanID','N/A');
 txt = strrep(strtrimSafe(txt),'\','/');
 txtU = upper(txt);
 
+% Classic animal/session/scan pattern.
 tok = regexpi(txtU,'([A-Z]{1,8}\d{6}[A-Z]?)_(S\d+)_(FUS_\d+)','tokens','once');
 if ~isempty(tok)
     meta.animalID = tok{1};
@@ -3526,19 +3527,60 @@ if ~isempty(tok)
     meta.session = tok{2};
 end
 
-tok = regexpi(txtU,'(FUS_\d+)','tokens','once');
+% Session_003 / Sess_003 / Session003 from folders or file names.
+tok = regexpi(txtU,'(?:SESSION|SESS)[_\- ]*0*(\d+)','tokens','once');
 if ~isempty(tok)
-    meta.scanID = tok{1};
+    nSess = str2double(tok{1});
+    if isfinite(nSess)
+        meta.session = sprintf('Session_%03d', round(nSess));
+    else
+        meta.session = ['Session_' tok{1}];
+    end
 end
 
-if ~strcmpi(meta.animalID,'N/A') || ~strcmpi(meta.session,'N/A') || ~strcmpi(meta.scanID,'N/A')
-    return;
+% Scan / FUS id.
+tok = regexpi(txtU,'(FUS_\d+)','tokens','once');
+if ~isempty(tok), meta.scanID = tok{1}; end
+if strcmpi(meta.scanID,'N/A')
+    tok = regexpi(txt,'(scan\d+(?:_[A-Za-z0-9]+)?)','tokens','once');
+    if ~isempty(tok), meta.scanID = tok{1}; end
+end
+
+% PACAP/RGRO pattern: RGRO_260512_1024_MM_B6J_1005 -> animalID = 1005.
+tok = regexpi(txtU,'[A-Z]+[_\-]\d{6}[_\-]\d{3,6}[_\-][A-Z]+[_\-][A-Z0-9]+[_\-](\d{3,6})(?:[_\-. /]|$)','tokens','once');
+if ~isempty(tok), meta.animalID = tok{1}; end
+
+% General sex/strain/ID pattern: MM_B6J_1005.
+if strcmpi(meta.animalID,'N/A')
+    tok = regexpi(txtU,'(?:^|[_/\-])(MM|M|F|MALE|FEMALE)[_/\-]+[A-Z0-9]+[_/\-]+(\d{3,6})(?:[_/\-. ]|$)','tokens','once');
+    if ~isempty(tok), meta.animalID = tok{2}; end
 end
 
 txtTok = regexprep(txt,'[^A-Za-z0-9/_\-]','_');
 parts = regexp(txtTok,'[/_\-]+','split');
 parts = parts(~cellfun(@isempty,parts));
 
+% Session fallback from split parts.
+if strcmpi(meta.session,'N/A')
+    for k = 1:numel(parts)
+        pk = parts{k};
+        if ~isempty(regexpi(pk,'^S\d+$','once'))
+            meta.session = pk;
+            break;
+        end
+        tokS = regexpi(pk,'^Session0*(\d+)$','tokens','once');
+        if ~isempty(tokS)
+            meta.session = sprintf('Session_%03d', round(str2double(tokS{1})));
+            break;
+        end
+        if strcmpi(pk,'Session') && k < numel(parts) && ~isempty(regexpi(parts{k+1},'^\d+$','once'))
+            meta.session = sprintf('Session_%03d', round(str2double(parts{k+1})));
+            break;
+        end
+    end
+end
+
+% Scan fallback from split parts.
 scanIdx = [];
 for k = 1:numel(parts)
     if ~isempty(regexpi(parts{k},'^scan\d+$','once'))
@@ -3546,9 +3588,7 @@ for k = 1:numel(parts)
         scanID = parts{k};
         if k < numel(parts)
             nxt = parts{k+1};
-            if ~isempty(regexpi(nxt,'^[A-Za-z]{1,6}[A-Za-z0-9]*$','once')) && ...
-                    isempty(regexpi(nxt,'^S\d+$','once')) && ...
-                    isempty(regexpi(nxt,'^\d+$','once'))
+            if ~isempty(regexpi(nxt,'^[A-Za-z]{1,6}[A-Za-z0-9]*$','once')) && isempty(regexpi(nxt,'^S\d+$','once')) && isempty(regexpi(nxt,'^\d+$','once'))
                 scanID = [scanID '_' nxt];
             end
         end
@@ -3557,25 +3597,24 @@ for k = 1:numel(parts)
     end
 end
 
-for k = 1:numel(parts)
-    if ~isempty(regexpi(parts{k},'^S\d+$','once'))
-        meta.session = parts{k};
-        break;
+% Strain marker fallback: B6J / C57BL6J followed by numeric animal ID.
+if strcmpi(meta.animalID,'N/A')
+    for k = 1:numel(parts)-1
+        if ~isempty(regexpi(parts{k},'^(B6J|C57BL6J|C57|BL6J)$','once')) && ~isempty(regexpi(parts{k+1},'^\d{3,6}$','once'))
+            meta.animalID = parts{k+1};
+            break;
+        end
     end
 end
 
-if ~isempty(scanIdx)
+% Old fallback: number shortly before scan token.
+if strcmpi(meta.animalID,'N/A') && ~isempty(scanIdx)
     for k = scanIdx-1:-1:max(1,scanIdx-3)
         if ~isempty(regexpi(parts{k},'^\d{3,6}$','once'))
             meta.animalID = parts{k};
             break;
         end
     end
-end
-
-if strcmpi(meta.scanID,'N/A')
-    tok = regexpi(txt,'(scan\d+(?:_[A-Za-z0-9]+)?)','tokens','once');
-    if ~isempty(tok), meta.scanID = tok{1}; end
 end
 end
 
@@ -5466,7 +5505,7 @@ if makePPT
     GA_export_capture_map_png_local(S,pngFile,D);
     GA = G; %#ok<NASGU>
     save(matFile,'G','GA','D','-v7.3');
-    GA_exportGroupAnalysisPPTBundleFix_20260511(hFig,true);
+    GA_export_write_ppt_local(outFile,pngFile,G,D);
     fprintf('[saved PPT] %s\n', outFile);
     fprintf('[saved preview PNG] %s\n', pngFile);
     fprintf('[saved SCM bundle] %s\n', matFile);

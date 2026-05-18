@@ -1217,7 +1217,7 @@ end
     end
 
     if ~isfield(cfg.motor, 'settle_pause_s') || isempty(cfg.motor.settle_pause_s)
-        cfg.motor.settle_pause_s = 1.0;
+        cfg.motor.settle_pause_s = 0.05;  % reduced split-mode motor settling pause
     end
 end
 
