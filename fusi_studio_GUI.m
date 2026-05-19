@@ -4184,6 +4184,14 @@ end
 
     opts.statusFcn = @(isReady) setProgramStatus(isReady);
     opts.logFcn = @(m) addLog(['[FC] ' m]);
+    opts.stepMotorFolder = '';
+    opts.preloadSegmentationFile = '';
+    if isfield(cfg,'stepMotorFolder') && ~isempty(cfg.stepMotorFolder)
+        opts.stepMotorFolder = cfg.stepMotorFolder;
+    end
+    if isfield(cfg,'segmentationFile') && ~isempty(cfg.segmentationFile)
+        opts.preloadSegmentationFile = cfg.segmentationFile;
+    end
 
     % Useful paths for the FC GUI file pickers
  opts.saveRoot = saveRoot;
@@ -4222,6 +4230,11 @@ end
             numel(cfg.roiNameTable.labels)));
     else
         addLog('[FC] Region names not preloaded.');
+    end
+    if isfield(cfg,'segmentationFile') && ~isempty(cfg.segmentationFile)
+        addLog(['[FC] Step-motor Segmentation preload: ' cfg.segmentationFile]);
+    end
+    if false
     end
 
     setProgramStatus(false);
@@ -4304,6 +4317,9 @@ loadedNames = struct('labels',[],'names',{{}});
     loadedAtlasName = '';
     loadedAnatName = '';
     loadedNamesName = '';
+loadedStepFolder = '';
+loadedSegmentationFile = '';
+loadedStepInfo = [];  % HUMOR_FC_STEP_FOLDER_SETUP_PATCH_20260519
 
     % ---------------- colors ----------------
     bg      = [0.045 0.045 0.050];
@@ -4654,6 +4670,18 @@ try, HUMoR_popup_polish_now(gcf); catch, end
 
     uicontrol('Parent',dlg,'Style','pushbutton', ...
         'Units','normalized', ...
+        'Position',[0.275 0.035 0.225 0.060], ...
+        'String','STEP-MOTOR FOLDER', ...
+        'BackgroundColor',orange, ...
+        'ForegroundColor','w', ...
+        'FontName','Arial', ...
+        'FontSize',12, ...
+        'FontWeight','bold', ...
+        'Callback',@onLoadStepMotorFolder);
+
+
+    uicontrol('Parent',dlg,'Style','pushbutton', ...
+        'Units','normalized', ...
         'Position',[0.54 0.035 0.24 0.06], ...
         'String','RUN CONNECTIVITY', ...
         'BackgroundColor',green, ...
@@ -4814,6 +4842,66 @@ set(ddUnderlay,'Value',1);
         updateSummary();
     end
 
+    function onLoadStepMotorFolder(~,~)
+        startDir = fcGetRegistrationStartDir(studio);
+        try
+            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+                startDir = studio.exportPath;
+            end
+        catch
+        end
+        folder = uigetdir(startDir,'Select step-motor analysed/session folder');
+        if isequal(folder,0), return; end
+        loadedStepFolder = folder;
+        loadedStepInfo = HUMOR_find_stepmotor_seg_fc_files(folder);
+
+        if isfield(loadedStepInfo,'segmentationFile') && ~isempty(loadedStepInfo.segmentationFile)
+            loadedSegmentationFile = loadedStepInfo.segmentationFile;
+        end
+
+        if isfield(loadedStepInfo,'nameFile') && ~isempty(loadedStepInfo.nameFile) && exist(loadedStepInfo.nameFile,'file') == 2
+            try
+                loadedNames = HUMOR_read_region_names_file(loadedStepInfo.nameFile);
+                if ~isempty(loadedNames.labels)
+                    loadedNamesName = localFileNameForFCSetup(loadedStepInfo.nameFile);
+                    set(ddNames,'Value',2);
+                end
+            catch
+            end
+        end
+
+        if isempty(loadedSegmentationFile) && isfield(loadedStepInfo,'labelFile') && ~isempty(loadedStepInfo.labelFile) && exist(loadedStepInfo.labelFile,'file') == 2
+            try
+                loadedAtlas = fcStudioReadAtlas(loadedStepInfo.labelFile,Y,X,Z);
+                if ~isempty(loadedAtlas)
+                    loadedAtlasName = localFileNameForFCSetup(loadedStepInfo.labelFile);
+                    set(ddAtlas,'Value',3);
+                end
+            catch
+            end
+        end
+
+        updateFileLabels();
+        updateSummary();
+        msg = 'Step-motor folder selected.';
+        if ~isempty(loadedSegmentationFile)
+            msg = ['Step-motor folder selected. Latest Segmentation MAT will be preloaded: ' localFileNameForFCSetup(loadedSegmentationFile)];
+        elseif isstruct(loadedStepInfo)
+            msg = ['Step-motor folder selected. ' loadedStepInfo.summary ' | Run Segmentation first if no Segmentation MAT was found.'];
+        end
+        set(summaryText,'String',msg);
+    end
+
+    function nm = localFileNameForFCSetup(f)
+        [~,a,b] = fileparts(f);
+        if strcmpi(b,'.gz')
+            [~,a2,b2] = fileparts(a);
+            nm = [a2 b2 b];
+        else
+            nm = [a b];
+        end
+    end
+
     function onLoadMask(~,~)
         startDir = fcSetupStartDir(studio);
         [f,p] = uigetfile({'*.mat','MAT files (*.mat)'}, ...
@@ -4906,33 +4994,75 @@ end
 end
 
 function onLoadNames(~,~)
+    choiceNames = questdlg('Load FC region names from file or recursively from step-motor folder?', ...
+        'FC region names', ...
+        'Name/TXT file', 'Step-motor folder', 'Cancel', 'Step-motor folder');
+
+    if isempty(choiceNames) || strcmpi(choiceNames,'Cancel')
+        return;
+    end
+
+    if strcmpi(choiceNames,'Step-motor folder')
+        startDir = fcGetRegistrationStartDir(studio);
+        try
+            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir') == 7
+                startDir = studio.exportPath;
+            end
+        catch
+        end
+
+        folder = uigetdir(startDir,'Select Registration2D or step-motor analysed/session folder');
+        if isequal(folder,0), return; end
+
+        try
+            R = HUMOR_FC_find_stepmotor_txt_names(folder);
+            if isempty(R.names.labels)
+                errordlg({'No readable region-name TXT/CSV/MAT files were found recursively.','','Selected folder:',folder,'','Expected example:','Registration2D\SourceSlice001_AtlasSlice111\AtlasRegions_slice111.txt','',R.summary},'FC step-motor names');
+                return;
+            end
+
+            loadedNames = R.names;
+            loadedNamesName = R.bestFile;
+            set(ddNames,'Value',2);
+            updateFileLabels();
+            updateSummary();
+            set(summaryText,'String',R.summary);
+
+        catch ME
+            errordlg(ME.message,'FC recursive step-motor names load error');
+        end
+        return;
+    end
+
     startDir = fcGetRegistrationStartDir(studio);
 
     [f,p] = fc_uigetfile_start( ...
         {'*.txt;*.csv;*.tsv;*.mat', ...
         'Region names (*.txt,*.csv,*.tsv,*.mat)'}, ...
-        'Load FC region names', startDir);
+        'Load FC region names / AtlasRegions_slice TXT', startDir);
 
     if isequal(f,0)
         return;
     end
 
-        try
-            loadedNames = fcStudioReadRegionNames(fullfile(p,f));
-            if isempty(loadedNames.labels)
-                errordlg('Could not parse labels/names from selected file.','FC names');
-                return;
-            end
-            loadedNamesName = f;
-            set(ddNames,'Value',2);
-            updateFileLabels();
-            updateSummary();
-        catch ME
-            errordlg(ME.message,'FC region names load error');
+    try
+        loadedNames = HUMOR_FC_read_region_names_file(fullfile(p,f));
+        if isempty(loadedNames.labels)
+            errordlg('Could not parse labels/names from selected file.','FC names');
+            return;
         end
+        loadedNamesName = f;
+        set(ddNames,'Value',2);
+        updateFileLabels();
+        updateSummary();
+    catch ME
+        errordlg(ME.message,'FC region names load error');
     end
+end
 
     function onRun(~,~)
+
+
 
         seedBox = str2double(get(edSeedBox,'String'));
         roiMinVox = str2double(get(edMinVox,'String'));
@@ -5119,6 +5249,9 @@ end
         cfg.seedBoxSize = max(1,round(seedBox));
         cfg.roiMinVox = max(1,round(roiMinVox));
         cfg.chunkVox = max(100,round(chunkVox));
+        cfg.stepMotorFolder = loadedStepFolder;
+        cfg.segmentationFile = loadedSegmentationFile;
+        cfg.stepMotorInfo = loadedStepInfo;
 
         cfg.cancelled = false;
 

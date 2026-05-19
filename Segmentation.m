@@ -156,6 +156,15 @@ end
 % -------------------------------------------------------------------------
 logMsg(logFcn,'Extracting left/right/bilateral region time courses...');
 [LeftRaw, RightRaw, BothRaw, region] = extractRegionTimecourses(D4, R, validDataMask, labelInfo, cfg.minVoxels, logFcn);
+try
+    if isfield(cfg,'regionNameFile') && ~isempty(cfg.regionNameFile) && exist(cfg.regionNameFile,'file') == 2
+        region = HUMOR_apply_region_names_to_region(region,cfg.regionNameFile);
+        labelInfo.regionNameFile = cfg.regionNameFile;
+        logMsg(logFcn,['Applied region names from: ' cfg.regionNameFile]);
+    end
+catch ME_names
+    logMsg(logFcn,['Could not apply external region names: ' ME_names.message]);
+end
 
 LeftZ  = zscoreBaselineMatrix(LeftRaw,  baseFrames);
 RightZ = zscoreBaselineMatrix(RightRaw, baseFrames);
@@ -226,6 +235,8 @@ cfg.sourceFile = '';
 cfg.atlasMode = 'manual_label';
 cfg.labelFile = '';
 cfg.reg2DFiles = {};
+cfg.stepMotorFolder = '';
+cfg.regionNameFile = '';  % HUMOR_STEPMOTOR_FOLDER_SEG_PATCH_20260519
 cfg.baselineStartSec = 30;
 cfg.baselineEndSec = 240;
 cfg.minVoxels = 5;
@@ -485,13 +496,13 @@ uicontrol('Parent',atlasPanel,'Style','pushbutton', ...
 uicontrol('Parent',atlasPanel,'Style','pushbutton', ...
     'Units','normalized', ...
     'Position',[0.660 0.155 0.28 0.165], ...
-    'String','Auto-find Reg2D', ...
+    'String','Step folder', ...
     'BackgroundColor',blue, ...
     'ForegroundColor','w', ...
     'FontName','Arial', ...
     'FontSize',11, ...
     'FontWeight','bold', ...
-    'Callback',@autoFindReg2D);
+    'Callback',@chooseStepMotorFolder);
 
 % ---------------------------------------------------------------------
 % Settings / explanation
@@ -694,6 +705,38 @@ waitfor(dlg);
             set(hAtlasStatus,'String',['Loaded label map: ' shortTxt(f,80)]);
         else
             set(hAtlasStatus,'String','This atlas mode does not need manual loading.');
+        end
+        updateSummary();
+    end
+
+    function chooseStepMotorFolder(varargin)
+        startDir = reg2DDir;
+        try
+            if isfield(studio,'exportPath') && ~isempty(studio.exportPath) && exist(studio.exportPath,'dir')
+                startDir = studio.exportPath;
+            end
+        catch
+        end
+        folder = uigetdir(startDir,'Select step-motor analysed/session folder containing Registration2D / Segmentation');
+        if isequal(folder,0), return; end
+        cfg.stepMotorFolder = folder;
+        info = HUMOR_find_stepmotor_seg_fc_files(folder);
+        if isfield(info,'reg2DFiles') && ~isempty(info.reg2DFiles)
+            cfg.reg2DFiles = sortReg2DFiles(info.reg2DFiles);
+            set(hAtlas,'Value',2);
+        end
+        if isfield(info,'nameFile') && ~isempty(info.nameFile)
+            cfg.regionNameFile = info.nameFile;
+        end
+        if isfield(info,'labelFile') && ~isempty(info.labelFile)
+            cfg.labelFile = info.labelFile;
+        end
+        if isempty(cfg.reg2DFiles)
+            set(hAtlasStatus,'String',['Step folder selected but no Reg2D files found: ' shortTxt(folder,80)]);
+        else
+            msg = sprintf('Step folder OK: %d Reg2D files',numel(cfg.reg2DFiles));
+            if ~isempty(cfg.regionNameFile), msg = [msg ' | names: ' localFileName(cfg.regionNameFile)]; end
+            set(hAtlasStatus,'String',msg);
         end
         updateSummary();
     end
@@ -1216,6 +1259,12 @@ D4src = force4DForSegmentation(Din, struct('isStatic3D',false));
 [Y0,X0,Z0,T] = size(D4src); %#ok<ASGLU>
 
 files = cfg.reg2DFiles;
+if isempty(files) && isfield(cfg,'stepMotorFolder') && ~isempty(cfg.stepMotorFolder) && exist(cfg.stepMotorFolder,'dir') == 7
+    stepInfo = HUMOR_find_stepmotor_seg_fc_files(cfg.stepMotorFolder);
+    if isfield(stepInfo,'reg2DFiles') && ~isempty(stepInfo.reg2DFiles)
+        files = sortReg2DFiles(stepInfo.reg2DFiles);
+    end
+end
 if isempty(files)
     reg2DDir = getRegistration2DDir(studio, getStructString(studio,'exportPath',pwd));
     files = autoFindReg2DFiles(reg2DDir);
@@ -1447,7 +1496,7 @@ allFiles = recursiveDirMat(reg2DDir);
 for ii = 1:numel(allFiles)
     f = allFiles{ii};
     nm = lower(localFileName(f));
-    if ~isempty(strfind(nm,'coronalregistration2d')) && isempty(strfind(nm,'stepmotor_reg2d_session'))
+    if ~isempty(strfind(nm,'coronalregistration2d')) || ~isempty(strfind(nm,'stepmotor_reg2d')) || ~isempty(strfind(nm,'step_motor_reg2d'))
         files{end+1} = f; %#ok<AGROW>
     end
 end

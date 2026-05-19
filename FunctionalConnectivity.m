@@ -112,6 +112,8 @@ st.Y = Y;
 st.X = X;
 st.Z = Z;
 st.slice = max(1, round(Z/2));
+st.sliceRegionOnly = (Z > 1);  % HUMOR_REPAIR_TRUE_SLICE_STATE_20260519
+st.sliceRegionOnly = (Z > 1);  % HUMOR_FC_STEP_SLICE_FILTER_DEFAULT_20260519  % HUMOR_FC_STEPMOTOR_NAMES_SLICE_UI_20260519
 
 st.seedX = max(1, round(X/2));
 st.seedY = max(1, round(Y/2));
@@ -303,7 +305,7 @@ uicontrol('Parent',pData,'Style','pushbutton','Units','normalized', ...
 
 uicontrol('Parent',pData,'Style','pushbutton','Units','normalized', ...
     'Position',[0.685 0.555 0.275 0.12], ...
-    'String','Load region names','BackgroundColor',C.blue,'ForegroundColor','w', ...
+    'String','Names / step folder','BackgroundColor',C.blue,'ForegroundColor','w', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsSmall,'Callback',@onLoadNames);
 
 fc_label(pData,[0.02 0.385 0.16 0.10],'Reference',C);
@@ -606,6 +608,22 @@ cbShowLR = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
     'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
     'Callback',@onShowHemisphere);
 
+% HUMOR_FC_STEPMOTOR_NAMES_SLICE_UI_20260519
+fc_label(pSave,[0.835 0.80 0.035 0.10],'Z',C);
+edSliceBox = uicontrol('Parent',pSave,'Style','edit','Units','normalized', ...
+    'Position',[0.875 0.78 0.075 0.12], 'String',num2str(st.slice), ...
+    'BackgroundColor',C.bgEdit,'ForegroundColor',C.fg, ...
+    'FontName',C.font,'FontSize',C.fsTiny,'FontWeight','bold', ...
+    'TooltipString','Display slice used by Seed Map / Compare ROI / slice-filtered heatmap', ...
+    'Callback',@onSliceBoxEdit);
+cbSliceRegionOnly = uicontrol('Parent',pSave,'Style','checkbox','Units','normalized', ...
+    'Position',[0.810 0.500 0.150 0.075], ...
+    'String','Slice ROIs', 'Value',0, ...
+    'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
+    'FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny, ...
+    'TooltipString','When ON, ROI Heatmap and Graph show only atlas regions present in current slice', ...
+    'Callback',@onSliceRegionOnly);
+
 % FC_REGION_MODE_PATCH_20260504_UI
 fc_label(pSave,[0.02 0.205 0.14 0.10],'Regions',C);
 ddRegionMode = uicontrol('Parent',pSave,'Style','popupmenu','Units','normalized', ...
@@ -721,7 +739,7 @@ try
     try, set(findobj(pData,'String','Load mask'),'Position',[0.230 0.430 0.190 0.145]); catch, end
     try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
     try, set(findobj(pData,'String','ROI labels'),'Position',[0.445 0.430 0.230 0.145]); catch, end
-    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Names / step folder'),'String','Region names'); catch, end
     try, set(findobj(pData,'String','Region names'),'Position',[0.700 0.430 0.260 0.145]); catch, end
 
     try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.020 0.205 0.120 0.085]); catch, end
@@ -846,7 +864,7 @@ try
     try, set(findobj(pData,'String','Load mask'),'Position',[0.220 0.455 0.185 0.140]); catch, end
     try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
     try, set(findobj(pData,'String','ROI labels'),'Position',[0.420 0.455 0.240 0.140]); catch, end
-    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Names / step folder'),'String','Region names'); catch, end
     try, set(findobj(pData,'String','Region names'),'Position',[0.680 0.455 0.280 0.140]); catch, end
 
     try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.020 0.225 0.120 0.080]); catch, end
@@ -948,7 +966,7 @@ try
     try, set(findobj(pData,'String','Load mask'),'Position',[0.220 0.450 0.175 0.140]); catch, end
     try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
     try, set(findobj(pData,'String','ROI labels'),'Position',[0.425 0.450 0.225 0.140]); catch, end
-    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Names / step folder'),'String','Region names'); catch, end
     try, set(findobj(pData,'String','Region names'),'Position',[0.690 0.450 0.270 0.140]); catch, end
 
     try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.020 0.215 0.115 0.080]); catch, end
@@ -1056,7 +1074,7 @@ try
     try, set(findobj(pData,'String','Load mask'),'Position',[0.230 0.425 0.180 0.145]); catch, end
     try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
     try, set(findobj(pData,'String','ROI labels'),'Position',[0.435 0.425 0.230 0.145]); catch, end
-    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Names / step folder'),'String','Region names'); catch, end
     try, set(findobj(pData,'String','Region names'),'Position',[0.690 0.425 0.270 0.145]); catch, end
 
     try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.025 0.205 0.120 0.085]); catch, end
@@ -1168,7 +1186,7 @@ try
     try, set(findobj(pData,'String','Load mask'),'Position',[0.225 0.425 0.175 0.135]); catch, end
     try, set(findobj(pData,'String','Load ROI labels'),'String','ROI labels'); catch, end
     try, set(findobj(pData,'String','ROI labels'),'Position',[0.430 0.425 0.225 0.135]); catch, end
-    try, set(findobj(pData,'String','Load region names'),'String','Region names'); catch, end
+    try, set(findobj(pData,'String','Names / step folder'),'String','Region names'); catch, end
     try, set(findobj(pData,'String','Region names'),'Position',[0.685 0.425 0.275 0.135]); catch, end
 
     try, set(findobj(pData,'Style','text','String','Reference'),'Position',[0.025 0.205 0.120 0.080]); catch, end
@@ -1508,6 +1526,11 @@ pPairView  = fc_view(panelViewWrap,C,'off');
 pGraphView = fc_view(panelViewWrap,C,'off');
 
 % Seed Map tab
+txtSeedSlice = uicontrol('Parent',pSeedView,'Style','text','Units','normalized', ...
+    'Position',[0.035 0.900 0.570 0.040], ...
+    'String',sprintf('Seed map | slice Z %d / %d   mouse-wheel = change slice',st.slice,st.Z), ...
+    'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
+    'HorizontalAlignment','left','FontName',C.font,'FontWeight','bold','FontSize',C.fsSmall);
 axMap = axes('Parent',pSeedView,'Units','normalized','Position',[0.035 0.080 0.570 0.810], ...
     'Color',C.bgAx,'XColor',C.dim,'YColor',C.dim);
 axis(axMap,'image'); axis(axMap,'off');
@@ -1567,6 +1590,11 @@ txtCompare = uicontrol('Parent',pCompView,'Style','text','Units','normalized', .
     'Position',[0.530 0.065 0.410 0.120], 'String','Compute ROI FC and select a region.', ...
     'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
     'HorizontalAlignment','left','FontName',C.font,'FontSize',C.fsSmall);
+txtCompareSlice = uicontrol('Parent',pCompView,'Style','text','Units','normalized', ...
+    'Position',[0.080 0.465 0.360 0.045], ...
+    'String',sprintf('Compare map slice Z %d / %d   scroll = change slice',st.slice,st.Z), ...
+    'BackgroundColor',C.bgPane,'ForegroundColor',C.fg, ...
+    'HorizontalAlignment','left','FontName',C.font,'FontWeight','bold','FontSize',C.fsTiny);
 
 % Pair ROI tab - positions fixed to avoid top cut-off
 uicontrol('Parent',pPairView,'Style','text','Units','normalized','Position',[0.055 0.900 0.080 0.055], ...
@@ -1649,6 +1677,34 @@ end
 % FC bundle convention: Fisher z for averaging/statistics, Pearson r for display.
 % FC_FISHERZ_STATS_PATCH_20260512_END
 guidata(fig,st);
+% HUMOR_FC_PRELOAD_SEGMENTATION_PATCH_20260519
+try
+    sPre = guidata(fig);
+    if isfield(sPre.opts,'preloadSegmentationFile') && ~isempty(sPre.opts.preloadSegmentationFile) && exist(sPre.opts.preloadSegmentationFile,'file') == 2
+        subjPre = sPre.subjects(sPre.currentSubject);
+        [resPre, segInfoPre, roiAtlasPre] = fc_read_segmentation_result(sPre.opts.preloadSegmentationFile, subjPre.TR, sPre.opts);
+        resPre = fc_apply_epoch_to_roi_result(resPre,sPre);
+        sPre.roiResults{sPre.currentSubject,sPre.currentEpoch} = resPre;
+        sPre.loadedSegmentationFile = sPre.opts.preloadSegmentationFile;
+        if ~isempty(roiAtlasPre)
+            try
+                Apre = fc_fit_volume(fc_repair_signed_label_map(roiAtlasPre), sPre.Y, sPre.X, sPre.Z, false);
+                if ~isempty(Apre) && fc_looks_like_roi_label_map(Apre)
+                    sPre.subjects(sPre.currentSubject).roiAtlas = round(double(Apre));
+                end
+            catch
+            end
+        end
+        if isfield(segInfoPre,'TR') && isfinite(segInfoPre.TR) && segInfoPre.TR > 0
+            sPre.subjects(sPre.currentSubject).TR = segInfoPre.TR;
+        end
+        guidata(fig,sPre);
+        updateROIDropdowns(resPre.names);
+        setStatus(sprintf('Preloaded step-motor segmentation: %d regions, %d time points.',numel(resPre.labels),size(resPre.meanTS,1)),C.good);
+    end
+catch ME_preloadSeg
+    try, setStatus(['Step-motor segmentation preload skipped: ' ME_preloadSeg.message],C.warn); catch, end
+end
 refreshAll();
 
 % =========================================================================
@@ -1667,23 +1723,19 @@ refreshAll();
 
     function onMouseWheel(~,ev)
         s = guidata(fig);
-        if s.Z <= 1
-            return;
-        end
+        if ~isfield(s,'Z') || s.Z <= 1, return; end
         step = 1;
         try
-            if ev.VerticalScrollCount > 0
-                step = 1;
-            else
-                step = -1;
-            end
+            if ev.VerticalScrollCount < 0, step = -1; else, step = 1; end
         catch
             step = 1;
         end
-        s.slice = fc_clip(s.slice + step,1,s.Z);
-        set(slSlice,'Value',s.slice);
-        set(edSlice,'String',num2str(s.slice));
+        s.slice = fc_clip(round(s.slice + step),1,s.Z);
+        try, set(slSlice,'Value',s.slice); catch, end
+        try, set(edSlice,'String',num2str(s.slice)); catch, end
+        try, set(edSliceBox,'String',num2str(s.slice)); catch, end
         guidata(fig,s);
+        try, setStatus(sprintf('Slice Z %d/%d. Heatmap/Compare refreshed.',s.slice,s.Z),C.dim); catch, end
         refreshAll();
     end
 
@@ -1957,6 +2009,36 @@ refreshAll();
         refreshAll();
     end
 
+    function onSliceBoxEdit(~,~)
+        s = guidata(fig);
+        v = str2double(get(edSliceBox,'String'));
+        if ~isfinite(v), v = s.slice; end
+        s.slice = fc_clip(round(v),1,s.Z);
+        set(slSlice,'Value',s.slice);
+        set(edSlice,'String',num2str(s.slice));
+        try, set(edSliceBox,'String',num2str(s.slice)); catch, end
+        if ~isfield(s,'sliceRegionOnly') || isempty(s.sliceRegionOnly), s.sliceRegionOnly = false; end
+        try, set(cbSliceRegionOnly,'Value',double(s.sliceRegionOnly)); catch, end
+        try, set(txtSeedSlice,'String',sprintf('Seed map | slice Z %d / %d   mouse-wheel = change slice',s.slice,s.Z)); catch, end
+        try, set(txtCompareSlice,'String',sprintf('Compare map slice Z %d / %d   scroll = change slice',s.slice,s.Z)); catch, end
+        set(edSliceBox,'String',num2str(s.slice));
+        guidata(fig,s);
+        refreshAll();
+    end
+
+    function onSliceRegionOnly(~,~)
+        s = guidata(fig);
+        s.sliceRegionOnly = logical(get(cbSliceRegionOnly,'Value'));
+        guidata(fig,s);
+        refreshHeatmapView();
+        refreshGraphView();
+        if s.sliceRegionOnly
+            setStatus(sprintf('Slice ROI filter ON: heatmap/graph show regions present in Z %d/%d.',s.slice,s.Z),C.good);
+        else
+            setStatus('Slice ROI filter OFF: heatmap/graph show all selected regions.',C.dim);
+        end
+    end
+
     function onSliceSlider(~,~)
         s = guidata(fig);
         s.slice = fc_clip(round(get(slSlice,'Value')),1,s.Z);
@@ -1972,6 +2054,11 @@ refreshAll();
         s.slice = fc_clip(round(v),1,s.Z);
         set(slSlice,'Value',s.slice);
         set(edSlice,'String',num2str(s.slice));
+        try, set(edSliceBox,'String',num2str(s.slice)); catch, end
+        if ~isfield(s,'sliceRegionOnly') || isempty(s.sliceRegionOnly), s.sliceRegionOnly = false; end
+        try, set(cbSliceRegionOnly,'Value',double(s.sliceRegionOnly)); catch, end
+        try, set(txtSeedSlice,'String',sprintf('Seed map | slice Z %d / %d   mouse-wheel = change slice',s.slice,s.Z)); catch, end
+        try, set(txtCompareSlice,'String',sprintf('Compare map slice Z %d / %d   scroll = change slice',s.slice,s.Z)); catch, end
         guidata(fig,s);
         refreshAll();
     end
@@ -2554,20 +2641,73 @@ function onMapClick(~,~)
     function onLoadAtlas(~,~)
         s = guidata(fig);
         subj = s.subjects(s.currentSubject);
-        [f,p] = fc_uigetfile_start( ...
-            {'*.mat;*.nii;*.nii.gz;*.tif;*.tiff','ROI label files'}, ...
-            'Load ROI atlas / integer label map', ...
-            fc_start_dir(subj,s.opts));
-        if isequal(f,0), return; end
-        a = fc_read_atlas_any(fullfile(p,f),s.Y,s.X,s.Z);
-        if isempty(a)
-            errordlg({'No compatible ROI label map found.', '', ...
-                'Histology/regions images are display underlays.', ...
-                'ROI FC needs integer labels/annotation volume.'},'ROI labels');
+        choiceAtlas = questdlg('Load ROI labels from file or recursively from step-motor folder?','Load ROI labels','Label/TXT file','Step-motor folder','Cancel','Step-motor folder');
+        if isempty(choiceAtlas) || strcmpi(choiceAtlas,'Cancel'), return; end
+
+        if strcmpi(choiceAtlas,'Step-motor folder')
+            startDir = fc_start_dir(subj,s.opts);
+            try
+                if isfield(s.opts,'stepMotorFolder') && ~isempty(s.opts.stepMotorFolder) && exist(s.opts.stepMotorFolder,'dir') == 7
+                    startDir = s.opts.stepMotorFolder;
+                end
+            catch
+            end
+            folder = uigetdir(startDir,'Select step-motor analysed/session folder');
+            if isequal(folder,0), return; end
+            P = HUMOR_FC_stepmotor_read_folder(folder,s.Y,s.X,s.Z);
+            did = false;
+            if ~isempty(P.atlas)
+                s.subjects(s.currentSubject).roiAtlas = round(double(P.atlas));
+                s.roiResults(s.currentSubject,:) = {[]};
+                did = true;
+            end
+            if ~isempty(P.names.labels)
+                s.opts.roiNameTable = P.names;
+                s.loadedRegionNameFile = folder;
+                s.subjects(s.currentSubject).roiNameTable = P.names;
+                did = true;
+            end
+            if ~did
+                errordlg({'No usable step-motor label/name files were found recursively.','','Folder:',folder,'','Summary:',P.summary},'Step-motor ROI labels');
+                return;
+            end
+            s.opts.stepMotorFolder = folder;
+            guidata(fig,s);
+            setStatus(['Loaded step-motor ROI labels/names: ' P.summary],C.good);
+            refreshAll();
             return;
         end
-        choice = questdlg('Apply ROI label map to current subject or all subjects?', ...
-            'ROI labels','Current','All','Current');
+
+        [f,p] = fc_uigetfile_start({'*.mat;*.nii;*.nii.gz;*.tif;*.tiff;*.txt;*.csv;*.tsv','ROI labels or step-motor TXT/MAT names'},'Load ROI labels or step-motor TXT',fc_start_dir(subj,s.opts));
+        if isequal(f,0), return; end
+        fullFile = fullfile(p,f);
+        [~,~,extNow] = fileparts(fullFile); extNow = lower(extNow);
+        if any(strcmp(extNow,{'.txt','.csv','.tsv'}))
+            P = HUMOR_FC_stepmotor_read_folder(p,s.Y,s.X,s.Z,fullFile);
+            if ~isempty(P.names.labels)
+                s.opts.roiNameTable = P.names;
+                s.loadedRegionNameFile = fullFile;
+                s.subjects(s.currentSubject).roiNameTable = P.names;
+            end
+            if ~isempty(P.atlas)
+                s.subjects(s.currentSubject).roiAtlas = round(double(P.atlas));
+                s.roiResults(s.currentSubject,:) = {[]};
+            end
+            if isempty(P.names.labels) && isempty(P.atlas)
+                errordlg('Selected TXT/CSV could not be parsed, and no matching atlas was found in the same folder tree.','Step-motor TXT labels');
+                return;
+            end
+            guidata(fig,s);
+            setStatus(['Loaded TXT names and matching step-motor atlas: ' P.summary],C.good);
+            refreshAll();
+            return;
+        end
+        a = fc_read_atlas_any(fullFile,s.Y,s.X,s.Z);
+        if isempty(a)
+            errordlg('No compatible ROI label map found.','ROI labels');
+            return;
+        end
+        choice = questdlg('Apply ROI label map to current subject or all subjects?','ROI labels','Current','All','Current');
         if strcmpi(choice,'All')
             for i = 1:s.nSub
                 s.subjects(i).roiAtlas = round(double(a));
@@ -2585,22 +2725,41 @@ function onMapClick(~,~)
     function onLoadNames(~,~)
         s = guidata(fig);
         subj = s.subjects(s.currentSubject);
-        [f,p] = fc_uigetfile_start( ...
-            {'*.txt;*.csv;*.tsv;*.mat','Region names (*.txt,*.csv,*.tsv,*.mat)'}, ...
+
+        choiceNames = questdlg('Load region names from file or recursively from step-motor folder?', ...
             'Load region names', ...
-            fc_start_dir(subj,s.opts));
-        if isequal(f,0), return; end
-        try
-            T = fc_read_region_names(fullfile(p,f));
-            if isempty(T.labels)
-                errordlg('Could not parse labels/names from selected file.');
+            'Name/TXT file', 'Step-motor folder', 'Cancel', 'Step-motor folder');
+
+        if isempty(choiceNames) || strcmpi(choiceNames,'Cancel')
+            return;
+        end
+
+        if strcmpi(choiceNames,'Step-motor folder')
+            startDir = fc_start_dir(subj,s.opts);
+            try
+                if isfield(s.opts,'stepMotorFolder') && ~isempty(s.opts.stepMotorFolder) && exist(s.opts.stepMotorFolder,'dir') == 7
+                    startDir = s.opts.stepMotorFolder;
+                end
+            catch
+            end
+
+            folder = uigetdir(startDir,'Select Registration2D or step-motor analysed/session folder');
+            if isequal(folder,0), return; end
+
+            R = HUMOR_FC_find_stepmotor_txt_names(folder);
+            if isempty(R.names.labels)
+                errordlg({'No readable region-name TXT/CSV/MAT files were found recursively.','','Selected folder:',folder,'','Expected example:','Registration2D\SourceSlice001_AtlasSlice111\AtlasRegions_slice111.txt','',R.summary},'Step-motor names');
                 return;
             end
-            s.opts.roiNameTable = T;
-            s.loadedRegionNameFile = fullfile(p,f);
+
+            s.opts.roiNameTable = R.names;
+            s.loadedRegionNameFile = R.bestFile;
+            s.opts.stepMotorFolder = folder;
+
             for i = 1:s.nSub
-                s.subjects(i).roiNameTable = T;
+                s.subjects(i).roiNameTable = R.names;
             end
+
             for i = 1:s.nSub
                 for e = 1:numel(s.epochs)
                     if ~isempty(s.roiResults{i,e})
@@ -2613,9 +2772,52 @@ function onMapClick(~,~)
                     end
                 end
             end
+
+            guidata(fig,s);
+            setStatus(['Loaded recursive step-motor region names: ' R.summary],C.good);
+            refreshAll();
+            return;
+        end
+
+        [f,p] = fc_uigetfile_start( ...
+            {'*.txt;*.csv;*.tsv;*.mat','Region names (*.txt,*.csv,*.tsv,*.mat)'}, ...
+            'Load region names / AtlasRegions_slice TXT', ...
+            fc_start_dir(subj,s.opts));
+
+        if isequal(f,0), return; end
+
+        try
+            fullFile = fullfile(p,f);
+            T = HUMOR_FC_read_region_names_file(fullFile);
+            if isempty(T.labels)
+                errordlg('Could not parse labels/names from selected file.','Region names');
+                return;
+            end
+
+            s.opts.roiNameTable = T;
+            s.loadedRegionNameFile = fullFile;
+
+            for i = 1:s.nSub
+                s.subjects(i).roiNameTable = T;
+            end
+
+            for i = 1:s.nSub
+                for e = 1:numel(s.epochs)
+                    if ~isempty(s.roiResults{i,e})
+                        labs = s.roiResults{i,e}.labels;
+                        nm = cell(numel(labs),1);
+                        for k = 1:numel(labs)
+                            nm{k} = fc_roi_name(labs(k),s.opts);
+                        end
+                        s.roiResults{i,e}.names = nm;
+                    end
+                end
+            end
+
             guidata(fig,s);
             setStatus(sprintf('Loaded %d region names from %s',numel(T.labels),f),C.good);
             refreshAll();
+
         catch ME
             setStatus(['Region-name error: ' ME.message],C.warn);
             if s.opts.debugRethrow, rethrow(ME); end
@@ -2623,6 +2825,10 @@ function onMapClick(~,~)
     end
 
     function onLoadSegmentation(~,~)
+
+
+
+
         s = guidata(fig);
         subj = s.subjects(s.currentSubject);
 
@@ -2927,6 +3133,11 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
         set(ddSubject,'Value',s.currentSubject);
         set(slSlice,'Value',s.slice);
         set(edSlice,'String',num2str(s.slice));
+        try, set(edSliceBox,'String',num2str(s.slice)); catch, end
+        if ~isfield(s,'sliceRegionOnly') || isempty(s.sliceRegionOnly), s.sliceRegionOnly = false; end
+        try, set(cbSliceRegionOnly,'Value',double(s.sliceRegionOnly)); catch, end
+        try, set(txtSeedSlice,'String',sprintf('Seed map | slice Z %d / %d   mouse-wheel = change slice',s.slice,s.Z)); catch, end
+        try, set(txtCompareSlice,'String',sprintf('Compare map slice Z %d / %d   scroll = change slice',s.slice,s.Z)); catch, end
         set(edSeedX,'String',num2str(s.seedX));
         set(edSeedY,'String',num2str(s.seedY));
         set(edSeedSize,'String',num2str(s.seedBoxSize));
@@ -3126,7 +3337,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
         fc_ax(axHeat,C);
         colormap(axHeat,cmap);
 
-        title(axHeat,'Region-by-region FC heatmap', ...
+        title(axHeat,sprintf('Region-by-region FC heatmap | Z %d/%d',s.slice,s.Z), ...
             'Color',C.fg, ...
             'Interpreter','none', ...
             'FontWeight','bold','FontSize',14);
@@ -3142,7 +3353,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
         else
             xlabel(axHeat,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
             ylabel(axHeat,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
-            title(axHeat,'Region-by-region FC heatmap', ...
+            title(axHeat,sprintf('Region-by-region FC heatmap | Z %d/%d',s.slice,s.Z), ...
                 'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',11);
         end
         fc_colorbar_legend(axHeatCB,cmap,clim,cbLabel,C);
@@ -3153,7 +3364,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
         else
             regionTxt = sprintf('%d',numel(names));
         end
-        set(txtHeat,'String',sprintf('Regions: %s\nValue: %s\n|r| thr: %.2f', regionTxt, cbLabel, s.roiAbsThr));
+        set(txtHeat,'String',sprintf('Regions: %s\nSlice: %s\nValue: %s\n|r| thr: %.2f', regionTxt, fc_slice_filter_text(s), cbLabel, s.roiAbsThr));
     end
 
     function refreshCompareView()
@@ -3230,7 +3441,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
             axis(axCompareMap,'image'); axis(axCompareMap,'ij'); axis(axCompareMap,'off');
             set(axCompareMap,'XLim',[0.5 s.X+0.5],'YLim',[0.5 s.Y+0.5]);
             colormap(axCompareMap,cmap);
-            title(axCompareMap,'Click a region to benchmark it','Color',C.fg,'Interpreter','none');
+            title(axCompareMap,sprintf('Click region | Z %d/%d  scroll = slice',s.slice,s.Z),'Color',C.fg,'Interpreter','none');
             try
                 subjNow = s.subjects(s.currentSubject);
                 fc_draw_roi_abbrev_on_map(axCompareMap,double(subjNow.roiAtlas(:,:,s.slice)),res.labels,res.names,C,s.showHemisphere);
@@ -3286,8 +3497,8 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
             end
             txtTop = fc_join(lines);
         end
-        set(txtCompare,'String',sprintf('Selected: %s\nAtlas label: %g\nTop partners:\n%s', ...
-            fc_roi_abbrev(names{sel},20,s.showHemisphere),res.labels(rawSel),txtTop));
+        set(txtCompare,'String',sprintf('Selected: %s\nAtlas label: %g\n%s\nTop partners:\n%s', ...
+            fc_roi_abbrev(names{sel},20,s.showHemisphere),res.labels(rawSel),fc_compare_slice_note(s,res.labels(rawSel)),txtTop));
     end
 
     function refreshPairView()
@@ -3420,7 +3631,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
         colormap(axAdj,cmap);
         fc_ax(axAdj,C);
 
-        title(axAdj,'Thresholded weighted FC matrix', ...
+        title(axAdj,sprintf('Thresholded weighted FC matrix | Z %d/%d',s.slice,s.Z), ...
             'Color',C.fg, ...
             'Interpreter','none', ...
             'FontWeight','bold','FontSize',14);
@@ -3436,7 +3647,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
         else
             xlabel(axAdj,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
             ylabel(axAdj,'Atlas region','Color',C.fg,'FontWeight','bold','FontSize',11);
-            title(axAdj,'Thresholded weighted FC matrix', ...
+            title(axAdj,sprintf('Thresholded weighted FC matrix | Z %d/%d',s.slice,s.Z), ...
                 'Color',C.fg,'Interpreter','none','FontWeight','bold','FontSize',11);
         end
         fc_colorbar_legend(axGraphCB,cmap,[-1 1],'Pearson r',C);
@@ -3460,7 +3671,7 @@ if ~isfield(s,'roiHemiMode') || isempty(s.roiHemiMode)
             'Regions: %s\n' ...
             'Connections: %d\n' ...
             'Density: %.4f'], ...
-            s.roiAbsThr,regionTxt,nEdges,density));
+            s.roiAbsThr,regionTxt,fc_slice_filter_text(s),nEdges,density));
     end
 % FC_LABEL_REGION_PICK_CALLBACKS_20260512_START
     function onMatrixTickMode(~,~)
@@ -3552,30 +3763,34 @@ function updateROIDropdowns(names)
         valsDisplay = M(sel,:);
         valsRaw = fc_display_values_to_raw(res,meta,valsDisplay);
 
-        atlasS = round(double(subj.roiAtlas(:,:,s.slice)));
+        A = subj.roiAtlas;
+        if ndims(A) < 3
+            atlasS = round(double(A));
+        else
+            zNow = fc_clip(round(s.slice),1,size(A,3));
+            atlasS = round(double(A(:,:,zNow)));
+        end
         mapS = nan(size(atlasS));
         for k = 1:numel(res.labels)
             labK = round(double(res.labels(k)));
             nameK = '';
             try
-                if isfield(res,'names') && k <= numel(res.names)
-                    nameK = res.names{k};
-                end
+                if isfield(res,'names') && k <= numel(res.names), nameK = res.names{k}; end
             catch
             end
-
             if ~isfinite(labK) || labK == 0 || fc_is_background_region(labK,nameK)
                 continue;
             end
             if k <= numel(valsRaw) && isfinite(valsRaw(k))
-                mapS(atlasS == labK) = valsRaw(k);
+                m = fc_label_mask_for_slice(atlasS,labK);
+                mapS(m) = valsRaw(k);
             end
         end
         ok = true;
     end
 end
-
 % =========================================================================
+
 % HELPER FUNCTIONS
 % =========================================================================
 function p = fc_panel(parent,pos,titleStr,C)
@@ -3602,6 +3817,8 @@ end
 function opts = fc_defaults(opts)
 if ~isfield(opts,'statusFcn'), opts.statusFcn = []; end
 if ~isfield(opts,'logFcn'), opts.logFcn = []; end
+if ~isfield(opts,'stepMotorFolder'), opts.stepMotorFolder = ''; end
+if ~isfield(opts,'preloadSegmentationFile'), opts.preloadSegmentationFile = ''; end
 if ~isfield(opts,'functionalField'), opts.functionalField = ''; end
 if ~isfield(opts,'roiNames'), opts.roiNames = {}; end
 if ~isfield(opts,'roiNameTable'), opts.roiNameTable = struct('labels',[],'names',{{}}); end
@@ -3876,6 +4093,14 @@ function startDir = fc_start_dir(subj,opts)
 % Fallbacks: <analysisDir>/Registration2D, then older Registration folder, then root.
 startDir = pwd;
 try
+    if isfield(opts,'stepMotorFolder') && ~isempty(opts.stepMotorFolder) && exist(opts.stepMotorFolder,'dir') == 7
+        segDir0 = fullfile(opts.stepMotorFolder,'Segmentation');
+        if exist(segDir0,'dir') == 7, startDir = segDir0; return; end
+        startDir = opts.stepMotorFolder; return;
+    end
+catch
+end
+try
     if isfield(opts,'registrationPath') && ~isempty(opts.registrationPath) && exist(opts.registrationPath,'dir')
         startDir = opts.registrationPath; return;
     end
@@ -3930,6 +4155,14 @@ end
 function [f,p] = fc_uigetfile_start(filterSpec,titleStr,startDir)
 if nargin < 3 || isempty(startDir) || ~exist(startDir,'dir')
     startDir = pwd;
+try
+    if isfield(opts,'stepMotorFolder') && ~isempty(opts.stepMotorFolder) && exist(opts.stepMotorFolder,'dir') == 7
+        segDir0 = fullfile(opts.stepMotorFolder,'Segmentation');
+        if exist(segDir0,'dir') == 7, startDir = segDir0; return; end
+        startDir = opts.stepMotorFolder; return;
+    end
+catch
+end
 end
 oldDir = pwd;
 cleanupObj = onCleanup(@() cd(oldDir)); %#ok<NASGU>
@@ -4272,41 +4505,36 @@ R = tmp;
 end
 
 function T = fc_read_region_names(fullf)
-T = struct('labels',[],'names',{{}});
-[~,~,ext] = fileparts(fullf); ext = lower(ext);
-if strcmp(ext,'.mat')
-    S = load(fullf); T = fc_region_names_from_mat(S); return;
-end
-fid = fopen(fullf,'r');
-if fid < 0, error('Could not open region-name file.'); end
-cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
-labels = []; names = {};
-while ~feof(fid)
-    line = fgetl(fid);
-    if ~ischar(line), continue; end
-    line = strtrim(line);
-    if isempty(line), continue; end
-    if line(1)=='#' || line(1)=='%', continue; end
-    line = strrep(line,char(9),','); line = strrep(line,';',',');
-    parts = regexp(line,',','split');
-    if numel(parts) < 2, parts = regexp(line,'\s+','split'); end
-    if numel(parts) < 2, continue; end
-    lab = str2double(strtrim(parts{1}));
-    if ~isfinite(lab), continue; end
-    nm = strtrim(parts{2});
-    if numel(parts) > 2
-        for k = 3:numel(parts)
-            pk = strtrim(parts{k}); if ~isempty(pk), nm = [nm ' ' pk]; end %#ok<AGROW>
-        end
-    end
-    labels(end+1,1) = lab; %#ok<AGROW>
-    names{end+1,1} = nm; %#ok<AGROW>
-end
-T.labels = labels; T.names = names;
+T = HUMOR_FC_read_region_names_file(fullf);
 end
 
 function T = fc_region_names_from_mat(S)
+
+
 T = struct('labels',[],'names',{{}});
+% HUMOR_FC_SEG_REGION_NAMES_FIX_20260519
+try
+    if isfield(S,'Seg') && isstruct(S.Seg) && isfield(S.Seg,'region')
+        T = fc_region_names_from_region_struct(S.Seg.region);
+        if ~isempty(T.labels), return; end
+    end
+    if isfield(S,'region') && isstruct(S.region)
+        T = fc_region_names_from_region_struct(S.region);
+        if ~isempty(T.labels), return; end
+    end
+catch
+end
+try
+    if isfield(S,'Seg') && isstruct(S.Seg) && isfield(S.Seg,'region')
+        T = fc_region_names_from_region_struct(S.Seg.region);
+        if ~isempty(T.labels), return; end
+    end
+    if isfield(S,'region') && isstruct(S.region)
+        T = fc_region_names_from_region_struct(S.region);
+        if ~isempty(T.labels), return; end
+    end
+catch
+end
 if isfield(S,'roiNameTable')
     x = S.roiNameTable;
     if isstruct(x) && isfield(x,'labels') && isfield(x,'names')
@@ -4476,6 +4704,15 @@ M(1:size(M,1)+1:end) = 1;
 end
 
 function [M,names,order,meta] = fc_current_matrix(s,res)
+% HUMOR_REPAIR_TRUE_SLICE_CURRENT_MATRIX_20260519
+try
+    if isfield(s,'Z') && s.Z > 1 && isfield(s,'sliceRegionOnly') && s.sliceRegionOnly
+        if ~(isstruct(res) && isfield(res,'sliceOnly') && isequal(res.sliceOnly,true))
+            res = HUMOR_FC_make_slice_roi_result(s,s.currentSubject,res,s.slice);
+        end
+    end
+catch
+end
 % Region-mode aware matrix builder.
 % Modes:
 %   both   = L_ and R_ regions remain separate.
@@ -5896,6 +6133,16 @@ for i = 1:s.nSub
     Z(1:size(Z,1)+1:end) = 0;
 
     fcBundle.subjects(i).Z = Z;
+    % HUMOR_REPAIR_SLICE_BUNDLE_EXPORT_20260519
+    try
+        fcBundle.subjects(i).isStepMotor3D = (isfield(s,'Z') && s.Z > 1);
+        fcBundle.subjects(i).nSlices = s.Z;
+        fcBundle.subjects(i).sliceResults = HUMOR_FC_build_slice_bundle(s,i,res);
+        fcBundle.subjects(i).sliceExportNote = 'sliceResults contain true slice-specific ROI FC matrices.';
+    catch ME_sliceExport
+        fcBundle.subjects(i).sliceResults = struct([]);
+        fcBundle.subjects(i).sliceExportNote = ['Slice export failed: ' ME_sliceExport.message];
+    end
     fcBundle.subjects(i).statMatrix = Z;
     fcBundle.subjects(i).statSpace = 'Fisher z';
     fcBundle.subjects(i).displayMatrix = res.M;
@@ -5936,6 +6183,14 @@ end
 function startDir = fc_segmentation_start_dir(subj,opts)
 % Prefer the HUMoR segmentation output folder.
 startDir = pwd;
+try
+    if isfield(opts,'stepMotorFolder') && ~isempty(opts.stepMotorFolder) && exist(opts.stepMotorFolder,'dir') == 7
+        segDir0 = fullfile(opts.stepMotorFolder,'Segmentation');
+        if exist(segDir0,'dir') == 7, startDir = segDir0; return; end
+        startDir = opts.stepMotorFolder; return;
+    end
+catch
+end
 try
     if isfield(opts,'exportPath') && ~isempty(opts.exportPath)
         segDir = fullfile(opts.exportPath,'Segmentation');
@@ -6518,11 +6773,9 @@ end
 
 
 function [M,names,order,meta] = fc_apply_region_visibility(s,M,names,order,meta)
-% Optional filtering of displayed heatmap/graph regions.
 try
-    if nargin < 5 || isempty(M) || isempty(names)
-        return;
-    end
+    if nargin < 5 || isempty(M) || isempty(names), return; end
+
     if isfield(meta,'isRectangular') && meta.isRectangular
         yKeep = 1:size(M,1);
         xKeep = 1:size(M,2);
@@ -6543,18 +6796,47 @@ try
         try, names = meta.namesY; catch, names = names(yKeep); end
         try, order = meta.orderY; catch, order = order(yKeep); end
         try, meta.displayLabels = meta.displayLabelsY; catch, end
+
+        if isfield(s,'sliceRegionOnly') && s.sliceRegionOnly
+            ySlice = HUMOR_FC_slice_keep_indices(s,meta,size(M,1),'y');
+            xSlice = HUMOR_FC_slice_keep_indices(s,meta,size(M,2),'x');
+            if ~isempty(ySlice) && ~isempty(xSlice)
+                M = M(ySlice,xSlice);
+                try, meta.namesY = meta.namesY(ySlice); catch, end
+                try, meta.namesX = meta.namesX(xSlice); catch, end
+                try, meta.orderY = meta.orderY(ySlice); catch, end
+                try, meta.orderX = meta.orderX(xSlice); catch, end
+                try, meta.displayLabelsY = meta.displayLabelsY(ySlice); catch, end
+                try, meta.displayLabelsX = meta.displayLabelsX(xSlice); catch, end
+                try, names = meta.namesY; catch, names = names(ySlice); end
+                try, order = meta.orderY; catch, order = order(ySlice); end
+                try, meta.displayLabels = meta.displayLabelsY; catch, end
+            end
+        end
         return;
     end
-    if ~isfield(s,'fcSelectedRegionIdx') || isempty(s.fcSelectedRegionIdx)
-        return;
+
+    if isfield(s,'fcSelectedRegionIdx') && ~isempty(s.fcSelectedRegionIdx)
+        keep = fc_region_keep_indices(s.fcSelectedRegionIdx,size(M,1));
+        if ~isempty(keep)
+            M = M(keep,keep);
+            names = names(keep);
+            try, order = order(keep); catch, end
+            try, meta.groups = meta.groups(keep); catch, end
+            try, meta.displayLabels = meta.displayLabels(keep); catch, end
+        end
     end
-    keep = fc_region_keep_indices(s.fcSelectedRegionIdx,size(M,1));
-    if isempty(keep), return; end
-    M = M(keep,keep);
-    names = names(keep);
-    try, order = order(keep); catch, end
-    try, meta.groups = meta.groups(keep); catch, end
-    try, meta.displayLabels = meta.displayLabels(keep); catch, end
+
+    if isfield(s,'sliceRegionOnly') && s.sliceRegionOnly
+        keepSlice = HUMOR_FC_slice_keep_indices(s,meta,size(M,1),'both');
+        if ~isempty(keepSlice)
+            M = M(keepSlice,keepSlice);
+            names = names(keepSlice);
+            try, order = order(keepSlice); catch, end
+            try, meta.groups = meta.groups(keepSlice); catch, end
+            try, meta.displayLabels = meta.displayLabels(keepSlice); catch, end
+        end
+    end
 catch
 end
 end
@@ -6836,3 +7118,5 @@ lines = {
 };
 txt = strjoin(lines,newline);
 end
+
+
